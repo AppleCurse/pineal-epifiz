@@ -86,7 +86,11 @@ Bu nedenle şu an desteklenebilen ifade, varsa, **“incelenen örneklemde gözl
 
 **Envanter tamamlandı. Mevcut kaynaklarla kişisel/tarihsel baseline oluşturma veya “normalden sapma” iddiası için GO yok.** Tarihli postlar bulunan bir görevde, sadece o anki örneklem içi değişim ve post aralığı gözlemi raporlanabilir; baseline bulunmadığı açıkça belirtilmelidir. Timestamp yoksa zaman karşılaştırması da yapılamaz. Nedensel/psikolojik yorum ve mesaj stratejisi bu ölçümden türetilmemelidir.
 
-C1+ bu nedenle başlatılmadı. Yeniden değerlendirme için önce gerçek, izinli ve saklama politikası tanımlı tarihsel corpus’un; hedef/source scope’un; post düzeyi kimlik ve timestamp provenance’ının; kapsama/eksik veri paydasının mevcut olduğu gösterilmelidir. Bu kanıtlar olmadan yeni baseline motoru yazılmamalıdır.
+### C1 kapsam ayrımı
+
+Bu çalışma ağacında Strata'nın **aynı görevdeki ilk/son üçte bir karşılaştırmasını** `EvidenceItem`'a aktaran parça zaten vardır: `adapt_pillar_bundle()` drift'i `observation`, geç alt kümede görülmeyen fossil konusunu `absence` olarak yazar; aralıkları ve kaynak metriklerini taşır, canonical `confidence` alanını `None` bırakır. `PinealExecutor` bu öğeleri `forensic_evidence` ve nötr timeline'a bağlar. Buna ilişkin `test_strata_drift_and_fossil_keep_their_scope_and_source_scores` testi de mevcuttur (`agent_core/services/pillar_evidence_adapter.py`, `agent_core/task_executor.py:961-1009`, `tests/unit/test_pillar_evidence_adapter.py:272-283`).
+
+Bu, görev-içi Strata çıktısının kanıt sözleşmesine aktarımıdır; **kişisel tarihsel baseline veya görevler-arası değişim izleme değildir**. Tarihsel baseline/C1 kapsamı hâlâ başlatılmadı. Bunun için önce gerçek, izinli ve saklama politikası tanımlı corpus'un; hedef/source scope'un; post düzeyi kimlik ve timestamp provenance'ının; kapsama/eksik veri paydasının mevcut olduğu gösterilmelidir. Bu kanıtlar ve P0 kararları olmadan yeni baseline motoru yazılmamalıdır.
 
 ## İncelenen temel kod yolları
 

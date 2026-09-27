@@ -48,6 +48,8 @@ Bir hedefin açık kaynaklı dijital ayak izlerini (sosyal paylaşımları, meti
 
 ## 2. Çift Modlu Taktik Komuta Arayüzü (v5.1 Mimarisi)
 
+> Router tüm ajanları zorunlu sırayla çalıştırmaz. Diyagram, koşullu dalları özetler. Yedi pillar motorunun kendi hesaplamaları LLM çağrısı yapmaz; deterministik kod hesaplarıdır. Sonuçları yine de betimleyici/heuristik kaynak ölçümleridir, psikometrik test değildir.
+
 PINEAL-HERETIC v5.1, operatöre hem derin sinematik sezgi hem de cerrahi şeffaflık sunan **çift modlu (Dual-Mode)** bir komuta köprüsü ile donatılmıştır. İki mod arasında sağ üstteki hap butondan anında geçiş yapılır ve tercih tarayıcıda (`localStorage.pineal_view_mode`) saklanır.
 
 ### MOD 1: Atlas Epifiz Gözlemevi (`AtlasPinealCockpit.svelte`)
@@ -85,6 +87,31 @@ PINEAL-HERETIC v5.1, operatöre hem derin sinematik sezgi hem de cerrahi şeffaf
      - `[HAM VERİ / RAW JSON]`: Backend'den dönen birebir JSON sözleşmesi.
 4. **Kara Kutu Canlı Uçuş Kaydedicisi (Alt Güverte):**
    - `ALL`, `OSINT`, `LLM`, `DECISION`, `ERRORS` filtreleriyle canlı log akışı sağlayan, otomatik kaydırmalı adli terminal.
+
+---
+
+## Teknik akış, API ve geliştirme
+
+### Temel kod yolları
+
+- API ve görev başlatma: `backend/api.py` → `run_mission()` → `agent_core/task_executor.py`
+- Ajan seçimi: `agent_core/services/cognitive_router.py`
+- Ajan envanteri ve altı soruluk kod ayrıntısı: [README_TECHNICAL.md](README_TECHNICAL.md)
+- Scraper/görsel/pillar: `agent_core/scraper/`, `agent_core/services/`, `agent_core/engines/`
+- UI: `frontend/src/`
+
+### Başlıca yüzeyler
+
+| Yüzey | Rol |
+|---|---|
+| `POST /api/initiate` | Ana profil görevi; aynı `run_mission` akışını başlatır. |
+| `POST /api/aspasia/chat` | Kullanıcıya görev/kanıt durumu yanıtı. |
+| `POST /api/aspasia/command` | Sınırlı doğal dil intent'i; desteklenen açık Instagram URL'si doğrulanır ve aynı görev akışına dispatch edilir. |
+| `POST /api/experimental/shadow/analyze` | Deneysel Shadow analiz endpoint'i; normal UI akışından ayrı. |
+| `POST /api/experimental/shadow/generate` | Deneysel Shadow taslak üretim endpoint'i; normal UI akışından ayrı. |
+| `POST /api/experimental/chat/respond` | Deneysel, oturumlu DialogueManager yanıtı; normal UI çağırmaz. |
+| `run_lilith.py` | Ana analiz hattı dışında, CLI'dan Lilith içerik paketi üretimi. |
+| `/api/experimental/interpreter/execute` | Yalnız opt-in Interpreter yapılandırmasında bulunan deneysel kod görevi yolu. |
 
 ---
 
@@ -195,9 +222,13 @@ baslat.bat
 *Sanal ortamı kontrol eder, frontend derlemesini yapar ve API sunucusunu başlatır.*
 
 ### Geliştirici Ortamı (Terminal)
+Python ve Node sürümlerini repository manifestlerine göre kurun (`package.json` Node `>=20.19 <23` ister). Örnek yerel başlangıç:
 
 ```bash
 # 1. Python Bağımlılıkları
+cp .env.example .env
+python -m venv .venv
+source .venv/bin/activate
 python -m pip install -r requirements.txt
 python -m playwright install chromium
 
@@ -227,6 +258,17 @@ cd frontend && npm run preview -- --host 127.0.0.1 --port 4173
 ---
 
 ## 8. Test ve Doğrulama Standartları
+
+İki ayrı terminalde çalıştırın:
+
+```bash
+# Backend — yerel geliştirme ortamını açıkça seçin
+PINEAL_ENV=development python -m uvicorn backend.api:app --host 0.0.0.0 --port 8000
+
+# Frontend — Vite varsayılan olarak 1420 portunu kullanır;
+# /api ve /ws isteklerini backend'in 8000 portuna proxy eder.
+npm run dev --prefix frontend -- --host 0.0.0.0
+```
 
 Sistem her commit öncesinde sıkı kalite kapılarından geçer:
 
@@ -259,3 +301,11 @@ Sistem her commit öncesinde sıkı kalite kapılarından geçer:
 
 **S: Kasa (Vault) kilitliyken ne olur?**  
 **C:** Kasa güvenlik mandalı kapalıyken dış dünyaya tek bir ağ isteği dahi çıkamaz. Kilit açılmadan sistem hiçbir harici platformu taramaz.
+
+`.env.example` içindeki sağlayıcı, canlı LLM, harcama sınırı, kimlik doğrulama ve deneysel özellik ayarlarını çalıştırmadan önce gözden geçirin. Sunucu anahtarlarını `VITE_*` frontend değişkenlerine koymayın. İsteğe bağlı bağımlılık ve geliştirme kontrolleri için root `package.json`, `requirements-*.txt` ve [frontend notlarına](frontend/README.md) bakın.
+
+### İnceleme raporları
+
+- [Yedi önerilen eksikliğin kaynak kodu incelemesi](docs/reports/EKSIK_YETENEKLER_2026-09-26.md)
+- [C0 salt-okunur veri envanteri](docs/reports/C0_BASELINE_VERI_ENVANTERI_2026-09-26.md)
+- [P0 tarihsel baseline altyapısı için açık kapsam kararları](docs/reports/P0_PERSONAL_BASELINE_INFRASTRUCTURE_SCOPE_2026-09-26.md)
