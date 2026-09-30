@@ -117,6 +117,21 @@ export const keyUnlocked = writable<boolean>(false);
 // otomatik yeniden bağlanma durur (App.svelte abonesi yönetir).
 export const powerEngaged = writable<boolean>(true);
 
+// Merkez göz: giriş perdesinde yüklenen özel göz fotoğrafı, kokpit
+// ortasındaki gözle aynı kaynaktan beslenir (localStorage destekli).
+const EYE_STORAGE_KEY = 'pineal_custom_eye';
+
+function readStoredEye(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return localStorage.getItem(EYE_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export const eyeImage = writable<string | null>(readStoredEye());
+
 // i18n köprüsü
 export { currentLang, type Language } from './i18n';
 

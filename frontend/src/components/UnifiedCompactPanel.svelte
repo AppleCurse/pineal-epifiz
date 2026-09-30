@@ -4,7 +4,8 @@
   import {
     clientId, apiFetch, apiToken, setApiToken, currentApiToken,
     isAuthFailure, isProcessing, logs, taskStatus, telemetryEvents,
-    armEngaged, sigintEngaged, recordEngaged, keyUnlocked, powerEngaged
+    armEngaged, sigintEngaged, recordEngaged, keyUnlocked, powerEngaged,
+    eyeImage
   } from '../store';
   import { currentLang, t } from '../i18n';
   import { playClick, playRunning, playHalt, playToggle, setSoundEnabled } from '../lib/consoleAudio';
@@ -13,6 +14,8 @@
     ttsRate, TTS_DETENTS, startHealthPoll, stopHealthPoll
   } from '../lib/telemetry';
   import PillarFeed from './PillarFeed.svelte';
+  import PinealEye from './PinealEye.svelte';
+  import defaultEye from '../assets/eye.jpg';
   import AnalogGauge from './diesel/AnalogGauge.svelte';
   import ToggleSwitch from './diesel/ToggleSwitch.svelte';
   import KeyLock from './diesel/KeyLock.svelte';
@@ -147,7 +150,7 @@
     { id: "authenticity_auditor",  name: "AUTHENTICITY AUDITOR",  color: "#eab308", primaryModel: "pineal-vision",             backupModel: "(forensic)",        via: "9router", capability: "vision+verify",   glyph: "🔍" },
     { id: "depth_analyst",         name: "DEPTH ANALYST",         color: "#8b5cf6", primaryModel: "pineal-deep-reasoning",     backupModel: "(combo)",           via: "9router", capability: "strong_reasoning", glyph: "💎" },
   ];
-  
+
 // <ROUTING-GENERATED-END>
 
   // --- İKİ DİLLİ ETİKETLER (EN gravür + TR alt satır) ---
@@ -274,6 +277,11 @@
     }
   }
 
+  // RISK kadranı: bütüncül profil varsa (1 - güven), yoksa park eder (null).
+  // Sahte risk üretilmez: ölçüm yoksa ibre beklemede durur.
+  $: riskVal = holisticProfile ? Math.min(1, Math.max(0, 1 - (overallConfidence ?? 0))) : null;
+  $: riskLabel = riskVal === null ? 'BEKLEMEDE' : riskVal < 0.33 ? 'DÜŞÜK' : riskVal < 0.66 ? 'ORTA' : 'YÜKSEK';
+
   // ==========================================
   // ASPASIA CHAT & SPEECH
   // ==========================================
@@ -303,11 +311,11 @@
     const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const displayMsg = attachedImage ? `[GÖRSEL] ${inputMessage}` : inputMessage;
     messages = [...messages, { sender: 'SİZ', text: displayMsg, time: nowTime }];
-    
+
     let currentInput = inputMessage;
     let currentImage = attachedImage;
-    inputMessage = ""; 
-    attachedImage = null; 
+    inputMessage = "";
+    attachedImage = null;
     isSending = true;
     playClick(280, 50);
 
@@ -427,76 +435,213 @@
   });
 </script>
 
-<div class="steampunk-console">
-  <!-- ==================== ÜST SIRA: CANLI GÖSTERGELER + DURUM PANOSU ==================== -->
-  <!-- İbreler /health + /api/telemetry ölçümlerine bağlıdır; veri yoksa park eder. -->
-  <div class="top-dials-row">
-    <LcdLogin />
-    <div class="dials-cluster">
-    <AnalogGauge
-      label="LLM GATEWAY"
-      tr="LLM GEÇİDİ"
-      tone="red"
-      value={$sysTelemetry.ok ? ($sysTelemetry.gateway ? 82 : 12) : null}
-      sub={$sysTelemetry.ok ? ($sysTelemetry.gateway ? `CANLI · $${$sysTelemetry.spendUsd.toFixed(2)}` : 'BEKLEMEDE (STANDBY)') : '—'}
-    />
-    <AnalogGauge
-      label="SCRAPER NODE"
-      tr="KAZIYICI DÜĞÜM"
-      tone="gold"
-      value={$sysTelemetry.ok ? (($sysTelemetry.scraper || $sysTelemetry.browser) ? 82 : 12) : null}
-      sub={$sysTelemetry.ok ? (($sysTelemetry.scraper || $sysTelemetry.browser) ? 'HAZIR (READY)' : 'TARAYICI YOK (NO BROWSER)') : '—'}
-    />
-    <AnalogGauge
-      label="CORE ENGINE"
-      tr="ÇEKİRDEK MOTOR"
-      tone="green"
-      value={$health.ok ? $health.integrityPct : null}
-      sub={$health.ok ? `${$health.integrityPct}% · ${$health.status.toUpperCase()} (${trStatus($health.status)})` : '—'}
-    />
+<div class="observatory">
+  <!-- ==================== ÜST PLAKA ==================== -->
+  <div class="masthead">
+    <span class="plaque-screw ps-tl"></span>
+    <span class="plaque-screw ps-tr"></span>
+    <span class="plaque-screw ps-bl"></span>
+    <span class="plaque-screw ps-br"></span>
+    <div class="mast-left">
+      <div class="mast-title font-cinzel">ATLAS EPİFİZ PINEAL OBSERVATORY <span class="mast-ver">v10</span></div>
+      <div class="mast-sub">PINEAL-HERETIC · 360° BÜTÜNCÜL İNSAN TANIMA VE REZONANS İSTASYONU</div>
     </div>
-    <SplitFlap
-      title="PINEAL · STATUS"
-      titleTr="PİNEAL DURUM PANOSU"
-      rows={[
-        { k: 'LATENCY', ktr: 'GECİKME', v: $health.ok && $health.latencyMs !== null ? `${$health.latencyMs}ms` : '—' },
-        { k: 'INTEGRITY', ktr: 'BÜTÜNLÜK', v: $health.ok ? `${$health.integrityPct}%` : '—' },
-        { k: 'HAT', ktr: 'LINE', v: $uplinkState },
-      ]}
-      foot={$health.ok ? `SYS ${$health.status.toUpperCase()} · NOMINAL` : 'SYS UNREACHABLE'}
-      footTr={$health.ok ? `SİS. ${trStatus($health.status)} · NOMİNAL` : 'SİS. ERİŞİLEMEZ'}
-      online={$uplinkState === 'ONLINE' && $health.ok}
-    />
-    <SplitFlap
-      title="SEFER · LEDGER"
-      titleTr="GÖREV DEFTERİ"
-      rows={[
-        { k: 'HARCAMA', ktr: 'SPEND', v: $sysTelemetry.ok ? `$${$sysTelemetry.spendUsd.toFixed(4)}` : '—' },
-        { k: 'TAVAN', ktr: 'CAP', v: $sysTelemetry.ok ? ($sysTelemetry.spendCapUsd > 0 ? `$${$sysTelemetry.spendCapUsd.toFixed(2)}` : 'YOK (NONE)') : '—' },
-        { k: 'REZERV', ktr: 'RESV', v: $sysTelemetry.ok ? String($sysTelemetry.activeReservations) : '—' },
-        { k: 'GÖREV', ktr: 'RUNS', v: $sysTelemetry.ok ? String($sysTelemetry.taskRuns) : '—' },
-      ]}
-      foot="BÜTÇE · QUOTA"
-      footTr={$sysTelemetry.ok ? 'CANLI AKIŞ' : 'VERİ YOK'}
-      online={$sysTelemetry.ok}
-    />
+    <div class="mast-right">
+      <div class="mast-locks">
+        <div class="lock-item">
+          <span class="lock-led {$keyUnlocked ? 'led-green' : 'led-red'}"></span>
+          <span class="lock-name">LOCK</span>
+          <span class="lock-state">{$keyUnlocked ? 'AÇIK' : 'KİLİTLİ'}</span>
+        </div>
+        <div class="lock-item">
+          <span class="lock-led {$apiToken ? 'led-green' : 'led-dim'}"></span>
+          <span class="lock-name">SECURE</span>
+          <span class="lock-state">{$apiToken ? 'TOKEN' : 'YOK'}</span>
+        </div>
+        <div class="lock-item">
+          <span class="lock-led {$recordEngaged ? 'led-green' : 'led-dim'}"></span>
+          <span class="lock-name">ARCHIVE</span>
+          <span class="lock-state">{$recordEngaged ? 'REC' : 'OFF'}</span>
+        </div>
+      </div>
+      <div class="sysstate">
+        <span class="sysstate-label">SYSTEM STATE<br /><span class="tr-micro">SİSTEM DURUMU</span></span>
+        <span class="sysstate-bars">
+          <span class="sysbar {($uplinkState === 'ONLINE') ? 'lit' : ''}"></span>
+          <span class="sysbar {($uplinkState === 'ONLINE' && $health.ok) ? 'lit' : ''}"></span>
+          <span class="sysbar {($uplinkState === 'ONLINE' && $health.ok && $sysTelemetry.ok) ? 'lit' : ''}"></span>
+        </span>
+        <span class="sysstate-text">{$uplinkState === 'ONLINE' ? ($health.ok ? 'SYNC' : 'KISMÎ') : 'OFFLINE'}</span>
+      </div>
+    </div>
   </div>
 
-  <!-- ==================== ANA KOKPİT GÖVDESİ (3 SÜTUN) ==================== -->
-  <div class="main-cockpit-grid">
-
-    <!-- SOL PANEL: DONANIM VE ŞALTERLER -->
-    <aside class="left-hardware-rack">
-      <!-- 1. VAULT KEY LOCK (ateşleme interlock'u) -->
-      <div class="hardware-module keylock-module">
-        <div class="module-title">VAULT KEY LOCK<span class="module-tr">KASA ANAHTAR KİLİDİ</span></div>
-        <KeyLock unlocked={$keyUnlocked} onToggle={toggleKey} />
-        <span class="knob-detent">{$keyUnlocked ? 'AÇIK · ateş serbest' : 'KİLİTLİ'}</span>
+  <!-- ==================== GÖSTERGE SIRASI (5 KADRAN) ==================== -->
+  <!-- İbreler /health + /api/telemetry ölçümlerine bağlıdır; veri yoksa park eder. -->
+  <div class="gauge-row">
+    <LcdLogin />
+    <div class="dials-cluster">
+      <AnalogGauge
+        label="LLM GATEWAY"
+        tr="LLM GEÇİDİ"
+        tone="red"
+        value={$sysTelemetry.ok ? ($sysTelemetry.gateway ? 82 : 12) : null}
+        sub={$sysTelemetry.ok ? ($sysTelemetry.gateway ? `CANLI · $${$sysTelemetry.spendUsd.toFixed(2)}` : 'BEKLEMEDE (STANDBY)') : '—'}
+      />
+      <AnalogGauge
+        label="SCRAPER NODE"
+        tr="KAZIYICI DÜĞÜM"
+        tone="gold"
+        value={$sysTelemetry.ok ? (($sysTelemetry.scraper || $sysTelemetry.browser) ? 82 : 12) : null}
+        sub={$sysTelemetry.ok ? (($sysTelemetry.scraper || $sysTelemetry.browser) ? 'HAZIR (READY)' : 'TARAYICI YOK (NO BROWSER)') : '—'}
+      />
+      <AnalogGauge
+        label="CORE ENGINE"
+        tr="ÇEKİRDEK MOTOR"
+        tone="green"
+        value={$health.ok ? $health.integrityPct : null}
+        sub={$health.ok ? `${$health.integrityPct}% · ${$health.status.toUpperCase()} (${trStatus($health.status)})` : '—'}
+      />
+      <AnalogGauge
+        label="PINEAL STATUS"
+        tr="PİNEAL DURUMU"
+        tone="green"
+        value={$uplinkState === 'ONLINE' ? 82 : 12}
+        sub="{$uplinkState}{$recordEngaged ? ' · REC' : ''}"
+      />
+      <AnalogGauge
+        label="SEFER / LEDGER"
+        tr="GÖREV DEFTERİ"
+        tone="gold"
+        value={$sysTelemetry.ok ? ($sysTelemetry.spendCapUsd > 0 ? Math.min(100, ($sysTelemetry.spendUsd / $sysTelemetry.spendCapUsd) * 100) : 82) : null}
+        sub={$sysTelemetry.ok ? `$${$sysTelemetry.spendUsd.toFixed(4)} HARCAMA` : '—'}
+      />
+    </div>
+    <div class="signals-block">
+      <div class="signals-label">SIGNALS<span class="tr-micro">SİNYALLER</span></div>
+      <div class="odometer-bezel">
+        <div class="odometer-digits">
+          {#each String(odometer).padStart(5, '0').split('') as digit}
+            <span class="odo-digit">{digit}</span>
+          {/each}
+        </div>
       </div>
+      <div class="signals-sub">REC · KAYIT SAYACI</div>
+    </div>
+    <div class="flaps-col">
+      <SplitFlap
+        title="PINEAL · STATUS"
+        titleTr="PİNEAL DURUM PANOSU"
+        rows={[
+          { k: 'LATENCY', ktr: 'GECİKME', v: $health.ok && $health.latencyMs !== null ? `${$health.latencyMs}ms` : '—' },
+          { k: 'INTEGRITY', ktr: 'BÜTÜNLÜK', v: $health.ok ? `${$health.integrityPct}%` : '—' },
+          { k: 'HAT', ktr: 'LINE', v: $uplinkState },
+        ]}
+        foot={$health.ok ? `SYS ${$health.status.toUpperCase()} · NOMINAL` : 'SYS UNREACHABLE'}
+        footTr={$health.ok ? `SİS. ${trStatus($health.status)} · NOMİNAL` : 'SİS. ERİŞİLEMEZ'}
+        online={$uplinkState === 'ONLINE' && $health.ok}
+      />
+      <SplitFlap
+        title="SEFER · LEDGER"
+        titleTr="GÖREV DEFTERİ"
+        rows={[
+          { k: 'HARCAMA', ktr: 'SPEND', v: $sysTelemetry.ok ? `$${$sysTelemetry.spendUsd.toFixed(4)}` : '—' },
+          { k: 'TAVAN', ktr: 'CAP', v: $sysTelemetry.ok ? ($sysTelemetry.spendCapUsd > 0 ? `$${$sysTelemetry.spendCapUsd.toFixed(2)}` : 'YOK (NONE)') : '—' },
+          { k: 'REZERV', ktr: 'RESV', v: $sysTelemetry.ok ? String($sysTelemetry.activeReservations) : '—' },
+          { k: 'GÖREV', ktr: 'RUNS', v: $sysTelemetry.ok ? String($sysTelemetry.taskRuns) : '—' },
+        ]}
+        foot="BÜTÇE · QUOTA"
+        footTr={$sysTelemetry.ok ? 'CANLI AKIŞ' : 'VERİ YOK'}
+        online={$sysTelemetry.ok}
+      />
+    </div>
+  </div>
 
-      <!-- 2. THROTTLE · MIXTURE · PROP (gerçek işlevli detentler) -->
-      <div class="hardware-module knobs-module">
-        <div class="module-title">THROTTLE &bull; MIXTURE &bull; PROP<span class="module-tr">GAZ · KARIŞIM · PERVANE</span></div>
+  <!-- ==================== ANA GÖVDE (3 SÜTUN) ==================== -->
+  <div class="obs-grid">
+
+    <!-- SOL: KAYNAK + ALIM + KASA -->
+    <aside class="col-left">
+      <section class="panel">
+        <div class="panel-title">
+          <span>SOURCE FIELD <span class="live-dot"></span> <span class="title-ghost">INPUT ONLINE</span></span>
+          <span class="panel-tr">KAYNAK ALANI</span>
+        </div>
+        <ul class="source-list">
+          <li>
+            <span class="src-led {$sysTelemetry.scraper ? 'on' : 'off'}"></span>
+            <span class="src-name">INSTAGRAM GHOST SCRAPER</span>
+            <span class="src-state">{$sysTelemetry.scraper ? 'AKTİF' : 'PASİF'}</span>
+          </li>
+          <li>
+            <span class="src-led {$sysTelemetry.browser ? 'on' : 'off'}"></span>
+            <span class="src-name">CANLI TARAYICI</span>
+            <span class="src-state">{$sysTelemetry.browser ? 'AKTİF' : 'PASİF'}</span>
+          </li>
+          <li>
+            <span class="src-led {$health.ok ? 'on' : 'off'}"></span>
+            <span class="src-name">WEB / ARCHIVE</span>
+            <span class="src-state">{$health.ok ? 'HAZIR' : 'YOK'}</span>
+          </li>
+          <li>
+            <span class="src-led {$sysTelemetry.gateway ? 'on' : 'off'}"></span>
+            <span class="src-name">OPEN DATA</span>
+            <span class="src-state">{$sysTelemetry.gateway ? 'AÇIK' : 'KAPALI'}</span>
+          </li>
+          <li>
+            <span class="src-led {(targetUrl.trim() || inputMessage.trim()) ? 'on' : 'off'}"></span>
+            <span class="src-name">MANUEL GİRİŞ</span>
+            <span class="src-state">{(targetUrl.trim() || inputMessage.trim()) ? 'GİRİLDİ' : 'BOŞ'}</span>
+          </li>
+        </ul>
+        <div class="source-stats">
+          <div class="stat-box">
+            <span class="stat-num">{odometer}</span>
+            <span class="stat-lbl">SİNYALLER</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-num">{[$sysTelemetry.scraper, $sysTelemetry.browser, $health.ok, $sysTelemetry.gateway].filter(Boolean).length}</span>
+            <span class="stat-lbl">KAYNAK</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">
+          <span>ACQUISITION CONTROLS</span>
+          <span class="panel-tr">ALIM KONTROLLERİ</span>
+        </div>
+        <div class="switches-grid">
+          <ToggleSwitch label="POWER" tr="GÜÇ" engaged={$powerEngaged} led="green" onToggle={togglePower} />
+          <ToggleSwitch label="ARM" tr="KURMA" engaged={$armEngaged} led="green" onToggle={toggleArm} />
+          <ToggleSwitch label="RECORD" tr="KAYIT" engaged={$recordEngaged} led="green" onToggle={toggleRecord} />
+          <ToggleSwitch label="SIGINT" tr="SİNYAL" engaged={$sigintEngaged} led="red" onToggle={toggleSigint} />
+        </div>
+        <div class="estop-wrap">
+          <EmergencyStop armed={$isProcessing || taskState === 'processing'} onPress={emergencyStop} />
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">
+          <span>PINEAL TOKEN</span>
+          <span class="panel-tr">KASA & KUMANDA</span>
+        </div>
+        <div class="token-plaque">
+          <div class="plaque-screw top-left"></div>
+          <div class="plaque-screw top-right"></div>
+          <div class="plaque-screw btm-left"></div>
+          <div class="plaque-screw btm-right"></div>
+          <div class="plaque-header">PINEAL TOKEN</div>
+          <div class="plaque-tr">PİNEAL ANAHTARI</div>
+          <div class="plaque-code">{$apiToken ? 'KASA · AÇIK' : 'KASA · KİLİTLİ'}</div>
+          <div class="plaque-sub">{$clientId}</div>
+        </div>
+        <div class="keylock-wrap">
+          <div class="module-title">VAULT KEY LOCK<span class="module-tr">KASA ANAHTAR KİLİDİ</span></div>
+          <KeyLock unlocked={$keyUnlocked} onToggle={toggleKey} />
+          <span class="knob-detent">{$keyUnlocked ? 'AÇIK · ateş serbest' : 'KİLİTLİ'}</span>
+        </div>
         <div class="knobs-row">
           <div class="knob-col">
             <button class="knurled-knob" aria-label="Throttle: ping aralığı" style="transform: rotate({throttleAngle}deg);" on:click={cycleThrottle}>
@@ -523,169 +668,121 @@
             <span class="knob-detent">{soundOn ? 'SES' : 'SESSİZ'}</span>
           </div>
         </div>
-      </div>
-
-      <!-- 3. POWER · ARM · RECORD · SIGINT -->
-      <div class="hardware-module switches-module">
-        <div class="module-title">POWER<span class="module-tr">GÜÇ</span></div>
-        <div class="switches-row">
-          <ToggleSwitch label="POWER" tr="GÜÇ" engaged={$powerEngaged} led="green" onToggle={togglePower} />
-          <ToggleSwitch label="ARM" tr="KURMA" engaged={$armEngaged} led="green" onToggle={toggleArm} />
-          <ToggleSwitch label="RECORD" tr="KAYIT" engaged={$recordEngaged} led="green" onToggle={toggleRecord} />
-          <ToggleSwitch label="SIGINT" tr="SİNYAL" engaged={$sigintEngaged} led="red" onToggle={toggleSigint} />
-        </div>
-      </div>
-
-      <!-- 4. EMERGENCY STOP (işleyen görevi iptal eder) -->
-      <div class="hardware-module estop-module">
-        <EmergencyStop armed={$isProcessing || taskState === 'processing'} onPress={emergencyStop} />
-      </div>
-
-      <!-- 4. REC ODOMETER COUNTER (00087) -->
-      <div class="hardware-module odometer-module">
-        <span class="counter-tag">REC <span class="tr-micro">(KAYIT)</span></span>
-        <div class="odometer-bezel">
-          <div class="odometer-digits">
-            {#each String(odometer).padStart(5, '0').split('') as digit}
-              <span class="odo-digit">{digit}</span>
-            {/each}
-          </div>
-        </div>
-      </div>
-
-      <!-- 6. STATUS ACTIVE LAMP -->
-      <div class="hardware-module status-module">
-        <span class="status-title">STATUS<br>ACTIVE<br><span class="tr-micro">DURUM: AKTİF</span></span>
-        <div class="big-jewel-lamp {$isProcessing ? 'lamp-pulse' : 'lamp-steady'}"></div>
-      </div>
-
-      <!-- 7. PINEAL TOKEN PLAQUE (canlı kasa durumu — uydurma seri no yok) -->
-      <div class="hardware-module token-plaque">
-        <div class="plaque-screw top-left"></div>
-        <div class="plaque-screw top-right"></div>
-        <div class="plaque-screw btm-left"></div>
-        <div class="plaque-screw btm-right"></div>
-        <div class="plaque-header">PINEAL TOKEN</div>
-        <div class="plaque-tr">PİNEAL ANAHTARI</div>
-        <div class="plaque-code">{$apiToken ? 'KASA · AÇIK' : 'KASA · KİLİTLİ'}</div>
-        <div class="plaque-sub">{$clientId}</div>
-      </div>
+      </section>
     </aside>
 
-    <!-- ORTA PANEL: AGENT DECK • ASPASIA OBSERVER -->
-    <main class="center-monitor-chassis">
-      <div class="crt-screen-bezel">
-        <div class="crt-screen-inner">
-          <!-- Monitor Header -->
-          <div class="crt-header">
-            <div class="header-title-group">
-              <span class="font-cinzel deck-title">AGENT DECK &bull; ASPASIA OBSERVER<span class="deck-tr">AJAN GÜVERTESİ • ASPASİA GÖZLEM</span></span>
-              <span class="sound-wave-icon {isSending ? 'wave-active' : ''}">)))</span>
-            </div>
-
-            <!-- Tabs: ASPASIA, VISION, OSINT, FRICTION, VERIFY -->
-            <div class="monitor-tabs-bar">
-              {#each ['ASPASIA', 'VISION', 'OSINT', 'FRICTION', 'VERIFY'] as tab}
-                <button 
-                  class="monitor-tab-btn {activeTab === tab ? 'tab-selected' : ''}" 
-                  on:click={() => { activeTab = tab; playClick(300, 30); }}
-                >
-                  {tab}<span class="tab-tr">{tabTr[tab]}</span>
-                </button>
-              {/each}
-            </div>
-          </div>
-
-          <!-- Active Route Bar (Dinamik Telemetri) -->
-          <div class="active-route-subbar">
-            <div class="route-text">
-              {#if ($isProcessing || taskState === 'processing') && currentAgent}
-                <b style="color: var(--gold);">AKTİF (ACTIVE):</b> {currentAgent}
-                &bull; <b style="color: var(--gold);">MODEL:</b> {runs[currentAgent]?.model || agentList.find(a => a.id === currentAgent)?.primaryModel || 'auto'}
-                &bull; <b style="color: var(--gold);">YOL (VIA):</b> {runs[currentAgent]?.via || agentList.find(a => a.id === currentAgent)?.via || 'unified-router'}
-              {:else if $isProcessing || taskState === 'processing'}
-                <b style="color: var(--gold);">DURUM (STATUS):</b> İŞLENİYOR (Ajan başlatılıyor...)
-              {:else if taskState === 'completed'}
-                <b style="color: #22c55e;">DURUM (STATUS):</b> TAMAMLANDI (Tüm kanıtlar doğrulandı)
-              {:else if taskState && taskState.startsWith('halted')}
-                <b style="color: #ef4444;">DURUM (STATUS):</b> DURDURULDU ({haltedReason || taskState})
-              {:else}
-                <b style="color: var(--gold);">DURUM (STATUS):</b> BEKLEMEDE (Sistem Hazır &bull; Hedef Bekleniyor)
-              {/if}
-            </div>
-            <div class="route-dots">
-              <span class="dot-led {($isProcessing || taskState === 'processing') ? 'dot-green pulse' : 'dot-amber'}"></span>
-            </div>
-          </div>
-
-          <!-- Hedef Profil Girişi (Kompakt Çubuk) -->
-          <div class="quick-target-strip">
-            <input 
-              type="text" 
-              bind:value={targetUrl} 
-              placeholder="Hedef kullanıcı adı / URL (@kullanici) · Target username / URL..." 
-              disabled={$isProcessing} 
-            />
-            <button 
-              class="launch-btn {$armEngaged ? 'btn-armed' : 'btn-unarmed'}" 
-              on:click={triggerAnalysis} 
-              disabled={$isProcessing || !targetUrl}
-            >
-              {$isProcessing ? 'İŞLENİYOR (BUSY)...' : 'BAŞLAT (LAUNCH)'}
-            </button>
-          </div>
-
-          <!-- Chat Dialogue Feed -->
-          <div class="dialogue-scroll-area" bind:this={chatContainer}>
-            {#each messages as msg}
-              <div class="chat-row {msg.sender === 'SİZ' ? 'row-user' : 'row-aspasia'}">
-                <div class="avatar-disc">
-                  {#if msg.sender === 'SİZ'}
-                    <span class="avatar-glyph">👤</span>
-                  {:else}
-                    <span class="avatar-glyph">🏛️</span>
-                  {/if}
-                </div>
-                <div class="bubble-body">
-                  <div class="bubble-text">{msg.text}</div>
-                  <div class="bubble-footer">
-                    <span class="msg-timestamp">{msg.time}</span>
-                    <span class="check-marks">✓✓</span>
-                  </div>
-                </div>
-              </div>
-            {/each}
-          </div>
-
-          <!-- Input Bar -->
-          <div class="monitor-input-tray">
-            <button class="cam-btn" on:click={() => fileInput.click()} title="Görsel Yükle">
-              📷
-            </button>
-            <input type="file" accept="image/*" bind:this={fileInput} on:change={handleImageUpload} style="display:none;" />
-            <input 
-              type="text" 
-              class="terminal-input"
-              bind:value={inputMessage} 
-              on:keydown={handleKeydown} 
-              placeholder="Komut girin · Enter command or query..." 
-              disabled={isSending} 
-            />
-            <button class="brass-send-btn" on:click={sendMessage} disabled={isSending || (!inputMessage.trim() && !attachedImage)}>
-              GÖNDER (SEND)
-            </button>
+    <!-- ORTA: GÖZ + AJAN GÜVERTESİ -->
+    <main class="col-center">
+      <section class="panel eye-panel">
+        <div class="eye-stage">
+          <div class="eye-orbit" aria-hidden="true"></div>
+          <span class="eye-led" style="--a: 0deg; --d: 0s;"></span>
+          <span class="eye-led" style="--a: 60deg; --d: 0.4s;"></span>
+          <span class="eye-led" style="--a: 120deg; --d: 0.8s;"></span>
+          <span class="eye-led" style="--a: 180deg; --d: 1.2s;"></span>
+          <span class="eye-led" style="--a: 240deg; --d: 1.6s;"></span>
+          <span class="eye-led" style="--a: 300deg; --d: 2s;"></span>
+          <div class="eye-scale">
+            <PinealEye size={300} scanning={$isProcessing || taskState === 'processing'} customImage={$eyeImage ?? defaultEye} interactive={true} />
           </div>
         </div>
-      </div>
+        <div class="eye-status">
+          <span class="dot-led {($isProcessing || taskState === 'processing') ? 'dot-green pulse' : 'dot-amber'}"></span>
+          {#if ($isProcessing || taskState === 'processing')}
+            <span><b>TARAMA AKTİF:</b> {currentAgent || 'ajan başlatılıyor...'}</span>
+          {:else if taskState === 'completed'}
+            <span><b>TAMAMLANDI:</b> kanıtlar doğrulandı</span>
+          {:else if taskState && taskState.startsWith('halted')}
+            <span><b>DURDURULDU:</b> {haltedReason || taskState}</span>
+          {:else}
+            <span><b>GÖZETİM HAZIR:</b> hedef bekleniyor</span>
+          {/if}
+        </div>
+      </section>
+
+      <section class="panel deck-panel">
+        <div class="panel-title">
+          <span>AGENT DECK · ASPASIA OBSERVER</span>
+          <span class="panel-tr">AJAN GÜVERTESİ</span>
+        </div>
+        <div class="monitor-tabs-bar">
+          {#each ['ASPASIA', 'VISION', 'OSINT', 'FRICTION', 'VERIFY'] as tab}
+            <button
+              class="monitor-tab-btn {activeTab === tab ? 'tab-selected' : ''}"
+              on:click={() => { activeTab = tab; playClick(300, 30); }}
+            >
+              {tab}<span class="tab-tr">{tabTr[tab]}</span>
+            </button>
+          {/each}
+        </div>
+        <div class="quick-target-strip">
+          <input
+            type="text"
+            bind:value={targetUrl}
+            placeholder="Hedef kullanıcı adı / URL (@kullanici) · Target username / URL..."
+            disabled={$isProcessing}
+          />
+          <button
+            class="launch-btn {$armEngaged ? 'btn-armed' : 'btn-unarmed'}"
+            on:click={triggerAnalysis}
+            disabled={$isProcessing || !targetUrl}
+          >
+            {$isProcessing ? 'İŞLENİYOR...' : 'YAKALA (CAPTURE)'}
+          </button>
+        </div>
+        <div class="active-route-subbar">
+          <div class="route-text">
+            {#if ($isProcessing || taskState === 'processing') && currentAgent}
+              <b style="color: var(--gold);">AKTİF (ACTIVE):</b> {currentAgent}
+              &bull; <b style="color: var(--gold);">MODEL:</b> {runs[currentAgent]?.model || agentList.find(a => a.id === currentAgent)?.primaryModel || 'auto'}
+              &bull; <b style="color: var(--gold);">YOL (VIA):</b> {runs[currentAgent]?.via || agentList.find(a => a.id === currentAgent)?.via || 'unified-router'}
+            {:else if $isProcessing || taskState === 'processing'}
+              <b style="color: var(--gold);">DURUM (STATUS):</b> İŞLENİYOR (Ajan başlatılıyor...)
+            {:else if taskState === 'completed'}
+              <b style="color: #22c55e;">DURUM (STATUS):</b> TAMAMLANDI (Tüm kanıtlar doğrulandı)
+            {:else if taskState && taskState.startsWith('halted')}
+              <b style="color: #ef4444;">DURUM (STATUS):</b> DURDURULDU ({haltedReason || taskState})
+            {:else}
+              <b style="color: var(--gold);">DURUM (STATUS):</b> BEKLEMEDE (Sistem Hazır &bull; Hedef Bekleniyor)
+            {/if}
+          </div>
+          <div class="route-dots">
+            <span class="dot-led {($isProcessing || taskState === 'processing') ? 'dot-green pulse' : 'dot-amber'}"></span>
+          </div>
+        </div>
+      </section>
     </main>
 
-    <!-- SAĞ PANEL: AJAN ZİNCİRİ (KULLANICININ VERDİĞİ KODUN TAM VE EKSİKSİZ UYARLAMASI) -->
-    <aside class="right-agent-rack">
-      <div class="rack-header">
-        <span class="font-cinzel rack-title">AJAN ZİNCİRİ<span class="rack-tr">AGENT CHAIN · 13 CANLI AJAN</span></span>
-        <div class="jewel-led led-on-green"></div>
-      </div>
+    <!-- SAĞ: İZ + RİSK + AJAN RAFI -->
+    <aside class="col-right">
+      <section class="panel">
+        <div class="panel-title">
+          <span>TRACE FIELD</span>
+          <span class="panel-tr">İZ ALANI</span>
+        </div>
+        <div class="trace-big">
+          <span class="trace-num">{odometer}</span>
+          <span class="trace-unit">SIGNALS</span>
+        </div>
+        <div class="trace-rows">
+          <div class="trace-row"><span>relation clusters</span><b>{osintFootprint?.associated_platforms?.length ?? '—'}</b></div>
+          <div class="trace-row"><span>confidence</span><b>{holisticProfile ? `%${(overallConfidence * 100).toFixed(0)}` : '—'}</b></div>
+          <div class="trace-row"><span>sefer / runs</span><b>{$sysTelemetry.ok ? $sysTelemetry.taskRuns : '—'}</b></div>
+        </div>
+      </section>
 
+      <section class="panel">
+        <div class="panel-title">
+          <span>RISK · BELİRSİZLİK</span>
+          <span class="panel-tr">RİSK GÖSTERGESİ</span>
+        </div>
+        <div class="risk-dial" role="img" aria-label="Risk gostergesi">
+          <div class="risk-arc"></div>
+          <div class="risk-needle" style="transform: translateX(-50%) rotate({riskVal === null ? -80 : -80 + riskVal * 160}deg);"></div>
+          <div class="risk-hub"></div>
+        </div>
+        <div class="risk-text">risk index: <b>{riskVal === null ? '—' : riskVal.toFixed(2)}</b> · {riskLabel === 'BEKLEMEDE' ? 'ölçüm bekleniyor' : 'belirsizlik: ' + riskLabel.toLowerCase()}</div>
+      </section>
       <div class="agent-cards-stack">
         {#each agentList as agent, i}
           {@const run = runs[agent.id]}<!-- [BOSS-10] 'depth_forensics' ölü anahtardı:
@@ -707,100 +804,126 @@
                 <span class="medal-symbol">{agent.glyph || '⚙️'}</span>
               </div>
 
-              <div class="agent-info-meta">
-                <div class="agent-title-text">{agent.name}</div>
-                <div class="agent-tr">{agentTr[agent.id] || ''}</div>
-                <div class="agent-spec-lines">
-                  <div><b style="color: var(--gold);">DURUM:</b> {isCompleted ? 'TAMAM' : isHalted ? 'DURDU' : isRunning ? 'ÇALIŞIYOR' : 'BEKLİYOR'}</div>
-                  <div><b style="color: var(--gold);">MODEL:</b> {liveModel}</div>
-                  <div><b style="color: var(--gold);">YOL:</b> {liveVia}</div>
-                  <div><b style="color: var(--gold);">ÇAĞRI:</b> {provCallId ? provCallId.slice(0, 14) + '…' : '—'}</div>
-                </div>
-              </div>
+      <section class="panel rack-panel">
+        <div class="panel-title">
+          <span>AGENT RACK</span>
+          <span class="panel-tr">AJAN RAFI · 13</span>
+        </div>
+        <div class="agent-rows">
+          {#each agentList as agent, i}
+            {@const run = runs[agent.id]}
+            {@const isCompleted = run?.status === 'completed'}
+            {@const isRunning = currentAgent === agent.id && ($isProcessing || taskState === 'processing')}
+            {@const isHalted = run?.status === 'halted' || run?.status === 'failed'}
+            {@const liveModel = run?.model || agent.primaryModel}
+            {@const liveVia = run?.via || agent.via}
+            <div class="agent-row {isRunning ? 'row-running' : isHalted ? 'row-halted' : isCompleted ? 'row-done' : ''}" title="{liveModel} · {liveVia}">
+              <span class="agent-idx">{String(i + 1).padStart(2, '0')}</span>
+              <span class="agent-led {isRunning ? 'led-green pulse' : isHalted ? 'led-red' : isCompleted ? 'led-teal' : 'led-dim'}"></span>
+              <span class="agent-name">{agent.name}<span class="agent-tr">{agentTr[agent.id] || ''}</span></span>
+              <span class="pill {isRunning ? 'pill-active' : isHalted ? 'pill-verify' : isCompleted ? 'pill-report' : 'pill-wait'}">{isRunning ? 'ACTIVE' : isHalted ? 'VERIFY' : isCompleted ? 'REPORT' : 'WAIT'}</span>
+            </div>
+          {/each}
+        </div>
+      </section>
+    </aside>
+  </div>
 
-              <!-- İlerleme Çubuğu -->
-              <div class="agent-meter-bar">
-                <div 
-                  class="meter-fill {isCompleted ? 'fill-green' : isRunning ? 'fill-running-red' : isHalted ? 'fill-red' : 'fill-dim'}"
-                  style="width: {isCompleted ? '100%' : isRunning ? '65%' : isHalted ? '100%' : '0%'};"
-                ></div>
+  <!-- ==================== ALT: KOMUTA + 7 SÜTUN ==================== -->
+  <div class="obs-bottom">
+    <section class="panel command-deck">
+      <div class="panel-title">
+        <span>ASPASIA OBSERVER · COMMAND DECK</span>
+        <span class="panel-tr">KOMUTA GÜVERTESİ · {isSending ? 'YAZIYOR' : 'CANLI'}</span>
+      </div>
+      <div class="dialogue-scroll-area" bind:this={chatContainer}>
+        {#each messages as msg}
+          <div class="chat-row {msg.sender === 'SİZ' ? 'row-user' : 'row-aspasia'}">
+            <div class="avatar-disc">
+              {#if msg.sender === 'SİZ'}
+                <span class="avatar-glyph">👤</span>
+              {:else}
+                <span class="avatar-glyph">🏛️</span>
+              {/if}
+            </div>
+            <div class="bubble-body">
+              <div class="bubble-text">{msg.text}</div>
+              <div class="bubble-footer">
+                <span class="msg-timestamp">{msg.time}</span>
+                <span class="check-marks">✓✓</span>
               </div>
             </div>
           </div>
         {/each}
       </div>
-    </aside>
+      <div class="monitor-input-tray">
+        <button class="cam-btn" on:click={() => fileInput.click()} title="Görsel Yükle">
+          📷
+        </button>
+        <input type="file" accept="image/*" bind:this={fileInput} on:change={handleImageUpload} style="display:none;" />
+        <input
+          type="text"
+          class="terminal-input"
+          bind:value={inputMessage}
+          on:keydown={handleKeydown}
+          placeholder="Komut girin · Enter command or query..."
+          disabled={isSending}
+        />
+        <button class="brass-send-btn" on:click={sendMessage} disabled={isSending || (!inputMessage.trim() && !attachedImage)}>
+          GÖNDER (SEND)
+        </button>
+      </div>
+    </section>
 
-  </div>
-
-  <!-- ==================== ALT SIRA: 8 ADLİ DAMGA YUVARLAK BUTONU ==================== -->
-  <footer class="bottom-forensic-bar">
-    <div class="forensic-buttons-track">
-      <button class="round-brass-btn {activeForensicModal === 'follower' ? 'btn-active' : ''}" on:click={() => toggleForensic('follower')}>
-        <div class="btn-inner-disc">
+    <section class="panel pillars-panel">
+      <div class="panel-title">
+        <span>7 PILLARS</span>
+        <span class="panel-tr">ADLİ DAMGALAR</span>
+      </div>
+      <div class="pillars-track">
+        <button class="pillar-btn {activeForensicModal === 'follower' ? 'btn-active' : ''}" on:click={() => toggleForensic('follower')}>
           <span class="forensic-icon">🕸️</span>
-        </div>
-        <span class="forensic-name">FOLLOWER</span>
-        <span class="forensic-tr">TAKİPÇİ</span>
-      </button>
-
-      <button class="round-brass-btn {activeForensicModal === 'timing' ? 'btn-active' : ''}" on:click={() => toggleForensic('timing')}>
-        <div class="btn-inner-disc">
+          <span class="forensic-name">FOLLOWER</span>
+          <span class="forensic-tr">TAKİPÇİ</span>
+        </button>
+        <button class="pillar-btn {activeForensicModal === 'timing' ? 'btn-active' : ''}" on:click={() => toggleForensic('timing')}>
           <span class="forensic-icon">⏱️</span>
-        </div>
-        <span class="forensic-name">TIMING</span>
-        <span class="forensic-tr">ZAMANLAMA</span>
-      </button>
-
-      <button class="round-brass-btn {activeForensicModal === 'depth' ? 'btn-active' : ''}" on:click={() => toggleForensic('depth')}>
-        <div class="btn-inner-disc">
+          <span class="forensic-name">TIMING</span>
+          <span class="forensic-tr">ZAMANLAMA</span>
+        </button>
+        <button class="pillar-btn {activeForensicModal === 'depth' ? 'btn-active' : ''}" on:click={() => toggleForensic('depth')}>
           <span class="forensic-icon">📑</span>
-        </div>
-        <span class="forensic-name">DEPTH</span>
-        <span class="forensic-tr">DERİNLİK</span>
-      </button>
-
-      <button class="round-brass-btn {activeForensicModal === 'visual' ? 'btn-active' : ''}" on:click={() => toggleForensic('visual')}>
-        <div class="btn-inner-disc">
+          <span class="forensic-name">DEPTH</span>
+          <span class="forensic-tr">DERİNLİK</span>
+        </button>
+        <button class="pillar-btn {activeForensicModal === 'visual' ? 'btn-active' : ''}" on:click={() => toggleForensic('visual')}>
           <span class="forensic-icon">👁️</span>
-        </div>
-        <span class="forensic-name">VISUAL</span>
-        <span class="forensic-tr">GÖRSEL</span>
-      </button>
-
-      <button class="round-brass-btn {activeForensicModal === 'shadow' ? 'btn-active' : ''}" on:click={() => toggleForensic('shadow')}>
-        <div class="btn-inner-disc">
+          <span class="forensic-name">VISUAL</span>
+          <span class="forensic-tr">GÖRSEL</span>
+        </button>
+        <button class="pillar-btn {activeForensicModal === 'shadow' ? 'btn-active' : ''}" on:click={() => toggleForensic('shadow')}>
           <span class="forensic-icon">🎭</span>
-        </div>
-        <span class="forensic-name">SHADOW</span>
-        <span class="forensic-tr">GÖLGE</span>
-      </button>
-
-      <button class="round-brass-btn {activeForensicModal === 'osint' ? 'btn-active' : ''}" on:click={() => toggleForensic('osint')}>
-        <div class="btn-inner-disc">
+          <span class="forensic-name">SHADOW</span>
+          <span class="forensic-tr">GÖLGE</span>
+        </button>
+        <button class="pillar-btn {activeForensicModal === 'osint' ? 'btn-active' : ''}" on:click={() => toggleForensic('osint')}>
           <span class="forensic-icon">🌐</span>
-        </div>
-        <span class="forensic-name">OSINT</span>
-        <span class="forensic-tr">OSINT</span>
-      </button>
-
-      <button class="round-brass-btn {activeForensicModal === 'resonance' ? 'btn-active' : ''}" on:click={() => toggleForensic('resonance')}>
-        <div class="btn-inner-disc">
+          <span class="forensic-name">OSINT</span>
+          <span class="forensic-tr">OSINT</span>
+        </button>
+        <button class="pillar-btn {activeForensicModal === 'resonance' ? 'btn-active' : ''}" on:click={() => toggleForensic('resonance')}>
           <span class="forensic-icon">🎯</span>
-        </div>
-        <span class="forensic-name">RESONANCE</span>
-        <span class="forensic-tr">REZONANS</span>
-      </button>
-
-      <button class="round-brass-btn {activeForensicModal === 'pillars' ? 'btn-active' : ''}" on:click={() => toggleForensic('pillars')}>
-        <div class="btn-inner-disc">
+          <span class="forensic-name">RESONANCE</span>
+          <span class="forensic-tr">REZONANS</span>
+        </button>
+        <button class="pillar-btn {activeForensicModal === 'pillars' ? 'btn-active' : ''}" on:click={() => toggleForensic('pillars')}>
           <span class="forensic-icon">◈</span>
-        </div>
-        <span class="forensic-name">7 PILLARS</span>
-        <span class="forensic-tr">7 SÜTUN</span>
-      </button>
-    </div>
-  </footer>
+          <span class="forensic-name">7 PILLARS</span>
+          <span class="forensic-tr">7 SÜTUN</span>
+        </button>
+      </div>
+    </section>
+  </div>
 
   <!-- ==================== DAMGA AÇILIR PANELİ (POPUP DRAWER) ==================== -->
   {#if activeForensicModal}
@@ -901,14 +1024,14 @@
 
 <style>
   /* ===================================================
-     HERETIC VICTORIAN STEAMPUNK INSTRUMENT CONSOLE CSS
+     ATLAS EPIFIZ PINEAL OBSERVATORY — KONSOL STİLLERİ
      =================================================== */
-  .steampunk-console {
-    background: 
+  .observatory {
+    background:
       radial-gradient(ellipse at 50% 10%, rgba(212, 175, 55, 0.08) 0%, transparent 60%),
       radial-gradient(circle at center, #1e1107 0%, #100804 60%, #080402 100%);
     border: 3px solid #8e6538;
-    box-shadow: 
+    box-shadow:
       0 0 0 1px #ffecb3,
       0 0 0 3px #180d05,
       0 0 0 5px #6b4b24,
@@ -920,96 +1043,446 @@
     padding: 18px;
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    gap: 16px;
     position: relative;
   }
 
-  /* --- TOP DIALS ROW (canlı göstergeler + split-flap pano) --- */
-  .top-dials-row {
-    background: 
-      linear-gradient(180deg, rgba(255,255,255,0.06) 0%, transparent 30%, rgba(0,0,0,0.4) 100%),
+  /* ---------- ÜST PLAKA ---------- */
+  .masthead {
+    position: relative;
+    background: linear-gradient(180deg, #fef0be 0%, #d4af37 28%, #8a6332 72%, #5a3a16 100%);
+    border: 1px solid #ffecb3;
+    border-radius: 10px;
+    box-shadow:
+      0 0 0 3px #180d05,
+      0 0 0 4px #8e6538,
+      0 6px 18px rgba(0, 0, 0, 0.8),
+      inset 0 2px 3px rgba(255, 255, 255, 0.85),
+      inset 0 -3px 6px rgba(0, 0, 0, 0.55);
+    padding: 12px 22px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    color: #150c04;
+  }
+  .mast-left { min-width: 0; }
+  .mast-title {
+    font-size: clamp(15px, 2.4vw, 24px);
+    font-weight: 900;
+    letter-spacing: 0.12em;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.55);
+    line-height: 1.15;
+  }
+  .mast-ver {
+    display: inline-block;
+    font-size: 0.62em;
+    background: #150c04;
+    color: #ffd978;
+    border-radius: 4px;
+    padding: 1px 8px;
+    vertical-align: middle;
+    letter-spacing: 0.08em;
+    text-shadow: none;
+    box-shadow: inset 0 1px 2px #000, 0 1px 0 rgba(255, 255, 255, 0.5);
+  }
+  .mast-sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: clamp(8px, 1.3vw, 11px);
+    font-weight: 700;
+    letter-spacing: 0.22em;
+    margin-top: 4px;
+    opacity: 0.85;
+  }
+  .mast-right {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+  }
+  .mast-locks {
+    display: flex;
+    gap: 12px;
+  }
+  .lock-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    background: rgba(10, 5, 2, 0.85);
+    border: 1px solid #3a220e;
+    border-radius: 6px;
+    padding: 5px 10px;
+    box-shadow: inset 0 2px 4px #000, 0 1px 0 rgba(255, 255, 255, 0.4);
+  }
+  .lock-name {
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    color: #d4af37;
+  }
+  .lock-state {
+    font-size: 8px;
+    font-weight: 700;
+    color: #f5edd8;
+  }
+  .lock-led, .agent-led {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    border: 1px solid #000;
+  }
+  .led-green { background: #10b981; box-shadow: 0 0 8px #10b981, 0 0 2px #fff, inset 0 1px 1px #fff; }
+  .led-red { background: #ef4444; box-shadow: 0 0 8px #ef4444, inset 0 1px 1px #ffb4b4; }
+  .led-dim { background: #3a2c1c; box-shadow: inset 0 1px 2px #000; }
+  .led-teal { background: #06b6d4; box-shadow: 0 0 8px #06b6d4, inset 0 1px 1px #fff; }
+  .pulse { animation: ledPulse 1.1s ease-in-out infinite; }
+  @keyframes ledPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+  }
+
+  .sysstate {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(10, 5, 2, 0.9);
+    border: 1px solid #3a220e;
+    border-radius: 6px;
+    padding: 6px 12px;
+    box-shadow: inset 0 2px 4px #000, 0 1px 0 rgba(255, 255, 255, 0.4);
+  }
+  .sysstate-label {
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    color: #d4af37;
+    line-height: 1.35;
+  }
+  .sysstate-bars { display: flex; gap: 4px; }
+  .sysbar {
+    width: 16px;
+    height: 8px;
+    border-radius: 2px;
+    background: #2a1c0d;
+    border: 1px solid #000;
+    box-shadow: inset 0 1px 2px #000;
+  }
+  .sysbar.lit {
+    background: linear-gradient(180deg, #7dfcd0, #10b981);
+    box-shadow: 0 0 8px #10b981;
+  }
+  .sysstate-text {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    color: #7dfcd0;
+    text-shadow: 0 0 8px rgba(16, 185, 129, 0.7);
+  }
+
+  /* ---------- GÖSTERGE SIRASI ---------- */
+  .gauge-row {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, transparent 30%, rgba(0, 0, 0, 0.4) 100%),
       linear-gradient(90deg, #1f1208 0%, #2b190d 50%, #1f1208 100%);
     border: 1px solid #5a3d1c;
-    box-shadow: 
-      inset 0 1px 2px rgba(255,235,175,0.25),
-      inset 0 -2px 5px rgba(0,0,0,0.8),
-      0 4px 14px rgba(0,0,0,0.65);
+    box-shadow:
+      inset 0 1px 2px rgba(255, 235, 175, 0.25),
+      inset 0 -2px 5px rgba(0, 0, 0, 0.8),
+      0 4px 14px rgba(0, 0, 0, 0.65);
     border-radius: 10px;
     padding: 14px 18px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 20px;
+    gap: 18px;
     flex-wrap: wrap;
-    position: relative;
   }
   .dials-cluster {
     display: flex;
-    gap: 28px;
+    gap: 22px;
     flex-wrap: wrap;
     justify-content: center;
     align-items: flex-start;
+    flex: 1;
   }
-
-  /* --- MAIN COCKPIT 3-COLUMN GRID --- */
-  .main-cockpit-grid {
-    display: grid;
-    grid-template-columns: 215px 1fr 285px;
-    gap: 18px;
-    align-items: stretch;
-  }
-
-  /* --- LEFT HARDWARE RACK --- */
-  .left-hardware-rack {
-    background: 
-      linear-gradient(90deg, #2b1a0e 0%, #1c1008 8%, #140b05 92%, #2b1a0e 100%);
-    border: 2px solid #6b4b24;
-    border-radius: 10px;
-    padding: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    box-shadow: 
-      inset 0 2px 4px rgba(255,235,175,0.25),
-      inset 0 0 25px rgba(0,0,0,0.9),
-      0 6px 16px rgba(0,0,0,0.7);
-    position: relative;
-  }
-
-  .hardware-module {
-    background: 
-      linear-gradient(135deg, rgba(255,255,255,0.06) 0%, transparent 40%, rgba(0,0,0,0.4) 100%),
-      linear-gradient(180deg, #2a1a0f 0%, #180e07 100%);
-    border: 1px solid #664622;
-    border-radius: 8px;
-    padding: 10px 8px;
+  .signals-block {
     display: flex;
     flex-direction: column;
     align-items: center;
-    text-align: center;
-    box-shadow: 
-      inset 1px 1px 1px rgba(255,235,175,0.25),
-      inset -1px -1px 2px rgba(0,0,0,0.8),
-      0 3px 8px rgba(0,0,0,0.6);
-    position: relative;
+    gap: 6px;
+    background: #0d0703;
+    border: 1px solid #4a3017;
+    border-radius: 8px;
+    padding: 10px 14px;
+    box-shadow: inset 0 2px 6px #000;
+  }
+  .signals-label {
+    font-family: 'Cinzel', serif;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    color: var(--gold);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+  }
+  .signals-sub {
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    color: var(--text-muted);
+  }
+  .odometer-bezel {
+    background: #0d0703;
+    border: 2px solid #5a3d1c;
+    padding: 3px 8px;
+    border-radius: 4px;
+    box-shadow: inset 0 0 8px #000, 0 2px 4px rgba(0, 0, 0, 0.6);
+  }
+  .odometer-digits { display: flex; gap: 3px; }
+  .odo-digit {
+    background: linear-gradient(180deg, #1f1f1f 0%, #111111 48%, #000000 52%, #141414 100%);
+    color: #fff;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 800;
+    padding: 2px 5px;
+    border-radius: 2px;
+    border: 1px solid #333;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 1px 2px #000;
+  }
+  .flaps-col {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
   }
 
+  /* ---------- GENEL PANEL ---------- */
+  .panel {
+    background:
+      linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, transparent 40%, rgba(0, 0, 0, 0.4) 100%),
+      linear-gradient(180deg, #201309 0%, #120a04 100%);
+    border: 2px solid #6b4b24;
+    border-radius: 10px;
+    padding: 12px;
+    box-shadow:
+      inset 1px 1px 1px rgba(255, 235, 175, 0.22),
+      inset -1px -1px 2px rgba(0, 0, 0, 0.8),
+      inset 0 0 22px rgba(0, 0, 0, 0.75),
+      0 5px 14px rgba(0, 0, 0, 0.7);
+    position: relative;
+  }
+  .panel-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    font-family: 'Cinzel', serif;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    color: var(--gold);
+    text-shadow: 0 1px 2px #000;
+    border-bottom: 1px solid #4a3017;
+    padding-bottom: 8px;
+    margin-bottom: 10px;
+  }
+  .panel-tr {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8px;
+    font-weight: 500;
+    color: var(--text-muted);
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+  }
+  .title-ghost {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    color: #7dfcd0;
+    text-shadow: 0 0 6px rgba(16, 185, 129, 0.7);
+  }
+  .live-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #10b981;
+    box-shadow: 0 0 8px #10b981;
+    animation: ledPulse 1.6s ease-in-out infinite;
+    margin: 0 2px 0 6px;
+    vertical-align: baseline;
+  }
+
+  /* ---------- ANA IZGARA ---------- */
+  .obs-grid {
+    display: grid;
+    grid-template-columns: 262px 1fr 305px;
+    gap: 16px;
+    align-items: stretch;
+  }
+  .col-left, .col-right {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+  }
+  .col-center {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+  }
+
+  /* ---------- SOL: KAYNAK LİSTESİ ---------- */
+  .source-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    margin-bottom: 10px;
+  }
+  .source-list li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #080402;
+    border: 1px solid #3d2b17;
+    border-radius: 5px;
+    padding: 6px 9px;
+    box-shadow: inset 0 1px 3px #000;
+  }
+  .src-led {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: 1px solid #000;
+    flex-shrink: 0;
+  }
+  .src-led.on { background: #10b981; box-shadow: 0 0 8px #10b981; }
+  .src-led.off { background: #4a3a26; box-shadow: inset 0 1px 2px #000; }
+  .src-name {
+    flex: 1;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #e2d7c5;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .src-state {
+    font-size: 8px;
+    font-weight: 800;
+    color: #7dfcd0;
+    text-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+    white-space: nowrap;
+  }
+  .source-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .stat-box {
+    background: #060302;
+    border: 1px solid #3d2b17;
+    border-radius: 6px;
+    padding: 7px 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    box-shadow: inset 0 2px 5px #000;
+  }
+  .stat-num {
+    font-size: 20px;
+    font-weight: 800;
+    color: #7dfcd0;
+    text-shadow: 0 0 10px rgba(16, 185, 129, 0.7);
+    line-height: 1.1;
+  }
+  .stat-lbl {
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    color: var(--text-muted);
+  }
+
+  /* ---------- SOL: ŞALTERLER + KASA ---------- */
+  .switches-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 6px;
+    justify-items: center;
+    margin-bottom: 10px;
+  }
+  .estop-wrap {
+    display: flex;
+    justify-content: center;
+    border-top: 1px solid #3d2b17;
+    padding-top: 10px;
+  }
+  .token-plaque {
+    position: relative;
+    background: linear-gradient(180deg, #fef0be 0%, #d4af37 25%, #8c6728 65%, #3a240d 100%);
+    border: 1px solid #ffecb3;
+    color: #120904;
+    padding: 8px;
+    text-align: center;
+    box-shadow:
+      inset 0 1px 1px rgba(255, 255, 255, 0.7),
+      inset 0 -1px 2px rgba(0, 0, 0, 0.6),
+      0 4px 8px rgba(0, 0, 0, 0.7);
+    border-radius: 4px;
+    margin-bottom: 10px;
+  }
+  .plaque-screw {
+    position: absolute;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #3a220e, #140b05);
+    border: 0.5px solid #ffecb3;
+    box-shadow: inset 0 1px 0 #000;
+  }
+  .plaque-screw.top-left { top: 3px; left: 3px; }
+  .plaque-screw.top-right { top: 3px; right: 3px; }
+  .plaque-screw.btm-left { bottom: 3px; left: 3px; }
+  .plaque-screw.btm-right { bottom: 3px; right: 3px; }
+  .ps-tl { top: 6px; left: 6px; }
+  .ps-tr { top: 6px; right: 6px; }
+  .ps-bl { bottom: 6px; left: 6px; }
+  .ps-br { bottom: 6px; right: 6px; }
+  .plaque-header { font-family: 'Cinzel', serif; font-size: 9px; font-weight: 900; letter-spacing: 0.6px; }
+  .plaque-code { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 800; letter-spacing: 1px; }
+  .plaque-sub { font-family: 'JetBrains Mono', monospace; font-size: 7px; font-weight: 500; letter-spacing: 0.5px; opacity: 0.85; margin-top: 2px; }
+  .keylock-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    border-top: 1px solid #3d2b17;
+    padding-top: 10px;
+    margin-bottom: 10px;
+  }
   .module-title {
     font-family: 'Cinzel', serif;
     font-size: 8px;
     font-weight: 800;
     color: var(--gold);
-    text-shadow: 0 1px 2px rgba(0,0,0,0.9);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
     letter-spacing: 0.8px;
-    margin-bottom: 6px;
+    text-align: center;
   }
-
-  /* Knobs (Throttle, Mixture, Prop) */
   .knobs-row {
     display: flex;
     justify-content: space-around;
     width: 100%;
     gap: 6px;
+    border-top: 1px solid #3d2b17;
+    padding-top: 10px;
   }
   .knob-col {
     display: flex;
@@ -1021,25 +1494,20 @@
     width: 36px;
     height: 36px;
     border-radius: 50%;
-    background: 
-      radial-gradient(circle at 35% 30%, #fef0be 0%, #d4af37 25%, #8c6728 65%, #3a240d 100%);
+    background: radial-gradient(circle at 35% 30%, #fef0be 0%, #d4af37 25%, #8c6728 65%, #3a240d 100%);
     border: 2px solid #5a3d1c;
-    box-shadow: 
-      0 4px 8px rgba(0,0,0,0.85),
+    box-shadow:
+      0 4px 8px rgba(0, 0, 0, 0.85),
       0 0 0 2px #221307,
       0 0 0 3px #8c6728,
-      inset 0 1px 2px rgba(255,255,255,0.7),
-      inset 0 -2px 4px rgba(0,0,0,0.8);
+      inset 0 1px 2px rgba(255, 255, 255, 0.7),
+      inset 0 -2px 4px rgba(0, 0, 0, 0.8);
     cursor: pointer;
     position: relative;
     transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.15s;
   }
-  .knurled-knob:hover {
-    filter: brightness(1.15);
-  }
-  .knurled-knob:active {
-    transform: scale(0.96);
-  }
+  .knurled-knob:hover { filter: brightness(1.15); }
+  .knurled-knob:active { transform: scale(0.96); }
   .knob-notch {
     position: absolute;
     top: 2px;
@@ -1048,22 +1516,9 @@
     height: 9px;
     background: #ffffff;
     border-radius: 1px;
-    box-shadow: 0 0 3px rgba(255,255,255,0.9), 0 1px 2px #000;
+    box-shadow: 0 0 3px rgba(255, 255, 255, 0.9), 0 1px 2px #000;
   }
-  .knob-label {
-    font-size: 7px;
-    color: var(--text-dim);
-    font-weight: 700;
-  }
-
-  /* Switches (ToggleSwitch bileşenleri; 4'lü sıra) */
-  .switches-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    width: 100%;
-    gap: 4px;
-  }
+  .knob-label { font-size: 7px; color: var(--text-dim); font-weight: 700; }
   .knob-detent {
     font-family: 'JetBrains Mono', monospace;
     font-size: 7px;
@@ -1076,226 +1531,82 @@
     margin-top: 3px;
     white-space: nowrap;
     text-shadow: 0 0 4px rgba(16, 185, 129, 0.6);
-    box-shadow: inset 0 1px 3px rgba(0,0,0,0.8);
-  }
-  .estop-module {
-    padding: 6px 10px 10px;
-  }
-  .jewel-led {
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    border: 1px solid #160d04;
-    box-shadow: inset 0 1px 2px rgba(255,255,255,0.5);
-  }
-  .led-on-green {
-    background: #10b981;
-    box-shadow: 0 0 10px #10b981, 0 0 2px #fff, inset 0 1px 2px #fff;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8);
   }
 
-  /* Mechanical Odometer */
-  .odometer-module {
-    flex-direction: row;
-    justify-content: space-between;
-    padding: 8px 12px;
+  /* ---------- ORTA: GÖZ ---------- */
+  .eye-panel {
+    background:
+      radial-gradient(ellipse at 50% 30%, rgba(212, 175, 55, 0.1) 0%, transparent 60%),
+      radial-gradient(circle at center, #160d05 0%, #0b0502 70%, #050201 100%);
   }
-  .counter-tag {
-    font-size: 8px;
-    font-weight: 800;
-    color: var(--gold);
-    text-shadow: 0 1px 2px #000;
-  }
-  .odometer-bezel {
-    background: #0d0703;
-    border: 2px solid #5a3d1c;
-    padding: 3px 8px;
-    border-radius: 4px;
-    box-shadow: inset 0 0 8px #000, 0 2px 4px rgba(0,0,0,0.6);
-  }
-  .odometer-digits {
-    display: flex;
-    gap: 3px;
-  }
-  .odo-digit {
-    background: linear-gradient(180deg, #1f1f1f 0%, #111111 48%, #000000 52%, #141414 100%);
-    color: #fff;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
-    font-weight: 800;
-    padding: 2px 4px;
-    border-radius: 2px;
-    border: 1px solid #333;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), 0 1px 2px #000;
-  }
-
-  /* Status Lamp */
-  .status-module {
-    flex-direction: row;
-    justify-content: space-between;
-    padding: 8px 14px;
-  }
-  .status-title {
-    font-size: 8px;
-    font-weight: 800;
-    color: var(--gold);
-    text-align: left;
-    line-height: 1.2;
-    text-shadow: 0 1px 2px #000;
-  }
-  .big-jewel-lamp {
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: radial-gradient(circle at 35% 30%, #fff 0%, #34d399 25%, #059669 65%, #064e3b 100%);
-    border: 2px solid #5a3d1c;
-    box-shadow: 0 0 15px #10b981, inset 0 1px 2px #fff;
-  }
-  .lamp-pulse {
-    animation: lampBlink 1s infinite alternate;
-  }
-  @keyframes lampBlink {
-    from { opacity: 0.5; box-shadow: 0 0 6px #10b981; }
-    to { opacity: 1; box-shadow: 0 0 20px #10b981, 0 0 30px rgba(16, 185, 129, 0.4); }
-  }
-
-  /* Token Plaque */
-  .token-plaque {
+  .eye-stage {
     position: relative;
-    background: 
-      linear-gradient(180deg, #fef0be 0%, #d4af37 25%, #8c6728 65%, #3a240d 100%);
-    border: 1px solid #ffecb3;
-    color: #120904;
-    padding: 8px;
-    box-shadow: 
-      inset 0 1px 1px rgba(255,255,255,0.7),
-      inset 0 -1px 2px rgba(0,0,0,0.6),
-      0 4px 8px rgba(0,0,0,0.7);
-    border-radius: 4px;
-  }
-  .plaque-screw {
-    position: absolute;
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: radial-gradient(circle at 35% 30%, #3a220e, #140b05);
-    border: 0.5px solid #ffecb3;
-    box-shadow: inset 0 1px 0 #000;
-  }
-  .plaque-screw.top-left { top: 3px; left: 3px; }
-  .plaque-screw.top-right { top: 3px; right: 3px; }
-  .plaque-screw.btm-left { bottom: 3px; left: 3px; }
-  .plaque-screw.btm-right { bottom: 3px; right: 3px; }
-  .plaque-header { font-family: 'Cinzel', serif; font-size: 8px; font-weight: 900; letter-spacing: 0.6px; }
-  .plaque-code { font-family: 'JetBrains Mono', monospace; font-size: 9px; font-weight: 800; letter-spacing: 1px; }
-  .plaque-sub { font-family: 'JetBrains Mono', monospace; font-size: 7px; font-weight: 500; letter-spacing: 0.5px; opacity: 0.85; margin-top: 2px; }
-
-  /* =========================================================
-     CENTER MONITOR CHASSIS & VINTAGE CRT DISPLAY
-     ========================================================= */
-  .center-monitor-chassis {
     display: flex;
-    flex-direction: column;
-  }
-
-  .crt-screen-bezel {
-    background: 
-      linear-gradient(135deg, rgba(255,255,255,0.08) 0%, transparent 45%, rgba(0,0,0,0.6) 100%),
-      linear-gradient(180deg, #2b1a0d 0%, #170d06 100%);
-    border: 4px solid #7a542b;
-    border-radius: 14px;
-    padding: 12px;
-    box-shadow: 
-      inset 0 2px 4px rgba(255,235,175,0.35),
-      inset 0 -3px 6px rgba(0,0,0,0.9),
-      inset 0 0 25px rgba(0,0,0,0.85),
-      0 8px 24px rgba(0,0,0,0.8);
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    position: relative;
-  }
-
-  .crt-screen-inner {
-    position: relative;
-    background: 
-      /* Curved Glass Reflection / Specular Highlight */
-      radial-gradient(ellipse at 50% 12%, rgba(255, 255, 255, 0.12) 0%, transparent 60%),
-      /* Deep CRT Vignette / Curved Tube Shadow */
-      radial-gradient(ellipse at 50% 50%, rgba(16, 28, 20, 0.95) 0%, rgba(8, 14, 10, 0.98) 70%, #030604 100%);
-    border: 3px solid #142018;
-    border-radius: 10px;
-    padding: 14px;
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    box-shadow: 
-      inset 0 0 45px rgba(0, 0, 0, 0.95),
-      inset 0 0 15px rgba(56, 239, 125, 0.15),
-      0 0 8px rgba(0, 0, 0, 0.9);
-    overflow: hidden;
-  }
-
-  /* Authentic CRT Scanline Overlay */
-  .crt-screen-inner::before {
-    content: " ";
-    display: block;
-    position: absolute;
-    top: 0; left: 0; bottom: 0; right: 0;
-    background: 
-      linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.35) 50%), 
-      linear-gradient(90deg, rgba(255, 0, 0, 0.02), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.02));
-    z-index: 2;
-    background-size: 100% 3px, 6px 100%;
-    pointer-events: none;
-    opacity: 0.85;
-  }
-
-  .crt-header {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    border-bottom: 1px solid #1f3829;
-    padding-bottom: 8px;
-    position: relative;
-    z-index: 4;
-  }
-
-  .header-title-group {
-    display: flex;
-    justify-content: space-between;
+    justify-content: center;
     align-items: center;
+    padding: 30px 0;
+    min-height: 380px;
   }
-
-  .deck-title {
-    font-size: 12px;
-    font-weight: 800;
-    color: var(--text-phosphor);
-    text-shadow: 0 0 6px rgba(56, 239, 125, 0.7);
-    letter-spacing: 1.2px;
+  .eye-orbit {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 372px;
+    height: 372px;
+    margin: -186px 0 0 -186px;
+    border: 1px dashed rgba(212, 175, 55, 0.4);
+    border-radius: 50%;
+    animation: orbitSpin 40s linear infinite;
+    pointer-events: none;
   }
-
-  .sound-wave-icon {
-    color: #10b981;
-    font-weight: 900;
-    font-size: 13px;
-    text-shadow: 0 0 6px #10b981;
+  @keyframes orbitSpin {
+    to { transform: rotate(360deg); }
   }
-  .wave-active {
-    animation: wavePulse 0.5s infinite alternate;
+  .eye-led {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 10px;
+    height: 10px;
+    margin: -5px 0 0 -5px;
+    border-radius: 50%;
+    background: #38ef7d;
+    box-shadow: 0 0 10px #38ef7d, 0 0 20px rgba(56, 239, 125, 0.5);
+    transform: rotate(var(--a)) translateY(-196px);
+    animation: ledPulse 2.4s ease-in-out infinite;
+    animation-delay: var(--d);
+    z-index: 2;
+    pointer-events: none;
   }
-  @keyframes wavePulse {
-    from { color: #10b981; text-shadow: 0 0 4px #10b981; }
-    to { color: #34d399; text-shadow: 0 0 14px #34d399, 0 0 25px rgba(52, 211, 153, 0.6); }
-  }
-
-  /* Monitor Tabs as Mechanical Pushbuttons */
-  .monitor-tabs-bar {
+  .eye-scale { position: relative; z-index: 1; }
+  .eye-status {
     display: flex;
-    gap: 6px;
-    position: relative;
-    z-index: 4;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: #060302;
+    border: 1px solid #3d2b17;
+    border-radius: 5px;
+    padding: 7px 12px;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    color: #c9b998;
+    box-shadow: inset 0 2px 5px #000;
+    text-align: center;
   }
+  .eye-status b { color: var(--gold); }
+  .dot-led { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dot-green { background: #10b981; box-shadow: 0 0 8px #10b981; }
+  .dot-amber { background: #f59e0b; box-shadow: 0 0 8px #f59e0b; }
+
+  /* ---------- ORTA: GÜVERTE ---------- */
+  .deck-panel {
+    background:
+      radial-gradient(ellipse at 50% 0%, rgba(255, 255, 255, 0.05) 0%, transparent 60%),
+      radial-gradient(ellipse at 50% 50%, rgba(14, 24, 18, 0.97) 0%, rgba(7, 12, 9, 0.99) 70%, #030604 100%);
+  }
+  .monitor-tabs-bar { display: flex; gap: 6px; margin-bottom: 10px; }
   .monitor-tab-btn {
     flex: 1;
     background: linear-gradient(180deg, #1b261e 0%, #0d1610 100%);
@@ -1307,7 +1618,7 @@
     padding: 6px 8px;
     border-radius: 4px;
     cursor: pointer;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.6), inset 0 1px 1px rgba(255,255,255,0.1);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.6), inset 0 1px 1px rgba(255, 255, 255, 0.1);
     transition: all 0.15s ease;
   }
   .monitor-tab-btn:hover {
@@ -1319,48 +1630,10 @@
     background: linear-gradient(180deg, #1b4d30 0%, #0c2b19 100%);
     color: #38ef7d;
     border-color: #38ef7d;
-    box-shadow: 
-      0 0 12px rgba(56, 239, 125, 0.4),
-      inset 0 1px 2px rgba(255,255,255,0.3);
+    box-shadow: 0 0 12px rgba(56, 239, 125, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.3);
     text-shadow: 0 0 6px rgba(56, 239, 125, 0.8);
   }
-
-  /* Active Route Subbar */
-  .active-route-subbar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: #08110b;
-    border: 1px solid #163020;
-    padding: 5px 10px;
-    border-radius: 4px;
-    font-size: 8px;
-    letter-spacing: 0.4px;
-    position: relative;
-    z-index: 4;
-  }
-  .route-text {
-    color: #729a80;
-  }
-  .route-dots {
-    display: flex;
-    gap: 5px;
-  }
-  .dot-led {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-  }
-  .dot-green { background: #10b981; box-shadow: 0 0 6px #10b981; }
-  .dot-amber { background: #f59e0b; box-shadow: 0 0 6px #f59e0b; }
-
-  /* Quick Target Strip */
-  .quick-target-strip {
-    display: flex;
-    gap: 8px;
-    position: relative;
-    z-index: 4;
-  }
+  .quick-target-strip { display: flex; gap: 8px; margin-bottom: 10px; }
   .quick-target-strip input {
     flex: 1;
     background: #060d08;
@@ -1368,7 +1641,7 @@
     color: #38ef7d;
     text-shadow: 0 0 4px rgba(56, 239, 125, 0.5);
     font-size: 11px;
-    padding: 7px 12px;
+    padding: 8px 12px;
     border-radius: 4px;
     box-shadow: inset 0 2px 4px #000;
   }
@@ -1376,88 +1649,264 @@
     font-family: 'Cinzel', serif;
     font-size: 10px;
     font-weight: 800;
-    padding: 7px 16px;
+    padding: 8px 16px;
     border-radius: 5px;
     cursor: pointer;
     transition: all 0.12s ease;
+    white-space: nowrap;
   }
   .btn-armed {
     background: linear-gradient(180deg, #34d399 0%, #10b981 40%, #065f46 100%);
     color: #062b1e;
-    text-shadow: 0 1px 0 rgba(255,255,255,0.5);
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
     border: 1px solid #6ee7b7;
-    box-shadow: 
-      0 4px 10px rgba(0,0,0,0.7),
-      0 0 14px rgba(16,185,129,0.6),
-      inset 0 1px 2px #fff;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.7), 0 0 14px rgba(16, 185, 129, 0.6), inset 0 1px 2px #fff;
   }
-  .btn-armed:hover {
-    filter: brightness(1.15);
-    transform: translateY(-1px);
-  }
-  .btn-armed:active {
-    transform: translateY(2px);
-    box-shadow: inset 0 2px 4px #000;
-  }
+  .btn-armed:hover { filter: brightness(1.15); transform: translateY(-1px); }
+  .btn-armed:active { transform: translateY(2px); box-shadow: inset 0 2px 4px #000; }
   .btn-unarmed {
     background: linear-gradient(180deg, #2b1f13 0%, #170d06 100%);
     color: var(--text-muted);
     border: 1px solid #4a3017;
     box-shadow: inset 0 1px 2px #000;
   }
+  .active-route-subbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    background: #08110b;
+    border: 1px solid #163020;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 8px;
+    letter-spacing: 0.4px;
+  }
+  .route-text { color: #729a80; }
+  .route-dots { display: flex; gap: 5px; }
 
-  /* Dialogue Area */
+  /* ---------- SAĞ: İZ ALANI ---------- */
+  .trace-big {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 10px;
+    background: #050302;
+    border: 1px solid #234731;
+    border-radius: 6px;
+    padding: 10px;
+    margin-bottom: 10px;
+    box-shadow: inset 0 2px 8px #000, 0 0 14px rgba(56, 239, 125, 0.12);
+  }
+  .trace-num {
+    font-size: 34px;
+    font-weight: 800;
+    color: #ffb834;
+    text-shadow: 0 0 4px rgba(255, 255, 255, 0.4), 0 0 14px rgba(255, 184, 52, 0.6);
+    line-height: 1;
+  }
+  .trace-unit {
+    font-family: 'Cinzel', serif;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.2em;
+    color: var(--text-dim);
+  }
+  .trace-rows { display: flex; flex-direction: column; gap: 6px; }
+  .trace-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 9px;
+    background: #080402;
+    border: 1px solid #3d2b17;
+    border-radius: 4px;
+    padding: 5px 9px;
+    color: #8bb397;
+  }
+  .trace-row b { color: #7dfcd0; font-size: 10px; }
+
+  /* ---------- SAĞ: RİSK KADRANI ---------- */
+  .risk-dial {
+    position: relative;
+    width: 168px;
+    height: 92px;
+    margin: 2px auto 4px;
+    overflow: hidden;
+  }
+  .risk-arc {
+    position: absolute;
+    inset: 0;
+    border-radius: 168px 168px 0 0;
+    background: conic-gradient(from 180deg, #10b981 0 30%, #f59e0b 38% 62%, #ef4444 70% 100%);
+    -webkit-mask: radial-gradient(circle at 50% 100%, transparent 62%, #000 64%);
+    mask: radial-gradient(circle at 50% 100%, transparent 62%, #000 64%);
+    opacity: 0.92;
+  }
+  .risk-needle {
+    position: absolute;
+    left: 50%;
+    bottom: 0;
+    width: 3px;
+    height: 70px;
+    background: #fff;
+    border-radius: 2px;
+    transform-origin: 50% 100%;
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.9);
+    transition: transform 0.5s cubic-bezier(0.34, 1.4, 0.64, 1);
+  }
+  .risk-hub {
+    position: absolute;
+    left: 50%;
+    bottom: -9px;
+    width: 18px;
+    height: 18px;
+    margin-left: -9px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #fef0be, #8c6728 70%, #241607);
+    border: 1px solid #5a3d1c;
+    box-shadow: 0 2px 4px #000;
+  }
+  .risk-text {
+    text-align: center;
+    font-size: 9px;
+    color: #c9b998;
+    background: #060302;
+    border: 1px solid #3d2b17;
+    border-radius: 4px;
+    padding: 5px 8px;
+    box-shadow: inset 0 2px 4px #000;
+  }
+  .risk-text b { color: #ffb834; }
+
+  /* ---------- SAĞ: AJAN RAFI ---------- */
+  .rack-panel { flex: 1; }
+  .agent-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    max-height: 430px;
+    overflow-y: auto;
+    padding-right: 2px;
+  }
+  .agent-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(180deg, #150d05 0%, #0c0603 100%);
+    border: 1px solid #3d2b17;
+    border-radius: 5px;
+    padding: 5px 8px;
+    box-shadow: inset 0 1px 2px #000;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .agent-row:hover { border-color: var(--brass-bright); }
+  .agent-row.row-running {
+    border-color: #10b981;
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.4), inset 0 0 8px rgba(16, 185, 129, 0.12);
+  }
+  .agent-row.row-halted { border-color: #ef4444; }
+  .agent-row.row-done { border-color: #2a6b5c; }
+  .agent-idx {
+    font-size: 9px;
+    font-weight: 800;
+    color: var(--text-muted);
+    min-width: 16px;
+  }
+  .agent-led { flex-shrink: 0; }
+  .agent-name {
+    flex: 1;
+    min-width: 0;
+    font-family: 'Cinzel', serif;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    color: #f5edd8;
+    text-shadow: 0 1px 2px #000;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pill {
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    padding: 3px 8px;
+    border-radius: 3px;
+    border: 1px solid #000;
+    flex-shrink: 0;
+  }
+  .pill-wait { background: #241a0e; color: #8c7355; }
+  .pill-active {
+    background: linear-gradient(180deg, #1b4d30, #0c2b19);
+    color: #38ef7d;
+    border-color: #38ef7d;
+    text-shadow: 0 0 6px rgba(56, 239, 125, 0.8);
+    animation: ledPulse 1.1s ease-in-out infinite;
+  }
+  .pill-report {
+    background: linear-gradient(180deg, #123a3f, #0a2225);
+    color: #67e8f9;
+    border-color: #155e68;
+  }
+  .pill-verify {
+    background: linear-gradient(180deg, #4d1512, #2b0c0a);
+    color: #f87171;
+    border-color: #7f1d1d;
+  }
+
+  /* ---------- ALT SIRA ---------- */
+  .obs-bottom {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 16px;
+    align-items: stretch;
+  }
+  .command-deck {
+    background:
+      radial-gradient(ellipse at 50% 0%, rgba(255, 255, 255, 0.04) 0%, transparent 60%),
+      radial-gradient(ellipse at 50% 50%, rgba(14, 24, 18, 0.97) 0%, #030604 100%);
+    display: flex;
+    flex-direction: column;
+  }
   .dialogue-scroll-area {
     flex: 1;
-    min-height: 250px;
-    max-height: 320px;
+    min-height: 150px;
+    max-height: 230px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 10px;
     padding-right: 6px;
-    position: relative;
-    z-index: 4;
+    margin-bottom: 10px;
   }
-  .chat-row {
-    display: flex;
-    gap: 10px;
-    align-items: flex-start;
-  }
-  .row-user {
-    flex-direction: row-reverse;
-  }
+  .chat-row { display: flex; gap: 10px; align-items: flex-start; }
+  .row-user { flex-direction: row-reverse; }
   .avatar-disc {
     width: 28px;
     height: 28px;
     border-radius: 50%;
     background: radial-gradient(circle at 35% 30%, #4a2e12, #1f1309);
     border: 1px solid #b8860b;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.8), inset 0 1px 1px rgba(255,255,255,0.4);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.8), inset 0 1px 1px rgba(255, 255, 255, 0.4);
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
   }
-  .avatar-glyph {
-    font-size: 14px;
-  }
+  .avatar-glyph { font-size: 14px; }
   .bubble-body {
     background: rgba(14, 26, 18, 0.9);
     border: 1px solid #1f452e;
     border-radius: 6px;
     padding: 9px 12px;
     max-width: 85%;
-    box-shadow: 
-      inset 0 1px 2px rgba(56, 239, 125, 0.15),
-      0 3px 8px rgba(0,0,0,0.7);
+    box-shadow: inset 0 1px 2px rgba(56, 239, 125, 0.15), 0 3px 8px rgba(0, 0, 0, 0.7);
   }
   .row-user .bubble-body {
     background: rgba(38, 22, 10, 0.9);
     border-color: #8c5d28;
-    box-shadow: 
-      inset 0 1px 2px rgba(255, 194, 71, 0.2),
-      0 3px 8px rgba(0,0,0,0.7);
+    box-shadow: inset 0 1px 2px rgba(255, 194, 71, 0.2), 0 3px 8px rgba(0, 0, 0, 0.7);
   }
   .bubble-text {
     font-size: 11px;
@@ -1478,20 +1927,13 @@
     font-size: 8px;
     color: #6b9c7a;
   }
-  .check-marks {
-    color: #10b981;
-    text-shadow: 0 0 4px #10b981;
-  }
-
-  /* Monitor Input Tray */
+  .check-marks { color: #10b981; text-shadow: 0 0 4px #10b981; }
   .monitor-input-tray {
     display: flex;
     gap: 8px;
     align-items: center;
     border-top: 1px solid #1f3829;
     padding-top: 10px;
-    position: relative;
-    z-index: 4;
   }
   .cam-btn {
     background: linear-gradient(180deg, #2b1f13 0%, #150c05 100%);
@@ -1500,13 +1942,10 @@
     padding: 7px 11px;
     border-radius: 4px;
     cursor: pointer;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.6), inset 0 1px 1px rgba(255,255,255,0.2);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.6), inset 0 1px 1px rgba(255, 255, 255, 0.2);
     transition: all 0.15s;
   }
-  .cam-btn:hover {
-    border-color: var(--gold);
-    transform: translateY(-1px);
-  }
+  .cam-btn:hover { border-color: var(--gold); transform: translateY(-1px); }
   .terminal-input {
     flex: 1;
     background: #060d08;
@@ -1519,10 +1958,9 @@
     box-shadow: inset 0 2px 4px #000;
   }
   .brass-send-btn {
-    background: 
-      linear-gradient(180deg, #fff3c8 0%, #e2b94c 18%, #ad8228 65%, #634612 100%);
+    background: linear-gradient(180deg, #fff3c8 0%, #e2b94c 18%, #ad8228 65%, #634612 100%);
     color: #1a0f04;
-    text-shadow: 0 1px 0 rgba(255,255,255,0.6);
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
     font-family: 'Cinzel', serif;
     font-size: 11px;
     font-weight: 800;
@@ -1530,282 +1968,63 @@
     border-radius: 5px;
     border: 1px solid #fff5cf;
     cursor: pointer;
-    box-shadow: 
-      0 4px 8px rgba(0,0,0,0.7),
-      inset 0 1px 2px rgba(255,255,255,0.9),
-      inset 0 -2px 3px rgba(0,0,0,0.6);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.7), inset 0 1px 2px rgba(255, 255, 255, 0.9), inset 0 -2px 3px rgba(0, 0, 0, 0.6);
     transition: all 0.12s ease;
-  }
-  .brass-send-btn:hover:not(:disabled) {
-    filter: brightness(1.15);
-    transform: translateY(-1px);
-  }
-  .brass-send-btn:active:not(:disabled) {
-    transform: translateY(2px);
-    box-shadow: inset 0 2px 4px rgba(0,0,0,0.8);
-  }
-  .brass-send-btn:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-    filter: grayscale(0.5);
-  }
-
-  /* --- RIGHT AGENT RACK --- */
-  .right-agent-rack {
-    background: 
-      linear-gradient(90deg, #2b1a0e 0%, #1c1008 8%, #140b05 92%, #2b1a0e 100%);
-    border: 2px solid #6b4b24;
-    border-radius: 10px;
-    padding: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    box-shadow: 
-      inset 0 2px 4px rgba(255,235,175,0.25),
-      inset 0 0 25px rgba(0,0,0,0.9),
-      0 6px 16px rgba(0,0,0,0.7);
-    max-height: 520px;
-    overflow-y: auto;
-  }
-
-  .rack-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-bottom: 1px solid #4a3017;
-    padding-bottom: 8px;
-  }
-  .rack-title {
-    font-size: 11px;
-    font-weight: 800;
-    color: var(--gold);
-    text-shadow: 0 1px 2px #000;
-    letter-spacing: 1px;
-  }
-
-  .agent-cards-stack {
-    display: flex;
-    flex-direction: column;
-    gap: 7px;
-  }
-
-  .agent-instrument-card {
-    background: 
-      linear-gradient(135deg, rgba(255,255,255,0.05) 0%, transparent 40%, rgba(0,0,0,0.4) 100%),
-      linear-gradient(180deg, #201309 0%, #130a04 100%);
-    border: 1px solid #54391c;
-    border-radius: 6px;
-    padding: 7px 10px;
-    box-shadow: 
-      inset 1px 1px 1px rgba(255,235,175,0.18),
-      inset -1px -1px 2px rgba(0,0,0,0.7),
-      0 2px 5px rgba(0,0,0,0.6);
-    transition: all 0.2s ease;
-    position: relative;
-  }
-  .agent-instrument-card:hover {
-    border-color: var(--brass-bright);
-    transform: translateX(-2px);
-    box-shadow: 
-      inset 1px 1px 1px rgba(255,235,175,0.3),
-      0 4px 10px rgba(0,0,0,0.8),
-      0 0 10px rgba(212,175,55,0.25);
-  }
-  .card-running {
-    border-color: #ef4444 !important;
-    background: linear-gradient(180deg, #2d1008 0%, #180803 100%) !important;
-    box-shadow: 0 0 12px rgba(239,68,68,0.45), inset 0 0 8px rgba(239,68,68,0.2) !important;
-    animation: runningCardPulse 1.2s infinite alternate;
-  }
-  @keyframes runningCardPulse {
-    from { border-color: #ef4444; box-shadow: 0 0 6px rgba(239,68,68,0.3); }
-    to { border-color: #f87171; box-shadow: 0 0 16px rgba(239,68,68,0.7); }
-  }
-  .card-done {
-    border-color: #10b981 !important;
-  }
-
-  .card-top-line {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-  }
-
-  .agent-medal {
-    width: 26px;
-    height: 26px;
-    border-radius: 50%;
-    background: radial-gradient(circle at 35% 30%, #ffd978 0%, #b8860b 45%, #523714 85%, #241607 100%);
-    border: 1px solid #ffecb3;
-    box-shadow: 
-      0 2px 5px rgba(0,0,0,0.8),
-      inset 0 1px 1px rgba(255,255,255,0.7);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-  .medal-pulse-red {
-    border-color: #ef4444;
-    box-shadow: 0 0 10px #ef4444;
-    animation: medalBlink 1s infinite alternate;
-  }
-  @keyframes medalBlink {
-    from { box-shadow: 0 0 3px #ef4444; }
-    to { box-shadow: 0 0 12px #ef4444; }
-  }
-  .medal-symbol {
-    font-size: 12px;
-  }
-
-  .agent-info-meta {
-    flex: 1;
-    min-width: 0;
-  }
-  .agent-title-text {
-    font-family: 'Cinzel', serif;
-    font-size: 9px;
-    font-weight: 800;
-    color: #f5edd8;
-    text-shadow: 0 1px 2px #000;
-    letter-spacing: 0.5px;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
-  .agent-spec-lines {
-    font-size: 7px;
-    color: var(--text-muted);
-    line-height: 1.3;
-    margin-top: 2px;
-  }
+  .brass-send-btn:hover:not(:disabled) { filter: brightness(1.15); transform: translateY(-1px); }
+  .brass-send-btn:active:not(:disabled) { transform: translateY(2px); box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.8); }
+  .brass-send-btn:disabled { opacity: 0.45; cursor: not-allowed; filter: grayscale(0.5); }
 
-  .agent-meter-bar {
-    width: 52px;
-    height: 6px;
-    background: #000;
-    border: 1px solid #4a3017;
-    border-radius: 3px;
-    overflow: hidden;
-    flex-shrink: 0;
-    box-shadow: inset 0 1px 2px #000;
+  /* ---------- 7 SÜTUN BARASI ---------- */
+  .pillars-track {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
   }
-  .meter-fill {
-    height: 100%;
-    transition: width 0.3s;
-  }
-  .fill-green {
-    background: linear-gradient(90deg, #059669, #10b981);
-    box-shadow: 0 0 8px #10b981;
-  }
-  .fill-running-red {
-    background: linear-gradient(90deg, #ef4444, #f59e0b);
-    box-shadow: 0 0 10px #ef4444;
-    animation: barPulse 1s infinite alternate;
-  }
-  @keyframes barPulse {
-    from { opacity: 0.7; }
-    to { opacity: 1; }
-  }
-  .fill-red { background: #ef4444; }
-  .fill-dim { background: transparent; }
-
-  /* --- İKİ DİLLİ ALT SATIRLAR (TR) --- */
-  .module-tr { display: block; font-family: 'JetBrains Mono', monospace; font-size: 7px; font-weight: 500; color: var(--text-muted); letter-spacing: 0.4px; margin-top: 1px; }
-  .knob-tr { font-family: 'JetBrains Mono', monospace; font-size: 6px; font-weight: 700; color: var(--text-muted); }
-  .tr-micro { font-family: 'JetBrains Mono', monospace; font-size: 7px; color: var(--text-muted); }
-  .deck-tr { display: block; font-family: 'JetBrains Mono', monospace; font-size: 7px; font-weight: 500; color: var(--text-muted); letter-spacing: 0.8px; margin-top: 1px; }
-  .tab-tr { display: block; font-family: 'JetBrains Mono', monospace; font-size: 6px; font-weight: 500; color: var(--text-muted); }
-  .rack-tr { display: block; font-family: 'JetBrains Mono', monospace; font-size: 7px; font-weight: 500; color: var(--text-muted); letter-spacing: 0.8px; }
-  .agent-tr { font-family: 'JetBrains Mono', monospace; font-size: 7px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .forensic-tr { font-family: 'JetBrains Mono', monospace; font-size: 6px; font-weight: 700; color: var(--text-muted); }
-  .plaque-tr { font-family: 'JetBrains Mono', monospace; font-size: 6px; font-weight: 700; letter-spacing: 0.5px; opacity: 0.8; }
-
-  /* --- BOTTOM FORENSIC BAR --- */
-  .bottom-forensic-bar {
-    background: 
-      linear-gradient(180deg, rgba(255,255,255,0.06) 0%, transparent 30%, rgba(0,0,0,0.5) 100%),
-      linear-gradient(90deg, #1f1208 0%, #2b1a0d 50%, #1f1208 100%);
-    border: 2px solid #6b4b24;
-    border-radius: 10px;
-    padding: 12px 16px;
-    box-shadow: 
-      inset 0 2px 4px rgba(255,235,175,0.25),
-      inset 0 0 20px rgba(0,0,0,0.85),
-      0 4px 12px rgba(0,0,0,0.7);
-  }
-  .forensic-buttons-track {
-    display: flex;
-    justify-content: space-around;
-    align-items: center;
-  }
-  .round-brass-btn {
-    background: transparent;
-    border: none;
+  .pillar-btn {
+    background:
+      linear-gradient(135deg, rgba(255, 255, 255, 0.07) 0%, transparent 45%, rgba(0, 0, 0, 0.5) 100%),
+      linear-gradient(180deg, #241608 0%, #120a04 100%);
+    border: 1px solid #5a3d1c;
+    border-radius: 6px;
+    padding: 10px 4px 8px;
     cursor: pointer;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 6px;
-    transition: transform 0.15s;
+    gap: 4px;
+    box-shadow: inset 0 1px 1px rgba(255, 235, 175, 0.2), 0 3px 7px rgba(0, 0, 0, 0.65);
+    transition: all 0.14s ease;
   }
-  .round-brass-btn:hover {
+  .pillar-btn:hover {
+    border-color: var(--brass-bright);
     transform: translateY(-2px);
+    box-shadow: inset 0 1px 1px rgba(255, 235, 175, 0.3), 0 5px 12px rgba(0, 0, 0, 0.8), 0 0 10px rgba(212, 175, 55, 0.25);
   }
-  .btn-inner-disc {
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    background: 
-      radial-gradient(circle at 35% 30%, #fef0be 0%, #d4af37 25%, #8c6728 65%, #3a240d 100%);
-    border: 2px solid #ffecb3;
-    box-shadow: 
-      0 5px 12px rgba(0,0,0,0.85),
-      0 0 0 2px #221307,
-      0 0 0 4px #7a542b,
-      inset 0 2px 3px rgba(255,255,255,0.8),
-      inset 0 -3px 5px rgba(0,0,0,0.8);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.12s ease;
-  }
-  .round-brass-btn:hover .btn-inner-disc {
-    filter: brightness(1.15);
-    transform: translateY(-2px);
-    box-shadow: 
-      0 7px 16px rgba(0,0,0,0.9),
-      0 0 0 2px #221307,
-      0 0 0 4px #d4af37,
-      inset 0 2px 3px rgba(255,255,255,0.9);
-  }
-  .round-brass-btn:active .btn-inner-disc {
-    transform: translateY(2px) scale(0.96);
-    box-shadow: 
-      0 1px 3px rgba(0,0,0,0.9),
-      0 0 0 2px #221307,
-      0 0 0 3px #7a542b,
-      inset 0 3px 6px rgba(0,0,0,0.95);
-  }
-  .round-brass-btn.btn-active .btn-inner-disc {
+  .pillar-btn:active { transform: translateY(1px); }
+  .pillar-btn.btn-active {
     border-color: #38ef7d;
-    box-shadow: 
-      0 0 16px rgba(56,239,125,0.7),
-      0 0 0 2px #221307,
-      0 0 0 4px #38ef7d,
-      inset 0 0 10px rgba(56,239,125,0.5);
+    box-shadow: 0 0 14px rgba(56, 239, 125, 0.55), inset 0 0 10px rgba(56, 239, 125, 0.25);
   }
-  .forensic-icon {
-    font-size: 19px;
-  }
+  .forensic-icon { font-size: 19px; line-height: 1; }
   .forensic-name {
     font-family: 'Cinzel', serif;
     font-size: 8px;
     font-weight: 800;
     color: var(--gold);
     text-shadow: 0 1px 2px #000;
-    letter-spacing: 0.8px;
+    letter-spacing: 0.06em;
   }
+
+  /* --- İKİ DİLLİ ALT SATIRLAR (TR) --- */
+  .module-tr { display: block; font-family: 'JetBrains Mono', monospace; font-size: 7px; font-weight: 500; color: var(--text-muted); letter-spacing: 0.4px; margin-top: 1px; }
+  .knob-tr { font-family: 'JetBrains Mono', monospace; font-size: 6px; font-weight: 700; color: var(--text-muted); }
+  .tr-micro { font-family: 'JetBrains Mono', monospace; font-size: 7px; color: var(--text-muted); }
+  .tab-tr { display: block; font-family: 'JetBrains Mono', monospace; font-size: 6px; font-weight: 500; color: var(--text-muted); }
+  .agent-tr { display: block; font-family: 'JetBrains Mono', monospace; font-size: 7px; font-weight: 500; color: var(--text-muted); }
+  .forensic-tr { font-family: 'JetBrains Mono', monospace; font-size: 6px; font-weight: 700; color: var(--text-muted); }
+  .plaque-tr { font-family: 'JetBrains Mono', monospace; font-size: 6px; font-weight: 700; letter-spacing: 0.5px; opacity: 0.8; }
 
   /* --- FORENSIC MODAL POPUP --- */
   .forensic-modal-backdrop {
@@ -1814,7 +2033,7 @@
     left: 0;
     width: 100vw;
     height: 100vh;
-    background: rgba(0,0,0,0.85);
+    background: rgba(0, 0, 0, 0.85);
     backdrop-filter: blur(4px);
     display: flex;
     align-items: center;
@@ -1822,21 +2041,18 @@
     z-index: 9999;
   }
   .forensic-modal-card {
-    background: 
-      linear-gradient(180deg, #201309 0%, #120904 100%);
+    background: linear-gradient(180deg, #201309 0%, #120904 100%);
     border: 3px solid var(--gold);
     border-radius: 10px;
     width: 90%;
     max-width: 520px;
-    box-shadow: 
-      0 0 0 4px #26170b,
-      0 20px 50px rgba(0,0,0,0.95);
+    box-shadow: 0 0 0 4px #26170b, 0 20px 50px rgba(0, 0, 0, 0.95);
     overflow: hidden;
   }
   .modal-header-brass {
     background: linear-gradient(180deg, #fff3c8 0%, #d4af37 30%, #8a6332 100%);
     color: #150c04;
-    text-shadow: 0 1px 0 rgba(255,255,255,0.6);
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
     padding: 10px 14px;
     display: flex;
     justify-content: space-between;
@@ -1860,9 +2076,7 @@
     border-radius: 3px;
     transition: background 0.15s;
   }
-  .modal-close:hover {
-    background: rgba(0,0,0,0.2);
-  }
+  .modal-close:hover { background: rgba(0, 0, 0, 0.2); }
   .modal-content-body {
     padding: 16px;
     color: var(--text-main);
@@ -1872,7 +2086,6 @@
     font-size: 0.78rem;
     margin: 0.25rem 0 0;
   }
-
   .report-box h4 {
     color: var(--gold);
     margin-bottom: 8px;
@@ -1884,5 +2097,33 @@
     margin-bottom: 6px;
     color: #e2d7c5;
     line-height: 1.4;
+  }
+
+  /* ---------- DUYARLI YERLEŞİM ---------- */
+  @media (max-width: 1240px) {
+    .obs-grid { grid-template-columns: 1fr 1fr; }
+    .col-center { grid-column: 1 / -1; order: -1; }
+    .obs-bottom { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 760px) {
+    .obs-grid { grid-template-columns: 1fr; }
+    .observatory { padding: 12px; }
+    .masthead { padding: 10px 14px; }
+    .mast-right { width: 100%; justify-content: space-between; }
+    .eye-stage { min-height: 0; padding: 18px 0; }
+    .eye-scale { transform: scale(0.78); }
+    .eye-orbit { width: 300px; height: 300px; margin: -150px 0 0 -150px; }
+    .eye-led { transform: rotate(var(--a)) translateY(-158px); }
+    .pillars-track { grid-template-columns: repeat(4, 1fr); }
+  }
+  @media (max-width: 480px) {
+    .eye-scale { transform: scale(0.66); }
+    .pillars-track { grid-template-columns: repeat(2, 1fr); }
+    .mast-locks { gap: 6px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .live-dot, .pulse, .pill-active, .eye-orbit, .eye-led { animation: none; }
+    .risk-needle { transition: none; }
   }
 </style>

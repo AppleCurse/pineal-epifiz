@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import PinealEye from './PinealEye.svelte';
   import defaultEye from '../assets/eye.jpg';
+  import { eyeImage } from '../store';
   import { playClick, playRunning, playToggle } from '../lib/consoleAudio';
 
   // KOKPİT GİRİŞİ — görseldeki izometrik plakalar süzülür, tam ortada göz durur.
@@ -119,6 +120,7 @@
           c.height = h;
           c.getContext('2d')?.drawImage(img, 0, 0, w, h);
           customEye = c.toDataURL('image/jpeg', 0.85);
+          eyeImage.set(customEye);
           try {
             localStorage.setItem(EYE_KEY, customEye);
           } catch {
@@ -136,6 +138,7 @@
 
   function resetEye() {
     customEye = null;
+    eyeImage.set(null);
     try {
       localStorage.removeItem(EYE_KEY);
     } catch {
@@ -150,6 +153,7 @@
     } catch {
       customEye = null;
     }
+    eyeImage.set(customEye);
     document.body.style.overflow = 'hidden';
     window.addEventListener('mousemove', onMouse, { passive: true });
     window.addEventListener('keydown', onKey);

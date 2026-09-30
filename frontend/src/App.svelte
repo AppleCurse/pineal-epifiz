@@ -7,6 +7,9 @@
     activeViewMode, agentStatusSource
   } from './store';
   import { uplinkState } from './lib/telemetry';
+  import { currentLang, t, type Language } from './i18n';
+  import UnifiedCompactPanel from './components/UnifiedCompactPanel.svelte';
+  import CockpitEntry from './components/CockpitEntry.svelte';
   import AtlasPinealCockpit from './components/AtlasPinealCockpit.svelte';
   import TacticalWarRoom from './components/TacticalWarRoom.svelte';
   import NeuralTelemetryBoard from './components/visualizers/NeuralTelemetryBoard.svelte';
@@ -16,6 +19,24 @@
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
   let lastToken = currentApiToken();
+
+  // Kokpit girişi: tam ortada göz + izometrik süzülen sahne. Her açılışta
+  // gösterilir; başlıktaki GÖZ düğmesiyle tekrar açılabilir.
+  let showEntry = true;
+  function handleCockpitEnter() {
+    showEntry = false;
+  }
+  function reopenCockpitEntry() {
+    showEntry = true;
+  }
+
+  // [BOSS-12] Ölü kod temizlendi: fetchTelemetry/fetchTasks/deleteTask ve
+  // tasksData hiçbir yerden çağrılmıyordu (görev geçmişi UI'de yoktu) — ölü
+  // yüzey bırakmak yerine kaldırıldı. Telemetri panosu artık CANLI beslenir.
+  type TelemetryPayload = Record<string, unknown>;
+
+  let telemetryData: TelemetryPayload | null = null;
+  let telemetryPoll: ReturnType<typeof setInterval> | null = null;
   let telemetryData: any = null;
   let telemetryPoll: any = null;
   let tauriUnlisteners: (() => void)[] = [];
@@ -311,6 +332,68 @@
   });
 </script>
 
+{#if showEntry}
+  <CockpitEntry onEnter={handleCockpitEnter} />
+{/if}
+
+<div class="walnut-frame">
+  <!-- HEADER & CONTROLS -->
+  <header style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid var(--brass-border); padding-bottom: 14px;">
+    <div>
+      <h1 class="font-cinzel" style="font-size: 22px; font-weight: 800; color: var(--gold); letter-spacing: 0.15em; line-height: 1.2;">
+        {t[$currentLang].appTitle}
+      </h1>
+      <p class="font-cinzel" style="font-size: 11px; color: var(--text-dim); letter-spacing: 0.25em; margin-top: 4px;">
+        {t[$currentLang].appSubtitle}
+      </p>
+    </div>
+
+    <!-- LANGUAGE SWITCHER & BADGE -->
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <div class="brass-header" style="font-size: 11px; font-weight: 800; letter-spacing: 0.1em; display: flex; align-items: center; gap: 6px;">
+        <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; {$uplinkState === 'ONLINE' ? 'background: #10b981; box-shadow: 0 0 6px #10b981;' : 'background: #ef4444; box-shadow: 0 0 6px #ef4444;'}"></span>
+        <span>{$uplinkState === 'ONLINE' ? 'ONLINE (ÇEVRİMİÇİ)' : 'OFFLINE (ÇEVRİMDIŞI)'}</span>
+      </div>
+
+      <button
+        class="btn-dark"
+        style="padding: 4px 10px; font-size: 11px; font-weight: 700;"
+        on:click={reopenCockpitEntry}
+        title="Kokpit girişini (göz) tekrar aç"
+      >
+        👁 GÖZ
+      </button>
+
+      <!-- TR / EN Toggle -->
+      <div style="display: flex; background: #0a0705; border: 1px solid var(--brass-border); border-radius: 6px; overflow: hidden; padding: 2px;">
+        <button 
+          class="btn-dark" 
+          style="padding: 4px 10px; font-size: 11px; font-weight: 700; border-radius: 4px; border: none; {$currentLang === 'tr' ? 'background: var(--gold); color: #120b04;' : 'background: transparent; color: var(--text-dim);'}" 
+          on:click={() => switchLang('tr')}
+        >
+          🇹🇷 TR
+        </button>
+        <button 
+          class="btn-dark" 
+          style="padding: 4px 10px; font-size: 11px; font-weight: 700; border-radius: 4px; border: none; {$currentLang === 'en' ? 'background: var(--gold); color: #120b04;' : 'background: transparent; color: var(--text-dim);'}" 
+          on:click={() => switchLang('en')}
+        >
+          🇬🇧 EN
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN COCKPIT BODY -->
+  <main>
+    <UnifiedCompactPanel />
+  </main>
+
+  <!-- [BOSS-12] NeuralTelemetryBoard import ediliyordu ama hiç basılmıyordu:
+       ölü import + görünmeyen pano. Artık gerçek telemetriyle render edilir. -->
+  <section class="telemetry-section">
+    <NeuralTelemetryBoard telemetry={telemetryData} />
+  </section>
 <main class="fullscreen-cockpit-viewport">
   {#if $activeViewMode === 'warroom'}
     <TacticalWarRoom />
