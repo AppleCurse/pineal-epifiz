@@ -9,26 +9,21 @@ permissions:
   contents: read
 
 concurrency:
-  # [2026-10-05] Aynı commit için `push` VE `pull_request` ayrı koşu açıyor;
-  # grup ref'e göre tekilleşince iki koşu birbirinin işlerini İPTAL ediyordu
-  # (backend birinde, android diğerinde düştü — ikisi de kod hatası değil).
-  # Gruba olay adı girince iki koşu yan yana koşar, birbirini öldürmez.
-  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   backend:
     runs-on: ubuntu-latest
     # [2026-10-05] Takım 1113 -> 1690 teste büyüdü; 10 dakika CI'da yetmiyor
-    # (koşu tam testler sürerken 10m17s'de kesiliyordu). Yerel tam koşu ~100s.
-    timeout-minutes: 25
+    # (koşu testler sürerken kesiliyordu). Yerel tam koşu ~100s.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: requirements.lock
       - name: Install dependencies (requirements.lock = production image tree)
         # [2026-09-18 B7] Dockerfile requirements.lock kurar; CI eskiden
         # requirements.txt'i taze çözüyordu -> prod ile test edilen ağaç
