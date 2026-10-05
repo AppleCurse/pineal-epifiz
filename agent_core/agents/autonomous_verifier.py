@@ -36,7 +36,7 @@ Yeni sözleşme (hepsi kodda, hiçbiri görünmez kural değil):
 """
 
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Dict, Iterable, List, Literal, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple
 
 from agent_core.services.claim_decision_gate import DIRECT_REFUTATION_BASIS
 
@@ -209,6 +209,11 @@ class VerifierReport(BaseModel):
     vote_accounting: Dict[str, int] = {}
     #: Kesinleşmeyen (BİLİNMİYOR) iddia sayısı — VERIFIED'i engelleyen ölçü.
     unknown_claims: int = 0
+    # [FAZ B · B1] BAĞIMSIZ KONSENSÜS DENETİMİ: panelin sayımı ikinci bir
+    # kafada yeniden sayılır; uyuşmazlık gizlenmez, rapora yazılır.
+    consensus: Optional[Dict[str, Any]] = None
+    #: Uyuşmazlıkta düşürülen iddialar (yalnız bağlayıcı kipte dolar).
+    consensus_downgrades: Dict[str, str] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -308,6 +313,7 @@ class AutonomousVerifier:
         evidence_quote: str,
         sources: Iterable[Tuple[str, str]],
         contradiction_detail: str = "",
+        claim_id: str = "",
     ) -> Tuple[str, str]:
         """Bir jüri oyunun sayılır hâle getirir. Döner: (status, kural).
 
@@ -329,7 +335,9 @@ class AutonomousVerifier:
             return VOTE_UNKNOWN, "kanit_url_kaynaksiz"
         from agent_core.services.quote_guard import quote_matches
 
-        if not quote_matches(evidence_quote or "", [content]):
+        # [FAZ B · B5] Eşik ölçülür: skor + kullanılan eşik kalibrasyon
+        # ledger'ına yazılır, operatör sonra etiketler, eşik o veriden kalibre olur.
+        if not quote_matches(evidence_quote or "", [content], observe=True, claim_id=claim_id):
             return VOTE_UNKNOWN, "kanit_alinti_kaynaksiz"
         support = claim_support_ratio(claim_text, content)
         if support < MIN_CLAIM_SUPPORT_RATIO:
@@ -342,6 +350,7 @@ class AutonomousVerifier:
         claim_text: str,
         llm_gateway,
         sources: Iterable[Tuple[str, str]] = (),
+        claim_id: str = "",
     ) -> VerificationResult:
         """Aynı kanıtı bağımsız jüri koltuklarına paralel sorar ve kararı yazar.
 
@@ -398,6 +407,7 @@ class AutonomousVerifier:
                 seat_quote,
                 sources,
                 contradiction_detail=str(getattr(outcome, "contradiction_detail", "") or ""),
+                claim_id=claim_id,
             )
             audit[seat] = rule
             votes[seat] = counted
@@ -787,7 +797,11 @@ class AutonomousVerifier:
             # [BOSS-4] Tek model onayı yerine çapraz jüri paneli: üreten zincirin
             # tüm aileleri panelden düşürülür, karar oylarla verilir (kanıt: juror_votes).
             panel_verdict = await self._verify_with_panel(
-                verify_prompt, claim.claim_text, llm_gateway, sources=sources
+                verify_prompt,
+                claim.claim_text,
+                llm_gateway,
+                sources=sources,
+                claim_id=str(claim_fields.get("claim_id", "") or ""),
             )
             direct_refutation = self._direct_refutation_is_audited(panel_verdict)
             panel_verdict = panel_verdict.model_copy(update={
@@ -878,6 +892,63 @@ class AutonomousVerifier:
             f"üreten_aile={'+'.join(producer_families) or 'unknown'} | düşürülen="
             f"{','.join(sorted(dropped_seats)) or 'yok'}"
         )
+
+        # [FAZ B · B1] BAĞIMSIZ KONSENSÜS DENETİMİ. Panel kendi sayımını
+        # ilan etti; şimdi o sayım BAĞIMSIZ yeniden yapılır ve karşılaştırılır.
+        # Bağlayıcı kipte (`PINEAL_JURY_BINDING=true`) uyuşmazlıkta denetçinin
+        # bulduğu hüküm geçerli olur ve iddia düşürülür.
+        from agent_core.services.jury_consensus import (
+            audit_claim,
+            consensus_downgrades,
+            quorum as _quorum,
+            summarize,
+        )
+
+        audits = [audit_claim(v) for v in verifications]
+        consensus = summarize(audits)
+        downgrades = consensus_downgrades(audits)
+        if downgrades:
+            for v in verifications:
+                key = str(v.claim_id or v.claim_text[:40])
+                if key in downgrades:
+                    v.truth_status = downgrades[key]
+            # Düşürme sayıları YENİDEN hesaplanır (eski toplam artık geçersiz).
+            confirmed = sum(1 for v in verifications if v.truth_status == VOTE_VERIFIED)
+            falsified = sum(1 for v in verifications if v.truth_status in {VOTE_FALSE, VOTE_CONTRADICTED})
+            conclusive = sum(1 for v in verifications if v.truth_status in CONCLUSIVE_VOTES)
+            unknown = total - conclusive
+            score = confirmed / total
+            if falsified > confirmed:
+                verdict_status = "CONTRADICTED"
+            elif falsified > 0 and confirmed > 0:
+                verdict_status = "PARTIALLY_CONTRADICTED"
+            elif confirmed > 0 and falsified == 0 and unknown == 0:
+                verdict_status = "VERIFIED"
+            elif confirmed > 0 and falsified == 0:
+                verdict_status = "PARTIALLY_VERIFIED"
+            else:
+                verdict_status = "UNVERIFIED"
+            if conclusive == 0:
+                data_confidence = False
+                fallback_reason = "no_conclusive_evidence"
+            agreement_terms = []
+            for v in verifications:
+                cast = len(v.juror_votes)
+                if not cast:
+                    agreement_terms.append(0.0)
+                    continue
+                tally: Dict[str, int] = {}
+                for status in v.juror_votes.values():
+                    tally[status] = tally.get(status, 0) + 1
+                agreement_terms.append(max(tally.values()) / cast)
+            agreement = sum(agreement_terms) / len(agreement_terms) if agreement_terms else 0.0
+            panel_confidence = round((conclusive / total) * agreement, 3)
+
+        rule_parts.append(
+            f"konsensüs:uyuşmazlık={consensus.mismatches}/{consensus.claims_audited}"
+            f" yeter_sayı={consensus.quorum_met_claims}/{consensus.claims_audited}"
+            f"({_quorum()}) bağlayıcı={'evet' if consensus.binding else 'hayır'}"
+        )
         return VerifierReport(
             verifications=verifications,
             overall_authenticity_score=score,
@@ -890,4 +961,6 @@ class AutonomousVerifier:
             fallback_reason=fallback_reason,
             vote_accounting=accounting,
             unknown_claims=unknown,
+            consensus=consensus.model_dump(),
+            consensus_downgrades=downgrades,
         )

@@ -150,6 +150,46 @@
     }
   }
 
+  // --- [FAZ B · B5] EŞİK KALİBRASYONU ---
+  // 0.70 sabit değil: ölçüldüyse ÖLÇÜLEN değer görünür, ölçülmediyse
+  // "ölçülmedi" açıkça yazılır (uydurma kesinlik yok).
+  let thresholdInfo: {
+    threshold: number;
+    source: string;
+    reason: string;
+    note: string;
+  } | null = null;
+
+  async function fetchThreshold() {
+    try {
+      const res = await apiFetch(`/api/calibration?client_id=${encodeURIComponent($clientId)}`);
+      if (!res.ok) {
+        thresholdInfo = null;
+        return;
+      }
+      const data = await res.json();
+      const quote = data?.scopes?.quote ?? null;
+      if (!quote) {
+        thresholdInfo = null;
+        return;
+      }
+      thresholdInfo = {
+        threshold: Number(quote.threshold ?? 0.7),
+        source: String(quote.source ?? 'varsayılan'),
+        reason: String(quote.reason ?? ''),
+        note: String(quote?.report?.machine_note ?? ''),
+      };
+    } catch (_e) {
+      thresholdInfo = null;
+    }
+  }
+
+  $: if ($clientId) fetchThreshold();
+
+  $: thresholdLabel = thresholdInfo
+    ? `EŞİK ${thresholdInfo.threshold.toFixed(2)} · ${thresholdInfo.source === 'kalibre' ? 'ÖLÇÜLDÜ' : thresholdInfo.source === 'elle_sabitleme' ? 'ELLE SABİT' : 'ÖLÇÜLMEDİ'}`
+    : 'EŞİK —';
+
   function nowTime() {
     return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   }
@@ -320,6 +360,15 @@
       alt="Atlas Pineal Eye"
       style="transform: translate(calc(-50% + {eyeX.toFixed(2)}px), calc(-50% + {eyeY.toFixed(2)}px)) scale({eyeScale.toFixed(3)});"
     />
+  </div>
+
+  <!-- [FAZ B · B5] EŞİK PİLİ: sabit 0.70 değil, ölçülen değer -->
+  <div
+    class="threshold-pill"
+    class:measured={thresholdInfo?.source === 'kalibre'}
+    title={thresholdInfo?.note || 'Kalibrasyon verisi yok — eşik varsayılan'}
+  >
+    {thresholdLabel}
   </div>
 
   <!-- HIZLI GEÇİŞ BUTONU: TACTICAL WAR ROOM (100% ŞEFFAF MUHAREBE MASASI) -->
@@ -1054,6 +1103,31 @@
   }
 
   /* TACTICAL WAR ROOM GEÇİŞ BUTONU */
+  .threshold-pill {
+    position: absolute;
+    top: 22px;
+    right: 210px;
+    z-index: 104;
+    padding: 6px 14px;
+    background: rgba(10, 15, 29, 0.82);
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    border-radius: 9999px;
+    font-family: 'JetBrains Mono', monospace, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: #94a3b8;
+    backdrop-filter: blur(6px);
+    white-space: nowrap;
+    cursor: help;
+  }
+
+  .threshold-pill.measured {
+    border-color: rgba(34, 197, 94, 0.65);
+    color: #86efac;
+    box-shadow: 0 0 14px rgba(34, 197, 94, 0.25);
+  }
+
   .war-room-switch-pill {
     position: absolute;
     top: 22px;

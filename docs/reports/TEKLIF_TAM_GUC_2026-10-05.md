@@ -199,5 +199,10 @@ X'in iki yolu var (twscrape + agent-reach), arama anahtarsız da çalışıyor
 (`requirements-retina.txt`); kurulmazsa hiçbir yetenek uydurma veri üretmiyor.
 
 **Faz B ilerlemesi (2026-10-05):** B6 FFT tamam · B4 gerçek örgü tamam
-(backend + arayüz) · B7 değişim izleme tamam. Sırada: B1 jüri konsensüsü,
-B2/B3 hafıza kristali + kalıcı bellek, B5 eşik kalibrasyonu.
+(backend + arayüz) · B7 değişim izleme tamam · **B1 jüri konsensüs denetçisi
+tamam** (oylar ikinci ve bağımsız bir kafada yeniden sayılıyor; uyuşmazlık
+gizlenmiyor, bağlayıcı kipte hüküm düşürülüyor) · **B5 eşik kalibrasyonu tamam**
+(0.70 sabiti ölçülen değere döndü: ledger + operatör etiketi + Wilson aralığı +
+46 adetlik geri test ızgarası + güvenilirlik diyagramı; veri yetersizse eşik
+DEĞİŞMİYOR ve bunu açıkça yazıyor). Sırada: B2/B3 hafıza kristali + kalıcı
+bellek.

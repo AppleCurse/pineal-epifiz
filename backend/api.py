@@ -4080,6 +4080,91 @@ async def api_task_graph(
     return graph.model_dump()
 
 
+class CalibrationObservationPayload(BaseModel):
+    """[FAZ B · B5] Elle ölçüm girişi: skor + (varsa) operatör etiketi."""
+
+    score: float = Field(ge=0.0, le=1.0)
+    scope: str = Field(default="quote", max_length=32)
+    truth: Optional[bool] = None
+    task_id: str = Field(default="", max_length=128)
+    claim_id: str = Field(default="", max_length=128)
+    note: str = Field(default="", max_length=200)
+
+
+class CalibrationAdjudicationPayload(BaseModel):
+    """[FAZ B · B5] Bir ölçüme operatörün etiket koyması (karar mercii operatör)."""
+
+    observation_id: str = Field(min_length=1, max_length=64)
+    truth: bool
+
+
+@app.get("/api/calibration")
+async def api_calibration(scope: str = ""):
+    """[FAZ B · B5] Eşik kalibrasyonunun GERÇEK durumu.
+
+    Sabit 0.70 eşiğinin yerini alan ÖLÇÜLEN eşik burada görünür: kaynağı
+    (`varsayılan` / `kalibre` / `elle_sabitleme`), güven aralığı, geri test
+    tablosu ve güvenilirlik diyagramı. Veri yetersizse eşik DEĞİŞMEMİŞTİR ve
+    bu açıkça yazar — "ölçülmüş gibi" yapılmaz.
+    """
+    from agent_core.services import threshold_calibration as calib
+
+    scopes = [scope] if scope else [calib.SCOPE_QUOTE, calib.SCOPE_CONFIDENCE]
+    return {
+        "scopes": {name: calib.summary(scope=name) for name in scopes},
+        "ledger": {
+            "dir": calib.storage_dir(),
+            "rows": len(calib.load()),
+            "labeled": sum(1 for row in calib.load() if row.truth is not None),
+        },
+        "min_samples": calib.min_samples(),
+    }
+
+
+@app.post("/api/calibration/observations")
+async def api_calibration_record(req: CalibrationObservationPayload):
+    """[FAZ B · B5] Ledger'a ölçüm yaz (ham metin DEĞİL: yalnız skor + kimlik)."""
+    from agent_core.services import threshold_calibration as calib
+
+    obs = calib.record(
+        req.score,
+        scope=req.scope,
+        matched=req.score >= calib.resolved_threshold(req.scope).value,
+        task_id=req.task_id,
+        claim_id=req.claim_id,
+        truth=req.truth,
+        note=req.note,
+    )
+    if obs is None:
+        return JSONResponse(
+            {
+                "status": "not_recorded",
+                "reason": "gözlem_kapali",
+                "hint": "PINEAL_CALIB_OBSERVE=true",
+            },
+            status_code=409,
+        )
+    return {"status": "recorded", "observation": obs.model_dump()}
+
+
+@app.post("/api/calibration/adjudicate")
+async def api_calibration_adjudicate(req: CalibrationAdjudicationPayload):
+    """[FAZ B · B5] Operatör bir ölçümü ETİKETLER: eşiği değiştiren veri budur."""
+    from agent_core.services import threshold_calibration as calib
+
+    if not calib.adjudicate(req.observation_id, req.truth):
+        return JSONResponse(
+            {"error": {"code": "OBSERVATION_NOT_FOUND", "message": "Kayıt bulunamadı"}},
+            status_code=404,
+        )
+    return {
+        "status": "adjudicated",
+        "observation_id": req.observation_id,
+        "truth": req.truth,
+        "threshold": calib.summary(scope=calib.SCOPE_QUOTE),
+    }
+
+
 @app.post("/api/tasks/{task_id}/cancel")
 async def api_cancel_task(task_id: str = Path(min_length=1, max_length=_MAX_TASK_ID_LENGTH), client_id: str = "", reason: str = ""):
     return _terminate_mission(client_id, task_id, "cancel", reason)

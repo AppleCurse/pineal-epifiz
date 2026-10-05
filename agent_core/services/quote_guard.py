@@ -22,26 +22,74 @@ def _normalize(text: str) -> str:
 def _source_corpus(source_texts: List[str]) -> List[str]:
     return [_normalize(s) for s in source_texts if s and str(s).strip()]
 
-def quote_matches(quote: str, corpus: List[str], threshold: float = 0.70) -> bool:
-    """Alıntı kaynak korpustaki herhangi bir metin parçasıyla eşleşiyor mu?"""
+def best_score(quote: str, corpus: List[str]) -> float:
+    """Alıntının korpustaki EN YÜKSEK benzerlik skoru (0..1).
+
+    [FAZ B · B5] Eşiğin ÖLÇÜLEBİLMESİ için karar tek bir sayıya indirilir:
+    skor >= eşik ise alıntı "gerçek". Skor ledger'a yazılır, operatör daha
+    sonra doğru/yanlış etiketi koyar; eşik o etiketlerden kalibre edilir.
+    """
     q = _normalize(quote)
     if len(q) < 4:
-        return False
-    for src in corpus:
+        return 0.0
+    best = 0.0
+    for raw in corpus:
+        # Korpus da aynı ölçekte normalize edilir: büyük/küçük harf ve noktalama
+        # farkı yüzünden KAYNAKTA BİREBİR VAR olan alıntı "yok" sayılıyordu
+        # (q alt-case, src değil -> `q in src` hiç tutmuyordu).
+        src = _normalize(raw)
         if len(src) < 4:
             continue
         if q in src:
-            return True
+            return 1.0
         if len(src) <= len(q) * 3:
-            if SequenceMatcher(None, q, src).ratio() >= threshold:
-                return True
+            best = max(best, SequenceMatcher(None, q, src).ratio())
         else:
             step = max(1, len(q) // 2)
             for i in range(0, len(src) - len(q) + 1, step):
                 window = src[i:i + len(q) * 2]
-                if SequenceMatcher(None, q, window).ratio() >= threshold:
-                    return True
-    return False
+                best = max(best, SequenceMatcher(None, q, window).ratio())
+                if best >= 1.0:
+                    return 1.0
+    return round(best, 6)
+
+
+def quote_matches(
+    quote: str,
+    corpus: List[str],
+    threshold: Optional[float] = None,
+    *,
+    observe: bool = False,
+    task_id: str = "",
+    claim_id: str = "",
+) -> bool:
+    """Alıntı kaynak korpustaki herhangi bir metin parçasıyla eşleşiyor mu?
+
+    [FAZ B · B5] ``threshold`` artık SABİT 0.70 değil: verilmezse kalibrasyon
+    modülü ölçülen eşiği verir (veri yoksa 0.70 varsayılan kalır, kaynak
+    ``varsayılan`` olarak raporlanır). Elle değer verilmesi hâlâ mümkündür —
+    o zaman ölçüm devre dışı kalmaz, yalnız bu çağrı için sabitlenir.
+    """
+    if threshold is None:
+        from agent_core.services.threshold_calibration import SCOPE_QUOTE, resolved_threshold
+
+        threshold = resolved_threshold(SCOPE_QUOTE).value
+    score = best_score(quote, corpus)
+    if observe:
+        try:
+            from agent_core.services.threshold_calibration import SCOPE_QUOTE, record
+
+            record(
+                score,
+                scope=SCOPE_QUOTE,
+                matched=score >= threshold,
+                task_id=task_id,
+                claim_id=claim_id,
+                note=f"eşik={threshold:.2f}",
+            )
+        except Exception:  # noqa: BLE001 - kalibrasyon kaydı kararı bozamaz
+            pass
+    return score >= threshold
 
 
 def verification_claim_index(input_data: Dict[str, Any]) -> Dict[str, Dict[str, str]]:

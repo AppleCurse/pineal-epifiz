@@ -32,6 +32,42 @@
   1291P/0F**, **entegrasyon 88P/0F** — gerileme yok. Frontend: `npm run build`
   + `svelte-check` **0 hata 0 uyarı**.
 
+## Unreleased — 2026-10-05 — FAZ B · BEYİN & HAFIZA (2): konsensüs denetçisi, eşik kalibrasyonu
+
+- **B1 · BAĞIMSIZ JÜRİ KONSENSÜS DENETÇİSİ.** Panel oylarını sayan kod,
+  sayımın doğruluğunu KENDİSİNE soruyordu. Artık ikinci ve bağımsız bir kafa
+  var: `agent_core/services/jury_consensus.py` oyları yeniden sayar, panelin
+  bildirdiği hükümle karşılaştırır ve uyuşmazlığı **gizlemez** (`VerifierReport.
+  consensus` + karar kuralında `konsensüs:uyuşmazlık=X/Y yeter_sayı=A/B(q)
+  bağlayıcı=evet|hayır`). Yeter sayı altındaki hüküm konsensüs SAYILMAZ; tek
+  koltuk "konsensüs" diye geçmez; berabere dürüstçe `BİLİNMİYOR`'a düşer.
+  `PINEAL_JURY_QUORUM` (varsayılan 1 = bugünkü davranış) ve
+  `PINEAL_JURY_BINDING` (varsayılan **kapalı** = salt denetim). Bağlayıcı kipte
+  denetçinin bulduğu hüküm GEÇERLİ olur ve tüm sayılar (doğrulanan/çürütilen/
+  kesin/bilinmeyen/skor/güven) yeniden hesaplanır. LLM yok, ağ yok.
+- **B5 · EŞİK ARTIK ÖLÇÜLÜYOR (kalibrasyon + geri test + güven aralığı).**
+  Sistemin en kritik eşiği **0.70** kodun içine sabitlenmişti ve hiç
+  ölçülmemişti. `agent_core/services/threshold_calibration.py`: her eşik kararı
+  skoruyla birlikte eklemeli bir ledger'a yazılır (`memory/calibration/`),
+  operatör daha sonra **etiket** koyar (karar mercii operatör), eşik o
+  etiketlerden kalibre edilir — Youden J ile seçilir, veri azken varsayılana
+  çekilir (shrinkage), **Wilson güven aralığı**, **46 adetlik geri test
+  ızgarası** ve **güvenilirlik diyagramı (ECE)** ile birlikte raporlanır.
+  **Kilit:** etiketli örnek `PINEAL_CALIB_MIN_SAMPLES` (varsayılan 30) altındaysa
+  eşik DEĞİŞMEZ ve kaynağı `varsayılan` olarak açıkça yazar — veri olmadan eşik
+  değiştirilemez. Elle sabitleme (`PINEAL_THRESHOLD_QUOTE`) her zaman kazanır.
+  Ledger'a **ham metin yazılmaz** (yalnız skor + kimlik).
+- **Alıntı kapısı ölçülen eşiğe bağlandı.** `quote_guard.quote_matches` artık
+  sabit 0.70 kullanmıyor: `resolved_threshold("quote")`'tan okur. Ayrıca korpus
+  da normalize ediliyor — eskiden büyük/küçük harf farkı yüzünden kaynakta
+  **birebir var** olan alıntı "yok" sayılıp eşiğin altında kalabiliyordu.
+  Yeni uçlar: `GET /api/calibration` · `POST /api/calibration/observations` ·
+  `POST /api/calibration/adjudicate`. Arayüzde gözün yanında **EŞİK** pili:
+  ölçüldüyse yeşil "ÖLÇÜLDÜ", ölçülmediyse gri "ÖLÇÜLMEDİ".
+- **Test:** +35 (konsensüs 15 · kalibrasyon 15 · kalibrasyon API 5). Tam koşu:
+  **birim 1321P/0F**, **entegrasyon 93P/0F** — gerileme yok. Frontend:
+  `npm run build` + `svelte-check` **0 hata 0 uyarı**.
+
 ## Unreleased — 2026-10-05 — FAZ A · RETİNA TAMAM: Agent-Reach + SearXNG + Scrapling
 
 - **A3 Agent-Reach (son kademe).** Temiz metin omurgası dört kademeye çıktı:
