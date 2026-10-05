@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased — 2026-10-05 — FAZ C · SES & NEFES (4): bulunanı söyle
+
+- **C4 · SESLİ RAPOR.** Sistem bulduğunu yazıyordu, söylemiyordu. `voice.report.
+  script` yeteneği (RENDERER, omurgada) görev sonucunu konuşulan Türkçe rapora
+  çevirir: hedef · durum · kanıt sayısı · koşan ajan · ortalama güven · geçmiş
+  taramaya göre değişim · kırmızı çizgi. **Uydurma cümle yok** — payload'da
+  olmayan alan için cümle KURULMAZ (değişim raporu temelsizse "yeni/kayıp"
+  söylenmez, güven sayısı yoksa güven söylenmez). Kırpılan metin `truncated`
+  olarak işaretlenir, sessizce kesilmez.
+- **Metin hazır, ses yoksa gizlenmez.** TTS motoru kapalıysa `available:false`
+  döner ama **metin yine de döner**: operatör neyin okunacağını görür.
+- **Kırmızı çizgi SUSTURULMAZ.** Raporda 18 altı işareti varsa sesli rapor
+  "KIRMIZI ÇİZGİ: on sekiz altı tespit edildi, görev durduruldu." der.
+- **Yeni uç:** `POST /api/speech/report` (`{report}` veya `{text}`) →
+  `{available, script, sections, url, ...}`; konuşma durumu WebSocket'ten akar.
+- **Arayüz:** kokpitte **RAPORU OKU** düğmesi — son görevin özetini yüksek
+  sesle okur (rapor yoksa düğme kapalı).
+- **Test:** +17 (birim 12 · entegrasyon 5). Tam koşu: **birim 1392P/0F**,
+  **entegrasyon 122P/0F** — gerileme yok. Frontend: `svelte-check` + `npm run
+  build` temiz.
+
 ## Unreleased — 2026-10-05 — FAZ C · SES & NEFES (3): göz dinler ve susar
 
 - **C3 · DİNLEYEN GÖZ — YEREL STT.** `LocalSTTCapability` (`voice.stt.local`,

@@ -336,6 +336,52 @@
     }
   }
 
+  // --- [FAZ C · C4] SESLİ RAPOR: bulunanı SÖYLE (göz ekrana bakmak zorunda değil) ---
+  // Yalnız GERÇEK alanlar gönderilir; olmayan alan için cümle UYDURULMAZ.
+  let isReadingReport = false;
+
+  function reportDigest(status: any): Record<string, unknown> | null {
+    if (!status || typeof status !== 'object') return null;
+    const runs: Record<string, unknown> = {};
+    const rawRuns = status.runs || {};
+    for (const [name, entry] of Object.entries<any>(rawRuns)) {
+      runs[name] = { status: entry?.status ?? null, confidence: entry?.confidence ?? null };
+    }
+    return {
+      task_id: status.task_id ?? null,
+      status: status.status ?? null,
+      target_profile: status.target_profile ?? null,
+      evidence_chain: (status.evidence_chain || []).map((e: any) => ({ agent: e?.agent ?? null })),
+      runs,
+      changes: status.changes ?? null,
+      depth_report: status.depth_report ?? null,
+      follower_audit: status.follower_audit ?? null,
+      timing_forensics: status.timing_forensics ?? null,
+      minor_gate: status.minor_gate ?? status.child_safety ?? null
+    };
+  }
+
+  async function readReportAloud() {
+    const digest = reportDigest($taskStatus);
+    if (!digest || isReadingReport) return;
+    isReadingReport = true;
+    playClick(590, 40);
+    try {
+      const res = await apiFetch('/api/speech/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id: $clientId || 'default', report: digest })
+      });
+      const data = await res.json();
+      if (data.script) addLog(`SES: rapor okundu → ${data.script}`, 'INFO');
+      if (!data.available) addLog(`SES: ses ÜRETİLEMEDİ — ${data.reason}`, 'WARNING');
+    } catch (_e) {
+      addLog('SES: rapor okunamadı', 'WARNING');
+    } finally {
+      isReadingReport = false;
+    }
+  }
+
   // --- [FAZ C · C3] DİNLEYEN GÖZ: mikrofon -> yerel STT -> Aspasia ---
   // Kayıt TARAYICIDA tutulur, yalnız transkript için YEREL motora gider;
   // ses dosyası dışarı çıkmaz. Motor yoksa uydurma metin yazılmaz.
@@ -619,6 +665,16 @@
       title="Aspasia Komut Satırı"
     />
   </div>
+
+  <!-- [FAZ C · C4] SESLİ RAPOR: son görevin özetini YÜKSEK SESLE okur -->
+  <button
+    class="mic-spot report-spot"
+    on:click={readReportAloud}
+    disabled={isReadingReport || !$taskStatus}
+    title={$taskStatus ? 'Son raporu sesli oku' : 'Okunacak rapor yok'}
+  >
+    {isReadingReport ? 'OKUYOR' : 'RAPORU OKU'}
+  </button>
 
   <!-- [FAZ C · C3] MİKROFON: bas -> dinler, bırak -> yerel STT -> Aspasia -->
   <button
@@ -1284,6 +1340,12 @@
     border-color: rgba(34, 197, 94, 0.8);
     color: #86efac;
     box-shadow: 0 0 16px rgba(34, 197, 94, 0.35);
+  }
+
+  .report-spot {
+    left: 404px;
+    border-color: rgba(56, 189, 248, 0.5);
+    color: #7dd3fc;
   }
 
   .voice-pill {

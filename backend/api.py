@@ -4384,6 +4384,46 @@ async def api_speech_status():
     return speech.status()
 
 
+class SpeechReportPayload(BaseModel):
+    """[FAZ C · C4] Sesli rapor: görev sonucu (veya doğrudan metin) okunur."""
+
+    client_id: str = "default"
+    report: dict | None = None
+    text: str = ""
+
+
+@app.post("/api/speech/report")
+async def api_speech_report(req: SpeechReportPayload):
+    """[FAZ C · C4] Bulunanı SÖYLER: görev sonucu sesli rapora çevrilir.
+
+    Metin payload'daki GERÇEK alanlardan kurulur — olmayan alan için cümle
+    UYDURULMAZ. Motor yoksa ses üretilmez; metin yine de döner (gizlenmez).
+    """
+    from agent_core.services import speech
+
+    if not rate_limit(f"report:{req.client_id}", "speech"):
+        return JSONResponse(
+            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla rapor okuma isteği"}},
+            status_code=429,
+        )
+
+    result = await speech.read_report(
+        req.report,
+        text=req.text,
+        vault_locked=not _check_vault_interlock(req.client_id),
+    )
+    payload = result.model_dump()
+    if result.available:
+        broadcast_speech(req.client_id, {"state": "speaking", **payload})
+        duration = max(0.0, float(result.duration_ms or 0) / 1000.0)
+        asyncio.create_task(_speech_finished(req.client_id, duration))
+        broadcast_log(req.client_id, "INFO", f"SES: {result.machine_note}")
+    else:
+        broadcast_speech(req.client_id, {"state": "denied", **payload})
+        broadcast_log(req.client_id, "WARNING", f"SES: RAPOR OKUNAMADI: {result.reason}")
+    return payload
+
+
 @app.post("/api/speech/listen", response_model=SpeechListenResponse)
 async def api_speech_listen(
     request: Request,

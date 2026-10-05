@@ -270,3 +270,60 @@ def test_status_lists_known_conversation_states(client):
     assert "listening" in payload["known_states"]
     assert "interrupted" in payload["known_states"]
     assert "speaking" in payload["known_states"]
+
+
+# =====================================================================
+# FAZ C · C4 — SESLİ RAPOR (bulunanı söyle)
+# =====================================================================
+REPORT_PAYLOAD = {
+    "status": "completed",
+    "target_profile": {"username": "salim.gumus"},
+    "evidence_chain": [{"agent": "a"}, {"agent": "b"}],
+    "runs": {"a": {"status": "completed", "confidence": 0.8}, "b": {"status": "failed"}},
+    "changes": {"available": True, "added": [1, 2], "removed": [], "changed": [3]},
+}
+
+
+def test_report_endpoint_speaks_the_findings(client, local_tts):
+    payload = client.post(
+        "/api/speech/report",
+        json={"client_id": "spx", "report": REPORT_PAYLOAD},
+    ).json()
+    assert payload["available"] is True, payload.get("reason")
+    assert "Hedef salim.gumus." in payload["script"]
+    assert payload["sections"][0] == "target"
+    assert payload["url"].endswith(".wav")
+
+
+def test_report_endpoint_broadcasts_speaking_state(client, local_tts):
+    with client.websocket_connect("/ws/spx") as ws:
+        client.post("/api/speech/report", json={"client_id": "spx", "report": REPORT_PAYLOAD})
+        frame = json.loads(ws.receive_text())
+        while frame.get("type") != "speech":
+            frame = json.loads(ws.receive_text())
+    assert frame["state"] == "speaking"
+    assert frame["script"].startswith("Hedef")
+
+
+def test_report_without_engine_keeps_the_text_but_no_audio(client, monkeypatch, tmp_path):
+    monkeypatch.delenv("ENABLE_LOCAL_TTS", raising=False)
+    monkeypatch.delenv("PINEAL_TTS_URL", raising=False)
+    monkeypatch.setenv("PINEAL_SPEECH_DIR", str(tmp_path / "speech"))
+    payload = client.post(
+        "/api/speech/report", json={"client_id": "spx", "report": REPORT_PAYLOAD}
+    ).json()
+    assert payload["available"] is False
+    assert payload["url"] == ""
+    assert "Hedef salim.gumus." in payload["script"]  # metin gizlenmez
+
+
+def test_report_endpoint_invents_no_sentence_from_empty_report(client, local_tts):
+    payload = client.post("/api/speech/report", json={"client_id": "spx", "report": {}}).json()
+    assert payload["available"] is False
+    assert payload["script"] == ""
+
+
+def test_report_status_exposes_the_report_capability(client):
+    payload = client.get("/api/speech/status").json()
+    assert payload["report"]["capability_id"] == "voice.report.script"
+    assert payload["report"]["available"] is True

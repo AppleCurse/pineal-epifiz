@@ -29,6 +29,8 @@ STATE_INTERRUPTED = "interrupted"
 
 STT_CAPABILITY_ID = "voice.stt.local"
 STT_GATE = "ENABLE_LOCAL_STT"
+#: [FAZ C · C4] Sesli rapor: görev sonucundan konuşma metni doğuran yetenek.
+REPORT_CAPABILITY_ID = "voice.report.script"
 
 #: Konuşma durumlarının tamamı (UI bu listeyi gösterir).
 KNOWN_STATES = (
@@ -73,6 +75,18 @@ class SpeechResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ReportSpeechResult(SpeechResult):
+    """[FAZ C · C4] Sesli rapor: konuşma sonucu + SÖYLENEN METNİN KENDİSİ.
+
+    `script` alanı bilinçli olarak açıktır: operatör neyin okunduğunu GÖRÜR;
+    ses ile metin ayrı düşerse (kırpma, motor farkı) sessizce gizlenmez.
+    """
+
+    script: str = ""
+    sections: list[str] = Field(default_factory=list)
+    truncated: bool = False
+
+
 #: Konuşma durumu (C3'te dinleme/araya girme ile birleşecek tek yer).
 _STATE: Dict[str, Any] = {"state": STATE_IDLE, "last": None, "updated_at": 0.0}
 
@@ -88,6 +102,70 @@ def set_state(state: str, **extra: Any) -> None:
     if "last" in extra:
         _STATE["last"] = extra["last"]
     _STATE.update({k: v for k, v in extra.items() if k != "last"})
+
+
+async def read_report(
+    report: Optional[Dict[str, Any]] = None,
+    *,
+    text: str = "",
+    voice: Optional[str] = None,
+    vault_locked: bool = True,
+    emit: Optional[Callable[[Dict[str, Any]], None]] = None,
+) -> ReportSpeechResult:
+    """[FAZ C · C4] Görev sonucunu SESLİ rapora çevirir ve okur.
+
+    İki yetenek, tek geçit: önce `voice.report.script` (metin doğar — uydurma
+    cümle yok), sonra `voice.tts.local` (ses doğar — motor yerel). Metin
+    boşsa ses ÜRETİLMEZ; motor yoksa uydurma ses YOK.
+    """
+    from agent_core.capabilities.base import CapabilityContext
+    from agent_core.capabilities.policy import PolicyState
+    from agent_core.capabilities.registry import bootstrap
+    from agent_core.capabilities.runner import CapabilityRunner
+
+    registry = bootstrap()
+    runner = CapabilityRunner(registry=registry, emit=emit)
+    # Metin kurucunun kapısı yoktur (harici bağımlılık yok); kasa kuralı aynı.
+    script_state = PolicyState(enabled_flags={}, vault_locked=bool(vault_locked), rate_ok=True)
+    built = await runner.run(
+        REPORT_CAPABILITY_ID,
+        CapabilityContext(params={"report": report or {}, "text": text or ""}),
+        state=script_state,
+    )
+    if not built.available or not (built.payload or {}).get("script"):
+        reason = str(built.unavailable_reason or built.denied_by or built.error or "unavailable")
+        set_state(STATE_DENIED, reason=reason, last_report=None)
+        return ReportSpeechResult(
+            available=False,
+            reason=reason,
+            state=STATE_DENIED,
+            machine_note=f"SES: rapor okunamadı — {reason} (uydurma metin yok)",
+        )
+
+    payload = dict(built.payload or {})
+    script = str(payload.get("script") or "").strip()
+    sections = [str(item) for item in (payload.get("sections") or [])]
+    truncated = bool(payload.get("truncated"))
+
+    spoken = await speak(script, voice=voice, vault_locked=vault_locked, emit=emit)
+    result = ReportSpeechResult(
+        **spoken.model_dump(),
+        script=script,
+        sections=sections,
+        truncated=truncated,
+    )
+    if result.available:
+        note = f"SES: rapor okundu ({len(sections)} bölüm · {len(script)} karakter"
+        result.machine_note = note + (" · kırpıldı)" if truncated else ")")
+        set_state(STATE_SPEAKING, last_report={"chars": len(script), "sections": sections})
+    else:
+        # Motor yok: metin HAZIR ama ses yok — metin yine de dönülür (gizlenmez).
+        result.machine_note = (
+            f"SES: rapor metni hazır, ses ÜRETİLEMEDİ — {spoken.reason} "
+            "(uydurma ses yok)"
+        )
+        set_state(STATE_DENIED, reason=spoken.reason)
+    return result
 
 
 def engine_status() -> Dict[str, Any]:
@@ -123,6 +201,11 @@ def engine_status() -> Dict[str, Any]:
             "engine": stt_engine or "",
             "available": bool(stt.availability().available),
             "reason": stt.availability().reason or stt_reason or "",
+        },
+        "report": {
+            "capability_id": REPORT_CAPABILITY_ID,
+            "available": True,  # metin kurucunun harici bağımlılığı yoktur
+            "reason": "",
         },
         "machine_note": (
             f"SES: konuşma={tts_engine or 'yok'} · dinleme={stt_engine or 'yok'} · "

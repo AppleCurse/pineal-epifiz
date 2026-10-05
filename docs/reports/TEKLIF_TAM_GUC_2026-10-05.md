@@ -219,4 +219,12 @@ duyulan metin log'a düşer ve Aspasia'ya gider. **Araya girme gerçek:** konuş
 sürerken mikrofon açılırsa Aspasia susar (`interrupted` + WebSocket çerçevesi).
 İris beş konuşma hâlini taşıyor (idle · listening · speaking · interrupted ·
 denied): dinlerken gözbebeği büyür, konuşurken titrer.
-Sırada: C4 sesli rapor okuma.
+**C4 TAMAM (2026-10-05) — bulunanı söyle.** `voice.report.script` omurgada:
+görev sonucu konuşulan Türkçe rapora çevriliyor (hedef · durum · kanıt sayısı ·
+ajan · güven · değişim · kırmızı çizgi). Olmayan alan için cümle uydurulmuyor;
+değişim raporu temelsizse fark söylenmiyor, kırpma işaretleniyor. Ses üretilemezse
+metin yine de dönüyor — gizlenmiyor. Kokpitte **RAPORU OKU** düğmesi var.
+Böylece **FAZ C — SES & NEFES TAMAM**: C1 jenerik yanıt filtresi · C2 yerel
+TTS · C3 dinleme + araya girme · C4 sesli rapor. Sıradaki faz:
+**FAZ D — BİRLEŞİM & İHRACAT** (D4 dil tespiti → D6 kurum hedefi → D2 yerel
+jüri → D1 MCP → D3 medya adli hattı → D5 rapor fabrikası).
