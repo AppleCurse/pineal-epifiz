@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     # [2026-10-05] Takım 1113 -> 1690 teste büyüdü; 10 dakika CI'da yetmiyor
     # (koşu testler sürerken kesiliyordu). Yerel tam koşu ~100s.
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -29,11 +29,14 @@ jobs:
         # requirements.txt'i taze çözüyordu -> prod ile test edilen ağaç
         # farklıydı (ölçülen: 20 paket sürüm farkı, 2 test skip/geçer farkı).
         run: |
-          pip install -r requirements.lock ruff pytest pytest-asyncio pytest-cov
+          pip install -r requirements.lock ruff pytest pytest-asyncio pytest-cov pytest-timeout
       - name: Lint with ruff
         run: ruff check .
       - name: Run backend tests with coverage gate
-        run: PYTHONPATH=$GITHUB_WORKSPACE pytest -q -p no:cacheprovider --cov=agent_core --cov=backend --cov-report=term-missing:skip-covered --cov-fail-under=80
+        # [2026-10-05] `--timeout`: CI'da tek bir ağ bekleyen test tüm işi
+        # kilitleyip 20 dakikada iptal ettiriyordu (yerel tam koşu ~100s).
+        # Süre aşımı olan test artık TAKILMAZ, FAIL yazar.
+        run: PYTHONPATH=$GITHUB_WORKSPACE pytest -q -p no:cacheprovider --timeout=300 --durations=25 --cov=agent_core --cov=backend --cov-report=term-missing:skip-covered --cov-fail-under=80
       - name: Verify routing shadows committed fresh
         run: |
           python scripts/generate_routing_shadows.py
