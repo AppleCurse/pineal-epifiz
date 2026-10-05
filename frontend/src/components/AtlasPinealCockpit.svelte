@@ -219,9 +219,13 @@
   $: voiceLabel =
     $speechState === 'speaking'
       ? 'SES: KONUŞUYOR'
-      : $speechState === 'denied'
-        ? 'SES: MOTOR YOK'
-        : 'SES: SUSKUN';
+      : $speechState === 'listening'
+        ? 'SES: DİNLİYOR'
+        : $speechState === 'interrupted'
+          ? 'SES: SUSTURULDU'
+          : $speechState === 'denied'
+            ? 'SES: MOTOR YOK'
+            : 'SES: SUSKUN';
 
   function toggleVoice() {
     voiceEnabled.update((v) => !v);
@@ -329,6 +333,85 @@
       setTimeout(() => {
         if (terminalEl) terminalEl.scrollTop = terminalEl.scrollHeight;
       }, 40);
+    }
+  }
+
+  // --- [FAZ C · C3] DİNLEYEN GÖZ: mikrofon -> yerel STT -> Aspasia ---
+  // Kayıt TARAYICIDA tutulur, yalnız transkript için YEREL motora gider;
+  // ses dosyası dışarı çıkmaz. Motor yoksa uydurma metin yazılmaz.
+  let micRecorder: MediaRecorder | null = null;
+  let micChunks: Blob[] = [];
+  let micStream: MediaStream | null = null;
+  let isListening = false;
+
+  async function toggleListening() {
+    if (isListening) {
+      stopListening();
+      return;
+    }
+    // ARAYA GİRME: Aspasia konuşurken mikrofon açılırsa SUSAR.
+    if ($speechState === 'speaking') {
+      try {
+        await apiFetch(`/api/speech/stop?client_id=${encodeURIComponent($clientId)}`, { method: 'POST' });
+        addLog('SES: araya girildi — Aspasia sustu', 'INFO');
+      } catch (_e) {
+        addLog('SES: araya girilemedi', 'WARNING');
+      }
+    }
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (_e) {
+      addLog('SES: mikrofon izni yok / cihaz yok', 'WARNING');
+      return;
+    }
+    micChunks = [];
+    const mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
+    micRecorder = new MediaRecorder(micStream, { mimeType: mime });
+    micRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) micChunks.push(e.data); };
+    micRecorder.onstop = () => { void transcribeAndSend(); };
+    micRecorder.start();
+    isListening = true;
+    playClick(660, 40);
+    addLog('SES: dinliyorum...', 'INFO');
+  }
+
+  function stopListening() {
+    if (micRecorder && micRecorder.state !== 'inactive') micRecorder.stop();
+    micStream?.getTracks().forEach((t) => t.stop());
+    micStream = null;
+    isListening = false;
+    playClick(330, 40);
+  }
+
+  async function transcribeAndSend() {
+    if (!micChunks.length) {
+      addLog('SES: kayıt boş', 'WARNING');
+      return;
+    }
+    const form = new FormData();
+    form.append('file', new Blob(micChunks, { type: micChunks[0].type || 'audio/webm' }), 'mic.webm');
+    micChunks = [];
+    try {
+      const res = await apiFetch(
+        `/api/speech/listen?client_id=${encodeURIComponent($clientId)}`,
+        { method: 'POST', body: form }
+      );
+      const data = await res.json();
+      if (!data.available) {
+        addLog(`SES: duyulamadı — ${data.reason || 'motor yok'}`, 'WARNING');
+        return;
+      }
+      const heard = String(data.transcript || '').trim();
+      if (!heard) {
+        addLog('SES: transkript boş', 'WARNING');
+        return;
+      }
+      addLog(`SES: duyuldu (${data.engine}) → ${heard}`, 'INFO');
+      inputMessage = heard;
+      // Eller serbest: duyulan metin doğrudan Aspasia'ya gider (kayıt üstünde).
+      await sendAspasiaMessage();
+    } catch (_e) {
+      addLog('SES: dinleme başarısız', 'WARNING');
     }
   }
 
@@ -536,6 +619,16 @@
       title="Aspasia Komut Satırı"
     />
   </div>
+
+  <!-- [FAZ C · C3] MİKROFON: bas -> dinler, bırak -> yerel STT -> Aspasia -->
+  <button
+    class="mic-spot"
+    class:listening={isListening}
+    on:click={toggleListening}
+    title={isListening ? 'Dinliyorum — bırakmak için tıkla' : 'Mikrofon: konuş, Aspasia duysun'}
+  >
+    {isListening ? 'DİNLİYOR' : 'MİK'}
+  </button>
 
   <!-- Aspasia GÖNDER Butonu ('GÖNDER' butonu üzerine şık buton) -->
   <button
@@ -1168,6 +1261,31 @@
   }
 
   /* TACTICAL WAR ROOM GEÇİŞ BUTONU */
+  .mic-spot {
+    position: absolute;
+    bottom: 168px;
+    left: 300px;
+    z-index: 106;
+    padding: 6px 14px;
+    background: rgba(10, 15, 29, 0.9);
+    border: 1px solid rgba(148, 163, 184, 0.5);
+    border-radius: 9999px;
+    font-family: 'JetBrains Mono', monospace, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: #94a3b8;
+    cursor: pointer;
+    white-space: nowrap;
+    backdrop-filter: blur(6px);
+  }
+
+  .mic-spot.listening {
+    border-color: rgba(34, 197, 94, 0.8);
+    color: #86efac;
+    box-shadow: 0 0 16px rgba(34, 197, 94, 0.35);
+  }
+
   .voice-pill {
     position: absolute;
     top: 54px;

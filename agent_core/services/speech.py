@@ -23,6 +23,35 @@ GATE = "ENABLE_LOCAL_TTS"
 STATE_IDLE = "idle"
 STATE_SPEAKING = "speaking"
 STATE_DENIED = "denied"
+#: [FAZ C · C3] Göz DİNLER ve SUSAR: dinleme + araya girme halleri.
+STATE_LISTENING = "listening"
+STATE_INTERRUPTED = "interrupted"
+
+STT_CAPABILITY_ID = "voice.stt.local"
+STT_GATE = "ENABLE_LOCAL_STT"
+
+#: Konuşma durumlarının tamamı (UI bu listeyi gösterir).
+KNOWN_STATES = (
+    STATE_IDLE,
+    STATE_LISTENING,
+    STATE_SPEAKING,
+    STATE_INTERRUPTED,
+    STATE_DENIED,
+)
+
+
+class ListenResult(BaseModel):
+    """Dinlemenin dürüst sonucu: transkript ya da sebep (uydurma metin yok)."""
+
+    available: bool = False
+    reason: str = ""
+    state: str = STATE_IDLE
+    transcript: str = ""
+    engine: str = ""
+    chars: int = 0
+    machine_note: str = ""
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class SpeechResult(BaseModel):
@@ -62,22 +91,43 @@ def set_state(state: str, **extra: Any) -> None:
 
 
 def engine_status() -> Dict[str, Any]:
-    """Motorun BUGÜNKÜ dürüst durumu (yoksa neden yok)."""
-    from agent_core.capabilities.adapters_voice import LocalTTSCapability
+    """Motorların BUGÜNKÜ dürüst durumu (yoksa neden yok): TTS + STT."""
+    from agent_core.capabilities.adapters_voice import (
+        LocalSTTCapability,
+        LocalTTSCapability,
+    )
 
-    capability = LocalTTSCapability()
-    availability = capability.availability()
-    engine, reason = capability.backend()
+    tts = LocalTTSCapability()
+    stt = LocalSTTCapability()
+    tts_engine, tts_reason = tts.backend()
+    stt_engine, stt_reason = stt.backend()
     return {
         "capability_id": CAPABILITY_ID,
         "gate": GATE,
         "gate_enabled": _flag(GATE),
-        "engine": engine or "",
-        "available": bool(availability.available),
-        "reason": availability.reason or reason or "",
+        "engine": tts_engine or "",
+        "available": bool(tts.availability().available),
+        "reason": tts.availability().reason or tts_reason or "",
+        "tts": {
+            "capability_id": CAPABILITY_ID,
+            "gate": GATE,
+            "gate_enabled": _flag(GATE),
+            "engine": tts_engine or "",
+            "available": bool(tts.availability().available),
+            "reason": tts.availability().reason or tts_reason or "",
+        },
+        "stt": {
+            "capability_id": STT_CAPABILITY_ID,
+            "gate": STT_GATE,
+            "gate_enabled": _flag(STT_GATE),
+            "engine": stt_engine or "",
+            "available": bool(stt.availability().available),
+            "reason": stt.availability().reason or stt_reason or "",
+        },
         "machine_note": (
-            f"SES: motor={engine or 'yok'} · kapı {GATE}={'açık' if _flag(GATE) else 'kapalı'}"
-            + (f" · {availability.reason}" if not availability.available else "")
+            f"SES: konuşma={tts_engine or 'yok'} · dinleme={stt_engine or 'yok'} · "
+            f"kapılar {GATE}={'açık' if _flag(GATE) else 'kapalı'}, "
+            f"{STT_GATE}={'açık' if _flag(STT_GATE) else 'kapalı'}"
         ),
     }
 
@@ -87,6 +137,11 @@ def status() -> Dict[str, Any]:
     payload = engine_status()
     payload["state"] = _STATE.get("state", STATE_IDLE)
     payload["last"] = _STATE.get("last")
+    payload["last_heard"] = _STATE.get("last_heard")
+    #: Araya girme izi: son konuşma KESİLDİ mi, hangi hâldeyken kesildi?
+    payload["interrupted"] = bool(_STATE.get("interrupted", False))
+    payload["interrupted_from"] = _STATE.get("interrupted_from")
+    payload["known_states"] = list(KNOWN_STATES)
     payload["updated_at"] = _STATE.get("updated_at", 0.0)
     return payload
 
@@ -162,6 +217,80 @@ async def speak(
     return spoken
 
 
+def start_listening() -> None:
+    """Dinleme başlar (göz büyür). Tek durum geçidi."""
+    set_state(STATE_LISTENING)
+
+
+def interrupt() -> None:
+    """Araya girme: konuşma KESİLİR ve izi bırakılır (hangi hâlde kesildi)."""
+    cut_from = str(_STATE.get("state") or STATE_IDLE)
+    set_state(STATE_INTERRUPTED, interrupted=True, interrupted_from=cut_from)
+    set_state(STATE_IDLE, interrupted=True, interrupted_from=cut_from)
+
+
+def clear_interrupt() -> None:
+    """Araya girme izini temizler (yeni bir konuşma başlarken)."""
+    _STATE.pop("interrupted", None)
+    _STATE.pop("interrupted_from", None)
+
+
 def stop() -> None:
     """Konuşmayı kes (C3'teki 'araya girme' için tek durum geçidi)."""
     set_state(STATE_IDLE)
+
+
+async def listen(
+    audio: bytes,
+    *,
+    suffix: str = ".wav",
+    language: str = "",
+    vault_locked: bool = True,
+    emit: Optional[Callable[[Dict[str, Any]], None]] = None,
+) -> ListenResult:
+    """Sesi METNE çevirir (tek geçit: `voice.stt.local` yeteneği).
+
+    Kasa kuralı konuşmayla aynıdır: durum bilinmiyorsa kilitli sayılır.
+    Motor yoksa uydurma transkript DÖNMEZ.
+    """
+    from agent_core.capabilities.base import CapabilityContext
+    from agent_core.capabilities.policy import PolicyState
+    from agent_core.capabilities.registry import bootstrap
+    from agent_core.capabilities.runner import CapabilityRunner
+
+    start_listening()
+    registry = bootstrap()
+    runner = CapabilityRunner(registry=registry, emit=emit)
+    state = PolicyState(
+        enabled_flags={STT_GATE: _flag(STT_GATE)},
+        vault_locked=bool(vault_locked),
+        rate_ok=True,
+    )
+    result = await runner.run(
+        STT_CAPABILITY_ID,
+        CapabilityContext(params={"audio": audio, "suffix": suffix, "language": language}),
+        state=state,
+    )
+
+    payload: Dict[str, Any] = dict(result.payload or {})
+    if not result.available or not payload:
+        reason = str(result.unavailable_reason or result.denied_by or result.error or "unavailable")
+        set_state(STATE_DENIED, reason=reason)
+        return ListenResult(
+            available=False,
+            reason=reason,
+            state=STATE_DENIED,
+            machine_note=f"SES: duyulamadı — {reason} (uydurma transkript yok)",
+        )
+
+    transcript = str(payload.get("transcript") or "").strip()
+    heard = ListenResult(
+        available=True,
+        state=STATE_IDLE,
+        transcript=transcript,
+        engine=str(payload.get("engine") or ""),
+        chars=len(transcript),
+        machine_note=f"SES: {payload.get('engine')} · {len(transcript)} karakter duyuldu",
+    )
+    set_state(STATE_IDLE, last_heard=heard.model_dump())
+    return heard

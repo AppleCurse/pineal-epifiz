@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { isProcessing } from '../store';
+  import { isProcessing, speechState } from '../store';
   import { IrisRenderer } from '../lib/irisRenderer';
   import eyeSrc from '../assets/eye.jpg';
   import livingDisk from '../assets/living_pineal_disk.png';
@@ -26,6 +26,10 @@
 
   $: if (renderer) {
     renderer.setProcessing($isProcessing || scanning, $isProcessing ? 0.8 : 0.6);
+    // [FAZ C · C3] Konuşma durumu TEK kaynaktan (backend WS) gelir:
+    // dinlerken gözbebeği büyür, konuşurken iris titrer.
+    renderer.setListening($speechState === 'listening');
+    renderer.setSpeaking($speechState === 'speaking');
   }
 
   onMount(() => {

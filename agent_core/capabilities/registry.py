@@ -158,7 +158,10 @@ def bootstrap(
             SearXNGCapability,
             XTwscrapeCapability,
         )
-        from agent_core.capabilities.adapters_voice import LocalTTSCapability
+        from agent_core.capabilities.adapters_voice import (
+            LocalSTTCapability,
+            LocalTTSCapability,
+        )
         from agent_core.capabilities.adapters_web import (
             Crawl4AICapability,
             ScraplingCapability,
@@ -179,8 +182,9 @@ def bootstrap(
             InstagrapiCapability(),
             AgentReachCapability(),
             SearXNGCapability(),
-            # --- ses (FAZ C · C2): yerel TTS, ses makineden çıkmaz
+            # --- ses (FAZ C · C2/C3): yerel TTS + STT, ses makineden çıkmaz
             LocalTTSCapability(),
+            LocalSTTCapability(),
         )
     for cap in capabilities:
         if reg.has(cap.id):

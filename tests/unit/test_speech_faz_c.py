@@ -19,6 +19,7 @@ import struct
 import pytest
 
 from agent_core.capabilities.adapters_voice import (
+    LocalSTTCapability,
     LocalTTSCapability,
     _wav_duration_ms,
     speech_dir,
@@ -217,5 +218,117 @@ def test_unknown_vault_state_is_fail_closed(monkeypatch):
     monkeypatch.setenv("ENABLE_LOCAL_TTS", "true")
     monkeypatch.setenv("PINEAL_TTS_URL", "http://127.0.0.1:9911/tts")
     result = asyncio.run(speech.speak("Mösyö."))
+    assert result.available is False
+    assert result.reason == "policy:vault_locked"
+
+
+# =====================================================================
+# FAZ C · C3 — DİNLEYEN GÖZ (yerel STT + konuşma durumu)
+# =====================================================================
+def test_stt_capability_is_registered_on_the_spine():
+    registry = bootstrap()
+    assert registry.has("voice.stt.local")
+    capability = registry.get("voice.stt.local")
+    assert capability.kind is CapabilityKind.EXTRACTOR
+    assert "ENABLE_LOCAL_STT" in capability.gates
+
+
+def test_stt_refuses_remote_endpoint(monkeypatch):
+    monkeypatch.setenv("PINEAL_STT_URL", "https://stt.example.com/transcribe")
+    availability = LocalSTTCapability().availability()
+    assert availability.available is False
+    assert availability.reason in {"non_local_endpoint", "no_local_endpoint"}
+
+
+def test_stt_rejects_empty_audio():
+    result = asyncio.run(LocalSTTCapability().run(CapabilityContext(params={"audio": b""})))
+    assert result.available is False
+    assert result.unavailable_reason == "empty_audio"
+
+
+def test_stt_rejects_oversized_audio(monkeypatch, tmp_path):
+    monkeypatch.setenv("PINEAL_SPEECH_DIR", str(tmp_path / "speech"))
+    monkeypatch.setenv("PINEAL_STT_URL", "http://127.0.0.1:9911/stt")
+    result = asyncio.run(
+        LocalSTTCapability().run(CapabilityContext(params={"audio": b"x" * (8 * 1024 * 1024 + 1)}))
+    )
+    assert result.available is False
+    assert result.unavailable_reason == "audio_too_large"
+
+
+def test_stt_transcribes_and_writes_evidence(monkeypatch, tmp_path):
+    monkeypatch.setenv("PINEAL_SPEECH_DIR", str(tmp_path / "speech"))
+    monkeypatch.setenv("PINEAL_STT_URL", "http://127.0.0.1:9911/stt")
+
+    async def _fake(self, audio_path):
+        return "Mösyö, bu hedefin son iki haftasını göster.", ""
+
+    monkeypatch.setattr(LocalSTTCapability, "_run_local_endpoint", _fake)
+    result = asyncio.run(
+        LocalSTTCapability().run(CapabilityContext(params={"audio": b"RIFFfake", "suffix": ".wav"}))
+    )
+    assert result.available is True
+    assert result.payload["transcript"].startswith("Mösyö")
+    assert result.items[0].scope["kind"] == "transcript"
+    assert result.items[0].content.startswith("Mösyö")
+
+
+def test_stt_failure_invents_no_transcript(monkeypatch, tmp_path):
+    monkeypatch.setenv("PINEAL_SPEECH_DIR", str(tmp_path / "speech"))
+    monkeypatch.setenv("PINEAL_STT_URL", "http://127.0.0.1:9911/stt")
+
+    async def _fake(self, audio_path):
+        return "", "endpoint_status:500"
+
+    monkeypatch.setattr(LocalSTTCapability, "_run_local_endpoint", _fake)
+    result = asyncio.run(LocalSTTCapability().run(CapabilityContext(params={"audio": b"RIFFfake"})))
+    assert result.available is False
+    assert result.unavailable_reason == "endpoint_status:500"
+    assert result.items == ()
+
+
+def test_listen_denied_when_gate_closed(monkeypatch):
+    monkeypatch.delenv("ENABLE_LOCAL_STT", raising=False)
+    monkeypatch.setenv("PINEAL_STT_URL", "http://127.0.0.1:9911/stt")
+    result = asyncio.run(speech.listen(b"RIFFfake", vault_locked=False))
+    assert result.available is False
+    assert result.state == "denied"
+    assert "gate_disabled" in result.reason
+    assert "uydurma transkript yok" in result.machine_note
+
+
+def test_listen_success_returns_transcript(monkeypatch, tmp_path):
+    monkeypatch.setenv("ENABLE_LOCAL_STT", "true")
+    monkeypatch.setenv("PINEAL_SPEECH_DIR", str(tmp_path / "speech"))
+    monkeypatch.setenv("PINEAL_STT_URL", "http://127.0.0.1:9911/stt")
+
+    async def _fake(self, audio_path):
+        return "görev tamam mı", ""
+
+    monkeypatch.setattr(LocalSTTCapability, "_run_local_endpoint", _fake)
+    result = asyncio.run(speech.listen(b"RIFFfake", vault_locked=False))
+    assert result.available is True
+    assert result.transcript == "görev tamam mı"
+    assert result.engine == "local_endpoint"
+    assert speech.status()["state"] == "idle"
+
+
+def test_listening_state_is_set_while_listening(monkeypatch):
+    speech.start_listening()
+    assert speech.status()["state"] == "listening"
+    speech.stop()
+
+
+def test_interrupt_marks_the_speech_as_cut(monkeypatch):
+    speech.set_state("speaking")
+    speech.interrupt()
+    assert speech.status()["state"] == "idle"
+    assert speech.status().get("interrupted") is True
+
+
+def test_locked_vault_blocks_listening(monkeypatch):
+    monkeypatch.setenv("ENABLE_LOCAL_STT", "true")
+    monkeypatch.setenv("PINEAL_STT_URL", "http://127.0.0.1:9911/stt")
+    result = asyncio.run(speech.listen(b"RIFFfake", vault_locked=True))
     assert result.available is False
     assert result.reason == "policy:vault_locked"

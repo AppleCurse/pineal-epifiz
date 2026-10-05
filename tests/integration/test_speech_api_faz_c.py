@@ -85,6 +85,34 @@ def local_tts(monkeypatch, tmp_path):
 
 
 @pytest.fixture()
+def local_stt(monkeypatch, tmp_path):
+    """Gerçek bir YEREL STT sunucusu (ephemeral port) + açılmış kapı."""
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802 - http.server sözleşmesi
+            length = int(self.headers.get("Content-Length", 0))
+            self.rfile.read(length)
+            body = json.dumps({"text": "Mösyö, bu hedefin son iki haftasını göster."}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            return
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    monkeypatch.setenv("PINEAL_STT_URL", f"http://127.0.0.1:{server.server_port}/stt")
+    monkeypatch.setenv("ENABLE_LOCAL_STT", "true")
+    monkeypatch.setenv("PINEAL_SPEECH_DIR", str(tmp_path / "speech"))
+    yield server
+    server.shutdown()
+    server.server_close()
+
+
+@pytest.fixture()
 def client():
     with TestClient(api.app) as test_client:
         yield test_client
@@ -160,10 +188,11 @@ def test_speech_returns_to_idle_after_the_audio_duration(client, local_tts, monk
 
 
 def test_stop_interrupts_the_speech(client, local_tts):
+    """[FAZ C · C3] Konuşurken durdurmak = ARAYA GİRME: `interrupted` döner."""
     client.post("/api/speech/say", json={"text": "uzun cümle", "client_id": "spx"}).json()
     assert client.get("/api/speech/status").json()["state"] == "speaking"
     payload = client.post("/api/speech/stop?client_id=spx").json()
-    assert payload["status"] == "stopped"
+    assert payload["status"] == "interrupted"
     assert payload["state"] == "idle"
 
 
@@ -175,3 +204,69 @@ def test_locked_vault_blocks_speech(client, local_tts, monkeypatch):
     ).json()
     assert result["available"] is False
     assert result["reason"] == "policy:vault_locked"
+
+
+# =====================================================================
+# FAZ C · C3 — DİNLEYEN GÖZ (mikrofon -> yerel STT -> WS durumu)
+# =====================================================================
+def test_listen_transcribes_with_local_engine(client, local_stt):
+    result = client.post(
+        "/api/speech/listen?client_id=spx",
+        files={"file": ("mic.webm", b"RIFFfake-audio", "audio/webm")},
+    ).json()
+    assert result["available"] is True, result.get("reason")
+    assert result["transcript"].startswith("Mösyö")
+    assert result["engine"] == "local_endpoint"
+
+
+def test_listen_broadcasts_listening_state(client, local_stt):
+    with client.websocket_connect("/ws/spx") as ws:
+        client.post(
+            "/api/speech/listen?client_id=spx",
+            files={"file": ("mic.webm", b"RIFFfake-audio", "audio/webm")},
+        )
+        frames = []
+        for _ in range(40):
+            frame = json.loads(ws.receive_text())
+            if frame.get("type") == "speech":
+                frames.append(frame.get("state"))
+                if "listening" in frames and frames[-1] == "idle":
+                    break
+    assert "listening" in frames, frames
+
+
+def test_listen_rejects_missing_audio(client, local_stt):
+    response = client.post("/api/speech/listen?client_id=spx")
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "NO_AUDIO"
+
+
+def test_listen_without_engine_invents_no_transcript(client, monkeypatch, tmp_path):
+    monkeypatch.setenv("ENABLE_LOCAL_STT", "true")
+    monkeypatch.delenv("PINEAL_STT_URL", raising=False)
+    monkeypatch.setenv("PINEAL_SPEECH_DIR", str(tmp_path / "speech"))
+    result = client.post(
+        "/api/speech/listen?client_id=spx",
+        files={"file": ("mic.webm", b"RIFFfake-audio", "audio/webm")},
+    ).json()
+    assert result["available"] is False
+    assert result["transcript"] == ""
+    assert result["reason"]
+
+
+def test_interrupt_while_speaking_cuts_the_speech(client, local_tts):
+    client.post("/api/speech/say", json={"text": "uzun konuşma", "client_id": "spx"}).json()
+    assert client.get("/api/speech/status").json()["state"] == "speaking"
+    payload = client.post("/api/speech/stop?client_id=spx").json()
+    assert payload["status"] == "interrupted"
+    status = client.get("/api/speech/status").json()
+    assert status["state"] == "idle"
+    assert status["interrupted"] is True
+    assert status["interrupted_from"] == "speaking"
+
+
+def test_status_lists_known_conversation_states(client):
+    payload = client.get("/api/speech/status").json()
+    assert "listening" in payload["known_states"]
+    assert "interrupted" in payload["known_states"]
+    assert "speaking" in payload["known_states"]

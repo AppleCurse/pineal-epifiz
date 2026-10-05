@@ -96,7 +96,9 @@ export const agentStatusSource = writable<'redis_bus' | 'in_memory' | 'fallback'
 export const vaultLocked = writable<boolean>(true);
 // [FAZ C · C2/C3] KONUŞMA DURUMU: tek kaynak backend'dir (WS "speech" çerçevesi).
 // 'idle' -> suskun · 'speaking' -> konuşuyor · 'denied' -> motor yok/reddedildi.
-export const speechState = writable<'idle' | 'speaking' | 'denied'>('idle');
+export const speechState = writable<
+  'idle' | 'speaking' | 'listening' | 'interrupted' | 'denied'
+>('idle');
 export const lastSpeech = writable<any>(null);
 // Sesli yanıt ana şalteri (kullanıcı kapatabilir; varsayılan açık).
 function _initialVoice(): boolean {

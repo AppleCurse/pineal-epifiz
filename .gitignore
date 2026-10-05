@@ -43,6 +43,8 @@ memory/calibration/
 memory/crystals/
 memory/telemetry/
 memory/speech/
+# [FAZ C · C3] STT gecici kayit alani (transkriptten sonra silinir)
+memory/speech/.stt/
 cov_out.txt
 
 

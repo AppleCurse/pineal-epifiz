@@ -4352,6 +4352,22 @@ async def api_task_memory(
     return summary
 
 
+#: [FAZ C · C3] Mikrofon kaydı için üst sınır: 8 MiB (yetenekteki sınırla aynı).
+MAX_LISTEN_AUDIO_BYTES = 8 * 1024 * 1024
+
+
+class SpeechListenResponse(BaseModel):
+    """[FAZ C · C3] Mikrofonun duyduğu: metin YEREL motordan gelir, uydurulmaz."""
+
+    available: bool = False
+    reason: str | None = None
+    state: str = "idle"
+    transcript: str = ""
+    engine: str | None = None
+    chars: int = 0
+    machine_note: str = ""
+
+
 class SpeechSayPayload(BaseModel):
     """[FAZ C · C2] Seslendirme isteği."""
 
@@ -4366,6 +4382,78 @@ async def api_speech_status():
     from agent_core.services import speech
 
     return speech.status()
+
+
+@app.post("/api/speech/listen", response_model=SpeechListenResponse)
+async def api_speech_listen(
+    request: Request,
+    client_id: str = "default",
+    language: str = "",
+):
+    """[FAZ C · C3] Göz dinler: mikrofon kaydı YEREL motorda metne çevrilir.
+
+    Ses dosyası makineden dışarı çıkmaz (yalnız 127.0.0.1/::1/localhost).
+    Motor yoksa uydurma transkript DÖNMEZ: `available:false` + sebep.
+    Konuşma sürerken çağrılırsa önce SUSTURUR (araya girme).
+    """
+    from agent_core.services import speech
+
+    if not rate_limit(f"listen:{client_id}", "speech"):
+        return JSONResponse(
+            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla dinleme isteği"}},
+            status_code=429,
+        )
+
+    try:
+        form = await request.form()
+    except Exception:  # python-multipart kurulu değilse net hata (uydurma yanıt yok)
+        return JSONResponse(
+            {
+                "error": {
+                    "code": "MULTIPART_UNAVAILABLE",
+                    "message": "Dosya yükleme için python-multipart gerekli",
+                }
+            },
+            status_code=500,
+        )
+    upload = form.get("file")
+    if upload is None:
+        return JSONResponse(
+            {"error": {"code": "NO_AUDIO", "message": "Ses dosyası yok"}},
+            status_code=400,
+        )
+    audio = await upload.read()
+    if not audio:
+        return JSONResponse(
+            {"error": {"code": "EMPTY_AUDIO", "message": "Ses dosyası boş"}},
+            status_code=400,
+        )
+    if len(audio) > MAX_LISTEN_AUDIO_BYTES:
+        return JSONResponse(
+            {"error": {"code": "AUDIO_TOO_LARGE", "message": "Ses dosyası çok büyük"}},
+            status_code=413,
+        )
+
+    suffix = os.path.splitext(getattr(upload, "filename", "") or "")[1][:8] or ".webm"
+    # ARAYA GİRME: konuşurken dinlemeye geçiyorsa önce susar.
+    if speech.status()["state"] == "speaking":
+        speech.interrupt()
+    speech.start_listening()
+    broadcast_speech(client_id, {"state": "listening"})
+    result = await speech.listen(
+        audio,
+        suffix=suffix,
+        language=language or None,
+        vault_locked=not _check_vault_interlock(client_id),
+    )
+    payload = result.model_dump()
+    if result.available:
+        broadcast_speech(client_id, {"state": "idle", "transcript": result.transcript})
+        broadcast_log(client_id, "INFO", f"SES: duyuldu ({result.chars} karakter)")
+    else:
+        broadcast_speech(client_id, {"state": "denied", "reason": result.reason})
+        broadcast_log(client_id, "WARNING", f"SES DUYULAMADI: {result.reason}")
+    return payload
 
 
 @app.post("/api/speech/say")
@@ -4441,9 +4529,17 @@ async def api_speech_stop(client_id: str = "default"):
     """[FAZ C · C3] Araya girme: konuşma KESİLİR ve durum UI'a düşer."""
     from agent_core.services import speech
 
-    speech.stop()
-    broadcast_speech(client_id, {"state": "idle", "interrupted": True})
-    return {"status": "stopped", "state": speech.status()["state"]}
+    # [FAZ C · C3] ARAYA GİRME: konuşurken mikrofon açılırsa Aspasia SUSAR.
+    was_speaking = speech.status()["state"] == "speaking"
+    speech.interrupt() if was_speaking else speech.stop()
+    broadcast_speech(
+        client_id,
+        {"state": "interrupted" if was_speaking else "idle", "interrupted": was_speaking},
+    )
+    return {
+        "status": "interrupted" if was_speaking else "stopped",
+        "state": speech.status()["state"],
+    }
 
 
 @app.post("/api/tasks/{task_id}/cancel")

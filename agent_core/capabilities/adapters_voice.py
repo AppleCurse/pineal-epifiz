@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -272,3 +273,195 @@ class LocalTTSCapability(BaseCapability):
         if not response.content:
             return b"", "empty_audio"
         return response.content, ""
+
+
+# ---------------------------------------------------------------------------
+# FAZ C · C3 — YEREL STT (ses -> metin): "göz dinler"
+# ---------------------------------------------------------------------------
+
+#: Dinleme için kabul edilen ses dosyası tavanı (bellek/disk sınırı).
+MAX_AUDIO_BYTES = 8 * 1024 * 1024
+
+
+def _local_stt_endpoint() -> tuple[str, str]:
+    """(url, '') ya da ('', sebep): STT ucu da YALNIZ yerel olabilir."""
+    url = os.getenv("PINEAL_STT_URL", "").strip()
+    if not url:
+        return "", "no_local_endpoint"
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if host not in _LOCAL_HOSTS:
+        return "", "non_local_endpoint"
+    if parsed.scheme not in {"http", "https"}:
+        return "", "bad_endpoint_scheme"
+    return url, ""
+
+
+class LocalSTTCapability(BaseCapability):
+    """Yerel konuşma tanıma: `whisper` CLI ya da YEREL bir STT ucu.
+
+    Ses MAKİNEDEN ÇIKMAZ (uç yalnız localhost). Motor yoksa uydurma
+    transkript ÜRETİLMEZ: `available=False` + makine-okunur sebep.
+    """
+
+    id = "voice.stt.local"
+    kind = CapabilityKind.EXTRACTOR
+    license = "harici süreç/yerel uç (kod gömülmez)"
+    gates = frozenset({"vault", "ENABLE_LOCAL_STT"})
+    timeout_seconds = 120.0
+    description = "Yerel konuşma tanıma (whisper CLI veya localhost STT ucu)."
+
+    def backend(self) -> tuple[str, str]:
+        url, reason = _local_stt_endpoint()
+        if url:
+            return "local_endpoint", ""
+        if shutil.which(os.getenv("PINEAL_STT_CMD", "whisper") or "whisper"):
+            return "cli", ""
+        return "", reason
+
+    def availability(self) -> Availability:
+        engine, reason = self.backend()
+        if not engine:
+            return Availability.unavailable(reason)
+        return Availability.ok()
+
+    async def run(self, ctx: CapabilityContext) -> CapabilityResult:
+        audio = ctx.params.get("audio") or b""
+        if not isinstance(audio, (bytes, bytearray)) or not audio:
+            return CapabilityResult(
+                capability_id=self.id, available=False, unavailable_reason="empty_audio"
+            )
+        if len(audio) > MAX_AUDIO_BYTES:
+            return CapabilityResult(
+                capability_id=self.id, available=False, unavailable_reason="audio_too_large"
+            )
+
+        engine, reason = self.backend()
+        if not engine:
+            return CapabilityResult(
+                capability_id=self.id, available=False, unavailable_reason=reason
+            )
+
+        suffix = str(ctx.params.get("suffix") or ".wav")
+        language = str(ctx.params.get("language") or os.getenv("PINEAL_STT_LANG", "") or "").strip()
+        workdir = Path(speech_dir()) / ".stt"
+        try:
+            workdir.mkdir(parents=True, exist_ok=True)
+            audio_path = workdir / f"in_{hashlib.sha256(bytes(audio)).hexdigest()[:16]}{suffix}"
+            if not audio_path.exists():
+                audio_path.write_bytes(bytes(audio))
+        except OSError as exc:
+            return CapabilityResult(
+                capability_id=self.id,
+                available=False,
+                unavailable_reason="write_failed",
+                error=type(exc).__name__,
+            )
+
+        if engine == "cli":
+            text, engine_reason = await self._run_cli(audio_path, language, workdir)
+        else:
+            text, engine_reason = await self._run_local_endpoint(audio_path)
+
+        if not text:
+            return CapabilityResult(
+                capability_id=self.id,
+                available=False,
+                unavailable_reason=engine_reason or "empty_transcript",
+                notes={"engine": engine},
+            )
+
+        item = make_evidence(
+            content=text[:2000],
+            source_engine=f"stt_{engine}",
+            epistemic_type="observation",
+            provenance_refs=[str(audio_path)],
+            observed_at=datetime.now(timezone.utc),
+            scope={
+                "kind": "transcript",
+                "engine": engine,
+                "bytes": len(audio),
+                "chars": len(text),
+                "language": language,
+            },
+            source_metrics={"chars": len(text), "bytes": len(audio)},
+        )
+        return CapabilityResult(
+            capability_id=self.id,
+            available=True,
+            items=(item,),
+            payload={"transcript": text, "engine": engine, "chars": len(text)},
+            notes={"engine": engine},
+        )
+
+    async def _run_cli(self, audio_path: Path, language: str, workdir: Path) -> tuple[str, str]:
+        command = os.getenv("PINEAL_STT_CMD", "whisper").strip() or "whisper"
+        model = os.getenv("PINEAL_STT_MODEL", "base").strip() or "base"
+        args = [
+            command,
+            str(audio_path),
+            "--model",
+            model,
+            "--output_format",
+            "txt",
+            "--output_dir",
+            str(workdir),
+        ]
+        if language:
+            args += ["--language", language]
+        try:
+            proc = await asyncio.wait_for(
+                asyncio.create_subprocess_exec(
+                    *args,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                ),
+                timeout=self.timeout_seconds,
+            )
+            _stdout, stderr = await asyncio.wait_for(
+                proc.communicate(), timeout=self.timeout_seconds
+            )
+        except asyncio.TimeoutError:
+            return "", "timeout"
+        except (OSError, FileNotFoundError) as exc:
+            return "", f"engine_error:{type(exc).__name__}"
+
+        if proc.returncode != 0:
+            detail = (stderr or b"").decode("utf-8", "replace").strip()[:160]
+            return "", f"transcribe_failed:{detail or proc.returncode}"
+
+        transcript_path = workdir / f"{audio_path.stem}.txt"
+        if not transcript_path.exists():
+            return "", "no_transcript_file"
+        text = transcript_path.read_text(encoding="utf-8", errors="replace").strip()
+        return text, ""
+
+    async def _run_local_endpoint(self, audio_path: Path) -> tuple[str, str]:
+        url, reason = _local_stt_endpoint()
+        if not url:
+            return "", reason
+        try:
+            import httpx
+        except ImportError:
+            return "", "dependency_missing:httpx"
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+                response = await client.post(
+                    url, files={"file": (audio_path.name, audio_path.read_bytes())}
+                )
+        except Exception as exc:
+            return "", f"endpoint_error:{type(exc).__name__}"
+        if response.status_code >= 400:
+            return "", f"endpoint_status:{response.status_code}"
+        raw = (response.text or "").strip()
+        if not raw:
+            return "", "empty_transcript"
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                text = str(parsed.get("text") or parsed.get("transcript") or "").strip()
+                if text:
+                    return text, ""
+        except (ValueError, TypeError):
+            pass
+        return raw, ""

@@ -211,4 +211,12 @@ konuyor). Sıradaki faz: **FAZ C — SES & NEFES** — C1 jenerik yanıt filtres
 telemetriye yazılıyor) · **C2 yerel TTS TAMAM** (Aspasia konuşuyor: motor
 yerel — piper CLI veya localhost uç; uzak uç reddediliyor, ses makineden
 çıkmıyor; konuşma durumu speaking/idle/denied WebSocket'ten arayüze akıyor).
-Sırada: C3 sesli etkileşim + araya girme · C4 sesli rapor okuma.
+**C3 TAMAM (2026-10-05) — göz dinler ve susar.** `voice.stt.local` omurgaya
+girdi; mikrofon kaydı tarayıcıda kalıyor, transkript yalnız yerel motorda
+(whisper CLI veya 127.0.0.1 ucu) üretiliyor; uzak uç reddediliyor, motor
+yoksa transkript uydurulmuyor. Kokpitte MİK düğmesi: bas → dinliyor, bırak →
+duyulan metin log'a düşer ve Aspasia'ya gider. **Araya girme gerçek:** konuşma
+sürerken mikrofon açılırsa Aspasia susar (`interrupted` + WebSocket çerçevesi).
+İris beş konuşma hâlini taşıyor (idle · listening · speaking · interrupted ·
+denied): dinlerken gözbebeği büyür, konuşurken titrer.
+Sırada: C4 sesli rapor okuma.

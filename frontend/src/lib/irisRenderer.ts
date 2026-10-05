@@ -35,6 +35,12 @@ export class IrisRenderer {
   private isProcessing = false;
   private processingIntensity = 0;
 
+  // [FAZ C · C3] Göz DİNLER ve SUSAR: dinlerken gözbebeği BÜYÜR,
+  // konuşurken iris hafif titrer. Durum backend'den gelir (uydurma yok).
+  private isListening = false;
+  private isSpeaking = false;
+  private listenAmount = 0;
+
   // Organic drift
   private driftX = 0;
   private driftY = 0;
@@ -101,6 +107,16 @@ export class IrisRenderer {
     this.processingIntensity = intensity;
   }
 
+  /** Dinleme: gözbebeği yavaşça büyür (karşısındakini duyan göz). */
+  public setListening(active: boolean) {
+    this.isListening = active;
+  }
+
+  /** Konuşma: iris hafif titrer (canlı varlık). */
+  public setSpeaking(active: boolean) {
+    this.isSpeaking = active;
+  }
+
   public start() {
     if (this.alive) return;
     this.alive = true;
@@ -129,8 +145,14 @@ export class IrisRenderer {
     // Processing flutter
     const processingFlutter = this.isProcessing ? Math.sin(elapsed * 3.5) * this.processingIntensity : 0;
 
-    const desiredX = this.targetX + organicDriftX + processingFlutter;
-    const desiredY = this.targetY + organicDriftY;
+    // [FAZ C · C3] Dinleme yumuşak geçişle açılır/kapanır (ani zıplama yok).
+    const listenTarget = this.isListening ? 1 : 0;
+    this.listenAmount += (listenTarget - this.listenAmount) * 0.06;
+    // Konuşurken iris titrer: küçük, canlı bir salınım.
+    const speakTremble = this.isSpeaking ? Math.sin(elapsed * 6.5) * 0.9 : 0;
+
+    const desiredX = this.targetX + organicDriftX + processingFlutter + speakTremble;
+    const desiredY = this.targetY + organicDriftY + speakTremble * 0.4;
 
     // Lerp 0.04 - yavas ve kaliteli akis
     this.currentX += (desiredX - this.currentX) * 0.04;
@@ -193,7 +215,8 @@ export class IrisRenderer {
     // Pupil - nefes alir
     const pupilBase = irisRadius * 0.36;
     const pupilPulse = this.isProcessing ? Math.sin(elapsed * 1.8) * 0.12 + 0.88 : 1 + Math.sin(elapsed * 0.5) * 0.05;
-    const pupilSize = pupilBase * pupilPulse;
+    // Dinlerken gözbebeği %22'ye kadar BÜYÜR (odak = karşısındaki insan).
+    const pupilSize = pupilBase * pupilPulse * (1 + this.listenAmount * 0.22);
     const pupilGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, pupilSize);
     pupilGrad.addColorStop(0, '#1a1a1a');
     pupilGrad.addColorStop(0.46, '#000');

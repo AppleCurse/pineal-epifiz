@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased — 2026-10-05 — FAZ C · SES & NEFES (3): göz dinler ve susar
+
+- **C3 · DİNLEYEN GÖZ — YEREL STT.** `LocalSTTCapability` (`voice.stt.local`,
+  `EXTRACTOR`) omurgaya girdi: aynı localhost izin listesi, aynı kasa
+  interlock'u. İki yerel yol: `whisper` CLI (`PINEAL_STT_CMD/MODEL/LANG`) veya
+  yerel uç (`PINEAL_STT_URL` — yalnız `127.0.0.1`/`::1`/`localhost`, UZAK uç
+  reddedilir). Motor yoksa transkript **UYDURULMAZ**: `available:false` +
+  makine-okunur sebep. Kayıt 8 MiB sınırını aşarsa `audio_too_large`.
+- **MİKROFON.** Kayıt tarayıcıda tutulur; dışarı yalnız transkript için yerel
+  motorun duyacağı ses gider. Kokpitte **MİK** düğmesi: bas → `DİNLİYOR`,
+  bırak → duyulan metin log'a düşer ve Aspasia'ya gider (eller serbest).
+  Yeni uç: `POST /api/speech/listen` (çok parçalı `file`).
+- **ARAYA GİRME.** Aspasia konuşurken mikrofon açılırsa **SUSAR**: `POST
+  /api/speech/stop` artık gerçek kesme — `{"status":"interrupted"}` + WebSocket
+  çerçevesi `{"state":"interrupted"}`. Kesme izi kalıcı: `/api/speech/status`
+  `interrupted` + `interrupted_from` verir.
+- **İRİS KONUŞMA DURUMUNU TAŞIYOR.** `speechState` artık beş hâl bilir:
+  `idle · listening · speaking · interrupted · denied`. Dinlerken gözbebeği
+  büyür (+%22), konuşurken iris titrer; SES pili `DİNLİYOR` / `SUSTURULDU`
+  yazar.
+- **Bağımlılık:** `python-multipart` (dosya yükleme için) eklendi.
+- **Test:** +17 (birim 11 · entegrasyon 6). Tam koşu: **birim 1380P/0F**,
+  **entegrasyon 117P/0F** — gerileme yok. Frontend: `svelte-check` ve `npm run
+  build` temiz.
+
 ## Unreleased — 2026-10-05 — FAZ B · BEYİN & HAFIZA (1): spektrum, gerçek örgü, değişim izleme
 
 - **B6 · GERÇEK SPEKTRAL ANALİZ (FFT).** `FrequencyReport.dominant_period_days`
