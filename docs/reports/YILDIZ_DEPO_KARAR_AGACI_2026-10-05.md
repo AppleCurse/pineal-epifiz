@@ -502,7 +502,7 @@ Gerekçe özeti: Pineal bir **adli gözlem ve doğrulama** istasyonudur; saldır
 
 ---
 
-## 5. KIRMIZI LİSTE — 42 DEPO VE GEREKÇELERİ
+## 5. KIRMIZI LİSTE — 43 DEPO VE GEREKÇELERİ
 
 Bu bölüm "neden almadık" sorusunun kalıcı kaydıdır. Bir daha masaya gelmez.
 
@@ -624,7 +624,7 @@ Karar kodları: **E** entegre · **A** adaptör (kapı arkası) · **İ** ilham/
 | 76 | K15·Geliştirici deneyimi/eğitim | `zoxide` | **İ** | dizin atlama |
 | 77 | K15·Geliştirici deneyimi/eğitim | `fzf` | **İ** | bulanık bulucu |
 | 78 | K15·Geliştirici deneyimi/eğitim | `fd` | **İ** | find alternatifi |
-| 79 | K15·Geliştirici deneyimi/eğitim | `ripgrep` | **İ** | aranan-adli-arama aracı |
+| 79 | K15·Geliştirici deneyimi/eğitim | `ripgrep` | **İ** | hızlı regex arama (adli denetim iş akışı) |
 | 80 | K15·Geliştirici deneyimi/eğitim | `eza` | **İ** | ls alternatifi |
 | 81 | K15·Geliştirici deneyimi/eğitim | `chezmoi` | **İ** | ortam tekrarlanabilirliği |
 | 82 | K10·Görsel/doküman/OCR | `HanLP` | **A** | CJK NLP; Y7 gerektiğinde |
