@@ -181,8 +181,16 @@ Onay ver, giriyorum.
 
 ## 9 · UYGULAMA DURUMU (2026-10-05)
 
-**FAZ A TAMAM.** A1 · A2 · A3 · A4 · A5 · A6 · A7 bağlandı (A8 WhatsMyName
-veri tazeleme Faz B'de maigret DB'siyle birlikte gelecek).
+**FAZ A TAMAM.** A1 · A2 · A3 · A4 · A5 · A6 · A7 · A8 bağlandı.
+
+**[A8 · 2026-10-05] Site listesi artık tazeleniyor.** `agent_core/services/
+maigret_db_refresh.py` WhatsMyName/sherlock verisini maigret şemasına
+birleştirir — üç kuralla: kaynakta olmayan alan uydurulmaz, maigret'in elle
+kürasyonu ezilmez, desteklenmeyen kip atlanıp sayılır. `PINEAL_MAIGRET_DB`
+doluysa tarayıcı tazelenmiş listeden koşar ve `db_source` + `db_sites`
+raporlar; bozuk dosyada sessizce eski listeye dönülmez. Gerçek ölçüm (maigret
+0.6.6 tabanı + sherlock-project 0.16.2): 5897 → 5958 site (+61 yeni · 106
+dolduruldu · 30 atlandı: 27 desteklenmeyen kip + 3 boş URL).
 
 - Temiz metin omurgası üretimde: `extract_web_text` = trafilatura → crawl4ai →
   scrapling. Public-web araştırması artık bu omurgadan besleniyor.
@@ -228,3 +236,19 @@ Böylece **FAZ C — SES & NEFES TAMAM**: C1 jenerik yanıt filtresi · C2 yerel
 TTS · C3 dinleme + araya girme · C4 sesli rapor. Sıradaki faz:
 **FAZ D — BİRLEŞİM & İHRACAT** (D4 dil tespiti → D6 kurum hedefi → D2 yerel
 jüri → D1 MCP → D3 medya adli hattı → D5 rapor fabrikası).
+
+**D4 TAMAM (2026-10-05) — dil ölçülüyor, çeviri yerelde.** Tespit
+deterministik (`services/language.py`): yazı sistemi Unicode'dan ölçülüyor,
+dil puanı karakter işaretleri + durma sözcüklerinden hesaplanıyor; model ve
+ağ yok. tr · en · de · es · fr · ru · az doğru ölçülüyor; sinyal yoksa etiket
+UYDURULMUYOR (`unknown` + sebep: `too_short` / `no_signal` /
+`script_unsupported:<script>`). Güven dürüst: tr/az ayrımı zor olduğundan
+marj küçülür ve güven ~0.50 çıkar; üç sözcüklük metin 0.99 güven alamaz.
+Çeviri ses ve dinlemeyle aynı kurala bağlı: yalnız localhost ucu ya da yerel
+CLI (`PINEAL_TRANSLATE_CMD`); uzak uç reddediliyor, motor yoksa çeviri
+üretilmiyor. Web çıkarıcılar (trafilatura → crawl4ai → scrapling) çıkardıkları
+metnin dilini kanıt kapsamına işliyor; kokpitte **DİL** pili bu gerçek tespiti
+gösteriyor. Uçlar: `GET /api/language/status` · `POST /api/language/detect` ·
+`POST /api/language/translate`. Her iki yetenek (`extractor.text.language`,
+`extractor.text.translate_local`) omurgada ve `vault` kapısında — kasa
+kilitliyken koşamazlar (istisna yok). Kalan: **D6 → D2 → D1 → D3 → D5**.

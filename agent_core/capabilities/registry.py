@@ -168,6 +168,10 @@ def bootstrap(
             ScraplingCapability,
             TrafilaturaCapability,
         )
+        from agent_core.capabilities.adapters_language import (
+            LanguageDetectCapability,
+            LocalTranslateCapability,
+        )
 
         capabilities = (
             # --- kimlik / OSINT
@@ -187,6 +191,9 @@ def bootstrap(
             LocalTTSCapability(),
             LocalSTTCapability(),
             ReportScriptCapability(),
+            # --- dil (FAZ D · D4): tespit deterministik, çeviri yerel
+            LanguageDetectCapability(),
+            LocalTranslateCapability(),
         )
     for cap in capabilities:
         if reg.has(cap.id):

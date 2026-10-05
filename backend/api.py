@@ -495,6 +495,9 @@ RATE_LIMITS = {
     # [FAZ C · C2] Seslendirme: yerel motor da olsa sınırsız istek kabul
     # edilmez (disk + CPU). Ölçülen ihtiyaç: tur başına birkaç cümle.
     "speech": (30, 60),
+    # [FAZ D · D4] Dil tespiti/çeviri: tespit saf hesaptır ama çeviri yerel
+    # motor çalıştırır; ikisi de sınırsız istek kabul etmez.
+    "language": (60, 60),
 }  # (request count, window seconds)
 class _RateBucket:
     """Kayan pencere olayları + BU kovaya ait pencere süresi.
@@ -4580,6 +4583,149 @@ async def api_speech_stop(client_id: str = "default"):
         "status": "interrupted" if was_speaking else "stopped",
         "state": speech.status()["state"],
     }
+
+
+# ---------------------------------------------------------------------------
+# [FAZ D · D4] DİL: tespit deterministik (model/ağ yok), çeviri YEREL.
+# Uydurma yok: sinyal yoksa etiket dönmez, motor yoksa çeviri dönmez.
+# ---------------------------------------------------------------------------
+
+
+class LanguageDetectPayload(BaseModel):
+    """[FAZ D · D4] Dil tespiti isteği."""
+
+    text: str = Field(min_length=1, max_length=20000)
+    client_id: str = Field(default="default", max_length=128)
+
+
+class LanguageTranslatePayload(BaseModel):
+    """[FAZ D · D4] Yerel çeviri isteği (metin makineden çıkmaz)."""
+
+    text: str = Field(min_length=1, max_length=2000)
+    target: str = Field(default="en", min_length=2, max_length=8)
+    client_id: str = Field(default="default", max_length=128)
+
+
+@app.get("/api/language/status")
+async def api_language_status():
+    """[FAZ D · D4] Dil hattının GERÇEK durumu: tespit her zaman yereldir;
+    çeviri motoru var mı, kapı açık mı, kanıta işlenen SON ölçüm ne?"""
+    from agent_core.services import language, translation
+
+    return {
+        "detect": {"available": True, "method": "deterministic_local"},
+        "translate": translation.status(),
+        "last": language.last_finding(),
+    }
+
+
+@app.post("/api/language/detect")
+async def api_language_detect(req: LanguageDetectPayload):
+    """[FAZ D · D4] Metnin dilini ölçer: omurga üzerinden (kasa kapısı dâhil).
+
+    Sinyal yoksa `language=unknown` + sebep döner; etiket UYDURULMAZ.
+    Kasa kilitliyken tespit de koşamaz (Tüzük Md.4, istisna yok).
+    """
+    from agent_core.capabilities.base import CapabilityContext
+    from agent_core.capabilities.policy import PolicyState
+    from agent_core.capabilities.registry import bootstrap
+    from agent_core.capabilities.runner import CapabilityRunner
+
+    if not rate_limit(f"language:{req.client_id}", "language"):
+        return JSONResponse(
+            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla dil isteği"}},
+            status_code=429,
+        )
+
+    runner = CapabilityRunner(registry=bootstrap())
+    state = PolicyState(
+        enabled_flags={}, vault_locked=not _check_vault_interlock(req.client_id), rate_ok=True
+    )
+    result = await runner.run(
+        "extractor.text.language", CapabilityContext(subject=req.text), state=state
+    )
+    finding = result.payload
+    payload = {
+        "available": bool(result.available),
+        "denied_by": result.denied_by,
+        "reason": result.unavailable_reason,
+        "language": getattr(finding, "language", "") if result.available else "",
+        "confidence": getattr(finding, "confidence", 0.0) if result.available else 0.0,
+        "script": getattr(finding, "script", "") if result.available else "",
+        "detect_reason": getattr(finding, "reason", None) if result.available else None,
+        "chars": getattr(finding, "chars", 0) if result.available else 0,
+    }
+    if result.denied_by:
+        broadcast_log(req.client_id, "WARNING", f"DİL: tespit engellendi — kasa:{result.denied_by}")
+    elif payload["language"] == "unknown":
+        broadcast_log(req.client_id, "INFO", f"DİL: ölçülemedi — {payload['detect_reason']}")
+    else:
+        broadcast_log(
+            req.client_id,
+            "INFO",
+            f"DİL: {payload['language']} · güven {payload['confidence']:.2f}",
+        )
+    return payload
+
+
+@app.post("/api/language/translate")
+async def api_language_translate(req: LanguageTranslatePayload):
+    """[FAZ D · D4] Metni YEREL motorda çevirir: ses/dinleme ile aynı kural.
+
+    Uzak uç REDDEDİLİR (`non_local_endpoint`); motor yoksa çeviri ÜRETİLMEZ
+    (`available:false` + sebep). Kaynak metin hedef dilmiş gibi DÖNMEZ.
+    """
+    from agent_core.capabilities.base import CapabilityContext
+    from agent_core.capabilities.policy import PolicyState
+    from agent_core.capabilities.registry import bootstrap
+    from agent_core.capabilities.runner import CapabilityRunner
+    from agent_core.services.translation import GATE, MAX_TEXT_CHARS, status as _translation_status
+
+    if not rate_limit(f"language:{req.client_id}", "language"):
+        return JSONResponse(
+            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla çeviri isteği"}},
+            status_code=429,
+        )
+
+    runner = CapabilityRunner(registry=bootstrap())
+    state = PolicyState(
+        enabled_flags={GATE: _flag_env(GATE)},
+        vault_locked=not _check_vault_interlock(req.client_id),
+        rate_ok=True,
+    )
+    result = await runner.run(
+        "extractor.text.translate_local",
+        CapabilityContext(subject=req.text[:MAX_TEXT_CHARS], params={"target": req.target}),
+        state=state,
+    )
+    translated = ""
+    if result.items:
+        translated = result.items[0].content
+    payload = {
+        "available": bool(result.available and result.items),
+        "denied_by": result.denied_by,
+        "reason": result.unavailable_reason,
+        "text": translated,
+        "source_language": result.notes.get("source_language", ""),
+        "source_confidence": result.notes.get("source_confidence", 0.0),
+        "target_language": req.target,
+        "engine": result.notes.get("engine", ""),
+    }
+    if payload["available"]:
+        broadcast_log(
+            req.client_id,
+            "INFO",
+            f"DİL: çeviri tamam — {payload['source_language']} → {req.target} ({payload['engine']})",
+        )
+    else:
+        why = result.denied_by or result.unavailable_reason or _translation_status().get("reason")
+        broadcast_log(req.client_id, "WARNING", f"DİL: ÇEVİRİ ÜRETİLEMEDİ — {why}")
+    return payload
+
+
+def _flag_env(name: str) -> bool:
+    """[FAZ D · D4] Env kapısı okuma (speech'teki `_flag` ile aynı dar taraf)."""
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 @app.post("/api/tasks/{task_id}/cancel")

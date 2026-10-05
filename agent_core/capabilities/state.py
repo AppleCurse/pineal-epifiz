@@ -37,6 +37,8 @@ MANAGED_GATE_FLAGS: tuple[str, ...] = (
     "ENABLE_IG_SECONDARY",
     "ENABLE_AGENT_REACH",
     "ENABLE_SEARXNG",
+    # [FAZ D · D4] Çeviri yerel motora bağlıdır; varsayılan KAPALI.
+    "ENABLE_LOCAL_TRANSLATE",
 )
 
 _TRUTHY = frozenset({"1", "true", "yes", "on", "enabled"})

@@ -51,7 +51,10 @@ class MaigretCapability(BaseCapability):
     # karar mercii operatördür (2026-10-05, K1 iptal).
     gates = frozenset({"vault", "ENABLE_MAIGRET"})
     timeout_seconds = 75.0
-    description = "Kullanıcı adının 3300+ sitedeki varlığını tarar (kanıtlı)."
+    description = (
+        "Kullanıcı adının binlerce sitedeki varlığını tarar (kanıtlı); "
+        "liste PINEAL_MAIGRET_DB ile tazelenir ve kaynak raporlanır (A8)."
+    )
 
     def availability(self) -> Availability:
         if not _flag("ENABLE_MAIGRET"):
@@ -69,6 +72,9 @@ class MaigretCapability(BaseCapability):
             "provider": getattr(scan, "provider", "maigret"),
             "scanned_count": getattr(scan, "scanned_count", 0),
             "error_count": getattr(scan, "error_count", 0),
+            # [A8] Taramanın hangi listeyle koştuğu raporda görünür (gizlenmez).
+            "db_source": getattr(scan, "db_source", ""),
+            "db_sites": getattr(scan, "db_sites", 0),
         }
 
         if not getattr(scan, "available", False):
