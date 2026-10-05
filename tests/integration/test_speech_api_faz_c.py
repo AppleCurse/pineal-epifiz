@@ -209,6 +209,7 @@ def test_locked_vault_blocks_speech(client, local_tts, monkeypatch):
 # FAZ C · C3 — DİNLEYEN GÖZ (mikrofon -> yerel STT -> WS durumu)
 # =====================================================================
 def test_listen_transcribes_with_local_engine(client, local_stt):
+    pytest.importorskip("multipart")  # dosya yükleme (python-multipart)
     result = client.post(
         "/api/speech/listen?client_id=spx",
         files={"file": ("mic.webm", b"RIFFfake-audio", "audio/webm")},
@@ -219,6 +220,7 @@ def test_listen_transcribes_with_local_engine(client, local_stt):
 
 
 def test_listen_broadcasts_listening_state(client, local_stt):
+    pytest.importorskip("multipart")  # dosya yükleme (python-multipart)
     with client.websocket_connect("/ws/spx") as ws:
         client.post(
             "/api/speech/listen?client_id=spx",
@@ -235,12 +237,14 @@ def test_listen_broadcasts_listening_state(client, local_stt):
 
 
 def test_listen_rejects_missing_audio(client, local_stt):
+    pytest.importorskip("multipart")  # dosya yükleme (python-multipart)
     response = client.post("/api/speech/listen?client_id=spx")
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "NO_AUDIO"
 
 
 def test_listen_without_engine_invents_no_transcript(client, monkeypatch, tmp_path):
+    pytest.importorskip("multipart")  # dosya yükleme (python-multipart)
     monkeypatch.setenv("ENABLE_LOCAL_STT", "true")
     monkeypatch.delenv("PINEAL_STT_URL", raising=False)
     monkeypatch.setenv("PINEAL_SPEECH_DIR", str(tmp_path / "speech"))
