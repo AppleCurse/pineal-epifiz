@@ -152,8 +152,33 @@ def bootstrap(
             MaigretCapability,
             SocidCapability,
         )
+        from agent_core.capabilities.adapters_sensors import (
+            AgentReachCapability,
+            InstagrapiCapability,
+            SearXNGCapability,
+            XTwscrapeCapability,
+        )
+        from agent_core.capabilities.adapters_web import (
+            Crawl4AICapability,
+            ScraplingCapability,
+            TrafilaturaCapability,
+        )
 
-        capabilities = (MaigretCapability(), HoleheCapability(), SocidCapability())
+        capabilities = (
+            # --- kimlik / OSINT
+            MaigretCapability(),
+            HoleheCapability(),
+            SocidCapability(),
+            # --- temiz metin omurgası (sıra: trafilatura → crawl4ai → scrapling)
+            TrafilaturaCapability(),
+            Crawl4AICapability(),
+            ScraplingCapability(),
+            # --- sensörler
+            XTwscrapeCapability(),
+            InstagrapiCapability(),
+            AgentReachCapability(),
+            SearXNGCapability(),
+        )
     for cap in capabilities:
         if reg.has(cap.id):
             continue

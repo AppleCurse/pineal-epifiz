@@ -33,7 +33,52 @@ class OsintInvestigatorAgent:
         # osint.industries API key vault'tan veya env'den alınabilir.
         self.osint_api_key = os.getenv("OSINT_INDUSTRIES_KEY", None)
 
-    async def _apply_username_scan(self, profile: OsintProfile, clean_username: str) -> OsintProfile:
+    # ---------------------------------------------------------------- omurga
+    @staticmethod
+    def _policy_state(payload: Dict[str, Any] | None = None):
+        """Görev payload'ından capability politika durumu (tek kaynak: state.py).
+
+        Kasa interlock'u API sınırında uygulanır (`/api/initiate` → 423); ajan
+        içinde bilinmiyorsa dar taraf seçilir: `vault_locked=True` (hiçbir
+        dış yetenek koşmaz). Payload'da `policy` varsa o değerler geçerlidir.
+        """
+        from agent_core.capabilities.state import policy_state
+
+        overrides = (payload or {}).get("policy") or {}
+        return policy_state(
+            vault_locked=bool(overrides.get("vault_locked", True)),
+            rate_ok=overrides.get("rate_ok"),
+        )
+
+    @staticmethod
+    async def _run_spine(
+        capability_id: str,
+        subject: str,
+        payload: Dict[str, Any] | None = None,
+        params: Dict[str, Any] | None = None,
+    ):
+        """Yeteneği OMURGADAN koşar + çıktısını kanıt zaman çizelgesine mühürler.
+
+        Dönen ikili: ``(CapabilityResult, EvidenceTimeline)``. Böylece maigret/
+        holehe bulgusu artık yalnız bir profile dict'i değil, MÜHÜRLÜ kanıttır;
+        çocuk kilidi, kasa ve env kapıları otomatik uygulanır (Faz A · Retina).
+        """
+        from agent_core.capabilities import (
+            CapabilityContext,
+            bootstrap,
+            run_capability,
+        )
+        from agent_core.capabilities.timeline_bridge import seal_results
+
+        bootstrap()
+        result = await run_capability(
+            capability_id,
+            CapabilityContext(subject=subject, params=params or {}),
+            state=OsintInvestigatorAgent._policy_state(payload),
+        )
+        return result, seal_results([result])
+
+    async def _apply_username_scan(self, profile: OsintProfile, clean_username: str, payload: Dict[str, Any] | None = None) -> OsintProfile:
         """[FAZ 2] Maigret kullanıcı-adı taramasını dürüstçe birleştirir.
 
         - Kapı (ENABLE_MAIGRET) kapalıysa / tarama kullanılamıyorsa: profil
@@ -43,13 +88,34 @@ class OsintInvestigatorAgent:
           olarak girer; güven = gözlenen kapsama (uydurma skor yok).
         - Güvenilir yokluk (sıfır hata + sıfır eşleşme): data_confidence=True
           kalır, düşük skor dürüstçe sıfır; sebep 'username_scan_no_match'.
+
+        [FAZ A] Tarama artık doğrudan servise değil, CAPABILITY OMURGASINA
+        gider (`sensor.identity.maigret`): kasa/env kapıları, çocuk kilidi ve
+        timeout aynı yerden uygulanır; çıktı `EvidenceTimeline`'a mühürlenir
+        (`username_scan_evidence`). Profil alanlarının anlamı DEĞİŞMEZ.
         """
+        from agent_core.services.maigret_scanner import MaigretScanResult
+
         try:
-            from agent_core.services.maigret_scanner import scan_username
-            scan = await scan_username(clean_username)
+            result, timeline = await self._run_spine(
+                "sensor.identity.maigret", clean_username, payload
+            )
         except Exception as exc:  # tarama asıl OSINT sonucunu asla bozmasın
             logger.warning("maigret scan skipped: %s: %s", type(exc).__name__, str(exc)[:80])
             return profile
+
+        scan = result.payload if isinstance(result.payload, MaigretScanResult) else None
+        if scan is None:
+            # Kapı/kasa/çocuk kilidi reddi: sebep korunur, site UYDURULMAZ.
+            scan = MaigretScanResult(
+                requested_username=clean_username,
+                available=False,
+                reason=(result.unavailable_reason or "unavailable"),
+            )
+        sealed = {
+            "username_scan_evidence": timeline.model_dump(mode="json"),
+            "username_scan_sealed": len(timeline.entries),
+        }
 
         if scan.available and scan.found_sites:
             merged = sorted({*profile.associated_platforms, *(h.site for h in scan.found_sites)})
@@ -60,6 +126,7 @@ class OsintInvestigatorAgent:
                 "confidence": round(coverage, 3),
                 "fallback_reason": None if not profile.fallback_reason else profile.fallback_reason,
                 "username_scan": scan.model_dump(),
+                **sealed,
             })
         if scan.available and scan.scanned_count and scan.error_count == 0:
             return profile.model_copy(update={
@@ -67,10 +134,11 @@ class OsintInvestigatorAgent:
                 "confidence": 0.0,
                 "fallback_reason": "username_scan_no_match",
                 "username_scan": scan.model_dump(),
+                **sealed,
             })
-        return profile.model_copy(update={"username_scan": scan.model_dump()})
+        return profile.model_copy(update={"username_scan": scan.model_dump(), **sealed})
 
-    async def _apply_email_scan(self, profile: OsintProfile, email: str) -> OsintProfile:
+    async def _apply_email_scan(self, profile: OsintProfile, email: str, payload: Dict[str, Any] | None = None) -> OsintProfile:
         """[FAZ 3] Holehe e-posta kayıt taramasını dürüstçe birleştirir.
 
         - Kapı (ENABLE_HOLEHE) kapalıysa / tarama kullanılamıyorsa: profil
@@ -83,12 +151,29 @@ class OsintInvestigatorAgent:
           gözlem yoksa confidence 0.0 + 'email_scan_no_match'; aksi halde
           mevcut değerler korunur (başka taramanın kanıtını ezmez).
         """
+        # [FAZ A] holehe de omurgadan koşar (sensor.identity.holehe) ve çıktısı
+        # mühürlü kanıt olur; kapı/kasa reddi sebep olarak korunur.
+        from agent_core.services.holehe_scanner import HoleheScanResult
+
         try:
-            from agent_core.services.holehe_scanner import scan_email
-            scan = await scan_email(email)
+            result, timeline = await self._run_spine(
+                "sensor.identity.holehe", email, payload
+            )
         except Exception as exc:  # tarama asıl OSINT sonucunu asla bozmasın
             logger.warning("holehe scan skipped: %s: %s", type(exc).__name__, str(exc)[:80])
             return profile
+
+        scan = result.payload if isinstance(result.payload, HoleheScanResult) else None
+        if scan is None:
+            scan = HoleheScanResult(
+                requested_email=email,
+                available=False,
+                reason=(result.unavailable_reason or "unavailable"),
+            )
+        sealed = {
+            "email_scan_evidence": timeline.model_dump(mode="json"),
+            "email_scan_sealed": len(timeline.entries),
+        }
 
         if scan.available and scan.found_sites:
             merged = sorted({*profile.associated_platforms, *(h.site for h in scan.found_sites)})
@@ -99,6 +184,7 @@ class OsintInvestigatorAgent:
                 "data_confidence": True,
                 "confidence": confidence,
                 "email_scan": scan.model_dump(),
+                **sealed,
             })
         if scan.available and scan.scanned_count and scan.error_count == 0:
             no_platforms = not profile.associated_platforms
@@ -107,6 +193,7 @@ class OsintInvestigatorAgent:
                 "confidence": 0.0 if no_platforms else profile.confidence,
                 "fallback_reason": "email_scan_no_match" if no_platforms else profile.fallback_reason,
                 "email_scan": scan.model_dump(),
+                **sealed,
             })
         return profile.model_copy(update={"email_scan": scan.model_dump()})
 
@@ -165,11 +252,13 @@ class OsintInvestigatorAgent:
             )
             # [FAZ 2] ENABLE_MAIGRET kapalıysa profil alanları değişmez; kapı
             # açıksa yalnız gerçek gözlemler dürüstçe birleştirilir.
-            profile = await self._apply_username_scan(profile, clean_username)
+            profile = await self._apply_username_scan(profile, clean_username, payload)
             # [FAZ 3] Bağlı e-posta varsa holehe kayıt taraması (ENABLE_HOLEHE
             # kapalıysa profil alanları yine değişmez; yalnız provenance eklenir).
             if profile.connected_emails:
-                profile = await self._apply_email_scan(profile, profile.connected_emails[0])
+                profile = await self._apply_email_scan(
+                    profile, profile.connected_emails[0], payload
+                )
             return profile
         else:
             try:

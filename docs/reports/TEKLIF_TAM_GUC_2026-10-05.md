@@ -176,3 +176,21 @@ D1 MCP sunucusu + Skills ihracı · D2 yerel jüri (donanımın var) · D3 medya
 Faz A'yı **şimdi** başlatıyorum: önce temiz metin omurgası (trafilatura → crawl4ai → Scrapling), sonra maigret/socid'in kanıt mührü, sonra X deliği. Sırayı bu şekilde öneriyorum çünkü geri kalan her şey (jüri, hafıza, rapor) temiz metin ve kanıt akışının üstüne kuruluyor; retina zayıfsa beyin de yanlış öğrenir.
 
 Onay ver, giriyorum.
+
+---
+
+## 9 · UYGULAMA DURUMU (2026-10-05)
+
+**A1 tamam · A2 tamam · A5 tamam · A6 hazır (kapı kapalı).**
+
+- Temiz metin omurgası üretimde: `extract_web_text` = trafilatura → crawl4ai →
+  scrapling. Public-web araştırması artık bu omurgadan besleniyor.
+- maigret/holehe artık doğrudan servis değil, **omurga** üzerinden koşuyor ve
+  çıktısı `EvidenceTimeline`'a mühürleniyor.
+- X deliği kapandı: `platform_registry.scrape_x` → `sensor.x.twscrape`.
+  `awaiting_authorization` yolu ve onun uydurma `followers: 150` alanı
+  kaldırıldı.
+- Kasa gerçeği görev payload'ında taşınıyor; ajanlar tahmin etmiyor.
+
+Sıradaki: A3 Agent-Reach · A4 SearXNG · A7 Scrapling kapıları, ardından
+**Faz B** (Beyin & Hafıza).

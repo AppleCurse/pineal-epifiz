@@ -2165,6 +2165,7 @@ class InitiatePayload(BaseModel):
 from agent_core.services.platform_registry import (
     effective_scraper_type as _effective_scraper_type,
     scrape_instagram,
+    scrape_x,
     build_user_context,
 )
 # Geriye uyumluluk re-export'u: Dalga 1 sözleşme testleri bu adı backend.api'den
@@ -2172,6 +2173,32 @@ from agent_core.services.platform_registry import (
 from agent_core.services.platform_registry import (  # noqa: F401
     ig_target_profile_update as _ig_target_profile_update,
 )
+
+
+def _x_sensor_ready() -> bool:
+    """X sensörü gerçekten kullanılabilir mi? (tek kaynak: capability spine).
+
+    Eskiden `/api/telemetry` alanı sabit `False` idi — sensör eklense bile
+    UI "yok" demeye devam ederdi. Şimdi kasa + env kapısı + kütüphane
+    durumunu registry'den okur; sebep makine-okunur olarak loglanır.
+    """
+    try:
+        from agent_core.capabilities import bootstrap
+        from agent_core.capabilities.state import policy_state
+
+        registry = bootstrap()
+        cap = registry.get("sensor.x.twscrape")
+        availability = cap.availability()
+        if not availability.available:
+            logger.debug("x sensörü kapalı: %s", availability.reason)
+            return False
+        from agent_core.capabilities.policy import PolicyKernel
+
+        state = policy_state(vault_locked=False, rate_ok=True)
+        return PolicyKernel().evaluate(cap.gates, state).allowed
+    except Exception as exc:  # telemetri asla API'yı düşürmez
+        logger.debug("x sensör durumu okunamadı: %s", type(exc).__name__)
+        return False
 
 
 def _new_task_id() -> str:
@@ -2222,21 +2249,8 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                     cookie = random.choice(cookie_list)
                     broadcast_log(client_id, "INFO", "DAEMON: Rotasyondan rastgele cookie seçildi.")
                 
-        enable_twitter = os.getenv("ENABLE_TWITTER", "false").lower() == "true" or os.getenv("ENABLE_X", "false").lower() == "true"
         enable_cross = os.getenv("ENABLE_CROSS_PLATFORM", "false").lower() == "true"
         effective_type = _effective_scraper_type(req.url, req.scraper_type)
-        if effective_type == "x" and not enable_twitter:
-            # Never run Pineal on an empty X profile. Preserve the request and
-            # ask the user to authorize a distinct, auditable alternative.
-            room = get_room(client_id)
-            room["pending_alternative_authorization"] = {
-                "url": req.url,
-                "requested_at": datetime.now().isoformat(),
-                "alternatives": ["public_web_search"],
-            }
-            broadcast_log(client_id, "WARNING", "X (TWITTER) KAZIMASI DESTEKLENMİYOR: alternatif public-web araştırması için yetki bekleniyor; analiz başlatılmadı.")
-            broadcast_result_error(client_id, "awaiting_authorization", "X desteklenmiyor. Aspasia alternatif public-web araştırması için onay bekliyor.")
-            return
         if req.url and effective_type == "unsupported_web":
             if not enable_cross:
                 # [023] fix: tanınmayan platformda URL segmentini Instagram adı gibi
@@ -2253,10 +2267,46 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                 return
             effective_type = "cross"
         task_id = task_id or _new_task_id()
-        if req.url and effective_type in ("x", "cross"):
-            broadcast_log(client_id, "INFO", f"UPLINK: Hedefe sızılıyor -> {req.url} [{effective_type.upper()}]")
+
+        # [FAZ A · Retina] X DELİĞİ KAPANDI. Eskiden X'in sensörü yoktu: istek
+        # "yetki bekliyor" diye geri çevriliyor, yetki verildiğinde ise arama
+        # snippet'leri profil diye giydiriliyordu (uydurma takipçi sayısı
+        # dâhil). Artık X de Instagram gibi OMURGADAN kazınır:
+        #   platform_registry.scrape_x → capability spine → sensor.x.twscrape
+        # Sensör kanıt üretemezse sahte profil ÜRETİLMEZ; açık kaynak dosyası
+        # olduğu gibi işaretlenerek devam edilir (aşağıdaki web dosyası yolu).
+        x_sensor_reason = ""
+        x_profile: dict = {}
+        if req.url and effective_type == "x":
+            from agent_core.services.platform_registry import extract_x_username
+            clean_u = extract_x_username(req.url) or ""
+            broadcast_log(client_id, "INFO", f"UPLINK: Hedefe sızılıyor -> {req.url} [X · twscrape]")
+            try:
+                x_profile = await scrape_x(
+                    req.url,
+                    log=lambda lvl, msg: broadcast_log(client_id, lvl, msg),
+                    vault_locked=not _check_vault_interlock(client_id),
+                    rate_ok=True,
+                )
+                broadcast_log(
+                    client_id, "INFO",
+                    f"TELEMETRİ: X akışı ele geçirildi — {len(x_profile['post_times'])} gerçek zaman damgalı gönderi.",
+                )
+            except (InsufficientEvidenceError, ScraperInsufficientEvidenceError) as exc:
+                x_sensor_reason = str(exc)[:200]
+                broadcast_log(
+                    client_id, "WARNING",
+                    f"X SENSÖRÜ KANIT ÜRETEMEDİ ({x_sensor_reason}); "
+                    "profil uydurulmadı, açık kaynak dosyası ile devam ediliyor.",
+                )
+
+        if req.url and (effective_type == "cross" or (effective_type == "x" and not x_profile)):
             from agent_core.services.platform_registry import extract_x_username
             clean_u = extract_x_username(req.url) or (req.url.split('/')[-1] if '/' in req.url else req.url).lstrip('@').strip()
+            if effective_type == "x":
+                broadcast_log(client_id, "INFO", f"UPLINK: Hedefe sızılıyor -> {req.url} [X · açık kaynak dosyası]")
+            else:
+                broadcast_log(client_id, "INFO", f"UPLINK: Hedefe sızılıyor -> {req.url} [{effective_type.upper()}]")
             broadcast_log(client_id, "INFO", f"AÇIK KAYNAK VE OSINT: {clean_u} için veriler taranıyor...")
             try:
                 # Çok kanallı paralel OSINT araması (Instagram, LinkedIn, Web)
@@ -2321,24 +2371,31 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                         if u not in found_profiles:
                             found_profiles.append(u)
 
-                bio = snippets[0] if snippets else f"Public OSINT dossier for {clean_u}"
                 if found_profiles:
                     broadcast_log(client_id, "INFO", f"HEDEF PROFİLLERİ TESPİT EDİLDİ: {', '.join(found_profiles[:3])}")
-                
+
                 display_user = f"@{clean_u.replace(' ', '_').lower()}" if " " in clean_u else f"@{clean_u}"
+                # [FAZ A] Dürüst dosya: arama snippet'i BİYOGRAPHİ diye
+                # sunulmaz, takipçi sayısı UYDURULMAZ (eski kod profil
+                # bulunduğunda sabit 150 yazıyordu). Ölçülmeyen alan None.
                 payload["target_profile"].update({
                     "username": display_user,
                     "name": clean_u,
-                    "bio": bio,
-                    "posts": snippets[1:] if len(snippets) > 1 else (snippets or [f"Public activity record for {clean_u}."]),
+                    "bio": "",
+                    "posts": snippets or [],
                     "post_times": [],
                     "posts_meta": [],
-                    "post_types": ["text" for _ in snippets] if snippets else ["text"],
+                    "post_types": ["text" for _ in snippets] if snippets else [],
                     "images": [],
-                    "followers": 150 if found_profiles else 0,
+                    "followers": None,
                     "following": None,
-                    "is_private": False,
+                    "is_private": None,
                     "detected_urls": found_profiles,
+                    "platform": "web_dossier",
+                    "sensor_note": (
+                        f"X sensörü kanıt üretemedi: {x_sensor_reason}" if x_sensor_reason
+                        else "Açık kaynak dosyası: platform sensörüyle kazınmadı."
+                    ),
                 })
                 broadcast_log(client_id, "INFO", f"TELEMETRİ: {len(snippets)} açık kaynak verisi ve {len(found_profiles)} profil hedefe bağlandı.")
             except Exception as se:
@@ -2346,16 +2403,20 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                 payload["target_profile"].update({
                     "username": f"@{clean_u}",
                     "name": clean_u,
-                    "bio": f"Target dossier for {clean_u}",
-                    "posts": [f"Public search for {clean_u}"],
+                    "bio": "",
+                    "posts": [],
                     "post_times": [],
                     "posts_meta": [],
-                    "post_types": ["text"],
+                    "post_types": [],
                     "images": [],
-                    "followers": 0,
+                    "followers": None,
                     "following": None,
-                    "is_private": False,
+                    "is_private": None,
+                    "platform": "web_dossier",
+                    "sensor_note": f"Açık kaynak araması başarısız: {type(se).__name__}",
                 })
+        if x_profile:
+            payload["target_profile"].update(x_profile)
         if req.url and effective_type == "instagram":
             broadcast_log(client_id, "INFO", f"UPLINK: Hedefe sızılıyor -> {req.url} [INSTAGRAM]")
             # [FIX #8] Eski kod: (1) tek deneme + hata yutuluyordu ve
@@ -2402,6 +2463,11 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                     task_id,
                 )
                 return
+        # [FAZ A · Retina] Kasa gerçeği görev payload'ına yazılır: ajanlar
+        # capability omurgasını çağırırken durumu TAHMİN ETMEZ, operatörün
+        # mandalının tek sahibi olan interlock'tan okur (kasa kapalıysa hiçbir
+        # dış yetenek koşamaz). İkinci bir "env'den kasa okuma" katmanı yok.
+        payload["policy"] = {"vault_locked": not _check_vault_interlock(client_id)}
         max_attempts = _bounded_env_int("PINEAL_TASK_MAX_ATTEMPTS", 3, 1, 3)
         task_timeout = _bounded_env_int("PINEAL_TASK_TIMEOUT_SECONDS", 300, 1, 1800)
         for attempt in range(1, max_attempts + 1):
@@ -2868,7 +2934,9 @@ async def api_telemetry(client_id: str = "default"):
             _is_real_key(getattr(search_keys, attr, None))
             for attr in ("tavily_key", "serpapi_key", "exa_key")
         ),
-        "x_scraper": False,
+        # [FAZ A] Artık SABİT False değil: X sensörü gerçekten var mı, kapıları
+        # açık mı? Cevap capability spine'ın TEK kaynağından gelir.
+        "x_scraper": _x_sensor_ready(),
         "instagram_scraper": capability["instagram"],
         "instagram_session": _is_real_key(vault.get("ig_sessionid")),
         "browser_installed": capability["browser"],
@@ -3362,7 +3430,9 @@ def _extract_handle_from_url(url: str) -> str:
     return url.split("?")[0].rstrip("/").split("/")[-1].replace("@", "").lower()
 
 
-async def _run_public_web_research(url: str, search_engine: Any) -> Dict[str, Any]:
+async def _run_public_web_research(
+    url: str, search_engine: Any, client_id: str = "default"
+) -> Dict[str, Any]:
     """Yetki verilmiş alternatif: kanıt kaynaklı public-web araması.
 
     Sözleşme (sahte veri YASAK):
@@ -3424,23 +3494,54 @@ async def _run_public_web_research(url: str, search_engine: Any) -> Dict[str, An
     except Exception as exc:  # zenginleştirme asıl sonucu asla bozmasın
         logger.warning("socid enrichment skipped: %s: %s", type(exc).__name__, str(exc)[:80])
         socid_note = ""
-    # [FAZ 4] Crawl4AI okunabilir-metin zenginleştirmesi. Kapı:
-    # ENABLE_CRAWL4AI (varsayılan kapalı → davranış birebir aynı). Yalnız
-    # available=True sonuçlar `crawl` alanına girer; hatalar alan EKLEMEZ
-    # (dürüst boş) ve asıl araştırma sonucunu asla bozmaz.
+    # [FAZ A · Retina] TEMİZ METİN OMURGASI. Eskiden tek bir crawl4ai çağrısı
+    # vardı ve yalnız ENABLE_CRAWL4AI açıkken çalışıyordu. Artık üç kademeli
+    # omurga devrede: trafilatura → crawl4ai → scrapling. İlk KANIT ÜRETEN
+    # kademe sonucu verir; hiçbiri üretemezse alan uydurma metinle DOLDURULMAZ
+    # (sebep + deneme izi yazılır). Tek arayüz: capabilities.extract_web_text.
     crawl_note = ""
     try:
-        if crawl_enricher.is_enabled() and matched:
+        from agent_core.capabilities import bootstrap as _caps_bootstrap
+        from agent_core.capabilities.adapters_web import extract_web_text
+        from agent_core.capabilities.state import policy_state
+
+        _caps_bootstrap()
+        web_state = policy_state(vault_locked=not _check_vault_interlock(client_id))
+        if matched:
             crawled = 0
             for m in matched[:crawl_enricher.research_limit()]:
-                res = await crawl_enricher.fetch_readable(m["source_url"])
-                if res.available:
-                    m["crawl"] = res.model_dump()
+                result = await extract_web_text(m["source_url"], state=web_state)
+                if result.ok:
+                    # payload kademeye göre değişir (pydantic kayıt veya dict);
+                    # ikisi de desteklenir, erişim güvenli.
+                    payload_raw = result.payload
+                    title = (
+                        payload_raw.get("title", "") if isinstance(payload_raw, dict)
+                        else getattr(payload_raw, "title", "") or ""
+                    )
+                    m["crawl"] = {
+                        "available": True,
+                        # HANGİ kademenin ürettiği kayıtta yazar (görünürlük).
+                        "provider": result.capability_id,
+                        "requested_url": m["source_url"],
+                        "title": title,
+                        "text": result.items[0].content if result.items else "",
+                        "evidence_ids": [i.evidence_id for i in result.items],
+                        "attempts": result.notes.get("attempts", []),
+                    }
                     crawled += 1
+                else:
+                    # Dürüst boş (sözleşme korunur): çekilemeyen sonuca `crawl`
+                    # alanı EKLENMEZ; sebep yalnız logda (uydurma metin yok).
+                    logger.info(
+                        "web extraction failed for %s: %s (attempts=%s)",
+                        m["source_url"], result.unavailable_reason,
+                        result.notes.get("attempts", []),
+                    )
             if crawled:
-                crawl_note = f" {crawled} sonuca crawl4ai ile okunabilir metin çekildi."
+                crawl_note = f" {crawled} sonuca temiz metin çekildi (omurga: trafilatura → crawl4ai → scrapling)."
     except Exception as exc:  # zenginleştirme asıl sonucu asla bozmasın
-        logger.warning("crawl4ai enrichment skipped: %s: %s", type(exc).__name__, str(exc)[:80])
+        logger.warning("web extraction skipped: %s: %s", type(exc).__name__, str(exc)[:80])
 
     if matched:
         status = "ok"
@@ -3624,7 +3725,9 @@ async def authorize_scraper_alternative(req: AlternativeAuthorizationPayload):
 
     if req.alternative == "public_web_search":
         executor = get_executor(req.client_id)
-        research = await _run_public_web_research(pending["url"], executor.search_engine)
+        research = await _run_public_web_research(
+            pending["url"], executor.search_engine, client_id=req.client_id
+        )
         room["web_research"] = research
         room.pop("pending_alternative_authorization", None)
         broadcast_log(

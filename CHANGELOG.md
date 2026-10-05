@@ -1,5 +1,38 @@
 # Changelog
 
+## Unreleased — 2026-10-05 — FAZ A · RETİNA: omurga ÜRETİM yoluna bağlandı
+
+- **X deliği KAPANDI.** X artık "yetki bekleyen" bir boşluk değil:
+  `platform_registry.scrape_x` → capability omurgası → `sensor.x.twscrape`.
+  Sensör kanıt üretemezse profil **uydurulmaz**: görev dürüstçe durur
+  (`scripts/run_task.py` → `halted_evidence` + exit 3), API'de ise açık kaynak
+  dosyası `platform: web_dossier` olarak işaretlenip devam eder. Eski
+  `awaiting_authorization` yolu ve `pending_alternative_authorization` akışı
+  kaldırıldı.
+- **Uydurma veri temizlendi.** X dalında arama snippet'i biyografi diye
+  sunulmuyordu artık sunulmuyor; sabit **`followers: 150`** de kalktı —
+  ölçülmeyen alan `None` (0 = ölçüm, None = ölçülmedi).
+- **Temiz metin omurgası üretimde.** Public-web araştırması artık tek crawl4ai
+  çağrısı değil: `extract_web_text` **trafilatura → crawl4ai → scrapling**
+  sırasıyla dener, ilk kanıt üreten kademeyi kullanır ve hangi kademenin
+  ürettiğini kayda yazar. Çekilemeyen sonuca alan EKLENMEZ (sözleşme korunur).
+- **maigret/holehe artık MÜHÜRLÜ KANIT.** `osint_investigator` taramaları
+  doğrudan servise değil omurgaya gider; çıktı `timeline_bridge` ile
+  `EvidenceTimeline`'a mühürlenir (`username_scan_evidence` /
+  `email_scan_evidence`). Böylece kasa, env kapıları ve **çocuk kilidi**
+  otonom görevlerde de uygulanır.
+- **Kasa gerçeği payload'a yazılıyor.** `/api/initiate` görev payload'ına
+  `{"policy": {"vault_locked": ...}}` enjekte eder; ajanlar kasa durumunu
+  tahmin etmez. Tek üretim yeri: `agent_core/capabilities/state.py`.
+- **Telemetri dürüstleşti.** `/api/telemetry` alanı `x_scraper` sabit `False`
+  değil; sensörün gerçek durumunu omurgadan okur (`_x_sensor_ready`).
+- **Yeni dosyalar:** `capabilities/adapters_web.py` · `adapters_sensors.py` ·
+  `timeline_bridge.py` · `state.py`. Kayıtlı yetenek: 10.
+- **Test:** `tests/unit/test_retina_faz_a.py` (20) +
+  `tests/unit/test_retina_faz_a_wiring.py` (10) → 30 yeni test geçiyor.
+  Tam birim koşusu: **58F/1177P/5S** — hata sayısı BAZLA AYNI (58), hiçbir
+  gerileme yok; entegrasyon koşusu da bazla birebir aynı (16F).
+
 ## Unreleased — 2026-10-05 — TEKLİF: "bunlar eklenirse Pineal şu hale gelir"
 
 - **Yeni:** `docs/reports/TEKLIF_TAM_GUC_2026-10-05.md`. Ürün sahibinin üç

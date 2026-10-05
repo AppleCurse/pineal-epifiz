@@ -2,7 +2,9 @@
 
 Sözleşme testleri (gerçek subprocess, mock yok):
 - Tanınmayan platform -> exit 2 + {"status": "unsupported_platform"}
-- X -> exit 2 + {"status": "awaiting_authorization"} (sahte profil ÜRETİLMEZ)
+- X -> sensör kanıt üretemediğinde exit 3 + {"status": "halted_evidence"}
+  (sahte profil ÜRETİLMEZ; eski "awaiting_authorization" yolu kaldırıldı,
+  Faz A · Retina)
 - Geçersiz stdin -> exit 4 + {"status": "invalid_input"}
 - Boş URL (kazımasız) -> pipeline GERÇEKTEN koşar -> exit 0 + TaskStatus
   (kanıt yok -> dürüst halted_* durumu; asla sahte COMPLETED değil)
@@ -44,13 +46,20 @@ def test_unsupported_platform_exits_with_explicit_status(tmp_path):
     assert "evidence_chain" not in data
 
 
-def test_x_platform_waits_for_authorization(tmp_path):
+def test_x_platform_halts_honestly_without_evidence(tmp_path):
+    """X artık "yetki bekleyen bir delik" değil: gerçek sensör koşar.
+
+    Sensör kanıt üretemezse (kütüphane/kapı/hesap yok) sahte profil
+    ÜRETİLMEZ; görev exit 3 + halted_evidence ile dürüstçe durur.
+    """
     proc = _run_task(json.dumps({
         "url": "https://x.com/hedef", "rituals": [], "playlist": [], "envies": [],
     }), tmp_path)
-    assert proc.returncode == 2
+    assert proc.returncode == 3
     data = _json_stdout(proc)
-    assert data["status"] == "awaiting_authorization"
+    assert data["status"] in ("halted_evidence", "scrape_failed")
+    assert data.get("platform") == "x"
+    assert "evidence_chain" not in data
 
 
 def test_invalid_stdin_is_rejected_not_improvised(tmp_path):

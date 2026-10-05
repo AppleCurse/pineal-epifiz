@@ -36,7 +36,7 @@
 | 429 (initiate/aspasia) | Rate limit — 1 dk bekle (bilinçli koruma) |
 | 401 tüm API çağrıları | `PINEAL_TOKEN` tanımlı ama UI göndermiyor → arayüzde Kasa → "API ERİŞİM ANAHTARI (PINEAL_TOKEN)" alanına gir (çalışma zamanı, yeniden derleme gerekmez; build-time gömme yolu yoktur — AUDIT 2026-09-11 P0) — ya da token'ı kaldır |
 | Scrape 429/403 (Instagram) | Platform limit/cookie: Kasaya güncel cookie gir |
-| X (Twitter) hedefi | Kazıma devre dışı (B4): `XScraperUnsupportedError`; WS logunda "DESTEKLENMİYOR" görünür, analiz BAŞLATILMAZ — public-web alternatifi için yetki beklenir (`awaiting_authorization`) |
+| X (Twitter) hedefi | Gerçek sensör: `sensor.x.twscrape` (kapı: `ENABLE_X_SENSOR=true` + kasa + hesap havuzu). Sensör kanıt üretirse **gerçek zaman damgalı gönderi serisi** çıkar. Sensör kapalı/kanıtsızsa profil UYDURULMAZ: logda `X SENSÖRÜ KANIT ÜRETEMEDİ` görünür, açık kaynak dosyası (`platform: web_dossier`, takipçi `None`) ile devam edilir; `scripts/run_task.py` ise `halted_evidence` + exit 3 döner. Eski `awaiting_authorization` yolu kaldırıldı (Faz A · Retina) |
 | WS bağlanmıyor | Token kipinde istemci bağlantıdan sonra ilk JSON mesajında `{type:"auth",token:"..."}` göndermeli; token URL/query'ye yazılmaz. Sunucu ~5 sn içinde auth mesajı almazsa 1008 ile kapatır (UI artık bunu "UPLINK YETKİ HATASI" diye loglar ve otomatik yeniden bağlanır). Port 8000 dışındaysa `VITE_API_BASE` tanımla |
 
 ## Görev verisi
