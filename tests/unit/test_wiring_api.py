@@ -53,7 +53,14 @@ def test_telemetry_reports_real_capabilities():
     assert data["scraper"] == data["instagram_scraper"]
 
 
-def test_x_initiate_reports_unsupported_over_ws():
+def test_x_initiate_reports_sensor_state_over_ws():
+    """[FAZ A] X artık "desteklenmiyor" diye geri ÇEVRİLMEZ.
+
+    Gerçek sensör (`sensor.x.twscrape`) omurgadan denenir; kanıt üretemezse
+    sebep makine-okunur olarak loglanır ve profil UYDURULMAZ (eski
+    `awaiting_authorization` ölü yolu kaldırıldı). Test yalnız dürüstlüğü
+    kilitler: sebep görünür, uydurma durum gelmez.
+    """
     cid = f"fx_{uuid.uuid4().hex[:6]}"
     # Vault interlock bypass — v5.0 vault mandalı test ortamında açık sayılır
     with patch("backend.api._check_vault_interlock", return_value=True):
@@ -73,21 +80,26 @@ def test_x_initiate_reports_unsupported_over_ws():
                     },
                 )
                 assert r.status_code == 200
-                saw_unsupported = False
+                logs = []
                 result_status = None
                 for _ in range(200):
                     m = ws.receive_json()
-                    if m.get("type") == "log" and "DESTEKLENMİYOR" in (m.get("msg") or ""):
-                        saw_unsupported = True
+                    if m.get("type") == "log":
+                        logs.append(m.get("msg") or "")
                     if m.get("type") == "result":
                         result_status = m.get("status")
                         break
-                assert saw_unsupported, "WS loglarinda desteklenmiyor mesaji yok"
+                joined = "\n".join(logs)
+                # Sensör yolu GERÇEKTEN denendi ve sebebini söyledi.
+                assert "X" in joined
+                assert ("twscrape" in joined or "SENSÖRÜ" in joined), joined[:400]
+                # Eski ölü yol yok; uydurma profille "completed" gelmez.
+                assert result_status != "awaiting_authorization"
                 assert result_status in (
                     "completed",
                     "failed",
                     "halted_evidence",
                     "halted_frequency",
+                    "halted_insufficient_evidence",
                     "partially_completed",
-                    "awaiting_authorization",
                 )

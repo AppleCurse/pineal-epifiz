@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased — 2026-10-05 — FAZ B · BEYİN & HAFIZA (1): spektrum, gerçek örgü, değişim izleme
+
+- **B6 · GERÇEK SPEKTRAL ANALİZ (FFT).** `FrequencyReport.dominant_period_days`
+  declared ama HİÇ doldurulmayan bir kabuktu. Artık `agent_core/engines/
+  spectrum.py` ile ÖLÇÜLÜYOR: Hann pencereli `rfft` periodogramı, DC ve Nyquist
+  hariç, normalize güç spektrumu. Harmonik tuzağı çözüldü — haftalık dürtü
+  treninde 2.33/3.5 gün değil **7 gün** temel periyot raporlanır. Yetersiz kova
+  (<8) veya sabit seride periyot **uydurulmaz**: alan `None` + makine-okunur
+  sebep (`insufficient_samples` / `flat_signal`). Ölçüm doğrulandı: 7g→7.0g,
+  14g→14.0g, saf sinüs 4g→4.0g.
+- **B4 · ÖRGÜ ARTIK GERÇEK VERİ ÇİZİYOR.** `HolographicResonanceMesh.svelte`
+  içindeki `generateNodes()` (12+8 **rastgele** düğüm) KALDIRILDI. Yerine
+  `agent_core/services/graph_builder.py`: düğümler yalnız kanıttan doğar
+  (hedef · kaynak sunucu · çıkarıcı motor · gözlem günü), kenarlar yalnız
+  birlikte-geçme ilişkisidir. Yerleşim **deterministik** (`Math.random()` yok).
+  Yeni uç: `GET /api/tasks/{task_id}/graph`. Kanıt yoksa graf BOŞ — arayüz
+  uydurma düğüm çizmez, "KANIT YOK" yazar.
+- **B7 · DEĞİŞİM İZLEME.** `agent_core/services/change_tracker.py`: her biten
+  görev hedefin geçmişine parmak izi bırakır (`memory/changes/<hedef>.json`),
+  ikinci tarama "ne değişti?" sorusunu cevaplar: **+yeni · -kayıp · ~değişen ·
+  aynı**. Parmak izi kanıdın KENDİSİNDEN üretilir (`evidence_id` her görevde
+  yeniden üretildiği için kullanılmaz); önceki kayıt yoksa fark UYDURULMAZ
+  (`no_baseline`). Yeni uç: `GET /api/tasks/{task_id}/changes`.
+- **Bellek üst verisi artık SİLİNMİYOR.** `CanonicalMemory.merge_evidence`
+  metadata kabul ediyor; eskiden her birleştirmede hedef profili (ve kurtarma
+  kaydı) kayboluyordu. `PinealExecutor` artık `target_profile`'ı kanıtla
+  birlikte yazıyor — değişim izleme ve graf aynı hedefi kararlı anahtarla
+  buluyor.
+- **Test:** +35 (spektrum 12 · graf 12 · değişim 11). Tam koşu: **birim
+  1291P/0F**, **entegrasyon 88P/0F** — gerileme yok. Frontend: `npm run build`
+  + `svelte-check` **0 hata 0 uyarı**.
+
 ## Unreleased — 2026-10-05 — FAZ A · RETİNA TAMAM: Agent-Reach + SearXNG + Scrapling
 
 - **A3 Agent-Reach (son kademe).** Temiz metin omurgası dört kademeye çıktı:

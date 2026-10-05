@@ -65,6 +65,17 @@ class FrequencyReport(StrictModel):
     evidence_refs: list[str] = Field(default_factory=list)
     computed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+    # --- FAZ B · B6: gerçek spektral analiz (FFT) ---
+    # `dominant_period_days` declared ama hiç doldurulmayan bir kabuktu; artık
+    # `agent_core.engines.spectrum` ile ÖLÇÜLEREK yazılır. Koşullar sağlanmazsa
+    # (yettersiz kova / sabit seri) None kalır — periyot UYDURULMAZ.
+    periodic_strength: float | None = Field(default=None, ge=0.0, le=1.0)
+    dominant_harmonic: int | None = None
+    spectral_method: str = ""
+    spectral_reason: str | None = None
+    #: Normalize güç spektrumu (DC/Nyquist hariç) — UI spektrum grafiği için.
+    spectrum: list[float] = Field(default_factory=list)
+
 
 class SeismicKind(str, Enum):
     SILENCE_GAP = "SILENCE_GAP"

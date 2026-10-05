@@ -198,4 +198,6 @@ X'in iki yolu var (twscrape + agent-reach), arama anahtarsız da çalışıyor
 (SearXNG). Kütüphaneler isteğe bağlı üçüncü kurulum adımında
 (`requirements-retina.txt`); kurulmazsa hiçbir yetenek uydurma veri üretmiyor.
 
-**Sıradaki: Faz B — Beyin & Hafıza.**
+**Faz B ilerlemesi (2026-10-05):** B6 FFT tamam · B4 gerçek örgü tamam
+(backend + arayüz) · B7 değişim izleme tamam. Sırada: B1 jüri konsensüsü,
+B2/B3 hafıza kristali + kalıcı bellek, B5 eşik kalibrasyonu.

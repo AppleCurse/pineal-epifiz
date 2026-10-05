@@ -102,6 +102,54 @@
   $: osintFootprint = $taskStatus?.osint_footprint || null;
   $: resonanceCalc = $taskStatus?.runs?.resonance_calc?.output_summary || null;
 
+  // --- [FAZ B · B4] GERÇEK İLİŞKİ GRAFI ---
+  // Örgü artık rastgele düğüm üretmiyor: görev bitince kanıt zincirinden
+  // üretilen gerçek graf çekilir. Kanıt yoksa graf boş kalır (uydurma yok).
+  let evidenceGraph: {
+    available: boolean;
+    nodes: Array<{ id: string; label: string; kind: string; weight: number; evidence_count: number }>;
+    edges: Array<{ source: string; target: string; weight: number }>;
+    node_count?: number;
+    edge_count?: number;
+    machine_note?: string;
+  } | null = null;
+  let lastGraphTaskId: string | null = null;
+
+  const TERMINAL_STATUSES = new Set([
+    'completed', 'partially_completed', 'failed',
+    'halted_evidence', 'halted_frequency', 'halted_insufficient_evidence', 'halted_critical',
+  ]);
+
+  async function fetchEvidenceGraph(taskId: string) {
+    try {
+      const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}/graph?client_id=${encodeURIComponent($clientId)}`);
+      if (!res.ok) {
+        evidenceGraph = null;
+        return;
+      }
+      const data = await res.json();
+      evidenceGraph = {
+        available: Boolean(data?.available),
+        nodes: Array.isArray(data?.nodes) ? data.nodes : [],
+        edges: Array.isArray(data?.edges) ? data.edges : [],
+        node_count: data?.node_count ?? 0,
+        edge_count: data?.edge_count ?? 0,
+        machine_note: data?.machine_note ?? '',
+      };
+    } catch (_e) {
+      evidenceGraph = null; // ağ hatası: uydurma graf ÜRETİLMEZ
+    }
+  }
+
+  $: {
+    const taskId = $taskStatus?.task_id ?? null;
+    const status = $taskStatus?.status ?? '';
+    if (taskId && TERMINAL_STATUSES.has(String(status)) && taskId !== lastGraphTaskId) {
+      lastGraphTaskId = taskId;
+      fetchEvidenceGraph(taskId);
+    }
+  }
+
   function nowTime() {
     return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   }
@@ -258,7 +306,12 @@
   <div class="living-eye-viewport" aria-label="Atlas Pineal Eye - Original Brass">
     <!-- Arkada: Holografik tel kafes — pirinç halka içinde, düşük yoğunluk -->
     <div class="mesh-layer">
-      <HolographicResonanceMesh size={meshSize} active={$isProcessing} intensity={isVaultLocked ? 0.22 : 0.48} />
+      <HolographicResonanceMesh
+        size={meshSize}
+        active={$isProcessing}
+        intensity={isVaultLocked ? 0.22 : 0.48}
+        graph={evidenceGraph}
+      />
     </div>
     <!-- Önde: Orijinal living_pineal_disk.png — organik drift korunuyor -->
     <img

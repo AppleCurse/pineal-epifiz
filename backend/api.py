@@ -2625,8 +2625,41 @@ def broadcast_result(client_id, res):
         **_pillar_payload_fields(res),
         "telemetry": getattr(res, "telemetry", None)
     }
+    # [FAZ B · B7] DEĞİŞİM İZLEME: her biten görev, aynı hedefin GEÇMİŞİNE bir
+    # parmak izi bırakır. Sonraki görev "ne değişti?" sorusunu cevaplayabilir.
+    # Yazma asla yayını bozmaz (try/except) ve önceki kayıt yoksa fark
+    # UYDURULMAZ (rapor `available:false` + sebep `no_baseline` kalır).
+    try:
+        payload["changes"] = _record_change_snapshot(room, res)
+    except Exception as exc:  # değişim izleme asıl sonucu asla bozmasın
+        logger.debug("change tracking skipped: %s", type(exc).__name__)
+
     room["latest_result"] = payload
     _enqueue(client_id, ("result", payload))
+
+
+def _record_change_snapshot(room: dict, res: Any) -> dict:
+    """Görevin kanıtını hedef geçmişine yazar + öncekiyle farkını döner."""
+    from agent_core.services.change_tracker import (
+        build_snapshot,
+        diff_snapshots,
+        latest_before,
+        record_snapshot,
+    )
+
+    executor = room.get("executor")
+    storage = getattr(getattr(executor, "memory", None), "storage_path", "./memory/")
+    chain = list(getattr(res, "evidence_chain", []) or [])
+    profile = getattr(res, "target_profile", None) or {}
+
+    snapshot = build_snapshot(chain, profile, task_id=str(getattr(res, "task_id", "") or ""))
+    if not snapshot.target:
+        return {"available": False, "reason": "no_target", "machine_note": "DEĞİŞİM: hedef anahtarı yok."}
+
+    previous = latest_before(storage, snapshot.target, snapshot.task_id)
+    report = diff_snapshots(previous, snapshot)
+    record_snapshot(storage, snapshot)
+    return report.model_dump()
 
 async def _send_result(room: dict, data: dict):
     result_telemetry = dict(data.get("telemetry") or {})
@@ -3944,6 +3977,107 @@ def _terminate_mission(client_id: str, task_id: str, action: str, reason: str):
         "task_id": task_id,
         "outcome": decision.outcome,
     }
+
+
+@app.get("/api/tasks/{task_id}/changes")
+async def api_task_changes(
+    task_id: str = Path(min_length=1, max_length=_MAX_TASK_ID_LENGTH),
+    client_id: str = "default",
+):
+    """[FAZ B · B7] Bu görev, aynı hedefin ÖNCEKİ taramasına göre ne değişti?
+
+    Önceki kayıt yoksa `available:false` + `no_baseline` döner; fark
+    UYDURULMAZ. Görev bitiminde parmak izi otomatik yazılır (broadcast_result).
+    """
+    try:
+        validate_identifier(task_id, field="task_id")
+    except ValueError:
+        return JSONResponse(
+            {"error": {"code": "INVALID_TASK_ID", "message": "Invalid task identifier"}},
+            status_code=400,
+        )
+
+    room = get_room(client_id)
+    latest = room.get("latest_result") or {}
+    if latest.get("task_id") == task_id and isinstance(latest.get("changes"), dict):
+        return latest["changes"]
+
+    executor = room.get("executor")
+    if executor is None:
+        return JSONResponse(
+            {"error": {"code": "NO_EXECUTOR", "message": "Oda hazır değil"}},
+            status_code=503,
+        )
+    from agent_core.services.change_tracker import build_snapshot, diff_snapshots, latest_before
+
+    try:
+        memory = executor.memory.get_task_memory(task_id)
+    except Exception as exc:
+        return JSONResponse(
+            {
+                "error": {
+                    "code": "MEMORY_UNAVAILABLE",
+                    "message": f"Görev belleği okunamadı: {type(exc).__name__}",
+                }
+            },
+            status_code=409,
+        )
+    snapshot = build_snapshot(
+        (memory or {}).get("evidence") or [],
+        (memory or {}).get("target_profile") or {},
+        task_id=task_id,
+    )
+    previous = latest_before(
+        getattr(executor.memory, "storage_path", "./memory/"), snapshot.target, task_id
+    )
+    return diff_snapshots(previous, snapshot).model_dump()
+
+
+@app.get("/api/tasks/{task_id}/graph")
+async def api_task_graph(
+    task_id: str = Path(min_length=1, max_length=_MAX_TASK_ID_LENGTH),
+    client_id: str = "default",
+):
+    """[FAZ B · B4] Görevin kanıtından GERÇEK ilişki grafı.
+
+    `HolographicResonanceMesh` artık rastgele düğüm üretmiyor: bu uçtan
+    beslenir. Kanıt yoksa graf BOŞ döner (`available:false` + sebep) — arayüz
+    boş graf için uydurma düğüm ÇİZMEZ.
+    """
+    try:
+        validate_identifier(task_id, field="task_id")
+    except ValueError:
+        return JSONResponse(
+            {"error": {"code": "INVALID_TASK_ID", "message": "Invalid task identifier"}},
+            status_code=400,
+        )
+
+    room = get_room(client_id)
+    executor = room.get("executor")
+    if executor is None:
+        return JSONResponse(
+            {"error": {"code": "NO_EXECUTOR", "message": "Oda hazır değil"}},
+            status_code=503,
+        )
+
+    try:
+        memory = executor.memory.get_task_memory(task_id)
+    except Exception as exc:  # bozuk bellek gizlenmez
+        logger.warning("graph: bellek okunamadı: %s", type(exc).__name__)
+        return JSONResponse(
+            {
+                "error": {
+                    "code": "MEMORY_UNAVAILABLE",
+                    "message": f"Görev belleği okunamadı: {type(exc).__name__}",
+                }
+            },
+            status_code=409,
+        )
+
+    from agent_core.services.graph_builder import graph_from_task_memory
+
+    graph = graph_from_task_memory(memory, (memory or {}).get("target_profile"))
+    return graph.model_dump()
 
 
 @app.post("/api/tasks/{task_id}/cancel")

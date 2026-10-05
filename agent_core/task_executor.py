@@ -675,6 +675,19 @@ class PinealExecutor:
             if provenance is not None:
                 verifier_run.output_summary["_provenance"] = provenance
 
+    async def _merge_task_memory(self, task_id: str, status: Any) -> None:
+        """[FAZ B · B7] Kanıtı HEDEF PROFİLİYLE birlikte kalıcı belleğe yazar.
+
+        Değişim izleme (change_tracker) ve ilişki grafı görevin HEDEFİNİ
+        bilmek zorundadır; eskiden bellek yalnız kanıt zincirini saklıyordu ve
+        hedef sonradan okunamıyordu (aynı hedef iki farklı anahtarla
+        kaydedilebiliyordu). Yazma asla görevi düşürmez.
+        """
+        profile = getattr(self, "_current_target_profile", None) or {}
+        await self.memory.merge_evidence(
+            task_id, status.evidence_chain, metadata={"target_profile": profile}
+        )
+
     async def execute_task(self, input_data: Dict[str, Any], task_id: str) -> TaskStatus:
         """Public entry: impl'i saran güvenli yaşam döngüsü.
 
@@ -728,6 +741,9 @@ class PinealExecutor:
         from agent_core.schemas.telemetry import (
             TaskStartedEvent, StepCompletedEvent, ErrorHaltEvent, TaskCompletedEvent, Severity
         )
+        # [FAZ B · B7] Hedef profili bellek yazımlarında taşınır (değişim
+        # izleme + ilişki grafı için kararlı hedef anahtarı).
+        self._current_target_profile = input_data.get("target_profile") or {}
         status = TaskStatus(task_id=task_id, status="processing", created_at=datetime.now(timezone.utc))
         _task_wall_start = datetime.now(timezone.utc)
 
@@ -1181,7 +1197,7 @@ class PinealExecutor:
                     error_message=str(e)[:200],
                     severity=Severity.Critical,
                 ))
-                await self.memory.merge_evidence(task_id, status.evidence_chain)
+                await self._merge_task_memory(task_id, status)
                 self._snapshot(status)
                 return status
             self._snapshot(status)
@@ -1268,7 +1284,7 @@ class PinealExecutor:
                             severity=Severity.Critical
                         ))
                         self._log("ERROR", f"[{task_id}] PIPELINE FAILED; critical agent failed.")
-                        await self.memory.merge_evidence(task_id, status.evidence_chain)
+                        await self._merge_task_memory(task_id, status)
                         return status
                     else:
                         self._log("WARNING", f"[{task_id}] Non-critical agent {agent_name} failed. Continuing pipeline (graceful degradation).")
@@ -1443,7 +1459,7 @@ class PinealExecutor:
                     status.status = "halted_frequency"
                     status.halted_reason = "Resonans kaniti esigin altinda: " + str(round(result.compatibility_score, 2)) + " < 0.70; sentez reddedildi"
                     status.completed_at = datetime.now(timezone.utc)
-                    await self.memory.merge_evidence(task_id, status.evidence_chain)
+                    await self._merge_task_memory(task_id, status)
                     self._snapshot(status)
                     return status
 
@@ -1558,7 +1574,7 @@ class PinealExecutor:
                             error_message=str(e)[:200],
                             severity=Severity.Critical,
                         ))
-                        await self.memory.merge_evidence(task_id, status.evidence_chain)
+                        await self._merge_task_memory(task_id, status)
                         return status
                     self._log("WARNING", f"[{task_id}] Non-critical deferred agent {agent_name} failed. Continuing pipeline.")
                     self._snapshot(status)
@@ -1869,7 +1885,7 @@ class PinealExecutor:
                 self._log("INFO", f"[{task_id}] TAMAMLANDI. Kanıt adımı: {len(status.evidence_chain)}")
                 
             status.completed_at = datetime.now(timezone.utc)
-            await self.memory.merge_evidence(task_id, status.evidence_chain)
+            await self._merge_task_memory(task_id, status)
             self._snapshot(status)
             
             # P0-FIX: Gercek SHA-256 kanit hash'i ve gercek sure (ms)
@@ -1887,7 +1903,7 @@ class PinealExecutor:
             self._log("ERROR", "[" + task_id + "] KANIT KILIDI: " + str(e))
             status.status = "halted_evidence"
             status.completed_at = datetime.now(timezone.utc)
-            await self.memory.merge_evidence(task_id, status.evidence_chain)
+            await self._merge_task_memory(task_id, status)
             self._snapshot(status)
         return status
 
