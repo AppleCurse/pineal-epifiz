@@ -67,6 +67,7 @@ def test_extraction_order_is_single_source_and_starts_with_trafilatura():
         "extractor.web.trafilatura",
         "extractor.web.crawl4ai",
         "extractor.web.scrapling",
+        "sensor.web.agent_reach",  # son çare: sosyal/medya sayfası (harici CLI)
     )
 
 

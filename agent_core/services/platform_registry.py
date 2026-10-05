@@ -362,18 +362,28 @@ async def scrape_x(
     from agent_core.capabilities.state import policy_state
 
     bootstrap()
+    state = policy_state(vault_locked=vault_locked, rate_ok=rate_ok)
     result = await run_capability(
         "sensor.x.twscrape",
         CapabilityContext(
             subject=username,
             params={"limit": int(limit) if limit else 50},
         ),
-        state=policy_state(vault_locked=vault_locked, rate_ok=rate_ok),
+        state=state,
     )
 
     if not result.ok:
         reason = result.unavailable_reason or "unknown"
         emit("WARNING", f"X SENSÖRÜ KANIT ÜRETEMEDİ: {reason}")
+
+        # [FAZ A · A3] İKİNCİ OKUMA YOLU: agent-reach (harici CLI, ücretsiz).
+        # twscrape hesap/kütüphane yokken X'i büsbütün kaybetmeyelim; kamuya
+        # açık okuma yapılır. Zaman damgası YOKTUR — post_times boş kalır,
+        # uydurma saat YAZILMAZ.
+        fallback = await _x_via_agent_reach(url, username, state, emit)
+        if fallback is not None:
+            return fallback
+
         raise InsufficientEvidenceError(
             f"X sensörü kanıt üretemedi ({reason}); profil uydurulmadı."
         )
@@ -386,6 +396,49 @@ async def scrape_x(
 
     emit("INFO", f"SCRAPER X: {len(series)} gönderi (twscrape, gerçek zaman damgalı)")
     return x_target_profile_update(username, series)
+
+
+async def _x_via_agent_reach(
+    url: str,
+    username: str,
+    state: Any,
+    emit: Callable[[str, str], None],
+) -> Optional[Dict[str, Any]]:
+    """X için ikinci okuma yolu: `sensor.web.agent_reach` (harici CLI, ücretsiz).
+
+    twscrape yoksa/reddedilirse devreye girer. Çıktıda zaman damgası yoktur:
+    frequency motoru için veri ÜRETMEYİZ, yalnız gerçek okunan metni taşırız.
+    CLI kurulu değilse (varsayılan) sessizce `None` döner — kapı ayrıdır
+    (`ENABLE_AGENT_REACH`), yani kurulmadan hiçbir şey değişmez.
+    """
+    from agent_core.capabilities import CapabilityContext, bootstrap, run_capability
+
+    try:
+        bootstrap()
+        result = await run_capability(
+            "sensor.web.agent_reach",
+            CapabilityContext(subject=url),
+            state=state,
+        )
+    except Exception as exc:  # yedek yol asıl kararı bozmasın
+        emit("WARNING", f"AGENT-REACH yedeği koşamadı: {type(exc).__name__}")
+        return None
+
+    if not result.ok or not result.items:
+        return None
+
+    text = (result.items[0].content or "").strip()
+    if not text:
+        return None
+
+    emit("INFO", f"SCRAPER X: agent-reach ile kamuya açık okuma ({len(text)} karakter)")
+    profile = x_target_profile_update(username, [{"text": text, "created_at": ""}])
+    profile["sensor"] = "agent_reach"
+    profile["sensor_note"] = (
+        "X akışı twscrape ile okunamadı; agent-reach ikinci yolu kullanıldı "
+        "(zaman damgası yok — frequency motoru için veri üretilmedi)."
+    )
+    return profile
 
 
 def x_target_profile_update(username: str, series: List[Dict[str, Any]]) -> Dict[str, Any]:

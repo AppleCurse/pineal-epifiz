@@ -109,6 +109,11 @@ async def main() -> None:
 
     task_id = f"rust_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}"
     executor = PinealExecutor(log_callback=_log)
+    # Operatör CLI'si kasa bilmez; omurga politikası payload ile aynıdır.
+    try:
+        executor.search_engine.set_policy(payload.get("policy") or {})
+    except Exception:
+        pass
     try:
         status = await executor.execute_task(payload, task_id)
     except Exception as e:

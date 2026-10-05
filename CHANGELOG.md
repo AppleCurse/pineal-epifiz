@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased — 2026-10-05 — FAZ A · RETİNA TAMAM: Agent-Reach + SearXNG + Scrapling
+
+- **A3 Agent-Reach (son kademe).** Temiz metin omurgası dört kademeye çıktı:
+  trafilatura → crawl4ai → scrapling → **agent-reach**. Sosyal/medya sayfasını
+  normal çıkarıcılar alamazsa harici CLI okur (kod gömülmez, API ücreti yok;
+  kapı `ENABLE_AGENT_REACH`).
+- **X'in ikinci okuma yolu.** twscrape yok/reddedilirse X büsbütün kaybolmuyor:
+  `scrape_x` agent-reach'e düşer ve profili **zaman damgası olmadan** kurar
+  (uydurma saat YOK). Hangi yolun okuduğu `sensor`/`sensor_note` alanında yazar.
+- **A4 SearXNG (ücretsiz arama).** `SearchEngine`, anahtar yokken DuckDuckGo'ya
+  ek olarak omurgadan `sensor.search.searxng`'i koşturur; bulgular
+  `provider: searxng` işaretli gelir. Ayrı servis (AGPL-3.0) — kod gömülmez,
+  yalnız HTTP (`SEARXNG_BASE_URL`). Kasa kapalıyken **dışarı istek çıkmaz**
+  (bunu kanıtlayan test: HTTP istemcisi "patlayan" istemciyle değiştirilir).
+- **Kasa gerçeği arama motoruna da taşındı.** `SearchEngine.set_policy`;
+  `/api/initiate` ve `/api/vault` interlock'tan okuyup yazıyor. Bu sınıf kasa
+  kararını **uydurmuyor**, dışarıdan alıyor.
+- **A7 Scrapling** kademesi ve kapısı omurgada hazır (`ENABLE_SCRAPLING`).
+- **Yeni dosya:** `requirements-retina.txt` — ÜÇÜNCÜ ve isteğe bağlı kurulum
+  adımı (trafilatura · scrapling · twscrape · instagrapi). Kurulmazsa ilgili
+  yetenek dürüst `dependency_missing` döner; sistemin geri kalanı aynı çalışır.
+  `.env.example` + `RUNBOOK.md` tüm Faz A kapılarıyla güncellendi.
+- **Test:** +7 (A3/A4/A7) → Faz A toplamı **37 test**. Birim koşusu bazla
+  aynı (58F), entegrasyon bazla aynı (16F) — gerileme yok.
+
 ## Unreleased — 2026-10-05 — FAZ A · RETİNA: omurga ÜRETİM yoluna bağlandı
 
 - **X deliği KAPANDI.** X artık "yetki bekleyen" bir boşluk değil:

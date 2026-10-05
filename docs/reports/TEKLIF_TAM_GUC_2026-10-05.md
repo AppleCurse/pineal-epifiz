@@ -181,7 +181,8 @@ Onay ver, giriyorum.
 
 ## 9 · UYGULAMA DURUMU (2026-10-05)
 
-**A1 tamam · A2 tamam · A5 tamam · A6 hazır (kapı kapalı).**
+**FAZ A TAMAM.** A1 · A2 · A3 · A4 · A5 · A6 · A7 bağlandı (A8 WhatsMyName
+veri tazeleme Faz B'de maigret DB'siyle birlikte gelecek).
 
 - Temiz metin omurgası üretimde: `extract_web_text` = trafilatura → crawl4ai →
   scrapling. Public-web araştırması artık bu omurgadan besleniyor.
@@ -192,5 +193,9 @@ Onay ver, giriyorum.
   kaldırıldı.
 - Kasa gerçeği görev payload'ında taşınıyor; ajanlar tahmin etmiyor.
 
-Sıradaki: A3 Agent-Reach · A4 SearXNG · A7 Scrapling kapıları, ardından
-**Faz B** (Beyin & Hafıza).
+Retina artık dört kademeli (trafilatura → crawl4ai → scrapling → agent-reach),
+X'in iki yolu var (twscrape + agent-reach), arama anahtarsız da çalışıyor
+(SearXNG). Kütüphaneler isteğe bağlı üçüncü kurulum adımında
+(`requirements-retina.txt`); kurulmazsa hiçbir yetenek uydurma veri üretmiyor.
+
+**Sıradaki: Faz B — Beyin & Hafıza.**

@@ -30,6 +30,10 @@ class SearchEngine:
         self.tavily_key = os.getenv("TAVILY_API_KEY") if tavily_key is None else (tavily_key if tavily_key != "" else None)
         self.serpapi_key = os.getenv("SERPAPI_API_KEY") if serpapi_key is None else (serpapi_key if serpapi_key != "" else None)
         self.exa_key = os.getenv("EXA_API_KEY") if exa_key is None else (exa_key if exa_key != "" else None)
+        # [FAZ A · A4] Yetenek omurgasının politika durumu. Dışarıdan (api.py)
+        # yazılır; yazılmadıysa ücretsiz yedekler (DuckDuckGo/SearXNG) mevcut
+        # davranışla aynı şekilde çalışır — kasa kararını bu sınıf uydurmaz.
+        self.policy: dict = {}
 
     def set_keys(self, tavily: Optional[str] = None, serpapi: Optional[str] = None, exa: Optional[str] = None):
         if tavily is not None:
@@ -38,6 +42,10 @@ class SearchEngine:
             self.serpapi_key = serpapi if serpapi != "" else None
         if exa is not None:
             self.exa_key = exa if exa != "" else None
+
+    def set_policy(self, policy: dict) -> None:
+        """Kasa/hız gerçeğini omurgaya taşır (tek kaynak: api.py interlock'u)."""
+        self.policy = dict(policy or {})
 
     async def search(self, query: str, num_results: int = 5) -> SearchOutcome:
         # One shared client for all providers in this query (pooling);
@@ -51,8 +59,12 @@ class SearchEngine:
             if self.exa_key:
                 tasks.append(self._search_exa(query, num_results, client=client))
 
-            # Eğer hiç anahtar yoksa ücretsiz DuckDuckGo yedeği devreye girer
+            # Eğer hiç anahtar yoksa ücretsiz yedekler devreye girer:
+            # [FAZ A · A4] SearXNG (kendi sunucun, anahtarsız, omurgadan) +
+            # mevcut DuckDuckGo yolu. SearXNG kapalıysa davranış ESKİSİ GİBİ.
             if not tasks:
+                if self._searxng_enabled():
+                    tasks.append(self._search_searxng(query, num_results))
                 tasks.append(self._search_duckduckgo(query, num_results, client=client))
 
             results_lists = await asyncio.gather(*tasks, return_exceptions=True)
@@ -79,6 +91,52 @@ class SearchEngine:
         if errors:
             return SearchOutcome(results=[], status="UNAVAILABLE", error=",".join(sorted(set(errors))), available=False)
         return SearchOutcome(results=[], status="NO_RESULTS", available=True)
+
+    def _searxng_enabled(self) -> bool:
+        """SearXNG yedeği açık mı? (kapı: ENABLE_SEARXNG + SEARXNG_BASE_URL)."""
+        return os.getenv("ENABLE_SEARXNG", "false").lower() == "true" and bool(
+            os.getenv("SEARXNG_BASE_URL", "").strip()
+        )
+
+    async def _search_searxng(self, query: str, num_results: int) -> List[SearchResult]:
+        """[FAZ A · A4] Anahtarsız metasearch — capability omurgasından koşar.
+
+        Ayrı servis (AGPL-3.0): kod gömülmez, yalnız HTTP. Servis yoksa/ulaşılamazsa
+        boş liste döner (görev hatası değil, sessiz yedek) — asıl sözleşme
+        korunur: sonuç yoksa `NO_RESULTS`, bulgu UYDURULMAZ.
+        """
+        from agent_core.capabilities import (
+            CapabilityContext,
+            bootstrap,
+            run_capability,
+        )
+        from agent_core.capabilities.state import policy_state
+
+        bootstrap()
+        result = await run_capability(
+            "sensor.search.searxng",
+            CapabilityContext(subject=query, params={"limit": num_results}),
+            state=policy_state(
+                vault_locked=bool(self.policy.get("vault_locked", False)),
+                rate_ok=self.policy.get("rate_ok"),
+            ),
+        )
+        if not result.ok:
+            return []
+        rows: List[SearchResult] = []
+        for item in result.items:
+            refs = list(getattr(item, "provenance_refs", []) or [])
+            if not refs:
+                continue
+            rows.append(
+                SearchResult(
+                    query=query,
+                    content=item.content,
+                    source_url=refs[0],
+                    provider="searxng",
+                )
+            )
+        return rows
 
     @staticmethod
     def _error_code(error: BaseException) -> str:

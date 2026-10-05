@@ -2468,6 +2468,13 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
         # mandalının tek sahibi olan interlock'tan okur (kasa kapalıysa hiçbir
         # dış yetenek koşamaz). İkinci bir "env'den kasa okuma" katmanı yok.
         payload["policy"] = {"vault_locked": not _check_vault_interlock(client_id)}
+        # Arama motoru da aynı gerçeği görür: kasa kapalıyken omurga yetenekleri
+        # (SearXNG dâhil) koşamaz. Ücretsiz DuckDuckGo yolu bugünkü davranışını
+        # korur; kararı bu katman uydurmaz, interlock'tan okur.
+        try:
+            executor.search_engine.set_policy(payload["policy"])
+        except Exception:  # telemetri/arama asıl görevi düşürmesin
+            logger.debug("search engine policy aktarılamadı")
         max_attempts = _bounded_env_int("PINEAL_TASK_MAX_ATTEMPTS", 3, 1, 3)
         task_timeout = _bounded_env_int("PINEAL_TASK_TIMEOUT_SECONDS", 300, 1, 1800)
         for attempt in range(1, max_attempts + 1):
@@ -2792,6 +2799,13 @@ async def api_vault(req: VaultPayload):
                 serpapi=real_search.get("serpapi"),
                 exa=real_search.get("exa"),
             )
+        # Kasa durumu değişti: omurga politikası da yenilenir (tek kaynak).
+        try:
+            executor.search_engine.set_policy(
+                {"vault_locked": not _check_vault_interlock(req.client_id)}
+            )
+        except Exception:
+            logger.debug("search engine policy aktarılamadı")
             vault["search_keys"] = True
             broadcast_log(req.client_id, "INFO", "KASA: Arama Motoru anahtarları mühürlendi.")
         

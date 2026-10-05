@@ -163,3 +163,205 @@ async def test_vault_lock_blocks_web_extraction_in_research(monkeypatch):
     )
     assert research["status"] == "ok"
     assert all("crawl" not in m for m in research["results"])
+
+
+# ============ A3 · Agent-Reach: son kademe + X'in ikinci okuma yolu ============
+@pytest.mark.asyncio
+async def test_agent_reach_is_the_last_resort_tier(monkeypatch):
+    """Üç çıkarıcı da alamazsa SON kademe agent-reach devreye girer."""
+    from agent_core.capabilities.runner import CapabilityRunner
+    from agent_core.capabilities.adapters_web import extract_web_text
+
+    calls: list[str] = []
+
+    async def _fake(self, cap_id, ctx, *, state=None):
+        calls.append(cap_id)
+        if cap_id != "sensor.web.agent_reach":
+            return CapabilityResult(
+                capability_id=cap_id, available=False, unavailable_reason="empty_text"
+            )
+        item = make_evidence(
+            content="agent-reach metni",
+            source_engine="agent_reach",
+            provenance_refs=[ctx.subject],
+        )
+        return CapabilityResult(capability_id=cap_id, available=True, items=(item,))
+
+    monkeypatch.setattr(CapabilityRunner, "run", _fake)
+    result = await extract_web_text("https://example.com/x")
+    assert result.ok is True
+    assert result.capability_id == "sensor.web.agent_reach"
+    assert calls[-1] == "sensor.web.agent_reach"   # en son denenen
+    assert len(calls) == 4
+
+
+@pytest.mark.asyncio
+async def test_x_falls_back_to_agent_reach_without_faking_timestamps(monkeypatch):
+    """twscrape yoksa X büsbütün kaybolmaz; ama sahte saat de ÜRETİLMEZ."""
+    import agent_core.capabilities as caps
+
+    async def _fake(cap_id, ctx, *, state=None, registry=None, emit=None):
+        if cap_id == "sensor.x.twscrape":
+            return CapabilityResult(
+                capability_id=cap_id,
+                available=False,
+                unavailable_reason="gate_disabled:ENABLE_X_SENSOR",
+            )
+        item = make_evidence(
+            content="X profilinden okunan genel metin",
+            source_engine="agent_reach",
+            provenance_refs=[ctx.subject],
+        )
+        return CapabilityResult(capability_id=cap_id, available=True, items=(item,))
+
+    monkeypatch.setattr(caps, "run_capability", _fake)
+    profile = await scrape_x("https://x.com/hedef")
+
+    assert profile["sensor"] == "agent_reach"
+    assert profile["posts"] == ["X profilinden okunan genel metin"]
+    assert profile["post_times"] == [""]      # uydurma zaman damgası YOK
+    assert profile["followers"] is None
+    assert "ikinci yol" in profile["sensor_note"]
+
+
+# ===================== A4 · SearXNG: ücretsiz arama yedeği =====================
+def test_searxng_stays_out_unless_operator_opens_the_gate(monkeypatch):
+    from agent_core.services.search_engine import SearchEngine
+
+    monkeypatch.delenv("ENABLE_SEARXNG", raising=False)
+    monkeypatch.delenv("SEARXNG_BASE_URL", raising=False)
+    assert SearchEngine()._searxng_enabled() is False
+
+    monkeypatch.setenv("ENABLE_SEARXNG", "true")
+    assert SearchEngine()._searxng_enabled() is False  # URL yok → kapalı
+
+    monkeypatch.setenv("SEARXNG_BASE_URL", "http://127.0.0.1:8080")
+    assert SearchEngine()._searxng_enabled() is True
+
+
+@pytest.mark.asyncio
+async def test_searxng_results_join_search_as_free_fallback(monkeypatch):
+    """Anahtar yokken SearXNG devreye girer; bulgular `provider: searxng`."""
+    import agent_core.capabilities as caps
+    from agent_core.services.search_engine import SearchEngine
+
+    seen: dict = {}
+
+    async def _fake(cap_id, ctx, *, state=None, registry=None, emit=None):
+        seen["cap_id"] = cap_id
+        seen["query"] = ctx.subject
+        seen["vault_locked"] = state.vault_locked
+        item = make_evidence(
+            content="arama bulgusu",
+            source_engine="searxng",
+            provenance_refs=["https://kaynak.test/1"],
+        )
+        return CapabilityResult(capability_id=cap_id, available=True, items=(item,))
+
+    monkeypatch.setattr(caps, "run_capability", _fake)
+    monkeypatch.setenv("ENABLE_SEARXNG", "true")
+    monkeypatch.setenv("SEARXNG_BASE_URL", "http://127.0.0.1:8080")
+
+    engine = SearchEngine()
+    engine.set_policy({"vault_locked": False})
+
+    async def _no_dd(self, query, num_results, client=None):
+        return []
+
+    monkeypatch.setattr(SearchEngine, "_search_duckduckgo", _no_dd)
+    outcome = await engine.search("hedef kişi", num_results=3)
+    assert outcome.available is True
+    assert [r.provider for r in outcome.results] == ["searxng"]
+    assert seen["cap_id"] == "sensor.search.searxng"
+    assert seen["query"] == "hedef kişi"
+    assert seen["vault_locked"] is False  # kasa gerçeği omurgaya TAŞINDI
+
+
+@pytest.mark.asyncio
+async def test_searxng_blocked_when_vault_locked(monkeypatch):
+    """Kasa kapalı: omurga yeteneği koşmaz → dışarı HTTP isteği ÇIKMAZ.
+
+    Koşturucu MOCKLANMAZ (mock kapıyı atlardı); bunun yerine HTTP istemcisi
+    "patlayan" bir istemciyle değiştirilir: istek çıkarsa test düşer.
+    """
+    from agent_core.capabilities import adapters_sensors
+    from agent_core.services.search_engine import SearchEngine
+
+    class _BoomClient:
+        def __init__(self, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, *a, **kw):
+            raise AssertionError("kasa kapalıyken dışarı HTTP isteği çıktı")
+
+    monkeypatch.setattr(adapters_sensors.httpx, "AsyncClient", _BoomClient)
+    monkeypatch.setenv("ENABLE_SEARXNG", "true")
+    monkeypatch.setenv("SEARXNG_BASE_URL", "http://127.0.0.1:8080")
+
+    engine = SearchEngine()
+    engine.set_policy({"vault_locked": True})
+
+    async def _no_dd(self, query, num_results, client=None):
+        return []
+
+    monkeypatch.setattr(SearchEngine, "_search_duckduckgo", _no_dd)
+    outcome = await engine.search("hedef", num_results=3)
+    assert outcome.results == []
+    assert outcome.status == "NO_RESULTS"
+
+
+@pytest.mark.asyncio
+async def test_searxng_path_is_live_when_vault_open(monkeypatch):
+    """Kasa açık: aynı düzenekte kapı GEÇİLİR, HTTP yolu canlıdır.
+
+    Kasa kapalı testin aynısı, tek fark `vault_locked=False`: istek patlamalı
+    (yani yol gerçekten açıldı). Kilit ile açık hal arasındaki TEK fark kasa.
+    """
+    from agent_core.capabilities import adapters_sensors
+    from agent_core.services.search_engine import SearchEngine
+
+    class _BoomClient:
+        def __init__(self, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, *a, **kw):
+            raise AssertionError("http_request_made")
+
+    monkeypatch.setattr(adapters_sensors.httpx, "AsyncClient", _BoomClient)
+    monkeypatch.setenv("ENABLE_SEARXNG", "true")
+    monkeypatch.setenv("SEARXNG_BASE_URL", "http://127.0.0.1:8080")
+
+    engine = SearchEngine()
+    engine.set_policy({"vault_locked": False})
+
+    async def _no_dd(self, query, num_results, client=None):
+        return []
+
+    monkeypatch.setattr(SearchEngine, "_search_duckduckgo", _no_dd)
+    outcome = await engine.search("hedef", num_results=3)
+    # Yetenek koştu ama servis yok -> dürüst "yok", uydurma bulgu değil.
+    assert outcome.results == []
+    assert outcome.status == "NO_RESULTS"
+
+
+# ==================== A7 · Scrapling: kırılganlık kademesi ====================
+def test_scrapling_is_third_tier_and_gated():
+    from agent_core.capabilities.adapters_web import ScraplingCapability
+    from agent_core.capabilities.adapters_web import WEB_EXTRACTION_ORDER
+
+    assert WEB_EXTRACTION_ORDER[2] == "extractor.web.scrapling"
+    cap = ScraplingCapability()
+    assert "ENABLE_SCRAPLING" in cap.gates
+    assert cap.license == "BSD-3-Clause"

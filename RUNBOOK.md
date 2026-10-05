@@ -12,7 +12,15 @@
 - `OPENROUTER_API_KEY` + `LIVE_LLM_E2E=1` → canlı bulut LLM.
 - Yerel: `USE_LOCAL_LLM=true`, `LOCAL_LLM_URL=http://localhost:11434/v1`, `LOCAL_LLM_MODEL=...` (anahtar gerekmez).
   Not: API sunucusunda Kasa'daki "yerel model" seçimi (`use_local`) bu env'i ezer; env varsayılanı yalnız Kasa seçimi yapılmamışsa geçerlidir.
-- `TAVILY_API_KEY`, `SERPAPI_API_KEY`, `EXA_API_KEY` → AutonomousVerifier web doğrulaması (yoksa DuckDuckGo yedeği).
+- `TAVILY_API_KEY`, `SERPAPI_API_KEY`, `EXA_API_KEY` → AutonomousVerifier web doğrulaması (yoksa DuckDuckGo + SearXNG yedeği).
+- Faz A · Retina kapıları (hepsi **default KAPALI**, hepsi omurgada):
+  `ENABLE_MAIGRET` · `ENABLE_HOLEHE` · `ENABLE_CRAWL4AI` · `ENABLE_SCRAPLING` ·
+  `ENABLE_X_SENSOR` · `ENABLE_IG_SECONDARY` · `ENABLE_AGENT_REACH` ·
+  `ENABLE_SEARXNG`. Kütüphaneleri (trafilatura/scrapling/twscrape/instagrapi)
+  **üçüncü adım** dosyasındadır: `pip install -r requirements-retina.txt`
+  (isteğe bağlı; kurulmazsa ilgili yetenek dürüst `dependency_missing` döner).
+  Agent-Reach Python paketi değil — harici CLI (`npm i -g agent-reach`).
+  SearXNG ayrı servistir (`SEARXNG_BASE_URL` ile gösterilir).
 - Vision: `OPENROUTER_VISION_MODEL` — varsayılan `google/gemini-3.7-flash`; VisionAnalyzer (profil fotoğrafları) ve görselli Aspasia isteklerinde kullanılır.
 - Model varsayılanları (2026-09-02 karar matrisi):
   Tier-1 `anthropic/claude-sonnet-5` (`OPENROUTER_TIER_1_MODEL`),
@@ -68,7 +76,8 @@ AST-bazlı; dedektör canlılık kanıtı içerir), `test_consolidation_faz1_5.p
 - `ENABLE_MAIGRET` / `ENABLE_HOLEHE` / `ENABLE_CRAWL4AI` — **default KAPALI**;
   kapalıyken davranış değişmez (uçlar dürüst `disabled` döner). Ayrıntılı alt
   değişkenler `.env.example`'da; kurulum ikinci adım dosyası:
-  `pip install -r requirements-osint.txt` (crawl4ai; psutil meta-çatışması).
+  `pip install -r requirements-osint.txt` (crawl4ai; psutil meta-çatışması);
+  Faz A kütüphaneleri için üçüncü adım `requirements-retina.txt` (isteğe bağlı).
 - `STEALTH_PROVIDER=playwright_stealth|invisible|cloak|none` — seçici kapı DEĞİL:
   default bugünkü davranış. invisible/cloak binary İNDİRMEZ; `INVISIBLE_BROWSER_BINARY`
   / `CLOAK_BROWSER_EXECUTABLE` yolu gösterilmezse dürüst `binary_missing` döner

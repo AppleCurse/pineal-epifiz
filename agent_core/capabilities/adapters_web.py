@@ -7,6 +7,8 @@ aynı temiz kaynaktan gelsin.
     extractor.web.trafilatura  → hafif, hızlı, birincil (Apache-2.0)
     extractor.web.crawl4ai     → JS'li/ağır sayfa, ikinci (Apache-2.0, mevcut)
     extractor.web.scrapling    → adaptif, anti-bot, üçüncü (BSD-3-Clause)
+    sensor.web.agent_reach     → sosyal/medya (X, Reddit, YouTube, GitHub),
+                                 harici CLI, dördüncü ve SON kademe (MIT)
 
 Dürüstlük sözleşmesi (değişmedi):
 - Kütüphane yok / kapı kapalı / ağ yok / boş sonuç → `available=False` +
@@ -44,10 +46,13 @@ __all__ = [
 ]
 
 #: Düşüş sırası (tek kaynak: buradan okunur; ikinci bir sıra listesi YOKTUR).
+#: Son kademe `sensor.web.agent_reach`: normal çıkarıcıların alamadığı sosyal
+#: platform sayfalarını harici CLI ile okur (kapısı ayrı: ENABLE_AGENT_REACH).
 WEB_EXTRACTION_ORDER: tuple[str, ...] = (
     "extractor.web.trafilatura",
     "extractor.web.crawl4ai",
     "extractor.web.scrapling",
+    "sensor.web.agent_reach",
 )
 
 DEFAULT_MAX_CHARS = 20_000
