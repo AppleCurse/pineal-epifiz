@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased — 2026-10-05 — TEKLİF: "bunlar eklenirse Pineal şu hale gelir"
+
+- **Yeni:** `docs/reports/TEKLIF_TAM_GUC_2026-10-05.md`. Ürün sahibinin üç
+  katmanlı tespiti (Retina & Sinir Uçları · Beyin Sapı/Hafıza/Jüri · Ses &
+  Yaşayan Epifiz) esas alındı; her depo için **"eklenen → olan"** ve
+  **ÖNCE/SONRA** tablosu yazıldı. Ahlaki değerlendirme içermez.
+- **Kod okumasıyla tespit edilen mevcut durum:** X sensörü yok
+  (`scraper.py:24`, `api.py:2238`) · crawl4ai yalnız tek yerde çağrılıyor
+  (`api.py:3433-3436`) · `HolographicResonanceMesh.svelte` **rastgele düğüm
+  üretiyor** (gerçek graf verisi yok) · Frequency motorunda FFT yok (sin/cos
+  modeli) · maigret/socid çıktısı kanıt zincirine (EvidenceTimeline) girmiyor.
+- **Teklifin üstüne eklenen 12 parça:** SearXNG (ücretsiz arama) · Scrapling
+  (kırılganlık) · yt-dlp+opencv+PaddleOCR (medya) · pHash+EXIF (catfish) ·
+  FFT/periodogram (gerçek spektral analiz) · DuckDB+scikit (zaman serisi +
+  kalibrasyon) · değişim izleme · dil tespiti/çeviri · phonenumbers +
+  theHarvester/open-seo (kişi + kurum) · MCP + Skills ihracı · yerel jüri ·
+  rapor fabrikası.
+- **Program:** Faz A Retina → Faz B Beyin & Hafıza → Faz C Ses & Nefes →
+  Faz D Birleşim & İhracat; her fazın kabul testiyle.
+
 ## Unreleased — 2026-10-05 — AHLAKİ DÖKÜM: 325 depo → 99 fikir
 
 - **Yeni:** `docs/reports/AHLAKI_DOKUM_2026-10-05.md`. 325 depo, aynı fikri
