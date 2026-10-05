@@ -51,3 +51,4 @@ pillow>=10.0.0
 # v5.0 - Agent Rack canlı köprüsü: Redis Pub/Sub
 redis>=5.0.0
 hiredis>=2.0.0
+python-multipart>=0.0.9

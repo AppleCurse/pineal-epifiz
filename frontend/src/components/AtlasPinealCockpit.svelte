@@ -2,7 +2,8 @@
   import { onMount } from 'svelte';
   import {
     apiFetch, clientId, isAuthFailure, logs, taskStatus, isProcessing,
-    apiToken, agentStatuses, vaultLocked, activeViewMode, inspectedAgentId
+    apiToken, agentStatuses, vaultLocked, activeViewMode, inspectedAgentId,
+    speechState, lastSpeech, voiceEnabled
   } from '../store';
   import { playClick, playHalt, playRunning } from '../lib/consoleAudio';
   import HolographicResonanceMesh from './HolographicResonanceMesh.svelte';
@@ -102,6 +103,142 @@
   $: osintFootprint = $taskStatus?.osint_footprint || null;
   $: resonanceCalc = $taskStatus?.runs?.resonance_calc?.output_summary || null;
 
+  // --- [FAZ B · B4] GERÇEK İLİŞKİ GRAFI ---
+  // Örgü artık rastgele düğüm üretmiyor: görev bitince kanıt zincirinden
+  // üretilen gerçek graf çekilir. Kanıt yoksa graf boş kalır (uydurma yok).
+  let evidenceGraph: {
+    available: boolean;
+    nodes: Array<{ id: string; label: string; kind: string; weight: number; evidence_count: number }>;
+    edges: Array<{ source: string; target: string; weight: number }>;
+    node_count?: number;
+    edge_count?: number;
+    machine_note?: string;
+  } | null = null;
+  let lastGraphTaskId: string | null = null;
+
+  const TERMINAL_STATUSES = new Set([
+    'completed', 'partially_completed', 'failed',
+    'halted_evidence', 'halted_frequency', 'halted_insufficient_evidence', 'halted_critical',
+  ]);
+
+  // --- [FAZ B · B2/B3] KALICI HAFIZA KRİSTALİ ---
+  // Görev bitince hafıza sıfırlanmıyor: hedefin geçmiş taramalarından kalan
+  // hatıralar burada görünür. Yoksa "HAFIZA YOK" yazar (uydurma geçmiş yok).
+  let memoryCrystal: { available: boolean; fragment_count: number; task_count: number; note: string } | null = null;
+  let lastMemoryTaskId: string | null = null;
+
+  async function fetchMemoryCrystal(taskId: string) {
+    try {
+      const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}/memory?client_id=${encodeURIComponent($clientId)}`);
+      if (!res.ok) {
+        memoryCrystal = null;
+        return;
+      }
+      const data = await res.json();
+      memoryCrystal = {
+        available: Boolean(data?.available),
+        fragment_count: Number(data?.fragment_count ?? 0),
+        task_count: Number(data?.task_count ?? 0),
+        note: String(data?.machine_note ?? ''),
+      };
+    } catch (_e) {
+      memoryCrystal = null;
+    }
+  }
+
+  async function fetchEvidenceGraph(taskId: string) {
+    try {
+      const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}/graph?client_id=${encodeURIComponent($clientId)}`);
+      if (!res.ok) {
+        evidenceGraph = null;
+        return;
+      }
+      const data = await res.json();
+      evidenceGraph = {
+        available: Boolean(data?.available),
+        nodes: Array.isArray(data?.nodes) ? data.nodes : [],
+        edges: Array.isArray(data?.edges) ? data.edges : [],
+        node_count: data?.node_count ?? 0,
+        edge_count: data?.edge_count ?? 0,
+        machine_note: data?.machine_note ?? '',
+      };
+    } catch (_e) {
+      evidenceGraph = null; // ağ hatası: uydurma graf ÜRETİLMEZ
+    }
+  }
+
+  $: {
+    const taskId = $taskStatus?.task_id ?? null;
+    const status = $taskStatus?.status ?? '';
+    if (taskId && TERMINAL_STATUSES.has(String(status)) && taskId !== lastGraphTaskId) {
+      lastGraphTaskId = taskId;
+      fetchEvidenceGraph(taskId);
+    }
+    if (taskId && TERMINAL_STATUSES.has(String(status)) && taskId !== lastMemoryTaskId) {
+      lastMemoryTaskId = taskId;
+      fetchMemoryCrystal(taskId);
+    }
+  }
+
+  // --- [FAZ B · B5] EŞİK KALİBRASYONU ---
+  // 0.70 sabit değil: ölçüldüyse ÖLÇÜLEN değer görünür, ölçülmediyse
+  // "ölçülmedi" açıkça yazılır (uydurma kesinlik yok).
+  let thresholdInfo: {
+    threshold: number;
+    source: string;
+    reason: string;
+    note: string;
+  } | null = null;
+
+  async function fetchThreshold() {
+    try {
+      const res = await apiFetch(`/api/calibration?client_id=${encodeURIComponent($clientId)}`);
+      if (!res.ok) {
+        thresholdInfo = null;
+        return;
+      }
+      const data = await res.json();
+      const quote = data?.scopes?.quote ?? null;
+      if (!quote) {
+        thresholdInfo = null;
+        return;
+      }
+      thresholdInfo = {
+        threshold: Number(quote.threshold ?? 0.7),
+        source: String(quote.source ?? 'varsayılan'),
+        reason: String(quote.reason ?? ''),
+        note: String(quote?.report?.machine_note ?? ''),
+      };
+    } catch (_e) {
+      thresholdInfo = null;
+    }
+  }
+
+  $: if ($clientId) fetchThreshold();
+
+  $: voiceLabel =
+    $speechState === 'speaking'
+      ? 'SES: KONUŞUYOR'
+      : $speechState === 'listening'
+        ? 'SES: DİNLİYOR'
+        : $speechState === 'interrupted'
+          ? 'SES: SUSTURULDU'
+          : $speechState === 'denied'
+            ? 'SES: MOTOR YOK'
+            : 'SES: SUSKUN';
+
+  function toggleVoice() {
+    voiceEnabled.update((v) => !v);
+  }
+
+  $: memoryLabel = memoryCrystal?.available
+    ? `HAFIZA ${memoryCrystal.fragment_count} HATIRA · ${memoryCrystal.task_count} GÖREV`
+    : 'HAFIZA YOK';
+
+  $: thresholdLabel = thresholdInfo
+    ? `EŞİK ${thresholdInfo.threshold.toFixed(2)} · ${thresholdInfo.source === 'kalibre' ? 'ÖLÇÜLDÜ' : thresholdInfo.source === 'elle_sabitleme' ? 'ELLE SABİT' : 'ÖLÇÜLMEDİ'}`
+    : 'EŞİK —';
+
   function nowTime() {
     return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   }
@@ -199,6 +336,131 @@
     }
   }
 
+  // --- [FAZ C · C4] SESLİ RAPOR: bulunanı SÖYLE (göz ekrana bakmak zorunda değil) ---
+  // Yalnız GERÇEK alanlar gönderilir; olmayan alan için cümle UYDURULMAZ.
+  let isReadingReport = false;
+
+  function reportDigest(status: any): Record<string, unknown> | null {
+    if (!status || typeof status !== 'object') return null;
+    const runs: Record<string, unknown> = {};
+    const rawRuns = status.runs || {};
+    for (const [name, entry] of Object.entries<any>(rawRuns)) {
+      runs[name] = { status: entry?.status ?? null, confidence: entry?.confidence ?? null };
+    }
+    return {
+      task_id: status.task_id ?? null,
+      status: status.status ?? null,
+      target_profile: status.target_profile ?? null,
+      evidence_chain: (status.evidence_chain || []).map((e: any) => ({ agent: e?.agent ?? null })),
+      runs,
+      changes: status.changes ?? null,
+      depth_report: status.depth_report ?? null,
+      follower_audit: status.follower_audit ?? null,
+      timing_forensics: status.timing_forensics ?? null,
+      minor_gate: status.minor_gate ?? status.child_safety ?? null
+    };
+  }
+
+  async function readReportAloud() {
+    const digest = reportDigest($taskStatus);
+    if (!digest || isReadingReport) return;
+    isReadingReport = true;
+    playClick(590, 40);
+    try {
+      const res = await apiFetch('/api/speech/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id: $clientId || 'default', report: digest })
+      });
+      const data = await res.json();
+      if (data.script) addLog(`SES: rapor okundu → ${data.script}`, 'INFO');
+      if (!data.available) addLog(`SES: ses ÜRETİLEMEDİ — ${data.reason}`, 'WARNING');
+    } catch (_e) {
+      addLog('SES: rapor okunamadı', 'WARNING');
+    } finally {
+      isReadingReport = false;
+    }
+  }
+
+  // --- [FAZ C · C3] DİNLEYEN GÖZ: mikrofon -> yerel STT -> Aspasia ---
+  // Kayıt TARAYICIDA tutulur, yalnız transkript için YEREL motora gider;
+  // ses dosyası dışarı çıkmaz. Motor yoksa uydurma metin yazılmaz.
+  let micRecorder: MediaRecorder | null = null;
+  let micChunks: Blob[] = [];
+  let micStream: MediaStream | null = null;
+  let isListening = false;
+
+  async function toggleListening() {
+    if (isListening) {
+      stopListening();
+      return;
+    }
+    // ARAYA GİRME: Aspasia konuşurken mikrofon açılırsa SUSAR.
+    if ($speechState === 'speaking') {
+      try {
+        await apiFetch(`/api/speech/stop?client_id=${encodeURIComponent($clientId)}`, { method: 'POST' });
+        addLog('SES: araya girildi — Aspasia sustu', 'INFO');
+      } catch (_e) {
+        addLog('SES: araya girilemedi', 'WARNING');
+      }
+    }
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (_e) {
+      addLog('SES: mikrofon izni yok / cihaz yok', 'WARNING');
+      return;
+    }
+    micChunks = [];
+    const mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
+    micRecorder = new MediaRecorder(micStream, { mimeType: mime });
+    micRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) micChunks.push(e.data); };
+    micRecorder.onstop = () => { void transcribeAndSend(); };
+    micRecorder.start();
+    isListening = true;
+    playClick(660, 40);
+    addLog('SES: dinliyorum...', 'INFO');
+  }
+
+  function stopListening() {
+    if (micRecorder && micRecorder.state !== 'inactive') micRecorder.stop();
+    micStream?.getTracks().forEach((t) => t.stop());
+    micStream = null;
+    isListening = false;
+    playClick(330, 40);
+  }
+
+  async function transcribeAndSend() {
+    if (!micChunks.length) {
+      addLog('SES: kayıt boş', 'WARNING');
+      return;
+    }
+    const form = new FormData();
+    form.append('file', new Blob(micChunks, { type: micChunks[0].type || 'audio/webm' }), 'mic.webm');
+    micChunks = [];
+    try {
+      const res = await apiFetch(
+        `/api/speech/listen?client_id=${encodeURIComponent($clientId)}`,
+        { method: 'POST', body: form }
+      );
+      const data = await res.json();
+      if (!data.available) {
+        addLog(`SES: duyulamadı — ${data.reason || 'motor yok'}`, 'WARNING');
+        return;
+      }
+      const heard = String(data.transcript || '').trim();
+      if (!heard) {
+        addLog('SES: transkript boş', 'WARNING');
+        return;
+      }
+      addLog(`SES: duyuldu (${data.engine}) → ${heard}`, 'INFO');
+      inputMessage = heard;
+      // Eller serbest: duyulan metin doğrudan Aspasia'ya gider (kayıt üstünde).
+      await sendAspasiaMessage();
+    } catch (_e) {
+      addLog('SES: dinleme başarısız', 'WARNING');
+    }
+  }
+
   async function sendAspasiaMessage() {
     const text = inputMessage.trim();
     if (!text || isSending) return;
@@ -258,7 +520,12 @@
   <div class="living-eye-viewport" aria-label="Atlas Pineal Eye - Original Brass">
     <!-- Arkada: Holografik tel kafes — pirinç halka içinde, düşük yoğunluk -->
     <div class="mesh-layer">
-      <HolographicResonanceMesh size={meshSize} active={$isProcessing} intensity={isVaultLocked ? 0.22 : 0.48} />
+      <HolographicResonanceMesh
+        size={meshSize}
+        active={$isProcessing}
+        intensity={isVaultLocked ? 0.22 : 0.48}
+        graph={evidenceGraph}
+      />
     </div>
     <!-- Önde: Orijinal living_pineal_disk.png — organik drift korunuyor -->
     <img
@@ -267,6 +534,35 @@
       alt="Atlas Pineal Eye"
       style="transform: translate(calc(-50% + {eyeX.toFixed(2)}px), calc(-50% + {eyeY.toFixed(2)}px)) scale({eyeScale.toFixed(3)});"
     />
+  </div>
+
+  <!-- [FAZ B · B2/B3] HAFIZA PİLİ: geçmiş hatıralar (kristal) -->
+  <div
+    class="memory-pill"
+    class:has-memory={Boolean(memoryCrystal?.available)}
+    title={memoryCrystal?.note || 'Bu hedef için geçmiş hatıra yok'}
+  >
+    {memoryLabel}
+  </div>
+
+  <!-- [FAZ C · C2] SES PİLİ: konuşma durumu backend'den gelir (uydurma değil) -->
+  <button
+    class="voice-pill"
+    class:speaking={$speechState === 'speaking'}
+    class:muted={!$voiceEnabled}
+    on:click={toggleVoice}
+    title={$lastSpeech?.machine_note || 'Ses durumu: konuşma yok (motor yerel)'}
+  >
+    {voiceLabel}{$voiceEnabled ? '' : ' · KAPALI'}
+  </button>
+
+  <!-- [FAZ B · B5] EŞİK PİLİ: sabit 0.70 değil, ölçülen değer -->
+  <div
+    class="threshold-pill"
+    class:measured={thresholdInfo?.source === 'kalibre'}
+    title={thresholdInfo?.note || 'Kalibrasyon verisi yok — eşik varsayılan'}
+  >
+    {thresholdLabel}
   </div>
 
   <!-- HIZLI GEÇİŞ BUTONU: TACTICAL WAR ROOM (100% ŞEFFAF MUHAREBE MASASI) -->
@@ -369,6 +665,26 @@
       title="Aspasia Komut Satırı"
     />
   </div>
+
+  <!-- [FAZ C · C4] SESLİ RAPOR: son görevin özetini YÜKSEK SESLE okur -->
+  <button
+    class="mic-spot report-spot"
+    on:click={readReportAloud}
+    disabled={isReadingReport || !$taskStatus}
+    title={$taskStatus ? 'Son raporu sesli oku' : 'Okunacak rapor yok'}
+  >
+    {isReadingReport ? 'OKUYOR' : 'RAPORU OKU'}
+  </button>
+
+  <!-- [FAZ C · C3] MİKROFON: bas -> dinler, bırak -> yerel STT -> Aspasia -->
+  <button
+    class="mic-spot"
+    class:listening={isListening}
+    on:click={toggleListening}
+    title={isListening ? 'Dinliyorum — bırakmak için tıkla' : 'Mikrofon: konuş, Aspasia duysun'}
+  >
+    {isListening ? 'DİNLİYOR' : 'MİK'}
+  </button>
 
   <!-- Aspasia GÖNDER Butonu ('GÖNDER' butonu üzerine şık buton) -->
   <button
@@ -1001,6 +1317,117 @@
   }
 
   /* TACTICAL WAR ROOM GEÇİŞ BUTONU */
+  .mic-spot {
+    position: absolute;
+    bottom: 168px;
+    left: 300px;
+    z-index: 106;
+    padding: 6px 14px;
+    background: rgba(10, 15, 29, 0.9);
+    border: 1px solid rgba(148, 163, 184, 0.5);
+    border-radius: 9999px;
+    font-family: 'JetBrains Mono', monospace, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: #94a3b8;
+    cursor: pointer;
+    white-space: nowrap;
+    backdrop-filter: blur(6px);
+  }
+
+  .mic-spot.listening {
+    border-color: rgba(34, 197, 94, 0.8);
+    color: #86efac;
+    box-shadow: 0 0 16px rgba(34, 197, 94, 0.35);
+  }
+
+  .report-spot {
+    left: 404px;
+    border-color: rgba(56, 189, 248, 0.5);
+    color: #7dd3fc;
+  }
+
+  .voice-pill {
+    position: absolute;
+    top: 54px;
+    right: 32px;
+    z-index: 104;
+    padding: 6px 14px;
+    background: rgba(10, 15, 29, 0.82);
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    border-radius: 9999px;
+    font-family: 'JetBrains Mono', monospace, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: #94a3b8;
+    backdrop-filter: blur(6px);
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .voice-pill.speaking {
+    border-color: rgba(251, 191, 36, 0.75);
+    color: #fcd34d;
+    box-shadow: 0 0 14px rgba(251, 191, 36, 0.3);
+  }
+
+  .voice-pill.muted {
+    opacity: 0.6;
+    text-decoration: line-through;
+  }
+
+  .memory-pill {
+    position: absolute;
+    top: 22px;
+    right: 418px;
+    z-index: 104;
+    padding: 6px 14px;
+    background: rgba(10, 15, 29, 0.82);
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    border-radius: 9999px;
+    font-family: 'JetBrains Mono', monospace, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: #94a3b8;
+    backdrop-filter: blur(6px);
+    white-space: nowrap;
+    cursor: help;
+  }
+
+  .memory-pill.has-memory {
+    border-color: rgba(129, 140, 248, 0.7);
+    color: #c7d2fe;
+    box-shadow: 0 0 14px rgba(129, 140, 248, 0.28);
+  }
+
+  .threshold-pill {
+    position: absolute;
+    top: 22px;
+    right: 210px;
+    z-index: 104;
+    padding: 6px 14px;
+    background: rgba(10, 15, 29, 0.82);
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    border-radius: 9999px;
+    font-family: 'JetBrains Mono', monospace, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: #94a3b8;
+    backdrop-filter: blur(6px);
+    white-space: nowrap;
+    cursor: help;
+  }
+
+  .threshold-pill.measured {
+    border-color: rgba(34, 197, 94, 0.65);
+    color: #86efac;
+    box-shadow: 0 0 14px rgba(34, 197, 94, 0.25);
+  }
+
   .war-room-switch-pill {
     position: absolute;
     top: 22px;

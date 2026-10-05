@@ -327,6 +327,165 @@ async def scrape_instagram(
                         emit("WARNING", f"SCRAPER CLEANUP: {resource_name} kapanamadı: {str(cleanup_error)[:80]}")
 
 
+async def scrape_x(
+    url: str,
+    log: Optional[Callable[[str, str], None]] = None,
+    *,
+    limit: Optional[int] = None,
+    vault_locked: bool = False,
+    rate_ok: Optional[bool] = None,
+) -> Dict[str, Any]:
+    """X (Twitter) profilini kazır — **tek sahiplik** ([FAZ A · Retina]).
+
+    Bugüne dek X'in sensörü yoktu: `effective_scraper_type` "x" döndürüyor,
+    api.py ise arama snippet'lerini profil diye giydiriyordu (uydurma
+    takipçi sayısı dâhil). Artık yol belli:
+
+        platform_registry.scrape_x  →  capability spine  →  sensor.x.twscrape
+
+    Yani X de Instagram gibi OMURGADAN geçer: kasa, hız, çocuk kilidi,
+    politika kapıları ve timeout aynı yerden uygulanır. Yetenek kanıt
+    üretemezse `InsufficientEvidenceError` yükselir — boş/uydurma profil
+    ÜRETİLMEZ, çağıran görev dürüstçe durur.
+    """
+    from agent_core.scraper.instagram_ghost import InsufficientEvidenceError
+
+    emit = log or (lambda level, msg: None)
+    username = extract_x_username(url)
+    if not username:
+        raise InsufficientEvidenceError(
+            "URL bir X PROFİLİ değil (yanlış hedef kazınmaz): "
+            f"{(url or '')[:80]} — https://x.com/<kullanici> verin"
+        )
+
+    from agent_core.capabilities import CapabilityContext, bootstrap, run_capability
+    from agent_core.capabilities.state import policy_state
+
+    bootstrap()
+    state = policy_state(vault_locked=vault_locked, rate_ok=rate_ok)
+    result = await run_capability(
+        "sensor.x.twscrape",
+        CapabilityContext(
+            subject=username,
+            params={"limit": int(limit) if limit else 50},
+        ),
+        state=state,
+    )
+
+    if not result.ok:
+        reason = result.unavailable_reason or "unknown"
+        emit("WARNING", f"X SENSÖRÜ KANIT ÜRETEMEDİ: {reason}")
+
+        # [FAZ A · A3] İKİNCİ OKUMA YOLU: agent-reach (harici CLI, ücretsiz).
+        # twscrape hesap/kütüphane yokken X'i büsbütün kaybetmeyelim; kamuya
+        # açık okuma yapılır. Zaman damgası YOKTUR — post_times boş kalır,
+        # uydurma saat YAZILMAZ.
+        fallback = await _x_via_agent_reach(url, username, state, emit)
+        if fallback is not None:
+            return fallback
+
+        raise InsufficientEvidenceError(
+            f"X sensörü kanıt üretemedi ({reason}); profil uydurulmadı."
+        )
+
+    series = list((result.payload or {}).get("series") or [])
+    if not series:
+        raise InsufficientEvidenceError(
+            "X sensörü gönderi üretemedi (boş akış); profil uydurulmadı."
+        )
+
+    emit("INFO", f"SCRAPER X: {len(series)} gönderi (twscrape, gerçek zaman damgalı)")
+    return x_target_profile_update(username, series)
+
+
+async def _x_via_agent_reach(
+    url: str,
+    username: str,
+    state: Any,
+    emit: Callable[[str, str], None],
+) -> Optional[Dict[str, Any]]:
+    """X için ikinci okuma yolu: `sensor.web.agent_reach` (harici CLI, ücretsiz).
+
+    twscrape yoksa/reddedilirse devreye girer. Çıktıda zaman damgası yoktur:
+    frequency motoru için veri ÜRETMEYİZ, yalnız gerçek okunan metni taşırız.
+    CLI kurulu değilse (varsayılan) sessizce `None` döner — kapı ayrıdır
+    (`ENABLE_AGENT_REACH`), yani kurulmadan hiçbir şey değişmez.
+    """
+    from agent_core.capabilities import CapabilityContext, bootstrap, run_capability
+
+    try:
+        bootstrap()
+        result = await run_capability(
+            "sensor.web.agent_reach",
+            CapabilityContext(subject=url),
+            state=state,
+        )
+    except Exception as exc:  # yedek yol asıl kararı bozmasın
+        emit("WARNING", f"AGENT-REACH yedeği koşamadı: {type(exc).__name__}")
+        return None
+
+    if not result.ok or not result.items:
+        return None
+
+    text = (result.items[0].content or "").strip()
+    if not text:
+        return None
+
+    emit("INFO", f"SCRAPER X: agent-reach ile kamuya açık okuma ({len(text)} karakter)")
+    profile = x_target_profile_update(username, [{"text": text, "created_at": ""}])
+    profile["sensor"] = "agent_reach"
+    profile["sensor_note"] = (
+        "X akışı twscrape ile okunamadı; agent-reach ikinci yolu kullanıldı "
+        "(zaman damgası yok — frequency motoru için veri üretilmedi)."
+    )
+    return profile
+
+
+def x_target_profile_update(username: str, series: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """X gönderi serisini `target_profile` alanlarına çevirir.
+
+    Sözleşme (sahte veri YASAK):
+    - `post_times` GERÇEK zaman damgalarından gelir — Instagram yoluyla aynı
+      hizada; frequency engine artık X için de gerçek veri görür.
+    - `followers`/`following` ÖLÇÜLMEDİYSE `None` durur (0 = ölçüm, None =
+      ölçülmedi; eski yolun uydurma 150'ü burada yoktur).
+    - `bio` BOŞ kalır: X akışından biyografi çıkarılmadıysa "" yazılır,
+      arama snippet'i biyografi diye sunulmaz.
+    """
+    posts: List[str] = []
+    post_times: List[str] = []
+    posts_meta: List[Dict[str, Any]] = []
+    for entry in series:
+        text = (entry.get("text") or "").strip()
+        if not text:
+            continue
+        posts.append(text)
+        post_times.append(entry.get("created_at") or "")
+        posts_meta.append(
+            {
+                "like_count": entry.get("like_count"),
+                "comment_count": entry.get("reply_count"),
+                "retweet_count": entry.get("retweet_count"),
+                "quote_count": entry.get("quote_count"),
+            }
+        )
+
+    return {
+        "username": "@" + username.lstrip("@"),
+        "name": username.lstrip("@"),
+        "bio": "",
+        "posts": posts,
+        "post_times": post_times,
+        "posts_meta": posts_meta,
+        "post_types": ["text" for _ in posts],
+        "images": [],
+        "followers": None,   # ölçülmedi — uydurma sayı YOK
+        "following": None,   # ölçülmedi
+        "is_private": None,  # akış okunduysa False, aksi halde bilinmiyor
+        "platform": "x",
+    }
+
+
 def build_user_context(
     rituals: List[str],
     playlist: List[str],

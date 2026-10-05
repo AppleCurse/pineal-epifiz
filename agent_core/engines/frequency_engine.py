@@ -151,6 +151,24 @@ class FrequencyEngine:
             return out
 
         night = sum(ts.hour >= 23 or ts.hour < 5 for ts, *_ in ev) / len(ev)
+
+        # [FAZ B · B6] GERÇEK spektral analiz: sin/cos modeli değil, FFT
+        # periodogramı. Yetersiz/sabit seride periyot UYDURULMAZ (alan None).
+        from agent_core.engines.spectrum import analyze_spectrum
+
+        spectrum = analyze_spectrum(
+            [s.energy for s in samples], bucket_hours=self.bucket_hours
+        )
+
+        note = f"FREQUENCY: {len(samples)} kova · μ={mu:.2f} σ={sd:.2f}"
+        if spectrum.available:
+            note += (
+                f" · baskın periyot {spectrum.dominant_period_days:g} gün"
+                f" (güç payı {spectrum.periodic_strength:.2f})"
+            )
+        else:
+            note += f" · periyot ölçülemedi ({spectrum.reason})"
+
         return FrequencyReport(
             status=EvidenceStatus.OBSERVED if len(samples) >= 8 else EvidenceStatus.WEAK,
             samples=samples,
@@ -163,6 +181,12 @@ class FrequencyEngine:
             energy_mean=round(mu, 4),
             energy_std=round(sd, 4),
             night_energy_share=round(night, 4),
-            machine_note=f"FREQUENCY: {len(samples)} kova · μ={mu:.2f} σ={sd:.2f}",
+            dominant_period_days=spectrum.dominant_period_days,
+            periodic_strength=spectrum.periodic_strength,
+            dominant_harmonic=spectrum.dominant_harmonic,
+            spectral_method=spectrum.method if spectrum.available else "",
+            spectral_reason=spectrum.reason,
+            spectrum=spectrum.spectrum,
+            machine_note=note,
             evidence_refs=refs[:64],
         )

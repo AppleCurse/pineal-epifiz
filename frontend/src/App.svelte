@@ -2,7 +2,8 @@
   import { onMount, onDestroy } from 'svelte';
   import { get } from 'svelte/store';
   import {
-    apiToken, currentApiToken, apiFetch, clientId, wsUrl, logs, taskStatus,
+    apiToken, currentApiToken, apiFetch, clientId, wsUrl, logs, taskStatus, API_BASE,
+    speechState, lastSpeech, voiceEnabled,
     isProcessing, powerEngaged, recordEngaged, agentStatuses, vaultLocked,
     activeViewMode, agentStatusSource
   } from './store';
@@ -117,7 +118,28 @@
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.type === "log") {
+        if (data.type === "speech") {
+          // [FAZ C · C2] Konuşma durumu TEK kaynaktan (backend) gelir:
+          // arayüz kendi kendine "konuşuyorum" uydurmaz.
+          lastSpeech.set(data);
+          if (data.state === "speaking") {
+            speechState.set("speaking");
+            if (get(voiceEnabled) && data.url) {
+              try {
+                const audio = new Audio(`${API_BASE}${data.url}`);
+                audio.onended = () => speechState.set("idle");
+                audio.onerror = () => speechState.set("idle");
+                void audio.play().catch(() => speechState.set("idle"));
+              } catch (_e) {
+                speechState.set("idle");
+              }
+            }
+          } else if (data.state === "denied") {
+            speechState.set("denied");
+          } else {
+            speechState.set("idle");
+          }
+        } else if (data.type === "log") {
           if (!recording()) return;
           logs.update(l => [...l, data].slice(-80));
         } else if (data.type === "agent_status_update") {

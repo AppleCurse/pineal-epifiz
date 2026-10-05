@@ -39,6 +39,7 @@ Pineal (Epifiz bezi); biyolojide ışığı, sirkadiyen döngüleri ve görünme
 Bir hedefin açık kaynaklı dijital ayak izlerini (sosyal paylaşımları, metinlerini, fotoğraflarını, zamansal etkileşim ritimlerini) toplayan, bunları **yapay zekaya asla fal baktırmadan**, saf matematiksel dalga motorlarıyla analiz eden **yerel bir adli psikodinamik profil ve rezonans istasyonudur**.
 
 ### Sistemin 4 Dokunulmaz İlkesi:
+> **Tüzük:** bu ilkeler artık [`docs/PINEAL_TUZUK.md`](docs/PINEAL_TUZUK.md) v2 içinde **Madde 1–4** olarak yaşar (2026-10-05). İlkeler değişmedi; bağlamı büyüdü: uyum/ilk temas artık sistemin tanımı değil, **kullanım sahalarından biridir** (tüzük Madde 0 ve Madde 9). Aşağıdaki dört ilke, tüzüğün kısa okumasıdır.
 1. **LLM'ler Falcı Değildir:** Karakter analizi, bastırılmış narsisizm veya derin travmalar LLM'lere "tahmin ettirilmez". 7 adet saf matematiksel dalga motoru metin ve zaman serisini doğrudan fizik/istatistik formülleriyle ölçer. LLM'ler yalnızca en son aşamada dil sentezi, diyalog tasarımı ve çapraz denetim için kullanılır.
 2. **Kanıt Mührü (Fail-Closed):** Verisi veya kanıtı olmayan hiçbir iddia üretilemez (`InsufficientEvidenceError`). Sistem boşlukları sallayarak doldurmaz; veri yoksa o kanalı dürüstçe kapatır veya işlemi durdurur.
 3. **100% Şeffaflık & Sıfır Sahte Simülasyon:** Arayüzde rastgele yanan sahte LED'ler veya yapay zamanlayıcılar (`demoMode`) kesinlikle bulunmaz. Ekranda görülen her durum, güven puanı ve log, doğrudan FastAPI WebSocket, Redis Pub/Sub ve Tauri IPC'den akan gerçek telemetridir.
@@ -304,8 +305,13 @@ Sistem her commit öncesinde sıkı kalite kapılarından geçer:
 
 `.env.example` içindeki sağlayıcı, canlı LLM, harcama sınırı, kimlik doğrulama ve deneysel özellik ayarlarını çalıştırmadan önce gözden geçirin. Sunucu anahtarlarını `VITE_*` frontend değişkenlerine koymayın. İsteğe bağlı bağımlılık ve geliştirme kontrolleri için root `package.json`, `requirements-*.txt` ve [frontend notlarına](frontend/README.md) bakın.
 
+### Tüzük
+
+- [Atlas Pineal Tüzüğü (v2, 2026-10-05)](docs/PINEAL_TUZUK.md) — 10 madde, yasaklar, sahalar
+
 ### İnceleme raporları
 
+- [Yıldız depo karar ağacı — 325 depo, 8 kapı, 10 faz](docs/reports/YILDIZ_DEPO_KARAR_AGACI_2026-10-05.md) *(entegrasyon hükmü ve yol haritası)*
 - [Yedi önerilen eksikliğin kaynak kodu incelemesi](docs/reports/EKSIK_YETENEKLER_2026-09-26.md)
 - [C0 salt-okunur veri envanteri](docs/reports/C0_BASELINE_VERI_ENVANTERI_2026-09-26.md)
 - [P0 tarihsel baseline altyapısı için açık kapsam kararları](docs/reports/P0_PERSONAL_BASELINE_INFRASTRUCTURE_SCOPE_2026-09-26.md)

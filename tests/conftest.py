@@ -59,6 +59,27 @@ def _isolate_response_cache(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_threshold_calibration(tmp_path, monkeypatch):
+    """[FAZ B · B5] Eşik kalibrasyon ledger'ı testler arasında SIZMASIN.
+
+    Kalibrasyon verisi MAKİNEDE kalır ve eşiği değiştirir: bir testin yazdığı
+    ölçüm bir sonraki testin eşiğini (ve dolayısıyla alıntı kapısının kararını)
+    sessizce değiştirirdi. Ledger geçici dizine taşınır; gözlem varsayılan
+    KAPALIdır, kalibrasyonu test eden dosyalar kendileri açar.
+    """
+    monkeypatch.setenv("PINEAL_CALIB_DIR", str(tmp_path / "calibration"))
+    # [FAZ B · B2/B3] Hafıza kristali de makineye yazılır: testler arasında sızmasın.
+    monkeypatch.setenv("PINEAL_CRYSTAL_DIR", str(tmp_path / "crystals"))
+    # [FAZ C · C1] Jenerik yanıt telemetrisi de makineye yazılır.
+    monkeypatch.setenv("PINEAL_TELEMETRY_DIR", str(tmp_path / "telemetry"))
+    monkeypatch.setenv("PINEAL_CALIB_OBSERVE", "false")
+    monkeypatch.delenv("PINEAL_THRESHOLD", raising=False)
+    monkeypatch.delenv("PINEAL_THRESHOLD_QUOTE", raising=False)
+    monkeypatch.delenv("PINEAL_CALIB_MIN_SAMPLES", raising=False)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _isolate_rate_limit_state():
     """[AUDIT P1-18a] `backend.api._rate_buckets` süreç genelinde paylaşılan
     mutable durumdur.

@@ -12,7 +12,15 @@
 - `OPENROUTER_API_KEY` + `LIVE_LLM_E2E=1` → canlı bulut LLM.
 - Yerel: `USE_LOCAL_LLM=true`, `LOCAL_LLM_URL=http://localhost:11434/v1`, `LOCAL_LLM_MODEL=...` (anahtar gerekmez).
   Not: API sunucusunda Kasa'daki "yerel model" seçimi (`use_local`) bu env'i ezer; env varsayılanı yalnız Kasa seçimi yapılmamışsa geçerlidir.
-- `TAVILY_API_KEY`, `SERPAPI_API_KEY`, `EXA_API_KEY` → AutonomousVerifier web doğrulaması (yoksa DuckDuckGo yedeği).
+- `TAVILY_API_KEY`, `SERPAPI_API_KEY`, `EXA_API_KEY` → AutonomousVerifier web doğrulaması (yoksa DuckDuckGo + SearXNG yedeği).
+- Faz A · Retina kapıları (hepsi **default KAPALI**, hepsi omurgada):
+  `ENABLE_MAIGRET` · `ENABLE_HOLEHE` · `ENABLE_CRAWL4AI` · `ENABLE_SCRAPLING` ·
+  `ENABLE_X_SENSOR` · `ENABLE_IG_SECONDARY` · `ENABLE_AGENT_REACH` ·
+  `ENABLE_SEARXNG`. Kütüphaneleri (trafilatura/scrapling/twscrape/instagrapi)
+  **üçüncü adım** dosyasındadır: `pip install -r requirements-retina.txt`
+  (isteğe bağlı; kurulmazsa ilgili yetenek dürüst `dependency_missing` döner).
+  Agent-Reach Python paketi değil — harici CLI (`npm i -g agent-reach`).
+  SearXNG ayrı servistir (`SEARXNG_BASE_URL` ile gösterilir).
 - Vision: `OPENROUTER_VISION_MODEL` — varsayılan `google/gemini-3.7-flash`; VisionAnalyzer (profil fotoğrafları) ve görselli Aspasia isteklerinde kullanılır.
 - Model varsayılanları (2026-09-02 karar matrisi):
   Tier-1 `anthropic/claude-sonnet-5` (`OPENROUTER_TIER_1_MODEL`),
@@ -36,7 +44,7 @@
 | 429 (initiate/aspasia) | Rate limit — 1 dk bekle (bilinçli koruma) |
 | 401 tüm API çağrıları | `PINEAL_TOKEN` tanımlı ama UI göndermiyor → arayüzde Kasa → "API ERİŞİM ANAHTARI (PINEAL_TOKEN)" alanına gir (çalışma zamanı, yeniden derleme gerekmez; build-time gömme yolu yoktur — AUDIT 2026-09-11 P0) — ya da token'ı kaldır |
 | Scrape 429/403 (Instagram) | Platform limit/cookie: Kasaya güncel cookie gir |
-| X (Twitter) hedefi | Kazıma devre dışı (B4): `XScraperUnsupportedError`; WS logunda "DESTEKLENMİYOR" görünür, analiz BAŞLATILMAZ — public-web alternatifi için yetki beklenir (`awaiting_authorization`) |
+| X (Twitter) hedefi | Gerçek sensör: `sensor.x.twscrape` (kapı: `ENABLE_X_SENSOR=true` + kasa + hesap havuzu). Sensör kanıt üretirse **gerçek zaman damgalı gönderi serisi** çıkar. Sensör kapalı/kanıtsızsa profil UYDURULMAZ: logda `X SENSÖRÜ KANIT ÜRETEMEDİ` görünür, açık kaynak dosyası (`platform: web_dossier`, takipçi `None`) ile devam edilir; `scripts/run_task.py` ise `halted_evidence` + exit 3 döner. Eski `awaiting_authorization` yolu kaldırıldı (Faz A · Retina) |
 | WS bağlanmıyor | Token kipinde istemci bağlantıdan sonra ilk JSON mesajında `{type:"auth",token:"..."}` göndermeli; token URL/query'ye yazılmaz. Sunucu ~5 sn içinde auth mesajı almazsa 1008 ile kapatır (UI artık bunu "UPLINK YETKİ HATASI" diye loglar ve otomatik yeniden bağlanır). Port 8000 dışındaysa `VITE_API_BASE` tanımla |
 
 ## Görev verisi
@@ -68,7 +76,8 @@ AST-bazlı; dedektör canlılık kanıtı içerir), `test_consolidation_faz1_5.p
 - `ENABLE_MAIGRET` / `ENABLE_HOLEHE` / `ENABLE_CRAWL4AI` — **default KAPALI**;
   kapalıyken davranış değişmez (uçlar dürüst `disabled` döner). Ayrıntılı alt
   değişkenler `.env.example`'da; kurulum ikinci adım dosyası:
-  `pip install -r requirements-osint.txt` (crawl4ai; psutil meta-çatışması).
+  `pip install -r requirements-osint.txt` (crawl4ai; psutil meta-çatışması);
+  Faz A kütüphaneleri için üçüncü adım `requirements-retina.txt` (isteğe bağlı).
 - `STEALTH_PROVIDER=playwright_stealth|invisible|cloak|none` — seçici kapı DEĞİL:
   default bugünkü davranış. invisible/cloak binary İNDİRMEZ; `INVISIBLE_BROWSER_BINARY`
   / `CLOAK_BROWSER_EXECUTABLE` yolu gösterilmezse dürüst `binary_missing` döner
