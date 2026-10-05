@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased — 2026-10-05 — AHLAKİ DÖKÜM: 325 depo → 99 fikir
+
+- **Yeni:** `docs/reports/AHLAKI_DOKUM_2026-10-05.md`. 325 depo, aynı fikri
+  satan tekrarlarıyla birlikte açıldı; **99 ayrı fikir**e indirildi. Her fikre
+  çıplak bir ahlaki hüküm yazıldı.
+- **Ahlak testi (3 soru):** (1) Kapıyı mı kırıyor, açık olanı mı okuyor?
+  (2) Kırılan şey bir insanın bedeni/kimliği/sesi mi? (3) Başkasının emeğini,
+  hesabını veya sırrını mı sömürüyor? Bir cevap bile kötüyse depo biter.
+- **Dağılım:** T1 temiz alet 232 depo (67 fikir) · T2 gri 45 depo (14 fikir) ·
+  T3 sınır ihlali 10 depo (6) · T4 saldırı/karanlık 16 depo (4) · T5 kimlik
+  hırsızlığı 8 depo (2) · T6 hile/asalaklık/yanıltma 14 depo (6).
+- **En kalabalık üç fikir:** kullanıcı adı taraması (24 depo), çok ajanlı
+  orkestrasyon (20), Agent Skills standardı (14) — yani 325 kaydın büyük
+  bölümü birbirinin tekrarı.
+- **Kırmızı çizgi ayrı tutuldu:** 18 yaş altı hiçbir sınıfla kıyaslanmaz;
+  hükmü Tüzük Madde 4/A ve `agent_core/safety/minor_gate.py` içinde.
+
 ## Unreleased — 2026-10-05 — ÇOCUK KIRMIZI ÇİZGİSİ (sistemin TEK kırmızı çizgisi)
 
 - **Ürün sahibi kuralı, değiştirilemez:** 18 yaşından küçük her birey çocuktur.

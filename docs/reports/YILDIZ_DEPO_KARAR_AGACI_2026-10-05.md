@@ -8,6 +8,8 @@
 - Depo tarafı: kullanıcının sağladığı 325 kayıt + kısa liste için GitHub API'den **lisans / yıldız / son push** doğrulaması (2026-10-05). Kısa listeye girmeyen depolarda karar, depo adı ve verilen açıklamaya dayanır; **lisans sütunu "doğrulanacak" ise entegrasyondan önce G4 kapısı tekrar koşulur.**
 - Hiçbir karar "popüler olduğu için" verilmedi. Her satır 8 kapıdan geçti.
 
+**Ahlaki döküm (99 fikir):** [`AHLAKI_DOKUM_2026-10-05.md`](AHLAKI_DOKUM_2026-10-05.md) — 325 depo tekrarlarından arındırılıp 99 fikre indirildi, her birinin ahlaki hükmü yazıldı.
+
 **Okuma kuralı:** `E` = çekirdeğe birleşik entegrasyon · `A` = kapı arkası adaptör · `İ` = ilham/desen/veri kümesi (kod alınmaz) · `T` = ertele · `R` = red.
 
 ---
