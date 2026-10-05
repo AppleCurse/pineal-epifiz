@@ -15,6 +15,7 @@
 | Bellek | `agent_core/services/canonical_memory.py` | Görev başına `memory/<task_id>.json` (bilinçli: DB yok) |
 | Telemetri | `agent_core/schemas/telemetry.py` + api.py kuyruğu | Pydantic event şemaları → FIFO → WebSocket (Snapshot + SearchEngine ayrımı) |
 | Aspasia | `agent_core/aspasia/aspasia_chief.py` | Gözlemci persona; telemetri özeti + sohbet (karar verici DEĞİL) |
+| Tüzük | `docs/PINEAL_TUZUK.md` | **Ürün anayasası (v2, 2026-10-05):** 10 madde. Maddeler kodda `PolicyKernel` kapıları olarak çalışır (vault/consent/rate/budget). Uyum/ilk temas tanım değil **sahadır** (Madde 9) |
 | Yetenek omurgası | `agent_core/capabilities/` | **Capability Spine (Faz 0):** tek sözleşme (`base.py`) + tek kayıt defteri (`registry.py`) + politika kapısı (`policy.py`) + tek koşucu (`runner.py`). Yeni bir yetenek eklemek = `BaseCapability` yaz + `register()`. İkinci bir "yetenek var mı?" katmanı YOKTUR (kural [009]) |
 | Scraper | `agent_core/scraper/instagram_ghost.py` (IG) | Playwright+stealth; Pydantic V2 şema; kanıt yoksa HALT. X (`scraper.py`) **devre dışı** — `XScraperUnsupportedError` (B4) |
 | Rust Core | `rust_core/` | **FAZ 9 Karar B — experimental/optional:** Python ürün yoluna bağlı değil, Docker'a paketlenmez ve karar etkisi yoktur; CI `rust-core` job'u yalnız bağımsız derleme/test yapar |

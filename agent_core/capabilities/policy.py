@@ -62,9 +62,24 @@ class PolicyKernel:
 
     KNOWN_GATES = BUILTIN_GATES
 
+    #: Kapı değerlendirme ÖNCELİĞİ (alfabetik DEĞİL — güvenlik sırası):
+    #: bilinmeyen kapı (en gürültülü, fail-closed) → kasa → rıza → bütçe →
+    #: hız → env bayrakları. Önemli: kasa kilidi, env bayrağı kapalı olsa bile
+    #: ÖNCE reddedilir; aksi halde denetim izinde "gate_disabled" görünür ve
+    #: kasa ihlali maskelenir (Tüzük Md.4.1: kasa istisnasızdır).
+    _GATE_ORDER = {"vault": 1, "consent": 2, "budget": 3, "rate": 4}
+
+    @classmethod
+    def _gate_rank(cls, gate: str) -> int:
+        if gate.startswith("ENABLE_"):
+            return 5
+        if gate not in cls.KNOWN_GATES:
+            return 0  # bilinmeyen kapı en önce reddedilir
+        return cls._GATE_ORDER[gate]
+
     def evaluate(self, gates: frozenset[str] | set[str], state: PolicyState) -> PolicyDecision:
-        """Kapıları deterministik sırada değerlendirir; ilk ret kararı kesindir."""
-        for gate in sorted(gates or ()):
+        """Kapıları **öncelik** sırasında değerlendirir; ilk ret kararı kesindir."""
+        for gate in sorted(gates or (), key=self._gate_rank):
             if gate.startswith("ENABLE_"):
                 if not bool(state.enabled_flags.get(gate, False)):
                     return PolicyDecision.deny(gate, "gate_disabled")

@@ -47,7 +47,8 @@ class MaigretCapability(BaseCapability):
     id = "sensor.identity.maigret"
     kind = CapabilityKind.SENSOR
     license = "MIT"
-    gates = frozenset({"vault", "ENABLE_MAIGRET"})
+    # Tüzük Madde 4: üçüncü kişi verisi → kasa + rıza kapısı ZORUNLU (2026-10-05, K1).
+    gates = frozenset({"vault", "consent", "ENABLE_MAIGRET"})
     timeout_seconds = 75.0
     description = "Kullanıcı adının 3300+ sitedeki varlığını tarar (kanıtlı)."
 
@@ -209,7 +210,8 @@ class SocidCapability(BaseCapability):
     id = "extractor.identity.socid"
     kind = CapabilityKind.EXTRACTOR
     license = "MIT"
-    gates = frozenset({"vault"})
+    # Tüzük Madde 4: bir kişinin profilini işliyor → kasa + rıza kapısı ZORUNLU.
+    gates = frozenset({"vault", "consent"})
     timeout_seconds = 20.0
     description = "Profil URL'sinden sosyal kimlik alanlarını çıkarır (kanıtlı)."
 

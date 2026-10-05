@@ -883,13 +883,22 @@ Karar kodları: **E** entegre · **A** adaptör (kapı arkası) · **İ** ilham/
 **Kabul:** (1) repoda "yetenek var mı?" kararı veren tek yer registry (grep ile kanıtlanır); (2) her capability için `available:false` birim testi; (3) hiçbir capability doğrudan rapora yazmıyor (statik kontrol); (4) mevcut 173 test paketi düşüş yok.
 **Yeni bağımlılık: YOK.**
 
-### Faz 1 · DİL + GEÇMİŞ + KALİBRASYON İSKELETİ (Y6, Y7, Y9)
+### Faz 1 · RIZA KAPISI + DİL + GEÇMİŞ + KALİBRASYON İSKELETİ (Y2, Y6, Y7, Y9)
+> **K1 kararı gereği rıza/yaş kapısı Faz 5'ten Faz 1'e çekildi.** Faz 2/3'te açılacak
+> hiçbir kişi-verisi sensörü bu kapı olmadan varsayılan açık olamaz.
 **İş:** `extractor.lang.detect` (hafif fasttext/lingua sınıfı) · `extractor.translate` (çeviri **kanıt kaybı yaratmaz**: orijinal metin korunur, `quote_guard` orijinalde eşleşir) · DuckDB geçmiş deposu (`memory.store`) · kalibrasyon iskeleti (`calibration.engine`, scikit-learn isotonic + backtest harness) · **0.70 eşiği "ölçülmemiş sabit" olarak işaretlenir** ve kalibrasyon raporuna bağlanır.
-**Kabul:** TR/EN/DE/AR + CJK profil metni doğru işlenir; çeviri sonrası `quote_guard` yanlış pozitif üretmez (regresyon testi); geçmiş deposu bozuk dosyadan kurtulur (CanonicalMemory kurtarma testinin aynısı).
+**Kabul:** TR/EN/DE/AR + CJK profil metni doğru işlenir; çeviri sonrası `quote_guard` yanlış pozitif üretmez (regresyon testi); geçmiş deposu bozuk dosyadan kurtulur (CanonicalMemory kurtarma testinin aynısı); **rıza kaydı olmayan hedefte hiçbir capability koşmaz** (`policy:consent_missing` → 0 kanıt) ve yaş kapısı tetiklenince `halted_consent` + gerekçe rapora yazılır.
 
 ### Faz 2 · SENSÖR IZGARASI (Y8 + arama bağımsızlığı)
 **İş:** `sensor.x.twscrape` (MIT) · `sensor.reddit/youtube.agent_reach` (MIT) · `sensor.tiktok.*` (`68` birincil, `69` harici yedek) · `extractor.web.trafilatura` (birincil) + `extractor.web.scrapling` (adaptif fallback) + crawl4ai (ağır fallback) · `search.searxng` (**ayrı konteyner**, imaja girmez) · `sensor.identity.phonenumbers` · maigret site DB'si `75/174/236` veri kümeleriyle tazelenir · `sensor.domain.theharvester` + `open-seo` (harici süreç).
 **Kabul:** `platform_registry` 6 platformu tanır; her sensörün `available:false` yolu var; **X URL'si sensör açıkken `awaiting_authorization`'a düşmez**, sensör kapalıyken hâlâ sahte profil üretilmez (mevcut B4 testi korunur); SearXNG kapalıyken arama `SearchOutcome(UNAVAILABLE)` döner.
+**K2 kararı (operatör hesabı):** `sensor.x.twscrape` kapıları
+`{"vault", "consent", "rate", "ENABLE_X_SENSOR"}`. Hesap bilgileri vault/env'de
+tutar; **log, telemetri, evidence ve rapora sızamaz** (redaction testi
+genişletilir). Rotasyon/rate-limit `twscrape`'in kendi mekanizmasında; Pineal
+tarafında `rate` kapısı ayrıca zorunludur. Hesapsız yollar (`315 Agent-Reach`,
+SearXNG public-web) yedek ve maliyetsiz katman olarak kalır.
+
 **Not:** `platform_registry` kural [009] gereği tek platform karar mercii olarak kalır — yeni sensörler oraya **adaptör** olarak eklenir.
 
 ### Faz 3 · MEDYA ADLİ HATTI (Y1, Y5)
@@ -912,7 +921,8 @@ Karar kodları: **E** entegre · **A** adaptör (kapı arkası) · **İ** ilham/
 **İş:** `capabilities/mcp_server.py` — registry'deki her capability açık rıza ile MCP aracı olarak yayınlanır · her capability için `SKILL.md` üretimi (Agent Skills standardı: `322/318/136/183/212/299`) · kum havuzu: dış araçlar `293 open-interpreter` deseninde izole ve kapalı kapı · webhook/CLI ihracı.
 **Kabul:** tüm capability'ler MCP araç listesinde görünür; dış araç çağrısı ayrı süreçte ve izole; kapalıyken uç nokta 404.
 
-### Faz 8 · YEREL & MAHREM
+### Faz 8 · YEREL & MAHREM — **Faz 2'nin hemen ardına alındı (paralel hat)**
+> **K3 kararı:** yerel çıkarım donanımı mevcut; bu faz beklemeye alınmadı.
 **İş:** yerel 3'lü jüri (ollama / llama.cpp / vllm + `193 llmfit` ile donanım seçimi + `151 magnitude` hızlandırma) · maliyet gözlemlenebilirliği (`198 litellm` kontrol listesi) · RTK genişletme.
 **Kabul:** kasa kapalı + internet yokken temel analiz hattı çalışır ve maliyet 0; yerel model yoksa dürüst `UNAVAILABLE`.
 
@@ -983,13 +993,50 @@ Kendi denetiminizde (`EKSIK_YETENEKLER_2026-09-26.md`) "tam uygulama olarak doğ
 
 ---
 
-## 10. ONAY BEKLEYEN ÜÇ KARAR (ürün sahibi = sensin)
+## 10. KİLİTLENEN KARARLAR (2026-10-05 · ürün sahibi onayı)
 
-Karar ağacı teknik hükmü verdi; aşağıdaki üçü **ürün/politika** kararıdır ve kod yazılmadan önce netleşmeli:
+Üç politika kararı da **onaylandı**. Sonuçları yol haritasına aşağıdaki gibi işlendi:
 
-1. **Rıza/yaş kapısı (Faz 5) zorunlu mu, uyarı mı?** Önerim: **zorunlu** — rıza kaydı olmayan hedefte analiz başlamasın. Bu, ürünü yavaşlatır ama "benzersiz ve yetkili" iddianın tek savunulabilir yoludur.
-2. **Hangi sensörler operatör hesabı gerektiriyor?** X (`70 twscrape`) ve oturum tabanlı erişim (`18/214/179`) için operatörün **kendi** hesabını bağlaması gerekir. Kendi hesabınla mı, hesapsız açık kaynak yollarla mı (daha zayıf sinyal)?
-3. **Yerel jüri (Faz 8) için donanım var mı?** Varsa Faz 8'i öne çekeriz (maliyet 0 + mahremiyet), yoksa Faz 8 sona kalır.
+### K1 · Rıza/yaş kapısı → **ZORUNLU** (Faz 1'e çekildi)
+Karar: rıza kaydı olmayan hedefte analiz **başlamaz**; reşit olmayan şüphesinde
+pipeline `halted_consent` ile durur ve gerekçeyi rapora yazar.
+Sonuçlar:
+- Faz 1'e **asgari rıza defteri** (`safety.consent` v0: hedef, amaç, kapsam,
+  zaman damgası, silme) + yaş kapısı eklendi. **Faz 2/3'teki hiçbir yeni kişi
+  verisi sensörü bu kapı olmadan varsayılan açık olamaz.**
+- Faz 5, tam emniyet çekirdeği (denetim izi, retention, silme kanıtı, ısrar
+  takibi) olarak kalır; kapının KENDİSİ artık Faz 1'dedir.
+- `A†` sınıfı yetenekler (MailAccess, MailFinder, user-scanner, Gokboru) yalnız
+  bu kapı açıldıktan sonra açılabilir.
+
+### K2 · X sensörü → **operatörün kendi hesabıyla** (Faz 2)
+Karar: X/Tarayıcı sensörleri operatörün **kendi** hesabıyla, kayıtlı ve izlenebilir
+biçimde çalışır; anonim/taklit erişim yok.
+Sonuçlar:
+- `sensor.x.twscrape` kapıları: `{"vault", "consent", "rate", "ENABLE_X_SENSOR"}`.
+- Hesap havuzu: ortam değişkeni/vault'ta tutulur; **log, telemetri, evidence ve
+  rapora asla sızmaz** (mevcut redaction testleri genişletilir).
+- Rate-limit ve rotasyon `twscrape`'in kendi mekanizmasıyla; Pineal tarafında
+  ek olarak `rate` kapısı zorunlu.
+- Hesap gerektirmeyen yollar (`315 Agent-Reach`, SearXNG public-web) yedek ve
+  maliyetsiz katman olarak kalır.
+
+### K3 · Yerel jüri → **donanım mevcut, Faz 8 öne alındı** (paralel hat)
+Karar: yerel çıkarım donanımı var.
+Sonuçlar:
+- Faz 8, Faz 2'nin hemen ardına **paralel hat** olarak alındı: `ollama` /
+  `llama.cpp` / `vllm` + `193 llmfit` (donanıma uygun model seçimi) +
+  `151 magnitude` (hızlandırma).
+- Hedef: 3'lü jüri paneli (hakemler) tamamen yerelde koşar → **maliyet 0** ve
+  hedef verisi makineden çıkmaz.
+- Kabul: kasa açık + internet yokken jüri çalışır; yerel model yoksa dürüst
+  `UNAVAILABLE` (buluta sessiz düşüş yok — `ALLOW_LOCAL_TO_CLOUD_FALLBACK`
+  varsayılanı korunur).
+
+### Tüzük etkisi
+Bu üç karar, Pineal'in **tüzüğünü** değiştirir: sistem artık "iki kişiyi tartıya
+koyup uyum bakmak" ile tanımlanmaz; uyum/ilk temas **bir kullanım sahasına**
+dönüşür. Yeni metin: `docs/PINEAL_TUZUK.md` (v2, 2026-10-05).
 
 ---
 

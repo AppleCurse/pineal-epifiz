@@ -421,3 +421,55 @@ async def test_maigret_adapter_emits_reliable_absence_only_when_zero_errors(monk
     monkeypatch.setattr(maigret_scanner, "scan_username", _fake_scan_errors)
     noisy = await MaigretCapability().run(CapabilityContext(subject="yok_kullanici"))
     assert noisy.items == ()  # hatalı taramada "yok" iddia edilmez
+
+
+# ------------------------------------------- 6) tüzük ↔ kod bağı (Madde 4/5/7)
+@pytest.mark.asyncio
+async def test_person_data_capabilities_carry_vault_and_consent_gates():
+    """Tüzük Madde 4: bir kişinin verisini işleyen her yetenek kasa + rıza
+    kapısına bağlı olmak zorundadır. Bu test tüzüğün kodda yaptırımıdır."""
+    reg = CapabilityRegistry()
+    bootstrap(reg)
+    identity_caps = [
+        cap
+        for cap in reg
+        if cap.id.startswith(("sensor.identity", "extractor.identity"))
+    ]
+    assert identity_caps, "kimlik yeteneği bulunamadı — test yanlış daralmış"
+    for cap in identity_caps:
+        assert "vault" in cap.gates, f"{cap.id}: kasa kapısı yok (Tüzük Md.4)"
+        assert "consent" in cap.gates, f"{cap.id}: rıza kapısı yok (Tüzük Md.4)"
+
+
+@pytest.mark.asyncio
+async def test_consent_gate_blocks_person_data_capability_without_record():
+    """Rıza kaydı yoksa kişi verisi yeteneği koşmaz ve KANIT ÜRETMEZ (fail-closed)."""
+    reg = CapabilityRegistry()
+    bootstrap(reg)
+    state = PolicyState(vault_locked=False, consent_recorded=False)
+    result = await run_capability(
+        "sensor.identity.holehe",
+        CapabilityContext(subject="ornek@example.com"),
+        registry=reg,
+        state=state,
+    )
+    assert result.available is False
+    assert result.denied_by == "consent"
+    assert result.unavailable_reason == "policy:consent_missing"
+    assert result.items == ()
+
+
+@pytest.mark.asyncio
+async def test_vault_lock_blocks_every_registered_capability():
+    """Tüzük Md.4.1: kasa kilitliyken kayıtlı hiçbir yetenek koşamaz (istisna yok)."""
+    reg = CapabilityRegistry()
+    bootstrap(reg)
+    for cap in reg:
+        result = await run_capability(
+            cap.id,
+            CapabilityContext(subject="hedef"),
+            registry=reg,
+            state=PolicyState(vault_locked=True, consent_recorded=True),
+        )
+        assert result.denied_by == "vault", f"{cap.id} kasa kilidini atladı"
+        assert result.items == ()

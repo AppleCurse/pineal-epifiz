@@ -1,5 +1,40 @@
 # Changelog
 
+## Unreleased — 2026-10-05 — TÜZÜK v2 + üç politika kararının kilitlenmesi
+
+- **Tüzük (yeni, yürürlükte):** `docs/PINEAL_TUZUK.md` — **ATLAS PINEAL TÜZÜĞÜ v2**,
+  10 madde. Nedeni (Madde 0): sistem kurulurken tek işi "bir insanı analiz et,
+  karşısındakiyle tartıya koy, uyuyorlar mı?" idi; sistem o işten büyüdü.
+  **Uyum / ilk temas / rezonans artık sistemin TANIMI değil, SAHALARINDAN BİRİDİR**
+  (Madde 9). Yeni tanım: *kamuya açık kaynaklar üzerinde çalışan adli gözlem ve
+  doğrulama istasyonu.* Eski 4 dokunulmaz ilke tüzüğün Madde 1–4'ü olarak korunur
+  (ilke değişmedi, bağlam büyüdü). Yasaklar (Madde 8) ve kısa form (duvar yazısı)
+  eklendi. `README.md` §1 ve `ARCHITECTURE.md` bileşen haritası tüzüğe bağlandı.
+- **Kilitlenen üç politika kararı** (karar belgesi §10):
+  - **K1 · Rıza/yaş kapısı ZORUNLU** → Faz 5'ten **Faz 1'e** çekildi. Rıza kaydı
+    olmayan hedefte hiçbir kişi-verisi yeteneği koşmaz; reşit olmayan şüphesinde
+    `halted_consent` + gerekçe. `A†` sınıfı yetenekler bu kapı açılmadan açılamaz.
+  - **K2 · Platform sensörleri operatörün KENDİ hesabıyla** (X/twscrape dâhil):
+    kapılar `{"vault","consent","rate","ENABLE_X_SENSOR"}`; kimlik bilgileri
+    log/telemetri/kanıt/rapora sızamaz; anonim-taklit, kiralık hesap havuzu ve
+    imza kırma yasak (Tüzük Md.5). Hesapsız ücretsiz yollar (SearXNG, public-web)
+    birincil kalır.
+  - **K3 · Yerel jüri öne alındı** (donanım mevcut): Faz 8, Faz 2'nin hemen ardına
+    **paralel hat** olarak alındı — yerel 3'lü jüri, maliyet 0, veri makineden
+    çıkmaz; yerel model yoksa dürüst `UNAVAILABLE` (buluta sessiz düşüş yok).
+- **Kod — tüzük yaptırımı:** kişi verisi işleyen tüm yetenekler artık
+  `vault` + `consent` kapılarını zorunlu taşır (`sensor.identity.maigret`,
+  `sensor.identity.holehe`, `extractor.identity.socid`). Bunu koruyan 3 yeni
+  test eklendi (tüzük ↔ kod bağı).
+- **Davranış düzeltmesi (önemli):** `PolicyKernel` kapıları artık **alfabetik
+  değil öncelik sırasına göre** değerlendirir:
+  bilinmeyen kapı → kasa → rıza → bütçe → hız → env bayrakları. Önceden
+  `ENABLE_*` bayrakları alfabetik olarak önce geliyor ve **kasa kilidi ihlali
+  "gate_disabled" olarak maskeleniyordu** (Tüzük Md.4.1 ihlali). Artık kasa
+  kilitliyken sebep her zaman `vault_locked` olur.
+- **Ölçüm:** `pytest tests/unit` — önce 58 failed / 1113 passed, sonra
+  58 failed / **1145** passed (+32). **Yeni düşüş yok.**
+
 ## Unreleased — 2026-10-05 — FAZ 0: Capability Spine + 325 depo karar ağacı
 
 - **Karar belgesi (yeni):** `docs/reports/YILDIZ_DEPO_KARAR_AGACI_2026-10-05.md`.
