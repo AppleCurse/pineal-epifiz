@@ -2,7 +2,8 @@
   import { onMount } from 'svelte';
   import {
     apiFetch, clientId, isAuthFailure, logs, taskStatus, isProcessing,
-    apiToken, agentStatuses, vaultLocked, activeViewMode, inspectedAgentId
+    apiToken, agentStatuses, vaultLocked, activeViewMode, inspectedAgentId,
+    speechState, lastSpeech, voiceEnabled
   } from '../store';
   import { playClick, playHalt, playRunning } from '../lib/consoleAudio';
   import HolographicResonanceMesh from './HolographicResonanceMesh.svelte';
@@ -215,6 +216,17 @@
 
   $: if ($clientId) fetchThreshold();
 
+  $: voiceLabel =
+    $speechState === 'speaking'
+      ? 'SES: KONUŞUYOR'
+      : $speechState === 'denied'
+        ? 'SES: MOTOR YOK'
+        : 'SES: SUSKUN';
+
+  function toggleVoice() {
+    voiceEnabled.update((v) => !v);
+  }
+
   $: memoryLabel = memoryCrystal?.available
     ? `HAFIZA ${memoryCrystal.fragment_count} HATIRA · ${memoryCrystal.task_count} GÖREV`
     : 'HAFIZA YOK';
@@ -403,6 +415,17 @@
   >
     {memoryLabel}
   </div>
+
+  <!-- [FAZ C · C2] SES PİLİ: konuşma durumu backend'den gelir (uydurma değil) -->
+  <button
+    class="voice-pill"
+    class:speaking={$speechState === 'speaking'}
+    class:muted={!$voiceEnabled}
+    on:click={toggleVoice}
+    title={$lastSpeech?.machine_note || 'Ses durumu: konuşma yok (motor yerel)'}
+  >
+    {voiceLabel}{$voiceEnabled ? '' : ' · KAPALI'}
+  </button>
 
   <!-- [FAZ B · B5] EŞİK PİLİ: sabit 0.70 değil, ölçülen değer -->
   <div
@@ -1145,6 +1168,36 @@
   }
 
   /* TACTICAL WAR ROOM GEÇİŞ BUTONU */
+  .voice-pill {
+    position: absolute;
+    top: 54px;
+    right: 32px;
+    z-index: 104;
+    padding: 6px 14px;
+    background: rgba(10, 15, 29, 0.82);
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    border-radius: 9999px;
+    font-family: 'JetBrains Mono', monospace, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: #94a3b8;
+    backdrop-filter: blur(6px);
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .voice-pill.speaking {
+    border-color: rgba(251, 191, 36, 0.75);
+    color: #fcd34d;
+    box-shadow: 0 0 14px rgba(251, 191, 36, 0.3);
+  }
+
+  .voice-pill.muted {
+    opacity: 0.6;
+    text-decoration: line-through;
+  }
+
   .memory-pill {
     position: absolute;
     top: 22px;

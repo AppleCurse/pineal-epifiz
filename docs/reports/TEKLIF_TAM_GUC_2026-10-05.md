@@ -206,7 +206,9 @@ değere döndü: ledger + operatör etiketi + Wilson aralığı + 46 adetlik ger
 ızgarası + güvenilirlik diyagramı; veri yetersizse eşik DEĞİŞMİYOR) · **B2/B3
 hafıza kristali + kalıcı bellek** (hafıza hedef başına yaşıyor; görev kapanınca
 sıfırlanmıyor; kristalden geçmiş hatıralar kafesli blok olarak ajanın önüne
-konuyor). Sıradaki faz: **FAZ C — SES & NEFES** — C1 jenerik yanıt filtresi
-TAMAM (laf salatası ölçülüyor, düşüyor, yerine kanıt cümlesi konuyor, olay
-telemetriye yazılıyor). Sırada: C2 yerel TTS · C3 sesli etkileşim + araya
-girme · C4 sesli rapor okuma.
+konuyor). Sıradaki faz: **FAZ C — SES & NEFES** — C1 jenerik yanıt filtresi TAMAM
+(laf salatası ölçülüyor, düşüyor, yerine kanıt cümlesi konuyor, olay
+telemetriye yazılıyor) · **C2 yerel TTS TAMAM** (Aspasia konuşuyor: motor
+yerel — piper CLI veya localhost uç; uzak uç reddediliyor, ses makineden
+çıkmıyor; konuşma durumu speaking/idle/denied WebSocket'ten arayüze akıyor).
+Sırada: C3 sesli etkileşim + araya girme · C4 sesli rapor okuma.

@@ -113,6 +113,34 @@
   1354P/0F**, **entegrasyon 103P/0F** — gerileme yok. Frontend: `npm run build`
   + `svelte-check` **0 hata 0 uyarı**.
 
+## Unreleased — 2026-10-05 — FAZ C · SES & NEFES (2): Aspasia konuşuyor (yerel TTS)
+
+- **C2 · SİSTEMİN ARTIK SESİ VAR.** `agent_core/capabilities/adapters_voice.py`:
+  `voice.tts.local` yeteneği, Capability Spine'in **RENDERER** sınıfında —
+  yani ses de her yetenek gibi tek sözleşmeden geçer (registry → kasa kapısı →
+  availability → run → kanıt). Paralel çağrı yolu YOK.
+- **Ses MAKİNEDE KALIR.** Motor iki yerel yoldan biriyle bulunur: **piper**
+  (yerel CLI) ya da **yerel bir TTS ucu** (`PINEAL_TTS_URL`; VoxCPM / MOSS-TTS
+  / herhangi bir yerel sunucu). Uç yalnız `127.0.0.1` / `localhost` olabilir;
+  **uzak uç REDDEDİLİR** (`non_local_endpoint`) — metin ve ses dışarı çıkmaz.
+- **Uydurma ses yok.** Motor yoksa `available:false` + makine-okunur sebep
+  (`no_local_endpoint`, `dependency_missing:piper`, `endpoint_status:503`);
+  boş ses dosyası yazılmaz. Seslendirme bir OLAYdir: kanıt zincirine motor,
+  parmak izi (sha256), bayt ve süre olarak yazılır (WAV süresi başlıktan
+  ÖLÇÜLÜR, tahmin edilmez). Ölçülen: 1.5 sn'lik WAV → `duration_ms=1500`.
+- **Konuşma durumu UI'a akıyor.** `POST /api/speech/say` → `speaking`, ses
+  süresi bitince `idle`, motor yoksa `denied`; hepsi WebSocket `speech`
+  çerçevesiyle arayüze düşer. `POST /api/speech/stop` konuşmayı KESER (C3'ün
+  araya-girme zemini). Uçlar: `GET /api/speech/status` ·
+  `GET /api/speech/audio/{dosya}`. Arayüzde **SES** pili: KONUŞUYOR / SUSKUN /
+  MOTOR YOK (tıklanınca ses kapatılır).
+- **Kasa kuralı değişmedi.** Tüzük Md.4 gereği kasa kapısı seste de var:
+  kilitli kasada motor hazır olsa bile ses üretilmez; durum bilinmiyorsa
+  kilitli sayılır (fail-closed).
+- **Test:** +21 (yetenek/servis 15 · API/WS 8). Tam koşu: **birim 1369P/0F**,
+  **entegrasyon 111P/0F** — gerileme yok. Frontend: `npm run build` +
+  `svelte-check` **0 hata 0 uyarı**.
+
 ## Unreleased — 2026-10-05 — FAZ A · RETİNA TAMAM: Agent-Reach + SearXNG + Scrapling
 
 - **A3 Agent-Reach (son kademe).** Temiz metin omurgası dört kademeye çıktı:

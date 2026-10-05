@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI, HTTPException, Path, Request, WebSocket
+from fastapi.responses import FileResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.staticfiles import StaticFiles
@@ -491,6 +492,9 @@ RATE_LIMITS = {
     "aspasia": (20, 60),
     "experimental": (10, 60),
     "openai": (60, 60),
+    # [FAZ C · C2] Seslendirme: yerel motor da olsa sınırsız istek kabul
+    # edilmez (disk + CPU). Ölçülen ihtiyaç: tur başına birkaç cümle.
+    "speech": (30, 60),
 }  # (request count, window seconds)
 class _RateBucket:
     """Kayan pencere olayları + BU kovaya ait pencere süresi.
@@ -1624,6 +1628,8 @@ async def _room_sender(room: dict):
                 await _send_result(room, payload)
             elif kind == "result_error":
                 await _send_result_error(room, payload)
+            elif kind == "speech":
+                await _send_speech(room, payload)
         except asyncio.CancelledError:
             raise
         except Exception as e:  # gonderici task asla olmemeli
@@ -2015,6 +2021,15 @@ async def _send_log(room: dict, payload: tuple):
     room["logs"].append(f"[{ts}] [{level}] {msg}")
     if len(room["logs"]) > 50: room["logs"].pop(0)
     await _send_ws(room, _ws_json({"type": "log", "ts": ts, "level": level, "msg": msg}))
+
+async def _send_speech(room: dict, payload: dict):
+    """[FAZ C · C2/C3] Konuşma durumu UI'a akar: speaking / idle / denied."""
+    await _send_ws(room, _ws_json({"type": "speech", **payload}))
+
+
+def broadcast_speech(client_id: str, payload: dict):
+    _enqueue(client_id, ("speech", payload))
+
 
 def broadcast_log(client_id: str, level: str, msg: str):
     _enqueue(client_id, ("log", (level, redact_text(msg))))
@@ -4335,6 +4350,100 @@ async def api_task_memory(
     summary["recalled"] = [hit.model_dump() for hit in result.hits]
     summary["recall_note"] = result.machine_note
     return summary
+
+
+class SpeechSayPayload(BaseModel):
+    """[FAZ C · C2] Seslendirme isteği."""
+
+    text: str = Field(min_length=1, max_length=2000)
+    voice: str = Field(default="", max_length=64)
+    client_id: str = Field(default="default", max_length=128)
+
+
+@app.get("/api/speech/status")
+async def api_speech_status():
+    """[FAZ C · C2] Sesin GERÇEK durumu: motor var mı, hangi kapı, konuşuyor mu."""
+    from agent_core.services import speech
+
+    return speech.status()
+
+
+@app.post("/api/speech/say")
+async def api_speech_say(req: SpeechSayPayload):
+    """[FAZ C · C2] Aspasia konuşur — ses YERELDE üretilir, makineden çıkmaz.
+
+    Motor yoksa uydurma ses DÖNMEZ: `available:false` + makine-okunur sebep.
+    Konuşma durumu (`speaking` → `idle`) WebSocket'ten UI'a akar.
+    """
+    from agent_core.services import speech
+
+    if not rate_limit(f"speech:{req.client_id}", "speech"):
+        return JSONResponse(
+            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla seslendirme isteği"}},
+            status_code=429,
+        )
+
+    # Kasa interlock'u GERÇEK durumdan okunur (uydurma "açık" yok): kilitliyken
+    # yetenek zaten koşamaz (Tüzük Md.4).
+    result = await speech.speak(
+        req.text,
+        voice=req.voice or None,
+        vault_locked=not _check_vault_interlock(req.client_id),
+    )
+    payload = result.model_dump()
+    if result.available:
+        broadcast_speech(req.client_id, {"state": "speaking", **payload})
+        duration = max(0.0, float(result.duration_ms or 0) / 1000.0)
+        asyncio.create_task(_speech_finished(req.client_id, duration))
+        broadcast_log(req.client_id, "INFO", f"SES: {result.machine_note}")
+    else:
+        broadcast_speech(req.client_id, {"state": "denied", **payload})
+        broadcast_log(req.client_id, "WARNING", f"SES ÜRETİLEMEDİ: {result.reason}")
+    return payload
+
+
+async def _speech_finished(client_id: str, seconds: float) -> None:
+    """Ses süresi bitince durum `idle`'a döner (tahmin değil: WAV süresi)."""
+    try:
+        await asyncio.sleep(min(60.0, seconds + 0.35))
+    except asyncio.CancelledError:
+        return
+    from agent_core.services import speech
+
+    speech.set_state("idle")
+    broadcast_speech(client_id, {"state": "idle"})
+
+
+@app.get("/api/speech/audio/{name}")
+async def api_speech_audio(name: str = Path(min_length=1, max_length=128)):
+    """[FAZ C · C2] Üretilen ses dosyası (yalnız yerel dosya; yol kaçışı kapalı)."""
+    from agent_core.services import speech
+    from agent_core.capabilities.adapters_voice import speech_dir
+
+    try:
+        path = safe_child_path(speech_dir(), name)
+    except ValueError:
+        return JSONResponse(
+            {"error": {"code": "INVALID_AUDIO_NAME", "message": "Geçersiz ses dosyası"}},
+            status_code=400,
+        )
+    if not os.path.exists(path):
+        return JSONResponse(
+            {"error": {"code": "NOT_FOUND", "message": "Ses dosyası yok"}},
+            status_code=404,
+        )
+    _ = speech  # servis yolu tek kaynaktır; dosya adı yeteneğin verdiği addır
+    return FileResponse(path, media_type="audio/wav", filename=name)
+
+
+@app.post("/api/speech/stop")
+async def api_speech_stop(client_id: str = "default"):
+    """[FAZ C · C3] Araya girme: konuşma KESİLİR ve durum UI'a düşer."""
+    from agent_core.services import speech
+
+    speech.stop()
+    broadcast_speech(client_id, {"state": "idle", "interrupted": True})
+    return {"status": "stopped", "state": speech.status()["state"]}
 
 
 @app.post("/api/tasks/{task_id}/cancel")
