@@ -35,6 +35,7 @@ htmlcov/
 # Junk / Memory artifacts
 check_runs.py
 memory/*.json
+memory/ledger/
 cov_out.txt
 
 

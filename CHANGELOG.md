@@ -1,5 +1,36 @@
 # Changelog
 
+## Unreleased — 2026-10-05 — ÇOCUK KIRMIZI ÇİZGİSİ (sistemin TEK kırmızı çizgisi)
+
+- **Ürün sahibi kuralı, değiştirilemez:** 18 yaşından küçük her birey çocuktur.
+  Normal koşulda **hiçbir çocuk, hiçbir sebeple araştırılamaz.** Sistemin bildiği
+  tek yasak budur. Yetişkin için sistem hiçbir engel koymaz (bkz. K1 iptal).
+- **TEK İSTİSNA — kayıp / başına bir şey gelmiş olması (Allah korusun):** bu
+  durumda çocuğun KENDİSİ, SOSYAL MEDYASI ve ARKADAŞLARI araştırılabilir, ancak
+  dört şartın **tamamı** sağlanmışsa:
+  1. **Ailenin bilgisi var** · 2. **Sebep net yazılmış** (≥25 karakter, boş geçilemez)
+  · 3. **Doğrulanmış** (emin olunmadan başlanmaz) · 4. **Konsorsiyum onayı** (≥2 farklı onaylayıcı).
+  Bir şart eksikse sistem durur ve eksik şartın adını söyler:
+  `family_not_notified` / `reason_missing` / `not_verified` / `council_approval_missing` / `case_type_not_allowed`.
+- **Yeni:** `agent_core/safety/minor_gate.py` — `MinorGate` (karar), `MinorCaseContext`
+  (vaka), `MinorCaseLedger` (kayıt). Koşucu (`runner.py`) bu kilidi politika
+  kapılarından **önce**, küresel ve istisnasız uygular: kasa açık olsun olmasın,
+  env bayrağı açık olsun olmasın hiçbir yetenek atlayamaz. Kasa hâlâ üstündür
+  (onaylı vakada kasa kapalıysa yine koşmaz).
+- **Kayıt:** onaylanan ve reddedilen her deneme `memory/ledger/minor-cases.jsonl`
+  dosyasına yazılır. Hedefin **ham kimliği dosyaya girmez** (sha256 hash);
+  zaman damgası, gerekçe uzunluğu, onaylayıcılar, vaka tipi saklanır.
+  `memory/ledger/` `.gitignore`'a eklendi (kayıt depoya girmez).
+- **Kilit testleri (yeni):** `tests/unit/test_minor_gate_faz0.py` — 14 test:
+  her şartın tek tek engellediği, dört şart tamamken istisnanın çalıştığı,
+  kayıtlı **her** yeteneğin çocuk kilidini atlayamadığı, kasanın hâlâ üstün
+  olduğu, yetişkinde hiçbir engel olmadığı, kaydın ham kimlik yazmadığı.
+- **Tüzük:** yeni **Madde 4/A — Çocuk Kırmızı Çizgisi** (8 bent). Kısa forma
+  "TEK KIRMIZI ÇİZGİ: ÇOCUK" satırı eklendi. Karar belgesine **K4** eklendi;
+  §9'da Y2 satırı "yetişkin rızası yok → yerine çocuk kilidi" olarak güncellendi.
+- **Ölçüm:** `pytest tests/unit` — 58 failed / 1145 passed → 58 failed /
+  **1159** passed (+14). **Yeni düşüş yok.**
+
 ## Unreleased — 2026-10-05 — DÜZELTME: hedef rızası/yaş kapısı KALDIRILDI
 
 - **Ürün sahibi kararı:** Pineal bir gözlem aracıdır; **rıza makamı hedef değil

@@ -15,6 +15,7 @@
 | Bellek | `agent_core/services/canonical_memory.py` | Görev başına `memory/<task_id>.json` (bilinçli: DB yok) |
 | Telemetri | `agent_core/schemas/telemetry.py` + api.py kuyruğu | Pydantic event şemaları → FIFO → WebSocket (Snapshot + SearchEngine ayrımı) |
 | Aspasia | `agent_core/aspasia/aspasia_chief.py` | Gözlemci persona; telemetri özeti + sohbet (karar verici DEĞİL) |
+| Çocuk kilidi | `agent_core/safety/minor_gate.py` | **TEK kırmızı çizgi:** 18 yaş altı araştırılamaz. Tek istisna kayıp/yaralanma: aile bilgisi + net sebep + doğrulama + konsorsiyum onayı (≥2). Koşucu tarafından politika kapılarından **önce**, küresel ve istisnasız uygulanır; kararlar `memory/ledger/minor-cases.jsonl` dosyasına ham kimlik yazılmadan kaydedilir |
 | Tüzük | `docs/PINEAL_TUZUK.md` | **Ürün anayasası (v2, 2026-10-05):** 10 madde. Maddeler kodda `PolicyKernel` kapıları olarak çalışır (vault/budget/rate — hedef rıza kapısı YOKTUR). Uyum/ilk temas tanım değil **sahadır** (Madde 9) |
 | Yetenek omurgası | `agent_core/capabilities/` | **Capability Spine (Faz 0):** tek sözleşme (`base.py`) + tek kayıt defteri (`registry.py`) + politika kapısı (`policy.py`) + tek koşucu (`runner.py`). Yeni bir yetenek eklemek = `BaseCapability` yaz + `register()`. İkinci bir "yetenek var mı?" katmanı YOKTUR (kural [009]) |
 | Scraper | `agent_core/scraper/instagram_ghost.py` (IG) | Playwright+stealth; Pydantic V2 şema; kanıt yoksa HALT. X (`scraper.py`) **devre dışı** — `XScraperUnsupportedError` (B4) |

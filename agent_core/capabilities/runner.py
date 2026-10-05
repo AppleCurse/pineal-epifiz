@@ -72,7 +72,36 @@ class CapabilityRunner:
                 )
             )
 
-        # 2) politika kapıları
+        # 2) ÇOCUK KİLİDİ (küresel, istisnasız) — politika kapılarından ÖNCE.
+        #    18 yaş altı: kayıp/yaralanma + aile bilgisi + net sebep + doğrulama
+        #    + konsorsiyum onayı YOKSA hiçbir yetenek koşamaz.
+        minor_case = getattr(state, "minor_case", None) if state else None
+        if minor_case is not None and getattr(minor_case, "subject_is_minor", False):
+            from agent_core.safety import MinorCaseLedger, MinorGate
+
+            decision = MinorGate().evaluate(minor_case)
+            ledger = MinorCaseLedger()
+            try:
+                ledger.record(
+                    minor_case, decision, capability_id=cap_id, subject=ctx.subject
+                )
+            except Exception:  # kayıt yazılamadı diye kilit gevşemez
+                logger.debug("minor ledger write failed", exc_info=True)
+            if not decision.allowed:
+                logger.warning(
+                    "ÇOCUK KİLİDİ: %s engellendi — %s", cap_id, decision.reason_code
+                )
+                return _finish(
+                    CapabilityResult(
+                        capability_id=cap_id,
+                        available=False,
+                        unavailable_reason=f"minor:{decision.reason_code}",
+                        denied_by="minor_safe",
+                        notes={"minor_detail": decision.detail},
+                    )
+                )
+
+        # 3) politika kapıları
         decision = self.kernel.evaluate(getattr(cap, "gates", frozenset()), state or PolicyState())
         if not decision.allowed:
             logger.info(
@@ -90,7 +119,7 @@ class CapabilityRunner:
                 )
             )
 
-        # 3) kullanılabilirlik
+        # 4) kullanılabilirlik
         try:
             availability = cap.availability()
         except Exception as exc:
@@ -111,7 +140,7 @@ class CapabilityRunner:
                 )
             )
 
-        # 4) koşu (+ timeout)
+        # 5) koşu (+ timeout)
         timeout = ctx.timeout_seconds if ctx.timeout_seconds is not None else getattr(
             cap, "timeout_seconds", 30.0
         )

@@ -980,7 +980,7 @@ Kendi denetiminizde (`EKSIK_YETENEKLER_2026-09-26.md`) "tam uygulama olarak doğ
 | Yara | Kapatacak yetenek (capability) | Dayanak depolar | Faz | **Kanıt (kabul testi)** |
 |---|---|---|---|---|
 | **Y1** Tersine görsel arama / catfish | `media.phash` + `media.reverse_search` + `media.metadata` + güçlendirilmiş `AuthenticityAuditor` | `314 opencv`, `28 searxng`, `269 PaddleOCR`, `295 OfficeCLI` | 3 | Aynı görselin ikinci hesapta kullanımı fixture ile yakalanır; tersine arama kapalıyken `UNAVAILABLE`, **asla "orijinal" iddiası yok** |
-| **Y2** *(kaldırıldı)* | — | — | — | **Ürün kararı (2026-10-05):** hedef rızası/yaş kapısı YOK. Rıza makamı operatördür. Yerine: operatör kaydı (kim/ne zaman/ne) + silme düğmesi |
+| **Y2** *(kaldırıldı)* | — | — | — | **Ürün kararı:** yetişkin için hedef rızası/yaş kapısı YOK → K1 iptal. **YERİNE ÇOCUK KİLİDİ (K4):** 18 altı asla araştırılamaz; kayıp/yaralanma istisnası 4 şart + konsorsiyum onayıyla (`agent_core/safety/minor_gate.py`) |
 | **Y3** Hedef tekrarı / ısrar takibi | `safety.repeat_target` + `memory.timeline` | `7 instatracker` (desen) | 4 | Aynı hedefe N. sorguda operatöre ısrar uyarısı; uyarı telemetriye yazılır |
 | **Y4** Sosyal graf / ilişki ağı | `graph.local` (+ opsiyonel Neo4j) + yorum/metion adaptörleri | `124 Osintgraph` (şema), `48 LightRAG`, `273 cognee`, `313`, `177` | 4 | Graf düğümleri kanıt kimliği taşır; veri yoksa sekme "kanıt yok" der |
 | **Y5** Video/ses içeriği analizi | `media.acquire → frames → ocr → asr` + `platform_registry` video_url düzeltmesi | `96 yt-dlp`, `94 gallery-dl`, `314 opencv`, `269 PaddleOCR`, `42 surya` | 3 | Video gönderiden kare + OCR + transkript kanıtı; ASR yoksa uydurma transkript üretilmez |
@@ -1041,6 +1041,19 @@ Sonuçlar:
 - Kabul: kasa açık + internet yokken jüri çalışır; yerel model yoksa dürüst
   `UNAVAILABLE` (buluta sessiz düşüş yok — `ALLOW_LOCAL_TO_CLOUD_FALLBACK`
   varsayılanı korunur).
+
+### K4 · ÇOCUK KIRMIZI ÇİZGİSİ (2026-10-05 · ürün sahibi, mutlak kural)
+> **Sistemin TEK kırmızı çizgisi budur.** 18 yaş altı = çocuktur. Normal koşulda
+> **hiçbir çocuk, hiçbir sebeple araştırılamaz.** Tek istisna: kayıp / başına bir
+> şey gelmiş olması — o zaman çocuğun kendisi, sosyal medyası ve arkadaşları
+> araştırılabilir; ama ancak dört şartın tamamıyla:
+> **aile bilgisi + net sebep + doğrulama + konsorsiyum onayı (en az 2).**
+> Bir şart eksikse sistem durur. Kilit küreseldir: hiçbir yetenek, hiçbir kapı
+> kombinasyonuyla atlayamaz; kasa da hâlâ üstündür. Her deneme (onaylı/reddedilen)
+> `memory/ledger/minor-cases.jsonl` dosyasına ham kimlik yazılmadan kaydedilir.
+> **Kod:** `agent_core/safety/minor_gate.py` · **Kilit testleri:**
+> `tests/unit/test_minor_gate_faz0.py` (14 test).
+> Yetişkin için sistem hiçbir engel koymaz (K1 iptal).
 
 ### Tüzük etkisi
 Bu üç karar, Pineal'in **tüzüğünü** değiştirir: sistem artık "iki kişiyi tartıya

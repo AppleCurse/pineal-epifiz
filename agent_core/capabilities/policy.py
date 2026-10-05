@@ -19,7 +19,7 @@ okumaz: durum dışarıdan ``PolicyState`` ile verilir (test edilebilirlik +
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Mapping
+from typing import Any, Mapping
 
 __all__ = ["PolicyDecision", "PolicyState", "PolicyKernel", "BUILTIN_GATES"]
 
@@ -54,6 +54,9 @@ class PolicyState:
     budget_usd: float | None = None
     rate_ok: bool | None = None          # None = bilinmiyor → "rate" kapısı RET
     enabled_flags: Mapping[str, bool] = field(default_factory=dict)
+    #: Çocuk vakası bağlamı. subject_is_minor=True ise runner, politika
+    #: kapılarından ÖNCE çocuk kilidini uygular (küresel, istisnasız).
+    minor_case: Any | None = None
 
 
 class PolicyKernel:
