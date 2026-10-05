@@ -19,7 +19,6 @@ import os
 
 import pytest
 
-from agent_core.services import threshold_calibration as calib
 from agent_core.services.quote_guard import best_score, quote_matches
 from agent_core.services.threshold_calibration import (
     DEFAULT_THRESHOLD,

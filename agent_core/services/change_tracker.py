@@ -23,7 +23,7 @@ import os
 import re
 import tempfile
 from datetime import datetime, timezone
-from typing import Any, Iterable, Sequence
+from typing import Any, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
 

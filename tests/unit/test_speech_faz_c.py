@@ -16,13 +16,11 @@ import asyncio
 import os
 import struct
 
-import pytest
 
 from agent_core.capabilities.adapters_voice import (
     LocalSTTCapability,
     LocalTTSCapability,
     _wav_duration_ms,
-    speech_dir,
 )
 from agent_core.capabilities.base import CapabilityContext, CapabilityKind
 from agent_core.capabilities.registry import bootstrap
@@ -30,7 +28,6 @@ from agent_core.services import speech
 
 
 def _wav(seconds: float = 1.5, rate: int = 8000) -> bytes:
-    import math
 
     samples = int(rate * seconds)
     data = b"".join(

@@ -122,8 +122,6 @@ def analyze_spectrum(
 
     total = float(usable.sum())
     normalized = (usable / total).tolist()
-    order = sorted(range(len(usable)), key=lambda i: float(usable[i]), reverse=True)
-    top = order[: max(1, top_k)]
 
     bucket_days = float(bucket_hours) / 24.0
     all_peaks = [

@@ -18,12 +18,10 @@ import pytest
 from agent_core.capabilities import (
     CapabilityContext,
     CapabilityRegistry,
-    CapabilityResult,
     PolicyState,
     bootstrap,
     run_capability,
 )
-from agent_core.capabilities.policy import PolicyKernel
 from agent_core.safety import (
     MIN_COUNCIL_APPROVALS,
     MinorCaseContext,

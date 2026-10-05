@@ -179,7 +179,6 @@ def test_speaking_state_reaches_the_ui_over_websocket(client, local_tts):
 
 
 def test_speech_returns_to_idle_after_the_audio_duration(client, local_tts, monkeypatch):
-    from agent_core.services import speech
 
     client.post("/api/speech/say", json={"text": "kısa", "client_id": "spx"}).json()
     assert client.get("/api/speech/status").json()["state"] == "speaking"

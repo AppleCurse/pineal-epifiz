@@ -38,7 +38,7 @@ from agent_core.capabilities.adapters_web import (
     WEB_EXTRACTION_ORDER,
     extract_web_text,
 )
-from agent_core.capabilities.adapters_osint import MaigretCapability, SocidCapability
+from agent_core.capabilities.adapters_osint import MaigretCapability
 from agent_core.capabilities.base import CapabilityResult, make_evidence
 from agent_core.capabilities.timeline_bridge import seal_items, seal_results, seal_summary
 

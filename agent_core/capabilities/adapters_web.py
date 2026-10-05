@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from typing import Any
 
 from agent_core.capabilities.adapters_osint import _flag, _module_available

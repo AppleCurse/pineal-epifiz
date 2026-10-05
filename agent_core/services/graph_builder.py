@@ -16,7 +16,7 @@ Kurallar (projenin dürüstlük sözleşmesiyle birebir aynı):
 from __future__ import annotations
 
 import re
-from collections import Counter, defaultdict
+from collections import Counter
 from typing import Any, Iterable, Sequence
 from urllib.parse import urlsplit
 
