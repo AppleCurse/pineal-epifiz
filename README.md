@@ -306,6 +306,7 @@ Sistem her commit öncesinde sıkı kalite kapılarından geçer:
 
 ### İnceleme raporları
 
+- [Yıldız depo karar ağacı — 325 depo, 8 kapı, 10 faz](docs/reports/YILDIZ_DEPO_KARAR_AGACI_2026-10-05.md) *(entegrasyon hükmü ve yol haritası)*
 - [Yedi önerilen eksikliğin kaynak kodu incelemesi](docs/reports/EKSIK_YETENEKLER_2026-09-26.md)
 - [C0 salt-okunur veri envanteri](docs/reports/C0_BASELINE_VERI_ENVANTERI_2026-09-26.md)
 - [P0 tarihsel baseline altyapısı için açık kapsam kararları](docs/reports/P0_PERSONAL_BASELINE_INFRASTRUCTURE_SCOPE_2026-09-26.md)

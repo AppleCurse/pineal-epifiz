@@ -1,5 +1,46 @@
 # Changelog
 
+## Unreleased — 2026-10-05 — FAZ 0: Capability Spine + 325 depo karar ağacı
+
+- **Karar belgesi (yeni):** `docs/reports/YILDIZ_DEPO_KARAR_AGACI_2026-10-05.md`.
+  325 yıldızlı depo, 8 kapılı karar ağacından (felsefe → zarar → kanıt mührü →
+  rıza/hukuk → lisans → ayak izi → benzersizlik → birleşme → bakım) geçirildi;
+  her biri `E / A / İ / T / R / MEVCUT` hükümlerinden birine bağlandı
+  (17 entegrasyon + 51 adaptör + 191 ilham + 16 erteleme + 43 red + 7 mevcut).
+  Şunlar açıkça REDDEDİLDİ ve §5'e gerekçeleri yazıldı: karanlık ağ tarayıcıları
+  (TorBot, darkfox, robin…), ihlal/şifre verisi (WhatBreach, pwnedOrNot, GHunt),
+  ses/yüz klonlama (RVC, GPT-SoVITS, facefusion, Deep-Live-Cam…), jailbreak ve
+  sızdırılmış prompt külliyatı (L1B3RT4S, CL4R1T4S, G0DM0D3, heretic…),
+  filtresiz üretim ve otomatik mesaj gönderimi (postiz-app).
+- **Kod (Faz 0 omurgası — yeni paket `agent_core/capabilities/`):**
+  - `base.py`: `CapabilityKind`, `Availability`, `CapabilityContext`,
+    `CapabilityResult`, `Capability` protokolü, `BaseCapability` ve
+    `make_evidence()` (kanıt mührü: boş içerik/kaynak adı kabul edilmez).
+  - `policy.py`: `PolicyKernel` — `vault / consent / budget / rate / ENABLE_*`
+    kapıları. **Bilinmeyen kapı = ret** (fail-closed); `rate` durumu bilinmiyorsa
+    ret. Çekirdek hiçbir ortam değişkenini kendisi okumaz (durum `PolicyState`
+    ile verilir).
+  - `registry.py`: `CapabilityRegistry` — yetenek envanterinin TEK kaynağı.
+    Kimlik sözdizimi, tür ve sözleşme kayıt anında doğrulanır; aynı kimlik ikinci
+    kez kaydedilemez. `status()` UI/telemetri için makine-okunur sebep döner.
+  - `runner.py`: `CapabilityRunner` — tek geçit: çöz → politika → kullanılabilirlik
+    → koşu (+timeout). Bilinmeyen yetenek/kapı reddi/hatası **istisna değil,
+    0 kanıt + makine-okunur sebep** üretir; hiçbir adımda kanıt uydurulmaz.
+  - `adapters_osint.py`: mevcut `maigret` / `holehe` / `socid` tarayıcılarını
+    sözleşmeye bağlayan ilk üç adaptör (kanıt üretimi + `payload` geçişi).
+- **Kilit:** `tests/unit/test_capability_spine_faz0.py` (29 test): registry tek
+  kaynak ve tekrar-reddi, bilinmeyen kapıda fail-closed, kasa kilidi, timeout ve
+  istisnada 0 kanıt, sözleşme ihlali reddi, kanıt şeması (`ev_` kimliği),
+  adaptör ↔ eski tarayıcı **eşdeğerlik** testleri (Faz 0.2 taşıması bitene kadar
+  çift-kaynak sapmasını önler).
+- **Ölçüm:** `pytest tests/unit` — değişiklikten ÖNCE 58 failed / 1113 passed,
+  SONRA 58 failed / 1142 passed (+29). **Yeni düşüş yok.** (58 failure, sandbox
+  ortamında eksik opsiyonel bağımlılıklardan — playwright/maigret/vision —
+  kaynaklanan önceden var olan toplama/koşu hatalarıdır; bu değişiklikle ilgisiz.)
+- **Kapsam dışı (bilinçli):** Faz 0.2 — `backend/api.py` ve `osint_investigator`
+  içindeki eski doğrudan çağrıların bu adaptörlere taşınması. Taşıma yapılana
+  kadar eşdeğerlik testleri iki yolun aynı dürüst sonucu verdiğini kanıtlar.
+
 ## Unreleased — 2026-09-26 — A-KAPANIŞ: Verifier → DepthReport izlenebilirliği
 
 - **Ölçülen kusur (A1 CONTROL/TREATMENT diff):** DepthAnalyst, prompt'taki hakem
