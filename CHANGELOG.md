@@ -92,6 +92,27 @@
   **birim 1340P/0F**, **entegrasyon 98P/0F** — gerileme yok. Frontend:
   `npm run build` + `svelte-check` **0 hata 0 uyarı**.
 
+## Unreleased — 2026-10-05 — FAZ C · SES & NEFES (1): jenerik yanıt filtresi
+
+- **C1 · LAF SALATASI ARTIK KULLANICIYA ÇIKMIYOR.** Aspasia'nın dili bir
+  prompt umuduna bağlıydı: "Tabii ki! Harika bir soru..." türü yanıtlar aynen
+  gidiyordu. `agent_core/services/taste_filter.py` her yanıtı deterministik
+  sinyallerle tartar: jenerik açılış · kalıp sorumluluk reddi · soruyu geri
+  atma · kaçamak/dolgu yoğunluğu · tekrar · uzun ama boş · emoji ve **en ağır
+  sinyal**: *elde VERİ varken yanıtın o veriye hiç değinmemesi*. Eşiği aşan
+  yanıt DÜŞER; yerine kanıttan derlenmiş tek cümlelik dürüst yanıt konur, veri
+  yoksa "yok" denir (uydurulmaz). Ölçülen: jenerik yanıt **0.85** → düştü;
+  kanıtlı kısa yanıt **0.00** → geçti.
+- **Telemetri + eşik disiplini.** Düşen her yanıt, NEDENİYLE birlikte
+  `memory/telemetry/taste.jsonl`'e yazılır; `GET /api/telemetry/taste` operatöre
+  kaç yanıtın düştüğünü ve hangi gerekçeyle düştüğünü gösterir. Eşik,
+  kalibrasyon modülünün `taste` kapsamına bağlıdır (B5 ile aynı kural:
+  ölçülmeden değişmez, `PINEAL_THRESHOLD_TASTE` ile elle sabitlenebilir).
+  Aspasia'nın güven etiketi düşen yanıtta `filtered_generic` olur — olay gizlenmez.
+- **Test:** +19 (filtre 14 · Aspasia/API entegrasyonu 5). Tam koşu: **birim
+  1354P/0F**, **entegrasyon 103P/0F** — gerileme yok. Frontend: `npm run build`
+  + `svelte-check` **0 hata 0 uyarı**.
+
 ## Unreleased — 2026-10-05 — FAZ A · RETİNA TAMAM: Agent-Reach + SearXNG + Scrapling
 
 - **A3 Agent-Reach (son kademe).** Temiz metin omurgası dört kademeye çıktı:

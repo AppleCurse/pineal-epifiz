@@ -265,6 +265,23 @@ Cevabın kısa ve net olsun: sonuç, sonra gerekiyorsa neden ve tek bir sonraki 
                 )
             final_msg = raw_response.strip()
             assessment = "high"
+            # [FAZ C · C1] JENERİK YANIT FİLTRESİ: "Tabii ki! Harika bir soru..."
+            # türü laf salatası KULLANICIYA ÇIKMAZ. Ölçüm deterministiktir;
+            # elde VERİ varken ona değinmeyen yanıt en ağır sinyaldir.
+            # Düşen yanıtın yerine kanıttan derlenmiş dürüst cümle konur ve
+            # olay telemetriye yazılır (neden düştüğü görünür).
+            try:
+                from agent_core.services.taste_filter import filter_response
+
+                decision = filter_response(
+                    final_msg,
+                    context={"verdict": verdict, "telemetry": telemetry_summary},
+                )
+                if not decision.kept:
+                    final_msg = decision.message
+                    assessment = "filtered_generic"
+            except Exception:  # filtre asla sohbeti düşürmez
+                pass
         except Exception as e:
             # Fallback Aspasia Response
             final_msg = (

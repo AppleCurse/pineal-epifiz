@@ -4188,6 +4188,19 @@ async def api_memory_recall(
     return result.model_dump()
 
 
+@app.get("/api/telemetry/taste")
+async def api_telemetry_taste(limit: int = 20):
+    """[FAZ C · C1] Jenerik yanıt telemetrisi: kaç yanıt DÜŞTÜ, neden düştü.
+
+    Aspasia'nın dili artık bir prompt umudu değil, ölçülen bir katman:
+    jenerik bulunan yanıt kullanıcıya çıkmaz ve buraya yazılır. Eşik aynı
+    kalibrasyon disiplinine bağlıdır (`taste` kapsamı) — ölçülmeden değişmez.
+    """
+    from agent_core.services import taste_filter
+
+    return taste_filter.telemetry_summary(limit=max(1, min(100, limit)))
+
+
 @app.get("/api/calibration")
 async def api_calibration(scope: str = ""):
     """[FAZ B · B5] Eşik kalibrasyonunun GERÇEK durumu.
