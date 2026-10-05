@@ -181,12 +181,21 @@ def test_policy_rate_unknown_is_denied():
     assert kernel.evaluate(frozenset({"rate"}), PolicyState(rate_ok=True)).allowed is True
 
 
-def test_policy_consent_and_budget():
+def test_policy_budget():
     kernel = PolicyKernel()
-    assert kernel.evaluate(frozenset({"consent"}), PolicyState()).reason == "consent_missing"
     assert kernel.evaluate(frozenset({"budget"}), PolicyState(spent_usd=2.0, budget_usd=1.0)).reason == (
         "budget_exhausted"
     )
+
+
+def test_no_consent_gate_exists():
+    """Karar mercii operatördür: hedef rızası diye bir kapı YOKTUR.
+    Eski bir yetenek 'consent' bildirirse bilinmeyen kapı sayılır ve çalışmaz."""
+    kernel = PolicyKernel()
+    assert "consent" not in kernel.KNOWN_GATES
+    decision = kernel.evaluate(frozenset({"consent"}), PolicyState())
+    assert decision.allowed is False
+    assert decision.reason == "unknown_gate"
 
 
 # ------------------------------------------------------------------ 3) koşucu
@@ -425,43 +434,23 @@ async def test_maigret_adapter_emits_reliable_absence_only_when_zero_errors(monk
 
 # ------------------------------------------- 6) tüzük ↔ kod bağı (Madde 4/5/7)
 @pytest.mark.asyncio
-async def test_person_data_capabilities_carry_vault_and_consent_gates():
-    """Tüzük Madde 4: bir kişinin verisini işleyen her yetenek kasa + rıza
-    kapısına bağlı olmak zorundadır. Bu test tüzüğün kodda yaptırımıdır."""
+async def test_person_data_capabilities_carry_vault_gate():
+    """Tüzük Madde 4: OPERATÖR mandalı (kasa) her kişi-verisi yeteneğinde zorunludur.
+    Hedef rızası kapısı YOKTUR — karar mercii operatördür."""
     reg = CapabilityRegistry()
     bootstrap(reg)
     identity_caps = [
-        cap
-        for cap in reg
-        if cap.id.startswith(("sensor.identity", "extractor.identity"))
+        cap for cap in reg if cap.id.startswith(("sensor.identity", "extractor.identity"))
     ]
     assert identity_caps, "kimlik yeteneği bulunamadı — test yanlış daralmış"
     for cap in identity_caps:
         assert "vault" in cap.gates, f"{cap.id}: kasa kapısı yok (Tüzük Md.4)"
-        assert "consent" in cap.gates, f"{cap.id}: rıza kapısı yok (Tüzük Md.4)"
-
-
-@pytest.mark.asyncio
-async def test_consent_gate_blocks_person_data_capability_without_record():
-    """Rıza kaydı yoksa kişi verisi yeteneği koşmaz ve KANIT ÜRETMEZ (fail-closed)."""
-    reg = CapabilityRegistry()
-    bootstrap(reg)
-    state = PolicyState(vault_locked=False, consent_recorded=False)
-    result = await run_capability(
-        "sensor.identity.holehe",
-        CapabilityContext(subject="ornek@example.com"),
-        registry=reg,
-        state=state,
-    )
-    assert result.available is False
-    assert result.denied_by == "consent"
-    assert result.unavailable_reason == "policy:consent_missing"
-    assert result.items == ()
+        assert "consent" not in cap.gates, f"{cap.id}: hedef rıza kapısı geri gelmiş"
 
 
 @pytest.mark.asyncio
 async def test_vault_lock_blocks_every_registered_capability():
-    """Tüzük Md.4.1: kasa kilitliyken kayıtlı hiçbir yetenek koşamaz (istisna yok)."""
+    """Tüzük Md.4: kasa kilitliyken kayıtlı hiçbir yetenek koşamaz (istisna yok)."""
     reg = CapabilityRegistry()
     bootstrap(reg)
     for cap in reg:
@@ -469,7 +458,7 @@ async def test_vault_lock_blocks_every_registered_capability():
             cap.id,
             CapabilityContext(subject="hedef"),
             registry=reg,
-            state=PolicyState(vault_locked=True, consent_recorded=True),
+            state=PolicyState(vault_locked=True),
         )
         assert result.denied_by == "vault", f"{cap.id} kasa kilidini atladı"
         assert result.items == ()

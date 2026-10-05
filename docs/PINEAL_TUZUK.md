@@ -48,16 +48,19 @@ Bu yüzden tüzük yeniden yazıldı:
 3. Bir yetenek kullanılamıyorsa ekranda `available: false` + **makine-okunur sebep** görünür; "çalıştı" görüntüsü verilmez.
 4. Skorlar, hangi modelin/kaç denemenin/maliyetin ürettiği bilgisiyle birlikte kanıt zincirine yazılır.
 
-## Madde 4 · Kasa ve rıza: kilit ve izin
+## Madde 4 · Kasa: yetki operatördedir
 
-> **2026-10-05 kararı (K1): rıza/yaş kapısı ZORUNLUDUR. Faz 5'ten Faz 1'e çekildi.**
+> **2026-10-05 düzeltmesi:** Bu maddeye "hedefin rızası" ve "yaş kapısı" diye
+> iki engel koydu. **İkisi de kaldırıldı.** Bu bir gözlem aracıdır; rıza makamı
+> hedef değil **operatördür.** Sistem, operatörün önüne kendi koyduğu kural
+> dışında engel çıkarmaz.
 
-1. **Kasa (vault):** mandal kilitliyken dış dünyaya tek bir istek çıkmaz. Bu, hiçbir yetenek için esnetilmez.
-2. **Rıza kaydı:** hedef için rıza kaydı (kim, hangi amaç, hangi kapsam, ne zaman, ne zaman silinecek) oluşturulmadan analiz **başlamaz.** Kapı adı: `consent`.
-3. **Yaş kapısı:** reşit olmayan olduğuna dair makul şüphede pipeline `halted_consent` ile durur ve gerekçeyi rapora yazar.
-4. **Israr takibi:** aynı hedefin tekrar tekrar taranması kaydedilir; eşik aşımında operatöre uyarı gider. Genel rate-limit bunun yerine geçmez.
-5. **Retention & silme:** her hedef verisinin saklama süresi vardır; silme talebinde kanıt dosyaları da silinir (`DELETE /api/tasks/{id}`).
-6. Kısıtlı yetenekler (`A†`: e-posta varlık taraması, telefon doğrulama vb.) **yalnızca** operatörün kendi kimliği veya rıza kaydı olan hedef için çalışır.
+1. **Kasa (vault) mandalı:** kilitliyken dış dünyaya tek bir istek çıkmaz. Mandalı çeviren operatördür — bu, sistemin değil operatörün iradesidir.
+2. **Karar mercii operatördür:** hangi hedef, hangi sensör, hangi derinlik, hangi sıklık — hepsine operatör karar verir. Sistem engel koymaz, yalnızca operatörün açtığı kapıdan geçer.
+3. **Hedefin rızası diye bir kapı yoktur.** Ne analiz öncesi onay, ne yaş doğrulama engeli, ne "bu hedef için izin var mı" kontrolü. Böyle bir kapı eklenmesi tüzük ihlalidir.
+4. **Operatörün yetkisi sınırsız değil, kaynağı bellidir:** kasa kapalıyken hiçbir yetenek koşamaz (tek istisna yok). Açıkken de her koşu kayda geçer — engel olarak değil, **operatörün kendi kaydı** olarak.
+5. **Silme operatörün elindedir:** istenen an her şey silinir (`DELETE /api/tasks/{id}`). Otomatik saklama engeli, zorunlu bekleme süresi veya kota-dışı sınır yoktur.
+6. Kısıtlı yetenekler (`A†`) da dâhil olmak üzere hiçbir tarayıcı "izin bekler" durumuna düşmez; kapı kapalıysa sebebi söyler, açıksa işini yapar.
 
 ## Madde 5 · Operatör kimliği: taklit yok, kayıt var
 
@@ -129,7 +132,7 @@ Bunlar ürüne girmez; karar belgesi §5'te gerekçeleriyle kayıtlıdır:
 GÖZLEM, HÜKÜM DEĞİLDİR          → fal yok, ölçüm var
 KANIT YOKSA İDDİA YOKTUR        → fail-closed
 SAHTE IŞIK YOKTUR               → simülasyon yok, gerçek telemetri
-KİLİT VE İZİN                   → kasa + rıza + yaş kapısı (ZORUNLU)
+KİLİT OPERATÖRDE                → kasa mandalı; hedef rızası yok, engel yok
 TAKLİT YOK, KAYIT VAR           → kendi hesabın, izlenebilir erişim
 VERİ SENİN CİHAZINDA            → yerel jüri, maliyet 0, mahremiyet
 TEK PARÇA                       → tek sözleşme, tek kayıt, tek kapı

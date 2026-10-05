@@ -47,8 +47,9 @@ class MaigretCapability(BaseCapability):
     id = "sensor.identity.maigret"
     kind = CapabilityKind.SENSOR
     license = "MIT"
-    # Tüzük Madde 4: üçüncü kişi verisi → kasa + rıza kapısı ZORUNLU (2026-10-05, K1).
-    gates = frozenset({"vault", "consent", "ENABLE_MAIGRET"})
+    # Kasa kapısı zorunlu (operatör mandalı). HEDEF RIZASI KAPISI YOKTUR:
+    # karar mercii operatördür (2026-10-05, K1 iptal).
+    gates = frozenset({"vault", "ENABLE_MAIGRET"})
     timeout_seconds = 75.0
     description = "Kullanıcı adının 3300+ sitedeki varlığını tarar (kanıtlı)."
 
@@ -131,9 +132,9 @@ class HoleheCapability(BaseCapability):
     id = "sensor.identity.holehe"
     kind = CapabilityKind.SENSOR
     license = "GPL-3.0 (harici süreç/bağımlılık — kod gömülmez)"
-    gates = frozenset({"vault", "consent", "ENABLE_HOLEHE"})
+    gates = frozenset({"vault", "ENABLE_HOLEHE"})
     timeout_seconds = 150.0
-    description = "E-postanın hangi platformlarda kayıtlı olduğunu tarar (rıza zorunlu)."
+    description = "E-postanın hangi platformlarda kayıtlı olduğunu tarar."
 
     def availability(self) -> Availability:
         if not _flag("ENABLE_HOLEHE"):
@@ -210,8 +211,7 @@ class SocidCapability(BaseCapability):
     id = "extractor.identity.socid"
     kind = CapabilityKind.EXTRACTOR
     license = "MIT"
-    # Tüzük Madde 4: bir kişinin profilini işliyor → kasa + rıza kapısı ZORUNLU.
-    gates = frozenset({"vault", "consent"})
+    gates = frozenset({"vault"})
     timeout_seconds = 20.0
     description = "Profil URL'sinden sosyal kimlik alanlarını çıkarır (kanıtlı)."
 

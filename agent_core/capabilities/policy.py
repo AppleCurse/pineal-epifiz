@@ -6,7 +6,7 @@ hangi kapılardan geçtiğini okumadı" senaryosunu yapısal olarak imkânsız k
 
 Kapı sözlüğü:
     ``vault``    — kasa mandalı açık olmalı (kilitliyken dış ağa çıkış yok)
-    ``consent``  — hedef için rıza kaydı olmalı (Faz 5 rıza defteri)
+    (hedef rızası diye bir kapı YOKTUR — karar mercii operatördür)
     ``budget``   — görev bütçesi aşılmamış olmalı
     ``rate``     — hız durumu biliniyor ve izin veriyor olmalı (bilinmiyorsa RET)
     ``ENABLE_*`` — env anahtarı açık olmalı (örn. ``ENABLE_MAIGRET``)
@@ -25,7 +25,7 @@ __all__ = ["PolicyDecision", "PolicyState", "PolicyKernel", "BUILTIN_GATES"]
 
 
 #: Çekirdeğin bildiği kapılar. Bunun dışındaki her şey fail-closed reddedilir.
-BUILTIN_GATES = frozenset({"vault", "consent", "budget", "rate"})
+BUILTIN_GATES = frozenset({"vault", "budget", "rate"})
 
 
 @dataclass(frozen=True)
@@ -50,7 +50,6 @@ class PolicyState:
     """Kapıların değerlendirileceği durum (çağıran sağlar)."""
 
     vault_locked: bool = False
-    consent_recorded: bool = False
     spent_usd: float = 0.0
     budget_usd: float | None = None
     rate_ok: bool | None = None          # None = bilinmiyor → "rate" kapısı RET
@@ -63,11 +62,11 @@ class PolicyKernel:
     KNOWN_GATES = BUILTIN_GATES
 
     #: Kapı değerlendirme ÖNCELİĞİ (alfabetik DEĞİL — güvenlik sırası):
-    #: bilinmeyen kapı (en gürültülü, fail-closed) → kasa → rıza → bütçe →
+    #: bilinmeyen kapı (en gürültülü, fail-closed) → kasa → bütçe →
     #: hız → env bayrakları. Önemli: kasa kilidi, env bayrağı kapalı olsa bile
     #: ÖNCE reddedilir; aksi halde denetim izinde "gate_disabled" görünür ve
     #: kasa ihlali maskelenir (Tüzük Md.4.1: kasa istisnasızdır).
-    _GATE_ORDER = {"vault": 1, "consent": 2, "budget": 3, "rate": 4}
+    _GATE_ORDER = {"vault": 1, "budget": 2, "rate": 3}
 
     @classmethod
     def _gate_rank(cls, gate: str) -> int:
@@ -91,9 +90,6 @@ class PolicyKernel:
 
             if gate == "vault" and state.vault_locked:
                 return PolicyDecision.deny(gate, "vault_locked")
-
-            if gate == "consent" and not state.consent_recorded:
-                return PolicyDecision.deny(gate, "consent_missing")
 
             if gate == "budget":
                 if state.budget_usd is not None and state.spent_usd >= state.budget_usd:

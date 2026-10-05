@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased — 2026-10-05 — DÜZELTME: hedef rızası/yaş kapısı KALDIRILDI
+
+- **Ürün sahibi kararı:** Pineal bir gözlem aracıdır; **rıza makamı hedef değil
+  OPERATÖRDÜR.** Önceki turda koyduğum "rıza kaydı olmayan hedefte analiz
+  başlamaz" ve "yaş kapısı" kuralları **kaldırıldı.** Sistem, operatörün kendi
+  koyduğu kural dışında engel çıkarmaz. Benim uygulamaya kısıtlama koyma
+  yetkim yoktu — hatalı bir karardı.
+- **Kod:** `consent` kapısı `PolicyKernel`'den ve üç kimlik yeteneğinden
+  (`sensor.identity.maigret`, `sensor.identity.holehe`, `extractor.identity.socid`)
+  çıkarıldı. Artık `consent` **bilinmeyen kapı** sayılır ve fail-closed
+  reddedilir — yani kimse arkadan geri getiremez. Kalan kapılar:
+  `vault` (operatörün kendi mandalı), `budget`, `rate`, `ENABLE_*`.
+- **Tüzük (Madde 4) yeniden yazıldı:** "Kasa ve rıza" → **"Kasa: yetki
+  operatördedir"**. Yeni hükümler: (1) kasa mandalı operatörün iradesidir;
+  (2) karar mercii operatör — hedef/sensör/derinlik/sıklık; (3) hedef rızası
+  veya yaş kapısı diye bir şey yoktur, eklenmesi tüzük ihlalidir; (4) koşular
+  engel değil **operatörün kendi kaydı** olarak tutulur; (5) silme her an
+  operatörün elindedir, otomatik saklama engeli yoktur. Kısa form (duvar yazısı)
+  güncellendi.
+- **Karar belgesi:** §10 K1 "İPTAL EDİLDİ" olarak işaretlendi; §9 boşluk
+  matrisinde Y2 satırı "kaldırıldı" olarak değiştirildi; Faz 1 başlığındaki
+  rıza şartı kaldırıldı; K1/K2/K3 kapıları `{"vault","rate","ENABLE_X_SENSOR"}`
+  oldu; §5.8 kısıtlı yetenekler maddesi "yalnız operatörün kendi kimliğiyle,
+  ek izin yok" olarak yeniden yazıldı; K3 karma kapısındaki "rıza" ifadesi
+  "operatör" ile değiştirildi.
+- **Test:** rıza testi kaldırıldı, yerine **"hedef rıza kapısı geri gelmesin"**
+  testi eklendi (`test_no_consent_gate_exists`, `test_person_data_capabilities_carry_vault_gate`).
+- **Ölçüm:** `pytest tests/unit` — 58 failed / 1145 passed. **Yeni düşüş yok.**
+
 ## Unreleased — 2026-10-05 — TÜZÜK v2 + üç politika kararının kilitlenmesi
 
 - **Tüzük (yeni, yürürlükte):** `docs/PINEAL_TUZUK.md` — **ATLAS PINEAL TÜZÜĞÜ v2**,

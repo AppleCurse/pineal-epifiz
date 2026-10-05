@@ -17,7 +17,7 @@
 | Sonuç | Adet | Anlamı |
 |---|---|---|
 | **E** · E* · E° | **9 + 1 + 7 = 17** | Çekirdeğe entegre. E = gerçek yetenek; E* = yalnız desen/şema; E° = **Agent Skills standardının benimsenmesi** |
-| **A** · A* · A† | **39 + 7 + 5 = 51** | Kapı arkası adaptör. Varsayılan **kapalı**; yoksa dürüst `available:false`. A† = yalnız operatörün kendi kimliği / rıza kayıtlı hedef |
+| **A** · A* · A† | **39 + 7 + 5 = 51** | Kapı arkası adaptör. Varsayılan **kapalı**; yoksa dürüst `available:false`. A† = yalnız operatörün kendi kimliği (hedef rızası aranmaz) |
 | **İ** | **191** | İlham / desen / envanter. **Kod alınmaz.** Mimari, kontrol listesi, veri kümesi |
 | **T** | **16** | Ertele — doğru iş, yanlış zaman (Faz 6–9) |
 | **MEVCUT** | **7** | Hâlihazırda entegre: maigret, socid-extractor, crawl4ai, 9Router, RTK (desen), CloakBrowser, opencv |
@@ -33,7 +33,7 @@ Gerçek anlamda **kod içeri alınacak** depo sayısı: **17 entegrasyon + 51 ad
 1. **X/Twitter deliği kapatılır** — bugün `XScraperUnsupportedError` → `awaiting_authorization` (B4). `twscrape` (MIT) + `Agent-Reach` (MIT) ile **gerçek X sensörü** açılır; mevcut "alternatif public-web araştırması" yedek yol olarak kalır.
 2. **SearXNG (AGPL-3.0) ayrı servis olarak** konumlandırılır — anahtarsız metasearch, Tavily/Exa/SerpAPI maliyetini ve tek sağlayıcı bağımlılığını kırar; AGPL yüzünden **kod gömülmez, HTTP üzerinden çağrılır**.
 3. **Medya adli hattı kurulur** (yt-dlp Unlicense + gallery-dl GPL-2.0 harici süreç + opencv kare + PaddleOCR Apache-2.0 + pHash + tersine görsel arama) — bugünün en büyük boşluğu olan "video/ses/görsel kaynağı" kapanır.
-4. **7 eksik yeteneğin tamamı kapatılır** (§9): tersine görsel arama, rıza/yaş kapısı, hedef tekrarı takibi, sosyal graf, video/ses, kalibrasyon, dil tespiti/çeviri. Bunların **hiçbiri tek bir depodan hazır gelmez**; her biri "spine + 1-2 adaptör" bileşimidir.
+4. **7 eksik yeteneğin tamamı kapatılır** (§9): tersine görsel arama, hedef tekrarı takibi, sosyal graf, video/ses, kalibrasyon, dil tespiti/çeviri. Bunların **hiçbiri tek bir depodan hazır gelmez**; her biri "spine + 1-2 adaptör" bileşimidir.
 5. **Kırmızı çizgiler yazılır** (§5): karanlık ağ tarama, ihlal/şifre verisi, ses/yüz klonlama, jailbreak & sızdırılmış prompt, filtresiz üretim, otomatik mesaj gönderimi, konum izleme → **ürüne girmez, giriş kapısı kapatılır.**
 
 ---
@@ -70,9 +70,9 @@ Bir depo ancak 8 kapının **tamamından** geçerse ürüne girer. Kapılar sır
    └─────────────────────────┬─────────────────────────┘
                              │
    ┌─────────────────────────▼─────────────────────────┐
-   │ K3 · RIZA & HUKUK KAPISI                          │
-   │ Üçüncü kişi verisi mi? Platform ToS? KVVM/GDPR?   │
-   │ Yaş/rıza kapısı gerektiriyor mu?                  │
+   │ K3 · OPERATÖR & HUKUK KAPISI                      │
+   │ Karar mercii operatör mü? Platform ToS? Hukuki    │
+   │ sınır? (HEDEF RIZASI ARANMAZ — engel konmaz)      │
    └─────────────────────────┬─────────────────────────┘
                              │
    ┌─────────────────────────▼─────────────────────────┐
@@ -536,7 +536,7 @@ Bu bölüm "neden almadık" sorusunun kalıcı kaydıdır. Bir daha masaya gelme
 
 ### 5.8 Kısıtlı izin verilenler (5) — `A†`
 `113 MailFinder` · `120 MailAccess` · `160 Gokboru_Intel` · `168 user-scanner` · `305 Ciphey`
-Bunlar **yalnızca** (a) operatörün kendi kimliği veya (b) rıza kaydı oluşturulmuş hedef için çalışır. Üçüncü kişiye karşı otomatik kullanım yasaktır; Faz 5'in rıza defteri hazır olmadan bu kapılar açılmaz.
+Bunlar yalnızca **operatörün kendi kimliğiyle** çalışır (kendi adresin, kendi numaran). Üçüncü kişiye karşı kullanım operatörün kararıdır; sistem ek izin istemez. Varsayılan kapalı, açılınca kayda geçer.
 
 ---
 
@@ -883,11 +883,12 @@ Karar kodları: **E** entegre · **A** adaptör (kapı arkası) · **İ** ilham/
 **Kabul:** (1) repoda "yetenek var mı?" kararı veren tek yer registry (grep ile kanıtlanır); (2) her capability için `available:false` birim testi; (3) hiçbir capability doğrudan rapora yazmıyor (statik kontrol); (4) mevcut 173 test paketi düşüş yok.
 **Yeni bağımlılık: YOK.**
 
-### Faz 1 · RIZA KAPISI + DİL + GEÇMİŞ + KALİBRASYON İSKELETİ (Y2, Y6, Y7, Y9)
-> **K1 kararı gereği rıza/yaş kapısı Faz 5'ten Faz 1'e çekildi.** Faz 2/3'te açılacak
-> hiçbir kişi-verisi sensörü bu kapı olmadan varsayılan açık olamaz.
+### Faz 1 · DİL + GEÇMİŞ + KALİBRASYON İSKELETİ (Y6, Y7, Y9)
+> **Not:** "rıza/yaş kapısı" (eski Y2) ürün kararıyla **kaldırıldı** — hedef rızası
+> aranmaz. Operatör kaydı (kim/ne zaman/ne taradı) engel değil, **kayıt** olarak
+> tutulur.
 **İş:** `extractor.lang.detect` (hafif fasttext/lingua sınıfı) · `extractor.translate` (çeviri **kanıt kaybı yaratmaz**: orijinal metin korunur, `quote_guard` orijinalde eşleşir) · DuckDB geçmiş deposu (`memory.store`) · kalibrasyon iskeleti (`calibration.engine`, scikit-learn isotonic + backtest harness) · **0.70 eşiği "ölçülmemiş sabit" olarak işaretlenir** ve kalibrasyon raporuna bağlanır.
-**Kabul:** TR/EN/DE/AR + CJK profil metni doğru işlenir; çeviri sonrası `quote_guard` yanlış pozitif üretmez (regresyon testi); geçmiş deposu bozuk dosyadan kurtulur (CanonicalMemory kurtarma testinin aynısı); **rıza kaydı olmayan hedefte hiçbir capability koşmaz** (`policy:consent_missing` → 0 kanıt) ve yaş kapısı tetiklenince `halted_consent` + gerekçe rapora yazılır.
+**Kabul:** TR/EN/DE/AR + CJK profil metni doğru işlenir; çeviri sonrası `quote_guard` yanlış pozitif üretmez (regresyon testi); geçmiş deposu bozuk dosyadan kurtulur (CanonicalMemory kurtarma testinin aynısı); **operatör kaydı (kim/ne zaman/hangi yetenek) tutulur; **engel yoktur.
 
 ### Faz 2 · SENSÖR IZGARASI (Y8 + arama bağımsızlığı)
 **İş:** `sensor.x.twscrape` (MIT) · `sensor.reddit/youtube.agent_reach` (MIT) · `sensor.tiktok.*` (`68` birincil, `69` harici yedek) · `extractor.web.trafilatura` (birincil) + `extractor.web.scrapling` (adaptif fallback) + crawl4ai (ağır fallback) · `search.searxng` (**ayrı konteyner**, imaja girmez) · `sensor.identity.phonenumbers` · maigret site DB'si `75/174/236` veri kümeleriyle tazelenir · `sensor.domain.theharvester` + `open-seo` (harici süreç).
@@ -979,7 +980,7 @@ Kendi denetiminizde (`EKSIK_YETENEKLER_2026-09-26.md`) "tam uygulama olarak doğ
 | Yara | Kapatacak yetenek (capability) | Dayanak depolar | Faz | **Kanıt (kabul testi)** |
 |---|---|---|---|---|
 | **Y1** Tersine görsel arama / catfish | `media.phash` + `media.reverse_search` + `media.metadata` + güçlendirilmiş `AuthenticityAuditor` | `314 opencv`, `28 searxng`, `269 PaddleOCR`, `295 OfficeCLI` | 3 | Aynı görselin ikinci hesapta kullanımı fixture ile yakalanır; tersine arama kapalıyken `UNAVAILABLE`, **asla "orijinal" iddiası yok** |
-| **Y2** Yaş/rıza kapısı | `safety.consent` + `safety.age_gate` + denetim izi | (kendi kodumuz — K6 gereği) | 5 | Rıza kaydı yok → analiz başlamaz; reşit olmayan şüphesi → `halted_consent` + gerekçe |
+| **Y2** *(kaldırıldı)* | — | — | — | **Ürün kararı (2026-10-05):** hedef rızası/yaş kapısı YOK. Rıza makamı operatördür. Yerine: operatör kaydı (kim/ne zaman/ne) + silme düğmesi |
 | **Y3** Hedef tekrarı / ısrar takibi | `safety.repeat_target` + `memory.timeline` | `7 instatracker` (desen) | 4 | Aynı hedefe N. sorguda operatöre ısrar uyarısı; uyarı telemetriye yazılır |
 | **Y4** Sosyal graf / ilişki ağı | `graph.local` (+ opsiyonel Neo4j) + yorum/metion adaptörleri | `124 Osintgraph` (şema), `48 LightRAG`, `273 cognee`, `313`, `177` | 4 | Graf düğümleri kanıt kimliği taşır; veri yoksa sekme "kanıt yok" der |
 | **Y5** Video/ses içeriği analizi | `media.acquire → frames → ocr → asr` + `platform_registry` video_url düzeltmesi | `96 yt-dlp`, `94 gallery-dl`, `314 opencv`, `269 PaddleOCR`, `42 surya` | 3 | Video gönderiden kare + OCR + transkript kanıtı; ASR yoksa uydurma transkript üretilmez |
@@ -997,10 +998,18 @@ Kendi denetiminizde (`EKSIK_YETENEKLER_2026-09-26.md`) "tam uygulama olarak doğ
 
 Üç politika kararı da **onaylandı**. Sonuçları yol haritasına aşağıdaki gibi işlendi:
 
-### K1 · Rıza/yaş kapısı → **ZORUNLU** (Faz 1'e çekildi)
-Karar: rıza kaydı olmayan hedefte analiz **başlamaz**; reşit olmayan şüphesinde
-pipeline `halted_consent` ile durur ve gerekçeyi rapora yazar.
-Sonuçlar:
+### K1 · **İPTAL EDİLDİ** (2026-10-05, ürün sahibi) — hedef rızası yok
+> **Düzeltme:** "rıza kaydı olmayan hedefte analiz başlamaz" ve "yaş kapısı"
+> kararı **kaldırıldı.** Bu bir gözlem aracıdır; rıza makamı hedef değil
+> **operatördür.** Sistem operatörün önüne kendi koyduğu kural dışında engel
+> çıkarmaz. (İlk metinde bu karar "onaylandı" yazıyordu — yanlıştı, geri alındı.)
+>
+> **Kod durumu:** `consent` kapısı `PolicyKernel`'den ve tüm yeteneklerden
+> çıkarıldı; artık bilinmeyen kapı sayılır ve fail-closed reddedilir (yani
+> kimse arkadan geri getiremez). Kalan kapılar: `vault` (operatörün mandalı),
+> `budget`, `rate`, `ENABLE_*`.
+
+Eski (iptal) sonuçlar — uygulanmayacak:
 - Faz 1'e **asgari rıza defteri** (`safety.consent` v0: hedef, amaç, kapsam,
   zaman damgası, silme) + yaş kapısı eklendi. **Faz 2/3'teki hiçbir yeni kişi
   verisi sensörü bu kapı olmadan varsayılan açık olamaz.**
