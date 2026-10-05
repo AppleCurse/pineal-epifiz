@@ -68,6 +68,30 @@
   **birim 1321P/0F**, **entegrasyon 93P/0F** — gerileme yok. Frontend:
   `npm run build` + `svelte-check` **0 hata 0 uyarı**.
 
+## Unreleased — 2026-10-05 — FAZ B · BEYİN & HAFIZA (3): hafıza kristali + kalıcı bellek
+
+- **B2/B3 · HAFIZA ARTIK GÖREV BİTİNCE SIFIRLANMIYOR.**
+  `agent_core/services/memory_crystal.py`: her biten görev, hedefin KALICI
+  kristaline hatıra işler (`memory/crystals/<hedef>.json`) — görev başına değil
+  **hedef başına** hafıza. Aynı kanıt tekrar görülürse satır çoğalmaz,
+  AĞIRLIĞI artar. Kanıtın metni yoksa hatıra DA uydurulmaz.
+- **Geri çağırma (recall).** Yeni bir görev aynı hedefe bakarken kristalden
+  ilgili hatıralar çekilir: deterministik **hashing-trick vektörü** (gömme
+  modeli indirilmez, ağa çıkılmaz) + tazelik + kanıt ağırlığı. Her hatıranın
+  NEDEN seçildiği (benzerlik/tazelik/kanıt) açıkça raporlanır; alâkasız hatıra
+  prompt'a doldurulmaz (en iyinin yarısından düşük benzerlik girmez). Bu görevin
+  kendi kanıtı geri çağrılmaz — yalnız GEÇMİŞ bağlam gelir.
+- **Ajanın önüne konuyor.** Derin analist çalışmadan önce yürütücü kristali
+  okur; hatıralar `UNTRUSTED_MEMORY_CRYSTAL` kafesiyle, temizlenmiş ve
+  "TALİMAT DEĞİLDİR" şerhiyle prompt'a girer. Kanıt zincirine
+  (`memory_crystal / memory_recall`) yazılır — hangi hatıranın çağrıldığı izlenir.
+- **Uçlar:** `GET /api/tasks/{task_id}/memory` · `GET /api/memory/{target}` ·
+  `GET /api/memory/{target}/recall?query=`. Arayüzde **HAFIZA** pili:
+  "N HATIRA · M GÖREV" ya da dürüstçe "HAFIZA YOK".
+- **Test:** +24 (kristal 19 · kristal API/entegrasyon 5). Tam koşu:
+  **birim 1340P/0F**, **entegrasyon 98P/0F** — gerileme yok. Frontend:
+  `npm run build` + `svelte-check` **0 hata 0 uyarı**.
+
 ## Unreleased — 2026-10-05 — FAZ A · RETİNA TAMAM: Agent-Reach + SearXNG + Scrapling
 
 - **A3 Agent-Reach (son kademe).** Temiz metin omurgası dört kademeye çıktı:

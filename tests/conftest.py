@@ -68,6 +68,8 @@ def _isolate_threshold_calibration(tmp_path, monkeypatch):
     KAPALIdır, kalibrasyonu test eden dosyalar kendileri açar.
     """
     monkeypatch.setenv("PINEAL_CALIB_DIR", str(tmp_path / "calibration"))
+    # [FAZ B · B2/B3] Hafıza kristali de makineye yazılır: testler arasında sızmasın.
+    monkeypatch.setenv("PINEAL_CRYSTAL_DIR", str(tmp_path / "crystals"))
     monkeypatch.setenv("PINEAL_CALIB_OBSERVE", "false")
     monkeypatch.delenv("PINEAL_THRESHOLD", raising=False)
     monkeypatch.delenv("PINEAL_THRESHOLD_QUOTE", raising=False)

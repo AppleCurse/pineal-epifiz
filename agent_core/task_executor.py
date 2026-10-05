@@ -482,6 +482,62 @@ class PinealExecutor:
             "has_target_analysis": "target_analysis" in input_data,
         }
 
+    def _recall_memory_crystal(self, task_id: str, input_data: dict, status: Any) -> str:
+        """[FAZ B · B2/B3] Aynı hedefin GEÇMİŞİNİ kristalden çeker.
+
+        Bu görevin kendi kanıtı HARİÇTIR (zaten elinde); yalnız önceki
+        taramalardan kalan hatıralar getirilir. Hatıralar UNTRUSTED'dır:
+        `recall_block` onları kafesler ve temizler — geçmiş bağlam TALİMAT
+        değildir. Kristal yoksa boş metin döner (uydurma hatıra yok).
+        """
+        try:
+            from agent_core.services import memory_crystal
+            from agent_core.services.change_tracker import target_key
+
+            profile = input_data.get("target_profile") or {}
+            if not isinstance(profile, dict):
+                profile = {}
+            evidence = input_data.get("forensic_evidence") or []
+            target = target_key(profile, evidence if isinstance(evidence, list) else [])
+            if not target:
+                return ""
+            query = " ".join(
+                str(profile.get(field) or "") for field in ("username", "name", "bio")
+            ).strip() or target
+            block = memory_crystal.recall_block(
+                target,
+                query,
+                base=getattr(self.memory, "storage_path", None),
+                exclude_task_id=str(task_id or ""),
+            )
+            result = memory_crystal.recall(
+                target,
+                query,
+                base=getattr(self.memory, "storage_path", None),
+                exclude_task_id=str(task_id or ""),
+            )
+            status.evidence_chain.append(
+                {
+                    "agent": "memory_crystal",
+                    "evidence_type": "memory_recall",
+                    "result": {
+                        "schema_version": memory_crystal.SCHEMA_VERSION,
+                        "target": target,
+                        "available": result.available,
+                        "reason": result.reason,
+                        "recalled": len(result.hits),
+                        "selected_fragment_ids": [hit.fragment_id for hit in result.hits],
+                        "machine_note": result.machine_note,
+                    },
+                }
+            )
+            if result.available:
+                self._log("INFO", f"[{task_id}] HAFIZA KRİSTALİ: {len(result.hits)} hatıra geri çağrıldı")
+            return block
+        except Exception as exc:  # hafıza asıl akışı asla bozmasın
+            self._log("WARNING", f"[{task_id}] HAFIZA KRİSTALİ devre dışı: {type(exc).__name__}")
+            return ""
+
     async def _download_images(self, urls: List[str]) -> List[str]:
         import httpx
         import asyncio
@@ -1743,6 +1799,9 @@ class PinealExecutor:
             self._rack_update("depth_analyst", "active")
             try:
                 depth_agent = self.agents.get("depth_analyst") or DepthAnalyst(self.llm_gateway)
+                # [FAZ B · B2/B3] Geçmiş hafıza: kristalden çağrılan hatıralar
+                # prompt'a kafesli girer (boşsa hiçbir şey eklenmez).
+                input_data["memory_crystal"] = self._recall_memory_crystal(task_id, input_data, status)
                 with self._capture_llm_calls(task_id, "depth_analyst") as depth_scope:
                     depth_rep = await self._bounded(
                         depth_agent.analyze(input_data, status.evidence_chain),

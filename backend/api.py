@@ -2633,6 +2633,13 @@ def broadcast_result(client_id, res):
         payload["changes"] = _record_change_snapshot(room, res)
     except Exception as exc:  # değişim izleme asıl sonucu asla bozmasın
         logger.debug("change tracking skipped: %s", type(exc).__name__)
+    # [FAZ B · B2/B3] HAFIZA KRİSTALİ: görev bitince kanıt, hedefin KALICI
+    # hafızasına işlenir. Sonraki görev aynı hedefe bakarken "geçmişte ne
+    # bulmuştuk?" sorusunu cevaplayabilir (recall).
+    try:
+        payload["memory"] = _crystallize_task(room, res)
+    except Exception as exc:  # kristal asıl sonucu asla bozmasın
+        logger.debug("memory crystal skipped: %s", type(exc).__name__)
 
     room["latest_result"] = payload
     _enqueue(client_id, ("result", payload))
@@ -2660,6 +2667,54 @@ def _record_change_snapshot(room: dict, res: Any) -> dict:
     report = diff_snapshots(previous, snapshot)
     record_snapshot(storage, snapshot)
     return report.model_dump()
+
+def _crystallize_task(room: dict, res: Any) -> dict:
+    """Görevin kanıtını hedefin kristaline işler + özetini döner."""
+    from agent_core.services import memory_crystal
+    from agent_core.services.change_tracker import target_key
+
+    executor = room.get("executor")
+    storage = getattr(getattr(executor, "memory", None), "storage_path", "./memory/")
+    task_id = str(getattr(res, "task_id", "") or "")
+    profile = getattr(res, "target_profile", None) or {}
+
+    memory_payload: Any = {}
+    try:
+        memory_payload = executor.memory.get_task_memory(task_id) or {}
+    except Exception:  # bellek okunamazsa kanıt zinciriyle devam edilir
+        memory_payload = {}
+
+    evidence = memory_payload.get("evidence")
+    if not evidence:
+        evidence = list(getattr(res, "evidence_chain", []) or [])
+    if not isinstance(profile, dict):
+        profile = {}
+
+    target = target_key(profile, evidence if isinstance(evidence, list) else [])
+    if not target:
+        return {
+            "available": False,
+            "reason": "no_target",
+            "machine_note": "KRİSTAL: hedef anahtarı yok — hatıra işlenmedi.",
+        }
+
+    query = " ".join(
+        str(profile.get(field) or "")
+        for field in ("username", "name", "bio")
+    ).strip()
+    crystal = memory_crystal.crystallize(target, task_id, evidence, base=storage)
+    payload = memory_crystal.summarize(target, base=storage)
+    # Bu görev kendi hatıralarını geri çağırmaz (yalnız GEÇMİŞ bağlam).
+    payload["recall_preview"] = [
+        hit.model_dump()
+        for hit in memory_crystal.recall(
+            target, query or target, base=storage, exclude_task_id=task_id
+        ).hits
+    ]
+    payload["crystallized_task"] = task_id
+    payload["machine_note"] = crystal.machine_note or payload.get("machine_note", "")
+    return payload
+
 
 async def _send_result(room: dict, data: dict):
     result_telemetry = dict(data.get("telemetry") or {})
@@ -4098,6 +4153,41 @@ class CalibrationAdjudicationPayload(BaseModel):
     truth: bool
 
 
+@app.get("/api/memory/{target}")
+async def api_memory_crystal(target: str = Path(min_length=1, max_length=128)):
+    """[FAZ B · B2/B3] Hedefin KALICI hafıza kristali: kaç hatıra, hangi görevler.
+
+    Görev bitince hafıza sıfırlanmıyor: kristal hedef başına yaşar. Yoksa
+    `available:false` döner — geçmiş UYDURULMAZ.
+    """
+    from agent_core.services import memory_crystal
+
+    return memory_crystal.summarize(target)
+
+
+@app.get("/api/memory/{target}/recall")
+async def api_memory_recall(
+    target: str = Path(min_length=1, max_length=128),
+    query: str = "",
+    k: int = 8,
+    exclude_task_id: str = "",
+):
+    """[FAZ B · B2/B3] Kristalden ilgili hatıraları ÇEKER (deterministik vektör).
+
+    Sorgu verilmezse hedefin kendi adıyla aranır. Sonuçta her hatıranın NEDEN
+    seçildiği (benzerlik/tazelik/kanıt) açıkça yazar — gizli skor yok.
+    """
+    from agent_core.services import memory_crystal
+
+    result = memory_crystal.recall(
+        target,
+        query or target,
+        k=max(1, min(50, k)),
+        exclude_task_id=exclude_task_id,
+    )
+    return result.model_dump()
+
+
 @app.get("/api/calibration")
 async def api_calibration(scope: str = ""):
     """[FAZ B · B5] Eşik kalibrasyonunun GERÇEK durumu.
@@ -4163,6 +4253,75 @@ async def api_calibration_adjudicate(req: CalibrationAdjudicationPayload):
         "truth": req.truth,
         "threshold": calib.summary(scope=calib.SCOPE_QUOTE),
     }
+
+
+@app.get("/api/tasks/{task_id}/memory")
+async def api_task_memory(
+    task_id: str = Path(min_length=1, max_length=_MAX_TASK_ID_LENGTH),
+    client_id: str = "default",
+):
+    """[FAZ B · B2/B3] Görevin hedefinin KALICI hafıza kristali.
+
+    `HolographicResonanceMesh` grafi (B4) ve değişim raporu (B7) ile aynı
+    desende: kanıt yoksa hafıza UYDURULMAZ (`available:false` + sebep).
+    Hatıralar önceki taramalardan gelir; bu görevin kendi kanıtı hariçtir.
+    """
+    try:
+        validate_identifier(task_id, field="task_id")
+    except ValueError:
+        return JSONResponse(
+            {"error": {"code": "INVALID_TASK_ID", "message": "Invalid task identifier"}},
+            status_code=400,
+        )
+
+    room = get_room(client_id)
+    executor = room.get("executor")
+    if executor is None:
+        return JSONResponse(
+            {"error": {"code": "NO_EXECUTOR", "message": "Oda hazır değil"}},
+            status_code=503,
+        )
+
+    try:
+        memory = executor.memory.get_task_memory(task_id)
+    except Exception as exc:  # bozuk bellek gizlenmez
+        logger.warning("memory crystal: bellek okunamadı: %s", type(exc).__name__)
+        return JSONResponse(
+            {
+                "error": {
+                    "code": "MEMORY_UNAVAILABLE",
+                    "message": f"Görev belleği okunamadı: {type(exc).__name__}",
+                }
+            },
+            status_code=409,
+        )
+
+    from agent_core.services import memory_crystal
+    from agent_core.services.change_tracker import target_key
+
+    storage = getattr(executor.memory, "storage_path", None)
+    payload = memory or {}
+    evidence = payload.get("evidence") or []
+    profile = payload.get("target_profile") or {}
+    if not isinstance(profile, dict):
+        profile = {}
+
+    target = target_key(profile, evidence if isinstance(evidence, list) else [])
+    if not target:
+        return {
+            "available": False,
+            "reason": "no_target",
+            "machine_note": "KRİSTAL: hedef anahtarı yok — hatıra uydurulmadı.",
+        }
+
+    query = " ".join(str(profile.get(field) or "") for field in ("username", "name", "bio")).strip()
+    summary = memory_crystal.summarize(target, base=storage)
+    result = memory_crystal.recall(
+        target, query or target, k=5, base=storage, exclude_task_id=str(task_id or "")
+    )
+    summary["recalled"] = [hit.model_dump() for hit in result.hits]
+    summary["recall_note"] = result.machine_note
+    return summary
 
 
 @app.post("/api/tasks/{task_id}/cancel")

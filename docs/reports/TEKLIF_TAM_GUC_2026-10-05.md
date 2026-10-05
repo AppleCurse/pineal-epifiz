@@ -198,11 +198,13 @@ X'in iki yolu var (twscrape + agent-reach), arama anahtarsız da çalışıyor
 (SearXNG). Kütüphaneler isteğe bağlı üçüncü kurulum adımında
 (`requirements-retina.txt`); kurulmazsa hiçbir yetenek uydurma veri üretmiyor.
 
-**Faz B ilerlemesi (2026-10-05):** B6 FFT tamam · B4 gerçek örgü tamam
-(backend + arayüz) · B7 değişim izleme tamam · **B1 jüri konsensüs denetçisi
-tamam** (oylar ikinci ve bağımsız bir kafada yeniden sayılıyor; uyuşmazlık
-gizlenmiyor, bağlayıcı kipte hüküm düşürülüyor) · **B5 eşik kalibrasyonu tamam**
-(0.70 sabiti ölçülen değere döndü: ledger + operatör etiketi + Wilson aralığı +
-46 adetlik geri test ızgarası + güvenilirlik diyagramı; veri yetersizse eşik
-DEĞİŞMİYOR ve bunu açıkça yazıyor). Sırada: B2/B3 hafıza kristali + kalıcı
-bellek.
+**Faz B ilerlemesi (2026-10-05): TAMAM.** B6 FFT · B4 gerçek örgü
+(backend + arayüz) · B7 değişim izleme · B1 jüri konsensüs denetçisi (oylar
+ikinci ve bağımsız bir kafada yeniden sayılıyor; uyuşmazlık gizlenmiyor,
+bağlayıcı kipte hüküm düşürülüyor) · B5 eşik kalibrasyonu (0.70 sabiti ölçülen
+değere döndü: ledger + operatör etiketi + Wilson aralığı + 46 adetlik geri test
+ızgarası + güvenilirlik diyagramı; veri yetersizse eşik DEĞİŞMİYOR) · **B2/B3
+hafıza kristali + kalıcı bellek** (hafıza hedef başına yaşıyor; görev kapanınca
+sıfırlanmıyor; kristalden geçmiş hatıralar kafesli blok olarak ajanın önüne
+konuyor). Sıradaki faz: **FAZ C — SES & NEFES** (C1 jenerik yanıt filtresi ·
+C2 yerel TTS · C3 sesli etkileşim + araya girme · C4 sesli rapor okuma).

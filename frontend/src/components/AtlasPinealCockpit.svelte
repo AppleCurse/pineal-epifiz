@@ -120,6 +120,31 @@
     'halted_evidence', 'halted_frequency', 'halted_insufficient_evidence', 'halted_critical',
   ]);
 
+  // --- [FAZ B · B2/B3] KALICI HAFIZA KRİSTALİ ---
+  // Görev bitince hafıza sıfırlanmıyor: hedefin geçmiş taramalarından kalan
+  // hatıralar burada görünür. Yoksa "HAFIZA YOK" yazar (uydurma geçmiş yok).
+  let memoryCrystal: { available: boolean; fragment_count: number; task_count: number; note: string } | null = null;
+  let lastMemoryTaskId: string | null = null;
+
+  async function fetchMemoryCrystal(taskId: string) {
+    try {
+      const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}/memory?client_id=${encodeURIComponent($clientId)}`);
+      if (!res.ok) {
+        memoryCrystal = null;
+        return;
+      }
+      const data = await res.json();
+      memoryCrystal = {
+        available: Boolean(data?.available),
+        fragment_count: Number(data?.fragment_count ?? 0),
+        task_count: Number(data?.task_count ?? 0),
+        note: String(data?.machine_note ?? ''),
+      };
+    } catch (_e) {
+      memoryCrystal = null;
+    }
+  }
+
   async function fetchEvidenceGraph(taskId: string) {
     try {
       const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}/graph?client_id=${encodeURIComponent($clientId)}`);
@@ -147,6 +172,10 @@
     if (taskId && TERMINAL_STATUSES.has(String(status)) && taskId !== lastGraphTaskId) {
       lastGraphTaskId = taskId;
       fetchEvidenceGraph(taskId);
+    }
+    if (taskId && TERMINAL_STATUSES.has(String(status)) && taskId !== lastMemoryTaskId) {
+      lastMemoryTaskId = taskId;
+      fetchMemoryCrystal(taskId);
     }
   }
 
@@ -185,6 +214,10 @@
   }
 
   $: if ($clientId) fetchThreshold();
+
+  $: memoryLabel = memoryCrystal?.available
+    ? `HAFIZA ${memoryCrystal.fragment_count} HATIRA · ${memoryCrystal.task_count} GÖREV`
+    : 'HAFIZA YOK';
 
   $: thresholdLabel = thresholdInfo
     ? `EŞİK ${thresholdInfo.threshold.toFixed(2)} · ${thresholdInfo.source === 'kalibre' ? 'ÖLÇÜLDÜ' : thresholdInfo.source === 'elle_sabitleme' ? 'ELLE SABİT' : 'ÖLÇÜLMEDİ'}`
@@ -360,6 +393,15 @@
       alt="Atlas Pineal Eye"
       style="transform: translate(calc(-50% + {eyeX.toFixed(2)}px), calc(-50% + {eyeY.toFixed(2)}px)) scale({eyeScale.toFixed(3)});"
     />
+  </div>
+
+  <!-- [FAZ B · B2/B3] HAFIZA PİLİ: geçmiş hatıralar (kristal) -->
+  <div
+    class="memory-pill"
+    class:has-memory={Boolean(memoryCrystal?.available)}
+    title={memoryCrystal?.note || 'Bu hedef için geçmiş hatıra yok'}
+  >
+    {memoryLabel}
   </div>
 
   <!-- [FAZ B · B5] EŞİK PİLİ: sabit 0.70 değil, ölçülen değer -->
@@ -1103,6 +1145,31 @@
   }
 
   /* TACTICAL WAR ROOM GEÇİŞ BUTONU */
+  .memory-pill {
+    position: absolute;
+    top: 22px;
+    right: 418px;
+    z-index: 104;
+    padding: 6px 14px;
+    background: rgba(10, 15, 29, 0.82);
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    border-radius: 9999px;
+    font-family: 'JetBrains Mono', monospace, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: #94a3b8;
+    backdrop-filter: blur(6px);
+    white-space: nowrap;
+    cursor: help;
+  }
+
+  .memory-pill.has-memory {
+    border-color: rgba(129, 140, 248, 0.7);
+    color: #c7d2fe;
+    box-shadow: 0 0 14px rgba(129, 140, 248, 0.28);
+  }
+
   .threshold-pill {
     position: absolute;
     top: 22px;
