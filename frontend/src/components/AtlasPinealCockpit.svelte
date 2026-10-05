@@ -146,6 +146,43 @@
     }
   }
 
+  // --- [FAZ D · D4] DİL PİLİ ---
+  // Kanıta işlenen GERÇEK tespiti gösterir: web çıkarıcıları (trafilatura →
+  // crawl4ai → scrapling) çıkardıkları metnin dilini ölçer ve kaydeder; pil
+  // o kaydı okur. Hiç ölçüm yoksa "ÖLÇÜLMEDİ" yazar (uydurma etiket yok).
+  let langInfo: {
+    language: string;
+    confidence: number;
+    reason: string | null;
+    source_engine: string;
+    url: string;
+  } | null = null;
+
+  async function fetchLanguageStatus() {
+    try {
+      const res = await apiFetch(`/api/language/status?client_id=${encodeURIComponent($clientId)}`);
+      if (!res.ok) {
+        langInfo = null;
+        return;
+      }
+      const data = await res.json();
+      const last = data?.last;
+      if (!last || !last.language) {
+        langInfo = null;
+        return;
+      }
+      langInfo = {
+        language: String(last.language),
+        confidence: Number(last.confidence ?? 0),
+        reason: (last.reason as string | null) ?? null,
+        source_engine: String(last.source_engine ?? ''),
+        url: String(last.url ?? ''),
+      };
+    } catch (_e) {
+      langInfo = null; // ağ hatası: uydurma etiket ÜRETİLMEZ
+    }
+  }
+
   async function fetchEvidenceGraph(taskId: string) {
     try {
       const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}/graph?client_id=${encodeURIComponent($clientId)}`);
@@ -177,6 +214,10 @@
     if (taskId && TERMINAL_STATUSES.has(String(status)) && taskId !== lastMemoryTaskId) {
       lastMemoryTaskId = taskId;
       fetchMemoryCrystal(taskId);
+    }
+    // [FAZ D · D4] Görev bittiğinde kanıta işlenen dil ölçümünü tazele.
+    if (taskId && TERMINAL_STATUSES.has(String(status))) {
+      fetchLanguageStatus();
     }
   }
 
@@ -238,6 +279,14 @@
   $: thresholdLabel = thresholdInfo
     ? `EŞİK ${thresholdInfo.threshold.toFixed(2)} · ${thresholdInfo.source === 'kalibre' ? 'ÖLÇÜLDÜ' : thresholdInfo.source === 'elle_sabitleme' ? 'ELLE SABİT' : 'ÖLÇÜLMEDİ'}`
     : 'EŞİK —';
+
+  // [FAZ D · D4] DİL pili etiketi: ölçüm yoksa ÖLÇÜLMEDİ (uydurma etiket yok).
+  $: langLabel = langInfo
+    ? langInfo.language === 'unknown'
+      ? 'DİL: ÖLÇÜLEMEDİ'
+      : `DİL: ${langInfo.language.toUpperCase()} · ${langInfo.confidence.toFixed(2)}`
+    : 'DİL: ÖLÇÜLMEDİ';
+  $: if ($clientId) fetchLanguageStatus();
 
   function nowTime() {
     return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -555,6 +604,20 @@
   >
     {voiceLabel}{$voiceEnabled ? '' : ' · KAPALI'}
   </button>
+
+  <!-- [FAZ D · D4] DİL PİLİ: kanıta işlenen gerçek tespit (uydurma etiket yok) -->
+  <div
+    class="language-pill"
+    class:detected={Boolean(langInfo && langInfo.language !== 'unknown')}
+    class:unknown={Boolean(langInfo && langInfo.language === 'unknown')}
+    title={langInfo
+      ? langInfo.language === 'unknown'
+        ? langInfo.reason || 'Dil sinyali ölçülemedi'
+        : `${langInfo.source_engine}${langInfo.url ? ' → ' + langInfo.url : ''} · güven ${langInfo.confidence.toFixed(2)}`
+      : 'Henüz dil ölçümü yok — web çıkarıcıları çıkardıkları metnin dilini işler'}
+  >
+    {langLabel}
+  </div>
 
   <!-- [FAZ B · B5] EŞİK PİLİ: sabit 0.70 değil, ölçülen değer -->
   <div
@@ -1376,6 +1439,36 @@
   .voice-pill.muted {
     opacity: 0.6;
     text-decoration: line-through;
+  }
+
+  .language-pill {
+    position: absolute;
+    top: 88px;
+    right: 32px;
+    z-index: 104;
+    padding: 6px 14px;
+    background: rgba(10, 15, 29, 0.82);
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    border-radius: 9999px;
+    font-family: 'JetBrains Mono', monospace, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: #94a3b8;
+    backdrop-filter: blur(6px);
+    white-space: nowrap;
+    cursor: help;
+  }
+
+  .language-pill.detected {
+    border-color: rgba(52, 211, 153, 0.7);
+    color: #a7f3d0;
+    box-shadow: 0 0 14px rgba(52, 211, 153, 0.28);
+  }
+
+  .language-pill.unknown {
+    border-color: rgba(248, 113, 113, 0.55);
+    color: #fca5a5;
   }
 
   .memory-pill {

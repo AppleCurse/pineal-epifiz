@@ -1,5 +1,53 @@
 # Changelog
 
+## Unreleased — 2026-10-05 — FAZ A/D · A8 + D4: site listesi tazeleniyor, dil ölçülüyor
+
+- **A8 · MAIGRET DB TAZELEME.** maigret paketlenmiş bir site anlık görüntüsüyle
+  gelir ve hiç güncellenmezdi. Yeni çekirdek `agent_core/services/
+  maigret_db_refresh.py`: WhatsMyName ve sherlock verisini maigret şemasına
+  birleştirir. Üç kural: (1) **uydurma yok** — kaynakta olmayan alan üretilmez
+  (`known_accounts` boşsa `usernameClaimed` icat edilmez); (2) **kürasyon
+  ezilmez** — maigret'in mevcut kaydı üzerine yazılmaz, yalnız eksik alan
+  dolar; (3) **desteklenmeyen kip atlanır ve sayılır** — sherlock'un
+  `response_url` kipi yanlış dönüştürülmez, `skipped` + sebep olarak raporlanır.
+  Her iki paketlenmiş DB biçimi desteklenir (düz ≤0.6.5, `{"sites":...}` ≥0.6.6).
+  CLI: `python -m agent_core.services.maigret_db_refresh --wmn X --sherlock Y`.
+- **A8 · TARAYICI TAZE LİSTEYİ GERÇEKTEN KULLANIYOR.** `PINEAL_MAIGRET_DB`
+  doluysa tarama o dosyadan koşar ve sonuç `db_source` + `db_sites` olarak
+  raporlanır (eski liste mi yeni liste mi, gizlenmez); bozuk dosyada sessizce
+  paketlenmiş listeye DÖNÜLMEZ (`db_unavailable`, fail-closed). Önbellek
+  kaynak anahtarlı: env değişince bayat DB ile taranmaz. Gerçek veri ölçümü
+  (maigret 0.6.6 tabanı + sherlock-project 0.16.2): 5897 → 5958 site
+  (+61 yeni · 106 dolduruldu · 284 değişmedi · 30 atlandı: 27 desteklenmeyen
+  kip + 3 boş URL). WhatsMyName verisi bu ortamda ağdan alınamadığı için
+  `missing_sources` içinde dürüstçe raporlanır.
+- **D4 · DİL TESPİTİ (deterministik).** `agent_core/services/language.py`:
+  yazı sistemi Unicode aralıklarından ölçülür, dil puanı durma sözcükleri +
+  karakter işaretlerinden hesaplanır. Model yok, ağ yok; aynı metin her zaman
+  aynı sonuç. Kapsam: tr · en · de · es · fr · ru · az. Sinyal yoksa etiket
+  UYDURULMAZ: `unknown` + makine-okunur sebep (`too_short` / `no_signal` /
+  `script_unsupported:<script>`). Güven dürüsttür: tr/az gibi yakın dillerde
+  marj küçülür, güven ~0.50'ye iner; üç sözcüklük metin 0.99 güven alamaz.
+- **D4 · ÇEVİRİ YERELDE (ses/dinleme ile aynı kural).** `agent_core/services/
+  translation.py` + `extractor.text.translate_local` yeteneği: uç YALNIZ
+  `127.0.0.1`/`localhost`/`[::1]` ya da yerel CLI (`PINEAL_TRANSLATE_CMD`,
+  varsayılan `trans`); UZAK uç `non_local_endpoint` ile reddedilir, motor
+  yoksa çeviri ÜRETİLMEZ. Kaynak dil önce ölçülür ve çıktıya yazılır; motor
+  girdiyi aynen geri verirse çeviri iddia edilmez (`engine_echoed_input`).
+- **D4 · KANITA DAMGA + KOKPİT PİLİ.** Web çıkarıcıları (trafilatura →
+  crawl4ai → scrapling) çıkardıkları metnin dilini kanıt kapsamına işler
+  (`language` + `language_confidence` + sebep). Kokpitte **DİL** pili bu
+  gerçek ölçümü gösterir; ölçüm yoksa `DİL: ÖLÇÜLMEDİ` (uydurma etiket yok).
+- **Yeni uçlar:** `GET /api/language/status` · `POST /api/language/detect` ·
+  `POST /api/language/translate` (kasa interlock'u + `language` hız kovası).
+- **Kasa invariant'ı istisnasız korundu:** iki yeni yetenek de (`extractor.
+  text.language`, `extractor.text.translate_local`) `vault` kapısını taşır;
+  mevcut "kasa kilitliyken hiçbir yetenek koşamaz" testi ikisini de kapsar.
+- **Env:** `PINEAL_MAIGRET_DB` · `ENABLE_LOCAL_TRANSLATE` ·
+  `PINEAL_TRANSLATE_URL` · `PINEAL_TRANSLATE_CMD` (hepsi varsayılan KAPALI/boş).
+- **Test:** +98 (birim 89 · entegrasyon 9). Tam koşu: **1781P/0F**, kapsama
+  **%85.77** (kapı %80). `ruff` temiz; `svelte-check` 0 hata; build başarılı.
+
 ## Unreleased — 2026-10-05 — FAZ C · SES & NEFES (4): bulunanı söyle
 
 - **C4 · SESLİ RAPOR.** Sistem bulduğunu yazıyordu, söylemiyordu. `voice.report.

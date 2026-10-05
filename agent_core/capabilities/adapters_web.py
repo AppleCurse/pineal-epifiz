@@ -57,6 +57,29 @@ WEB_EXTRACTION_ORDER: tuple[str, ...] = (
 DEFAULT_MAX_CHARS = 20_000
 
 
+def _language_scope(text: str, engine: str, url: str) -> dict[str, Any]:
+    """[FAZ D · D4] Çıkarılan metnin dili kanıt kapsamına işlenir.
+
+    Tespit deterministiktir (model/ağ yok) ve çıkarıcıyı ASLA bozmaz:
+    ölçüm patlasa bile kapsam `language=unknown` + sebeple dürüst kalır.
+    Ölçüm, kokpitteki DİL pilinin beslendiği SON kayıttır.
+    """
+    from agent_core.services.language import detect_language, record_finding
+
+    try:
+        finding = detect_language(text)
+    except Exception:  # tespit çıkarıcıyı düşürmez; sessizlik de yok
+        return {"language": "unknown", "language_reason": "detect_error"}
+    record_finding(finding, source_engine=engine, url=url)
+    scope: dict[str, Any] = {
+        "language": finding.language,
+        "language_confidence": finding.confidence,
+    }
+    if finding.reason:
+        scope["language_reason"] = finding.reason
+    return scope
+
+
 def _clamp(text: str, max_chars: int) -> str:
     text = (text or "").strip()
     if len(text) <= max_chars:
@@ -142,12 +165,13 @@ class TrafilaturaCapability(BaseCapability):
             )
 
         max_chars = int(ctx.params.get("max_chars") or DEFAULT_MAX_CHARS)
+        lang_scope = _language_scope(text, "trafilatura", url)
         item = make_evidence(
             content=_clamp(text, max_chars),
             source_engine="trafilatura",
             epistemic_type="observation",
             provenance_refs=[url],
-            scope={"kind": "web_text", "title": title},
+            scope={"kind": "web_text", "title": title, **lang_scope},
             source_metrics={"chars": len(text), "truncated": len(text) > max_chars},
         )
         return CapabilityResult(
@@ -155,7 +179,11 @@ class TrafilaturaCapability(BaseCapability):
             available=True,
             items=(item,),
             payload={"url": url, "title": title, "text": text},
-            notes={"chars": len(text), "title": title},
+            notes={
+                "chars": len(text),
+                "title": title,
+                "language": lang_scope.get("language"),
+            },
         )
 
 
@@ -210,6 +238,7 @@ class Crawl4AICapability(BaseCapability):
 
         max_chars = int(ctx.params.get("max_chars") or DEFAULT_MAX_CHARS)
         final_url = getattr(result, "url", "") or url
+        lang_scope = _language_scope(markdown, "crawl4ai", final_url)
         item = make_evidence(
             content=_clamp(markdown, max_chars),
             source_engine="crawl4ai",
@@ -219,6 +248,7 @@ class Crawl4AICapability(BaseCapability):
                 "kind": "web_text",
                 "title": getattr(result, "title", "") or "",
                 "status_code": getattr(result, "status_code", None),
+                **lang_scope,
             },
             source_metrics={"chars": len(markdown)},
         )
@@ -227,7 +257,10 @@ class Crawl4AICapability(BaseCapability):
             available=True,
             items=(item,),
             payload=result,
-            notes={"title": getattr(result, "title", "")},
+            notes={
+                "title": getattr(result, "title", ""),
+                "language": lang_scope.get("language"),
+            },
         )
 
 
@@ -297,16 +330,20 @@ class ScraplingCapability(BaseCapability):
             )
 
         max_chars = int(ctx.params.get("max_chars") or DEFAULT_MAX_CHARS)
+        lang_scope = _language_scope(text, "scrapling", url)
         item = make_evidence(
             content=_clamp(text, max_chars),
             source_engine="scrapling",
             epistemic_type="observation",
             provenance_refs=[url],
-            scope={"kind": "web_text"},
+            scope={"kind": "web_text", **lang_scope},
             source_metrics={"chars": len(text)},
         )
         return CapabilityResult(
-            capability_id=self.id, available=True, items=(item,), notes={"chars": len(text)}
+            capability_id=self.id,
+            available=True,
+            items=(item,),
+            notes={"chars": len(text), "language": lang_scope.get("language")},
         )
 
 
