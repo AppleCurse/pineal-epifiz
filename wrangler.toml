@@ -32,3 +32,6 @@ main = "worker.ts"
 [assets]
 directory = "frontend/dist"
 binding = "ASSETS"
+
+[build]
+command = "npm run build"
