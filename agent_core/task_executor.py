@@ -564,6 +564,8 @@ class PinealExecutor:
 
         # Use a shared httpx.AsyncClient to enable connection pooling
         async with httpx.AsyncClient(follow_redirects=False, timeout=15.0) as client:
+            # [E7-muaf] `fetch_image` her istisnayı yakalar, loglar ve None
+            # döner; kalan görsel yine indirilir (`paths` filtresi).
             results = await asyncio.gather(*(fetch_image(client, u) for u in urls[:2]))
         
         paths = [p for p in results if p is not None]

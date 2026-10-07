@@ -551,6 +551,8 @@ class RoutedChatExecutor:
         kwargs: dict[str, Any],
     ) -> RoutedChatResult:
         selected = plan.attempt_order[: plan.parallel_width]
+        # [E7-muaf] `_attempt` istisnayı YUTMAZ, `outcome.error` olarak
+        # döndürür; başarısız denemeler sonraki modele devreder.
         outcomes = await asyncio.gather(*(
             self._attempt(gateway, plan, execution_key, messages, kwargs)
             for execution_key in selected

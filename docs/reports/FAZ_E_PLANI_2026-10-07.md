@@ -40,7 +40,7 @@ Bu plan hazırlanırken ölçülmemişti; #113 ile kapandı: **kasa kilitliyken 
 | **E4** fail-closed worker | **Çalışılıyor** | paralel oturum (talep 3) |
 | **E5** motor yoksa `400` | **Kapandı** (bu PR) | bu oturum |
 | **E6** UI "Yetersiz Kanıt" | **Kapandı** (bu PR) | bu oturum |
-| **E7** `gather` koruması | Açık 🟡 | — |
+| **E7** `gather` koruması | **Kapandı** (bu PR) | bu oturum |
 | **E8** Pydantic (169 → 10-15) | Açık 🟢 | — |
 
 **Sıra notu (çakışma uyarısı):** E4 şu an paralel oturumun elinde ve E3/E7 ile **aynı dosyalara** dokunuyor. #113 `backend/api.py`'yi ağır biçimde değiştirdiği için **E2 de aynı dosyada** yaşar → E2 · E3 · E7'yi #113 birleşmeden başlatmak çakışma üretir.
@@ -178,6 +178,22 @@ Depo bu kültüre sahip (`tests/unit/test_ui_honesty_contract.py`, `tests/unit/t
 - **Neden:** Bugün tek hata bütün analizi çökertebiliyor (fail-open'un tersi: fail-crash).
 - **DoD:** `grep -rn 'asyncio.gather' agent_core/ backend/` → her çağrı ya `return_exceptions` ya gerekçeli `# noqa: ...` taşır.
 - **Boyut:** küçük-orta.
+
+#### E7 · UYGULANDI (2026-10-07) — grep sayımı anlamsal denetime çevrildi
+- **Ölçüm (öncesi):** repoda **11** `asyncio.gather` var; **3'ü** `return_exceptions=True` ile koşuyordu, **8'i** korumasız GÖRÜNÜYORDU. Tek tek okuma tabloyu değiştirdi:
+
+  | Nokta | Gerçek durum |
+  |---|---|
+  | `autonomous_verifier` · `search_engine` · `api.run_mission` | zaten `return_exceptions=True` |
+  | `holehe_scanner` · `human_behavior` · `local_jury` · `routed_chat` · `task_executor` | **iç coroutine hatayı yakalıyor** (düşen parça dürüst kayda dönüşüyor: `stalled` · boş liste · `SeatVote(error=…)` · `outcome.error` · `None`) |
+  | `vision_analyzer` | kayıt-tabanlı: `status`/`reason` alanlarıyla düşüş raporlanıyor |
+  | `pillar_orchestrator` | **BİLİNÇLİ all-or-nothing**: 7-sütun politikası hatayı GÖRMEK zorunda; kısmi sonuç "rapor tamam" görüntüsü üretirdi |
+  | **`socid_enricher.enrich_urls`** | **gerçekten korumasız** → tek bozuk URL tüm partiyi kaybettiriyordu |
+
+- **Düzeltilen tek nokta:** `socid_enricher.enrich_urls` artık `return_exceptions=True` ile koşar; beklenmedik istisna yalnız o hedefi `scan_error` kaydına düşürür, parti devam eder ve düşüş **sessiz kalmaz** (uyarı logu + makine-okunur sebep). Dönüş sözleşmesi (yalnız `available=True`) korunur — çağıranlar değişmedi.
+- **Yapısal bekçi:** yeni `tests/unit/test_gather_contract.py` — her `asyncio.gather(...)` ya `return_exceptions=True` taşır ya da 3 satır içinde `[E7-muaf]` + ≥30 karakter gerekçe. Muafiyet kümesi **sabit** (8 dosya) ve test onu bildirir: yeni bir korumasız `gather` sessizce eklenemez. Mutasyon denetimi: bir muafiyet işareti silindiğinde test **kırmızı** yanıyor.
+- **Not (testin kendisiyle kanıtlanan ayrım):** `adapters_sensors.py` tarama dışıdır — oradaki `gather` twscrape'in KENDİ fonksiyonudur (asyncio değil) ve zaten try/except ile dürüst `CapabilityResult`e bağlıdır.
+- **Kanıt:** `test_gather_contract.py` **8 test** (yapısal + `socid` kısmi sonuç · `scan_error` işareti · sözleşme korunması). Tam paket **2186 passed**, kırmızılar temiz tabanla birebir aynı (32, ortam) → **regresyon yok**; `ruff check .` temiz.
 
 ### E8 · Tip güvenliği (kademeli) 🟢 DÜŞÜK-ORTA
 - **Ne:** `Dict[str, Any]` → Pydantic modelleri (`agent_core/` 169 yer). **İlk dilim:** API'ye en yakın 10-15 nokta (runtime `KeyError` riski en yüksek olanlar). Kalanı için görev listesi bu belgenin ekinde tutulur.
