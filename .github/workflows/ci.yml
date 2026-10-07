@@ -123,10 +123,34 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust_core
+      # [SESSİZ-ÇÖKME-YOK] Actions logları Azure blob storage'da tutulur ve her
+      # ortamdan okunamaz; "Process completed with exit code 101" dışında hiçbir
+      # şey görünmediğinde hata fiilen HALI ALTINA süpürülmüş olur. Bu yüzden
+      # derleyici/test hataları ayrıca workflow ANNOTATION'ı olarak yüzeye
+      # çıkarılır — annotation'lar api.github.com üzerinden okunabilir.
       - name: Cargo check (core, no tauri feature)
-        run: cargo check --all-targets
+        run: |
+          set +e
+          cargo check --all-targets --message-format=short 2>&1 | tee /tmp/cargo-check.log
+          code=${PIPESTATUS[0]}
+          grep -E ':[0-9]+:[0-9]+: error' /tmp/cargo-check.log | head -60 | while IFS= read -r line; do
+            f=$(printf '%s' "$line" | cut -d: -f1)
+            l=$(printf '%s' "$line" | cut -d: -f2)
+            c=$(printf '%s' "$line" | cut -d: -f3)
+            m=$(printf '%s' "$line" | cut -d: -f4-)
+            echo "::error file=rust_core/${f},line=${l},col=${c}::${m}"
+          done
+          exit $code
       - name: Cargo test
-        run: cargo test --locked
+        run: |
+          set +e
+          cargo test --locked 2>&1 | tee /tmp/cargo-test.log
+          code=${PIPESTATUS[0]}
+          grep -E 'panicked at|^error|assertion|failures:$|^ +[a-z_:]+$' /tmp/cargo-test.log \
+            | head -60 | while IFS= read -r line; do
+              echo "::error title=cargo-test::${line}"
+            done
+          exit $code
 
   android:
     runs-on: ubuntu-latest
