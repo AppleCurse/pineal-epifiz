@@ -12,6 +12,8 @@ böylece bir ailenin istisnası diğerini sessizce açmaz.
 """
 
 from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
 
 import ipaddress
 import os
@@ -47,6 +49,7 @@ def is_private_host(hostname: str, *, env_name: str) -> bool:
         try:
             ip = ipaddress.ip_address(info[4][0])
         except Exception:
+            logger.warning('Suppressed exception observed at agent_core/services/net_hygiene.py:52 (continue)')
             continue
         if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
             return True

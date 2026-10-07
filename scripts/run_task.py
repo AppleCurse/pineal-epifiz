@@ -112,8 +112,10 @@ async def main() -> None:
     # Operatör CLI'si kasa bilmez; omurga politikası payload ile aynıdır.
     try:
         executor.search_engine.set_policy(payload.get("policy") or {})
-    except Exception:
-        pass
+    except Exception as exc:
+        # The CLI must not hide a policy propagation failure: the executor
+        # still fail-closes its own gates, but the operator gets a visible note.
+        _log("WARNING", f"search policy aktarılamadı: {type(exc).__name__}")
     try:
         status = await executor.execute_task(payload, task_id)
     except Exception as e:

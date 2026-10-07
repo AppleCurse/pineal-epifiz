@@ -21,6 +21,8 @@ değildir. Bu ayrım kanıt zarfında (``epistemic_type``) açıkça taşınır.
 """
 
 from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
 
 import asyncio
 import json
@@ -230,6 +232,7 @@ def _extract_payload(text: str) -> dict[str, Any] | None:
         try:
             payload = json.loads(candidate)
         except ValueError:
+            logger.warning('Suppressed exception observed at agent_core/services/local_jury.py:235 (continue)')
             continue
         if isinstance(payload, dict):
             return payload

@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+logger = logging.getLogger(__name__)
 import os
 import random
 import re
@@ -212,7 +213,7 @@ class InstagramGhostScraper:
                     if isinstance(text, str) and text.strip():
                         return text[:2200]
             except Exception:
-                pass
+                logger.warning('Suppressed exception observed at agent_core/scraper/instagram_ghost.py:216 (pass)')
             cap = node.get("caption")
             if isinstance(cap, dict) and isinstance(cap.get("text"), str) and cap["text"].strip():
                 return cap["text"][:2200]
@@ -365,6 +366,7 @@ class InstagramGhostScraper:
                 try:
                     posts.append(InstagramPost(**node))
                 except Exception:
+                    logger.warning('Suppressed exception observed at agent_core/scraper/instagram_ghost.py:369 (continue)')
                     continue
 
             if not posts:
@@ -493,6 +495,7 @@ class InstagramGhostScraper:
                             video_url=post_videos[i] if i < len(post_videos) else None,
                         ))
                     except Exception:
+                        logger.warning('Suppressed exception observed at agent_core/scraper/instagram_ghost.py:497 (continue)')
                         continue
 
             # Eğer private ve post yoksa, sonraki ajanlar boş veriyle halüsinasyon göreceği için durdur
@@ -570,6 +573,7 @@ class InstagramGhostScraper:
             try:
                 blob = json.loads(match.group(1))
             except (TypeError, ValueError):
+                logger.warning('Suppressed exception observed at agent_core/scraper/instagram_ghost.py:574 (continue)')
                 continue
             matched = None
             for node in InstagramGhostScraper._collect_structured_posts(blob):
@@ -594,6 +598,7 @@ class InstagramGhostScraper:
                 try:
                     ld = json.loads(ld_match.group(1).strip())
                 except (TypeError, ValueError):
+                    logger.warning('Suppressed exception observed at agent_core/scraper/instagram_ghost.py:598 (continue)')
                     continue
                 candidates = ld if isinstance(ld, list) else [ld]
                 for entry in candidates:
@@ -668,7 +673,7 @@ class InstagramGhostScraper:
                 try:
                     await self._post_detail_delay()
                 except Exception:
-                    pass
+                    logger.warning('Suppressed exception observed at agent_core/scraper/instagram_ghost.py:672 (pass)')
             first = False
             try:
                 await playwright_page.goto(
@@ -682,6 +687,7 @@ class InstagramGhostScraper:
             try:
                 detail = self._extract_post_detail(post_html, post.shortcode)
             except Exception:
+                logger.warning('Suppressed exception observed at agent_core/scraper/instagram_ghost.py:686 (continue)')
                 continue
             if not detail:
                 continue
@@ -704,6 +710,7 @@ class InstagramGhostScraper:
                 try:
                     enriched[idx] = post.model_copy(update=update)
                 except Exception:
+                    logger.warning('Suppressed exception observed at agent_core/scraper/instagram_ghost.py:708 (continue)')
                     continue
         return enriched
 

@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 import contextvars
 import hashlib
 import json
@@ -1247,7 +1249,7 @@ class LLMGateway:
             if isinstance(exc, (APITimeoutError, APIConnectionError)):
                 return True
         except Exception:
-            pass
+            logger.warning('Suppressed exception observed at agent_core/services/llm_gateway.py:1251 (pass)')
 
         err = str(exc).lower()
         if "in_flight" in err or "in-flight" in err:
@@ -1279,7 +1281,7 @@ class LLMGateway:
             if isinstance(exc, (APITimeoutError, APIConnectionError)):
                 return True
         except Exception:
-            pass
+            logger.warning('Suppressed exception observed at agent_core/services/llm_gateway.py:1283 (pass)')
         if isinstance(exc, (TimeoutError, ConnectionError, OSError)):
             return True
         status = getattr(exc, "status_code", None)
@@ -1400,7 +1402,7 @@ class LLMGateway:
             else:
                 governor.record_failure(route.provider_id, "*")
         except Exception:
-            pass
+            logger.warning('Suppressed exception observed at agent_core/services/llm_gateway.py:1404 (pass)')
 
     def _route_cooldown_remaining(self, provider_id: str) -> float:
         return max(0.0, self._provider_block_until.get(provider_id, 0.0) - time.monotonic())
@@ -1618,6 +1620,7 @@ class LLMGateway:
             try:
                 provider = catalog.get_provider(provider_id)
             except Exception:
+                logger.warning('Suppressed exception observed at agent_core/services/llm_gateway.py:1622 (continue)')
                 continue
             if provider.protocol is not ProviderProtocol.OPENAI_CHAT or not provider.base_url:
                 continue
@@ -1720,7 +1723,7 @@ class LLMGateway:
                 if getattr(st, "status", st) is QuotaStatus.EXHAUSTED:
                     continue
             except Exception:
-                pass
+                logger.warning('Suppressed exception observed at agent_core/services/llm_gateway.py:1724 (pass)')
             variants.append((
                 _price_sum(pricing),
                 0,
@@ -1888,7 +1891,7 @@ class LLMGateway:
                     skipped[provider_id] = {"reason": "exhausted", **info}
                     continue
             except Exception:
-                pass
+                logger.warning('Suppressed exception observed at agent_core/services/llm_gateway.py:1892 (pass)')
             offered.append({
                 "route_key": f"{matched_id}@{provider_id}", "provider": provider_id,
                 "model": matched_id, "priced": priced, "source": matched_source,
@@ -2958,20 +2961,20 @@ class LLMGateway:
                 try:
                     return json.loads(b)
                 except Exception:
-                    pass
+                    logger.warning('Suppressed exception observed at agent_core/services/llm_gateway.py:2962 (pass)')
         elif "```" in text:
             blocks = [b.split("```")[0].strip() for b in text.split("```")[1:]]
             for b in reversed(blocks):
                 try:
                     return json.loads(b)
                 except Exception:
-                    pass
+                    logger.warning('Suppressed exception observed at agent_core/services/llm_gateway.py:2969 (pass)')
 
         # 2. Doğrudan parse dene
         try:
             return json.loads(text)
         except Exception:
-            pass
+            logger.warning('Suppressed exception observed at agent_core/services/llm_gateway.py:2975 (pass)')
 
         # 3. Metin içindeki tüm JSON nesnelerini tara
         decoder = json.JSONDecoder()

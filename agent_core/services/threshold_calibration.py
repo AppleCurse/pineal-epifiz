@@ -22,6 +22,8 @@ LLM çağrısı yok, ağ yok, rastgelelik yok: aynı kayıt -> aynı eşik.
 """
 
 from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
 
 import math
 import os
@@ -101,6 +103,7 @@ def env_override(scope: Optional[str] = None) -> Optional[float]:
         try:
             return _clamp(float(str(raw).strip()))
         except (TypeError, ValueError):
+            logger.warning('Suppressed exception observed at agent_core/services/threshold_calibration.py:106 (continue)')
             continue
     return None
 
@@ -247,6 +250,7 @@ def load(storage: Optional[str] = None, scope: Optional[str] = None) -> List[Obs
                 try:
                     rows.append(Observation.model_validate_json(line))
                 except Exception:  # noqa: BLE001 - bozuk satır istatistiğe girmez
+                    logger.warning('Suppressed exception observed at agent_core/services/threshold_calibration.py:252 (continue)')
                     continue
     except OSError:
         return []

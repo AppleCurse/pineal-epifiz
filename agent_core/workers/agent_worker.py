@@ -68,13 +68,17 @@ async def run_worker(agent_id: str):
             try:
                 import httpx
                 async with httpx.AsyncClient(timeout=5.0) as client:
-                    await client.post(
+                    response = await client.post(
                         f"{BACKEND_URL}/api/agents/status/{agent_id}",
                         params={"status": "Ready"},
                         json={"worker": agent_id, "timestamp": datetime.now(timezone.utc).isoformat()},
                     )
-            except Exception:
-                pass  # Backend yoksa sessizce devam
+                    response.raise_for_status()
+            except Exception as exc:
+                logger.warning(
+                    "[%s] Backend durum bildirimi başarısız; worker devam ediyor: %s: %s",
+                    agent_id, type(exc).__name__, exc,
+                )
 
     except asyncio.CancelledError:
         logger.info(f"[{agent_id}] Worker durduruluyor")
@@ -82,7 +86,7 @@ async def run_worker(agent_id: str):
             try:
                 await tracker.set_wait(agent_id)
             except Exception:
-                pass
+                logger.warning('Suppressed exception observed at agent_core/workers/agent_worker.py:85 (pass)')
         raise
 
 
@@ -107,7 +111,7 @@ def main():
         try:
             loop.add_signal_handler(sig, lambda: loop.stop())
         except NotImplementedError:
-            pass  # Windows
+            logger.warning('Suppressed exception observed at agent_core/workers/agent_worker.py:110 (pass)')
 
     try:
         loop.run_until_complete(run_worker(agent_id))

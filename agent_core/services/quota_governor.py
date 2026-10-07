@@ -7,6 +7,8 @@ reported as ``unknown`` and is never treated as unlimited capacity.
 """
 
 from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
 
 import threading
 import time
@@ -173,6 +175,7 @@ class QuotaGovernor:
             try:
                 return int(float(raw))
             except (TypeError, ValueError):
+                logger.warning('Suppressed exception observed at agent_core/services/quota_governor.py:178 (continue)')
                 continue
         return None
 
@@ -188,6 +191,7 @@ class QuotaGovernor:
             try:
                 return float(raw)
             except (TypeError, ValueError):
+                logger.warning('Suppressed exception observed at agent_core/services/quota_governor.py:193 (continue)')
                 continue
         return None
 

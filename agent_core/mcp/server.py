@@ -354,7 +354,7 @@ def stdio_main(argv: list[str] | None = None) -> int:
         try:  # Windows kod sayfası cp1254'te Türkçe/Yunanca karakterler patlamasın
             stream.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
         except (AttributeError, ValueError):  # pragma: no cover - akış yönlendirilmişse
-            pass
+            logger.warning('Suppressed exception observed at agent_core/mcp/server.py:357 (pass)')
 
     server = MCPServer()
 

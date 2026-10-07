@@ -8,6 +8,7 @@
   import { playClick, playHalt, playRunning } from '../lib/consoleAudio';
   import HolographicResonanceMesh from './HolographicResonanceMesh.svelte';
   import AgentRack from './AgentRack.svelte';
+  import EvidenceStatusBanner from './EvidenceStatusBanner.svelte';
 
   function openWarRoom(agentId?: string) {
     playClick(500, 30);
@@ -693,6 +694,7 @@
 <svelte:window on:mousemove={handleMouseMove} />
 
 <div class="cockpit-viewport-frame" role="region" aria-label="Atlas Epifiz Pineal Observatory">
+  <EvidenceStatusBanner evidenceStatus={$taskStatus?.evidence_status || null} />
   <!-- 1. TEK VE DOKUNULMAZ ANA ŞASİ GÖRSELİ (Kayıpsız 16:9) — PINEAL-HERETIC İMZASI -->
   <img class="master-cockpit-bg" src={cockpitSkin} alt="Atlas Pineal Observatory Cockpit" />
 

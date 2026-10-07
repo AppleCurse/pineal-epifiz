@@ -327,13 +327,13 @@ if __name__ == "__main__":
         assert_executable("unknown-model@unknown-provider")
         sys.exit("MUST DENY unknown")
     except UnknownModelDenied:
-        pass
+        logger.warning('Suppressed exception observed at agent_core/services/final_routing_policy.py:330 (pass)')
 
     try:
         assert_executable("openai/gpt-5.6-luna@nous-research")
         sys.exit("paid must DENY by default")
     except PaidEscalationDenied:
-        pass
+        logger.warning('Suppressed exception observed at agent_core/services/final_routing_policy.py:336 (pass)')
 
     # happy paths
     assert assert_executable("openai/gpt-oss-120b", "groq").is_free()
@@ -344,7 +344,7 @@ if __name__ == "__main__":
         assert_known_model("laguna:free", "nous-research")
         sys.exit("forbidden alias must DENY")
     except UnknownModelDenied:
-        pass
+        logger.warning('Suppressed exception observed at agent_core/services/final_routing_policy.py:347 (pass)')
 
     # no paid leakage
     for keys in executable_task_groups(allow_paid=False).values():

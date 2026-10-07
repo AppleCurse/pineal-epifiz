@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 from typing import Any, Optional
 from pydantic import BaseModel
 
@@ -74,7 +76,7 @@ class AspasiaChief:
             if digest:
                 return digest
         except Exception:
-            pass
+            logger.warning('Suppressed exception observed at agent_core/aspasia/aspasia_chief.py:79 (pass)')
         return ""
 
 
@@ -281,7 +283,7 @@ Cevabın kısa ve net olsun: sonuç, sonra gerekiyorsa neden ve tek bir sonraki 
                     final_msg = decision.message
                     assessment = "filtered_generic"
             except Exception:  # filtre asla sohbeti düşürmez
-                pass
+                logger.warning('Suppressed exception observed at agent_core/aspasia/aspasia_chief.py:286 (pass)')
         except Exception as e:
             # Fallback Aspasia Response
             final_msg = (

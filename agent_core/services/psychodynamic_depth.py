@@ -21,6 +21,8 @@ Cikti JSON-serializable'dir.
 """
 
 from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
 
 import math
 from typing import Any, Dict, List
@@ -281,6 +283,7 @@ def measure_saturation(image_paths: Any, max_side: int = 64) -> Dict[str, Any]:
                 small.thumbnail((max_side, max_side))
                 pixels = list(small.convert("HSV").getdata())
         except Exception:
+            logger.warning('Suppressed exception observed at agent_core/services/psychodynamic_depth.py:286 (continue)')
             continue
         if not pixels:
             continue

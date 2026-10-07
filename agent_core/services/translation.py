@@ -14,6 +14,8 @@ gizlenmez). Tespit ayrı, çeviri ayrı dürüstlük taşır.
 """
 
 from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
 
 import asyncio
 import os
@@ -188,7 +190,7 @@ async def _run_local_endpoint(text: str, finding: LanguageFinding, target: str, 
             candidate = data.get("text") or data.get("translation") or ""
             return str(candidate).strip(), ""
     except ValueError:
-        pass
+        logger.warning('Suppressed exception observed at agent_core/services/translation.py:193 (pass)')
     return body, ""
 
 

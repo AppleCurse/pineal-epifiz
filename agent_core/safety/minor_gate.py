@@ -29,6 +29,8 @@ Yetişkin (18+) için: bu modül HİÇBİR ENGEL oluşturmaz. Sistemin tek kırm
 """
 
 from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
 
 import hashlib
 import json
@@ -182,5 +184,5 @@ class MinorCaseLedger:
                 handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
         except OSError:
             # Kayıt yazılamadı diye kilit gevşetilmez; ama koşu da patlamaz.
-            pass
+            logger.warning('Suppressed exception observed at agent_core/safety/minor_gate.py:187 (pass)')
         return entry

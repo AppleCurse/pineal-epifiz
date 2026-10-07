@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+logger = logging.getLogger(__name__)
 from typing import Any, Dict, List, Optional
 
 import cv2
@@ -393,6 +394,7 @@ class HumanBehaviorAnalyzer:
                     if hour >= 23 or hour <= 4:
                         late_night_count += 1
             except (TypeError, ValueError):
+                logger.warning('Suppressed exception observed at agent_core/agents/human_behavior.py:397 (continue)')
                 continue
 
         if total_valid > 0:

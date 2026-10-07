@@ -12,6 +12,8 @@ Dürüstlük sözleşmesi:
 """
 
 from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
 
 import asyncio
 import os
@@ -127,13 +129,13 @@ class BrowserSession:
                 try:
                     await obj.close()
                 except Exception:
-                    pass
+                    logger.warning('Suppressed exception observed at agent_core/services/browser_session.py:132 (pass)')
             setattr(self, attr, None)
         if self._pw is not None:
             try:
                 await self._pw.stop()
             except Exception:
-                pass
+                logger.warning('Suppressed exception observed at agent_core/services/browser_session.py:138 (pass)')
             self._pw = None
 
     async def _require_page(self):

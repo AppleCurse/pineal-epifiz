@@ -20,6 +20,8 @@ metin parmak izi, kaç bayt, kaç ms) — sonra "bunu söyledik" iddiası izlene
 """
 
 from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
 
 import asyncio
 import hashlib
@@ -463,5 +465,5 @@ class LocalSTTCapability(BaseCapability):
                 if text:
                     return text, ""
         except (ValueError, TypeError):
-            pass
+            logger.warning('Suppressed exception observed at agent_core/capabilities/adapters_voice.py:468 (pass)')
         return raw, ""

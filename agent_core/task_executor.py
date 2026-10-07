@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 import os
 import tempfile
 from contextlib import contextmanager
@@ -791,7 +793,7 @@ class PinealExecutor:
             try:
                 os.remove(path)
             except OSError:
-                pass
+                logger.warning('Suppressed exception observed at agent_core/task_executor.py:796 (pass)')
 
     async def _execute_task_impl(self, input_data: Dict[str, Any], task_id: str) -> TaskStatus:
         from agent_core.schemas.telemetry import (
@@ -802,6 +804,57 @@ class PinealExecutor:
         self._current_target_profile = input_data.get("target_profile") or {}
         status = TaskStatus(task_id=task_id, status="processing", created_at=datetime.now(timezone.utc))
         _task_wall_start = datetime.now(timezone.utc)
+
+        # Defense-in-depth child gate for non-HTTP callers (CLI/Tauri/MCP
+        # adapters). The API evaluates this before creating a mission, but a
+        # direct executor call must not become a bypass.
+        minor_raw = input_data.get("minor_case")
+        minor_ages = (
+            tuple(
+                value for value in (minor_raw.get("age"), minor_raw.get("subject_age"))
+                if isinstance(value, (int, float))
+            )
+            if isinstance(minor_raw, dict)
+            else ()
+        )
+        if isinstance(minor_raw, dict) and (
+            minor_raw.get("subject_is_minor") or any(value < 18 for value in minor_ages)
+        ):
+            from agent_core.safety import MinorCaseContext, MinorCaseLedger, MinorGate
+
+            ages = minor_ages
+            case = MinorCaseContext(
+                subject_is_minor=bool(minor_raw.get("subject_is_minor") or any(value < 18 for value in ages)),
+                case_type=str(minor_raw.get("case_type") or ""),
+                family_notified=bool(minor_raw.get("family_notified")),
+                reason=str(minor_raw.get("reason") or ""),
+                verified=bool(minor_raw.get("verified")),
+                council_approvals=tuple(minor_raw.get("council_approvals") or ()),
+                case_id=str(minor_raw.get("case_id") or ""),
+            )
+            decision = MinorGate().evaluate(case)
+            # The HTTP gate already ledgered approved requests. Direct CLI/
+            # Tauri executor calls still get their own audit record.
+            if not isinstance(input_data.get("minor_gate"), dict):
+                MinorCaseLedger().record(
+                    case,
+                    decision,
+                    capability_id="executor.task",
+                    subject=str(self._current_target_profile.get("username") or ""),
+                )
+            status.minor_gate = {
+                "allowed": decision.allowed,
+                "reason_code": decision.reason_code,
+                "detail": decision.detail,
+                "case_type": case.case_type,
+            }
+            if not decision.allowed:
+                status.status = PipelineStatus.HALTED_CRITICAL
+                status.halted_reason = f"minor:{decision.reason_code}"
+                status.completed_at = datetime.now(timezone.utc)
+                self._log("ERROR", f"[{task_id}] ÇOCUK KİLİDİ: {decision.detail}")
+                self._snapshot(status)
+                return status
 
         # Only concrete memory engines participate in the health contract; test
         # doubles without the method retain their existing behavior.

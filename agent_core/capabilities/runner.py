@@ -85,8 +85,11 @@ class CapabilityRunner:
                 ledger.record(
                     minor_case, decision, capability_id=cap_id, subject=ctx.subject
                 )
-            except Exception:  # kayıt yazılamadı diye kilit gevşemez
-                logger.debug("minor ledger write failed", exc_info=True)
+            except Exception as exc:  # kayıt yazılamadı diye kilit gevşemez
+                logger.warning(
+                    "minor ledger write failed; gate remains closed: %s",
+                    type(exc).__name__,
+                )
             if not decision.allowed:
                 logger.warning(
                     "ÇOCUK KİLİDİ: %s engellendi — %s", cap_id, decision.reason_code

@@ -31,8 +31,8 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:  # pragma: no cover - akış yönlendirilmişse
-        pass
+    except Exception as exc:  # pragma: no cover - akış yönlendirilmişse
+        print(f"[UYARI] UTF-8 stdout ayarlanamadı: {type(exc).__name__}", file=sys.stderr)
 
 from agent_core.capabilities import bootstrap  # noqa: E402
 from agent_core.mcp import tools as mcp_tools  # noqa: E402

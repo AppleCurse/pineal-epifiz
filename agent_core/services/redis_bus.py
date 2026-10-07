@@ -143,7 +143,7 @@ class RedisBus:
             if self._client and aioredis:
                 await self._client.close()
         except Exception:
-            pass
+            logger.warning('Suppressed exception observed at agent_core/services/redis_bus.py:146 (pass)')
         self._connected = False
 
 

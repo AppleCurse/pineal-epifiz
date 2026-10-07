@@ -106,6 +106,9 @@ class TaskSnapshot(BaseModel):
     planned_agents: List[str] = []
     completed_agents: List[str] = []
     halted_reason: Optional[str] = None
+    # API/WS şeffaflığı: çocuk kapısının kararı snapshot/result içinde taşınır;
+    # karar yoksa alan None kalır, izin varmış gibi varsayılmaz.
+    minor_gate: Optional[Dict[str, Any]] = None
     resonance_score: Optional[float] = None
     required_threshold: float = 0.70
     agent_runs: Dict[str, AgentRun] = {}

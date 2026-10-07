@@ -5,6 +5,7 @@
     agentStatuses, vaultLocked, activeViewMode, inspectedAgentId
   } from '../store';
   import { playClick, playHalt, playRunning } from '../lib/consoleAudio';
+  import EvidenceStatusBanner from './EvidenceStatusBanner.svelte';
 
   // 12 Ajan Kanonik Tanımları
   const AGENT_LIST = [
@@ -323,6 +324,8 @@
       </button>
     </div>
   </header>
+
+  <EvidenceStatusBanner evidenceStatus={$taskStatus?.evidence_status || null} />
 
   <!-- ANA OPERASYON GÖVDESİ (3 SÜTUN) -->
   <main class="warroom-body">

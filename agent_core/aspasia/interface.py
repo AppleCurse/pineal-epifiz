@@ -9,6 +9,8 @@ Mimari sözleşme:
   yalnız okur; set_key/quota/spend/provider HTTP mutasyonu YAPMAZ ve YAPAMAZ.
 """
 from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
 
 import contextlib
 import os
@@ -741,7 +743,7 @@ def build_oversight_digest(
                 + fact_suffix
             )
     except Exception:  # pragma: no cover
-        pass
+        logger.warning('Suppressed exception observed at agent_core/aspasia/interface.py:746 (pass)')
     try:
         anomalies = TelemetryReader(gateway).anomalies()
         counts = {k: len(v) for k, v in anomalies.items()}
@@ -760,7 +762,7 @@ def build_oversight_digest(
                 + "' (" + str(denial.get("provider")) + ") — ikame reddedildi, zincir durdu"
             )
     except Exception:  # pragma: no cover
-        pass
+        logger.warning('Suppressed exception observed at agent_core/aspasia/interface.py:765 (pass)')
     try:
         snap = CostReader(gateway).snapshot()
         if "error" not in snap:
@@ -770,7 +772,7 @@ def build_oversight_digest(
                 f"limit={'sinirsiz' if not snap.get('cap_usd') else '$%.2f' % snap.get('cap_usd', 0)}"
             )
     except Exception:  # pragma: no cover
-        pass
+        logger.warning('Suppressed exception observed at agent_core/aspasia/interface.py:775 (pass)')
     try:
         quotas = []
         for provider in ("groq", "cerebras"):
@@ -784,7 +786,7 @@ def build_oversight_digest(
         if quotas and has_content:
             lines.append("KOTA: " + " | ".join(quotas))
     except Exception:  # pragma: no cover
-        pass
+        logger.warning('Suppressed exception observed at agent_core/aspasia/interface.py:789 (pass)')
     try:
         # ROUTING-HARDENING: saglayici saglik devresi gorunur (gateway'in kendi
         # durumu okunur; yeni store yok). Bos ise satir eklenmez — gurultu yok.
@@ -796,7 +798,7 @@ def build_oversight_digest(
                 lines.append("SAĞLIK: " + " | ".join(
                     f"{p} cooldown={s:.0f}s" for p, s in sorted(cooling.items())))
     except Exception:  # pragma: no cover
-        pass
+        logger.warning('Suppressed exception observed at agent_core/aspasia/interface.py:801 (pass)')
     if executor is not None:
         try:
             status = AgentInspector(executor).run_status(room_state)
@@ -853,7 +855,7 @@ def build_oversight_digest(
                         + suffix + " (RAM boş; diskten okundu)"
                     )
         except Exception:  # pragma: no cover
-            pass
+            logger.warning('Suppressed exception observed at agent_core/aspasia/interface.py:858 (pass)')
     if command_gateway is not None:
         for entry in command_gateway.audit()[-3:]:
             has_content = True

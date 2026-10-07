@@ -30,7 +30,7 @@ try:
     from dotenv import load_dotenv
     load_dotenv(ROOT / ".env")
 except ImportError:
-    pass
+    print("[UYARI] python-dotenv yok; .env yüklenmedi", file=sys.stderr)
 
 # BOSS-1: ön denetim ile çalışma zamanı AYNI çözümleyiciyi kullanır. Önceden
 # preflight PINEAL_LLM_API_KEY'i ilk sırada okuyor, gateway ise o adı hiç

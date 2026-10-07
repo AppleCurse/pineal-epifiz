@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 import re
 from difflib import SequenceMatcher
 from typing import Dict, List, Tuple, Any, Optional
@@ -88,7 +90,7 @@ def quote_matches(
                 note=f"eşik={threshold:.2f}",
             )
         except Exception:  # noqa: BLE001 - kalibrasyon kaydı kararı bozamaz
-            pass
+            logger.warning('Suppressed exception observed at agent_core/services/quote_guard.py:93 (pass)')
     return score >= threshold
 
 

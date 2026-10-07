@@ -19,6 +19,7 @@
   import EmergencyStop from './diesel/EmergencyStop.svelte';
   import SplitFlap from './diesel/SplitFlap.svelte';
   import LcdLogin from './diesel/LcdLogin.svelte';
+  import EvidenceStatusBanner from './EvidenceStatusBanner.svelte';
 
   onMount(() => startHealthPoll());
   onDestroy(() => stopHealthPoll());
@@ -606,7 +607,7 @@
               {:else if $isProcessing || taskState === 'processing'}
                 <b style="color: var(--gold);">DURUM (STATUS):</b> İŞLENİYOR (Ajan başlatılıyor...)
               {:else if taskState === 'completed'}
-                <b style="color: #22c55e;">DURUM (STATUS):</b> TAMAMLANDI (Tüm kanıtlar doğrulandı)
+                <b style="color: #22c55e;">DURUM (STATUS):</b> TAMAMLANDI (Kanıt durumu aşağıda)
               {:else if taskState && taskState.startsWith('halted')}
                 <b style="color: #ef4444;">DURUM (STATUS):</b> DURDURULDU ({haltedReason || taskState})
               {:else}
@@ -617,6 +618,8 @@
               <span class="dot-led {($isProcessing || taskState === 'processing') ? 'dot-green pulse' : 'dot-amber'}"></span>
             </div>
           </div>
+
+          <EvidenceStatusBanner evidenceStatus={$taskStatus?.evidence_status || null} />
 
           <!-- Hedef Profil Girişi (Kompakt Çubuk) -->
           <div class="quick-target-strip">

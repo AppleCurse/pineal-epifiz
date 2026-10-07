@@ -17,8 +17,8 @@ if sys.platform == "win32":
     try:
         sys.stdout.reconfigure(encoding="utf-8")
         sys.stderr.reconfigure(encoding="utf-8")
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[UYARI] stdout kodlaması ayarlanamadı: {type(exc).__name__}", file=sys.stderr)
 
 from agent_core.agents.lilith_growth import LilithGrowthAgent
 
@@ -29,7 +29,7 @@ def resolve_credentials(model: str) -> tuple[str | None, str | None, str]:
         from dotenv import load_dotenv
         load_dotenv()
     except ImportError:
-        pass
+        print("[UYARI] python-dotenv yok; .env yüklenmedi", file=sys.stderr)
 
     base_url = os.getenv("OPENROUTER_BASE_URL") or os.getenv("OPENAI_BASE_URL")
     api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("NOUS_API_KEY") or os.getenv("OPENAI_API_KEY")
@@ -47,8 +47,8 @@ def resolve_credentials(model: str) -> tuple[str | None, str | None, str]:
                         api_key = _or_entry.get("api_key")
                     elif isinstance(_or_entry, str):
                         api_key = _or_entry
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[UYARI] kasa anahtarı okunamadı: {type(exc).__name__}", file=sys.stderr)
 
     if api_key and not base_url:
         if api_key.startswith("sk-nous-"):

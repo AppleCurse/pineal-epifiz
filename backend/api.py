@@ -61,6 +61,8 @@ from agent_core.utils.security import (
     validate_identifier,
 )
 from agent_core.task_executor import PinealExecutor, InsufficientEvidenceError
+from agent_core.safety import MinorCaseContext, MinorCaseLedger, MinorGate
+from agent_core.services.evidence_status import classify_evidence_status
 # [FIX #8] Scraper'ın KENDİNE ÖZLÜ InsufficientEvidenceError'ı (başka bir
 # Exception hiyerarşisi) da yakalanmalı; ayrı sınıflar olduğundan
 # isinstance ile ayrım yapılır, str(type) kontrolü ile değil.
@@ -173,8 +175,12 @@ async def lifespan(application: FastAPI):
     try:
         if hasattr(application.state, 'redis_bus') and application.state.redis_bus:
             await application.state.redis_bus.disconnect()
-    except Exception:
-        pass
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        # Shutdown telemetry must not be silent: a failed disconnect can leak
+        # sockets/connections even though the process is leaving.
+        logger.warning("Redis kapanışı başarısız: %s: %s", type(exc).__name__, exc)
 
 app = FastAPI(title="PINEAL-HERETIC v3.0.0-rc.1 API", lifespan=lifespan)
 app.state.llm_backend_mode = "legacy"
@@ -255,8 +261,11 @@ class BodySizeLimitMiddleware:
                     if content_length > max_bytes:
                         await self._send_413(send, max_bytes)
                         return
-                except (ValueError, UnicodeDecodeError):
-                    pass
+                except (ValueError, UnicodeDecodeError) as exc:
+                    # An invalid length is not trusted for admission, so the
+                    # streaming limit remains the authority. It is still an
+                    # observable client/proxy defect, never a silent branch.
+                    logger.warning("Geçersiz Content-Length başlığı: %s", type(exc).__name__)
                 break
 
         # 2. Akış / Parçalı (chunked) gövde kontrolü
@@ -281,8 +290,17 @@ class BodySizeLimitMiddleware:
 
         try:
             await self.app(scope, limited_receive, tracked_send)
-        except Exception:
-            pass
+        except BodySizeLimitExceeded:
+            # The bounded receiver deliberately uses an exception to abort the
+            # application. Convert only this known control path to 413.
+            body_size_exceeded = True
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # Never turn an application crash into an empty HTTP response.
+            # Re-raising lets FastAPI's error handler and monitoring see it.
+            logger.exception("İstek uygulaması middleware içinde çöktü: %s", type(exc).__name__)
+            raise
 
         if body_size_exceeded:
             await self._send_413(send, max_bytes)
@@ -675,7 +693,11 @@ async def _scraper_capability() -> dict:
                         exe = p.chromium.executable_path
                         result["browser"] = bool(exe and os.path.exists(exe))
                         result["instagram"] = result["browser"]
-            except Exception:
+            except Exception as exc:
+                logger.warning(
+                    "Tarayıcı capability probu başarısız: %s: %s",
+                    type(exc).__name__, exc,
+                )
                 result = {"instagram": False, "browser": False}
         _telemetry_capability["ts"] = time.monotonic()
         _telemetry_capability["value"] = result
@@ -1221,8 +1243,13 @@ def get_room(client_id: str) -> dict:
             app.state.rooms[client_id]["sender_task"] = loop.create_task(
                 _room_sender(app.state.rooms[client_id])
             )
-        except RuntimeError:
-            pass
+        except RuntimeError as exc:
+            # Synchronous callers (CLI/tests) may not have a running loop;
+            # the room remains usable, but the missing live sender is explicit.
+            logger.warning(
+                "Oda telemetri göndericisi başlatılamadı (%s): %s",
+                type(exc).__name__, exc,
+            )
     _prune_room_stale_state(app.state.rooms[client_id])  # [AUDIT R1]
     return app.state.rooms[client_id]
 
@@ -1394,8 +1421,8 @@ def _openai_streaming_response(
             if aclose is not None:
                 try:
                     await aclose()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning("OpenAI stream kapanışı başarısız: %s: %s", type(exc).__name__, exc)
         yield "data: [DONE]\n\n"
 
     plan = routed_stream.plan
@@ -1653,7 +1680,10 @@ async def _room_sender(room: dict):
             # [BOSS-11] Eskiden yalnız print ediliyordu: kaybolan çerçeve
             # telemetride görünmüyordu. Artık oda durumu DEGRADED işaretlenir.
             _record_frame_error(room, kind, e)
-            print(f"[room_sender] hata: {type(e).__name__}: {e}")
+            logger.warning(
+                "Oda telemetrisi çerçevesi üretilemedi: kind=%s error=%s",
+                kind, type(e).__name__,
+            )
 
 def _lifecycle(room: dict) -> TaskLifecycleRegistry:
     return room.setdefault("lifecycle", TaskLifecycleRegistry())
@@ -1868,8 +1898,8 @@ def _prune_room_stale_state(room: dict) -> None:
     try:
         live = set((room.get("mission_tasks") or {}).keys())
         _lifecycle(room).sweep(now, live_task_ids=live)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.exception("Lifecycle retention süpürmesi başarısız: %s", type(exc).__name__)
 
     # 2) active_tasks: terminal snapshot'lar retention dolunca düşer; sert
     # tavan aşımında EN ESKİ terminal (hepsi terminal değilse en eski kayıt)
@@ -1882,8 +1912,8 @@ def _prune_room_stale_state(room: dict) -> None:
         retention = 1800.0
         try:
             retention = _lifecycle(room).retention_seconds
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.exception("Lifecycle retention okunamadı: %s", type(exc).__name__)
         for task_id in [
             t for t, snap in active.items()
             if _snapshot_status(snap) in _TERMINAL_PIPELINE_STATES
@@ -1983,7 +2013,7 @@ def _enqueue(client_id: str, item: tuple):
                 dropped_kind, _ = q.get_nowait()  # Explicit drop-oldest policy.
                 _record_queue_drop(room, dropped_kind)
             except asyncio.QueueEmpty:
-                pass
+                logger.warning("Telemetri kuyruğu boşken drop-oldest istendi: %s", item[0])
             try:
                 q.put_nowait(item)
             except asyncio.QueueFull:
@@ -2027,9 +2057,18 @@ async def _send_ws(room: dict, payload: str) -> None:
     for ws in list(ws_set):
         try:
             await asyncio.wait_for(ws.send_text(payload), timeout=_WS_SEND_TIMEOUT_S)
-        except Exception:
-            # Ölü/açık soket: odaya ait setten at; yayına diğerleriyle devam.
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # Ölü/açık soket: odaya ait setten at; fakat arızayı oda
+            # telemetrisine ve loga yaz. Aksi halde UI durum değişikliğini
+            # kaçırdığını hiçbir operatör göremez.
             ws_set.discard(ws)
+            _record_frame_error(room, "websocket_send", exc)
+            logger.warning(
+                "WebSocket çerçevesi gönderilemedi; soket çıkarıldı: %s: %s",
+                type(exc).__name__, exc,
+            )
 
 async def _send_log(room: dict, payload: tuple):
     level, msg = payload
@@ -2101,6 +2140,13 @@ async def _send_snapshot(room: dict, snapshot: Any):
         "planned_agents": snapshot.planned_agents,
         "completed_agents": snapshot.completed_agents,
         "halted_reason": getattr(snapshot, "halted_reason", None),
+        "evidence_status": classify_evidence_status(
+            status=getattr(snapshot, "status", None),
+            halted_reason=getattr(snapshot, "halted_reason", None),
+            runs=getattr(snapshot, "agent_runs", None),
+            evidence_chain=getattr(snapshot, "evidence_chain", None),
+        ),
+        "minor_gate": getattr(snapshot, "minor_gate", None),
         "resonance_score": getattr(snapshot, "resonance_score", None),
         "holistic_profile": _dump_field(getattr(snapshot, "holistic_profile", None)),
         "follower_audit": _dump_field(getattr(snapshot, "follower_audit", None)),
@@ -2169,6 +2215,104 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
     finally:
         room["websockets"].discard(websocket)
 
+class MinorCasePayload(BaseModel):
+    """Public API representation of the child red-line context.
+
+    ``subject_is_minor`` is an operator declaration; ``age``/``subject_age``
+    are accepted as an additional signal so an explicit age under 18 cannot
+    accidentally bypass the gate. The gate itself remains the sole authority
+    for the four required conditions.
+    """
+
+    subject_is_minor: bool = False
+    age: Optional[int] = Field(default=None, ge=0, le=150)
+    subject_age: Optional[int] = Field(default=None, ge=0, le=150)
+    case_type: str = Field(default="", max_length=64)
+    family_notified: bool = False
+    reason: str = Field(default="", max_length=4_000)
+    verified: bool = False
+    council_approvals: List[str] = Field(default_factory=list, max_length=16)
+    case_id: str = Field(default="", max_length=128)
+
+    def to_context(self) -> MinorCaseContext:
+        ages = [value for value in (self.age, self.subject_age) if value is not None]
+        age_says_minor = any(value < 18 for value in ages)
+        return MinorCaseContext(
+            subject_is_minor=bool(self.subject_is_minor or age_says_minor),
+            case_type=self.case_type.strip(),
+            family_notified=self.family_notified,
+            reason=self.reason,
+            verified=self.verified,
+            council_approvals=tuple(self.council_approvals),
+            case_id=self.case_id.strip(),
+        )
+
+
+class MinorGateBlocked(PermissionError):
+    """A child research attempt failed the global safety gate."""
+
+    def __init__(self, decision, entry: dict):
+        self.decision = decision
+        self.entry = entry
+        super().__init__(decision.detail or decision.reason_code)
+
+
+def _minor_case_from_request(req: "InitiatePayload") -> MinorCaseContext | None:
+    """Normalize nested and legacy top-level API forms into one context."""
+    if req.minor_case is not None:
+        return req.minor_case.to_context()
+    top_level_present = (
+        req.subject_is_minor
+        or req.age is not None
+        or req.subject_age is not None
+        or bool(req.case_type)
+        or bool(req.reason)
+        or bool(req.council_approvals)
+        or req.family_notified
+        or req.verified
+    )
+    if not top_level_present:
+        return None
+    return MinorCasePayload(
+        subject_is_minor=req.subject_is_minor,
+        age=req.age,
+        subject_age=req.subject_age,
+        case_type=req.case_type,
+        family_notified=req.family_notified,
+        reason=req.reason,
+        verified=req.verified,
+        council_approvals=req.council_approvals,
+        case_id=req.case_id,
+    ).to_context()
+
+
+def _minor_gate_record(
+    case: MinorCaseContext | None,
+    *,
+    capability_id: str,
+    subject: str,
+    record: bool = True,
+) -> tuple[dict, object, dict] | None:
+    """Evaluate and optionally ledger a declared child case."""
+    if case is None:
+        return None
+    decision = MinorGate().evaluate(case)
+    entry = (
+        MinorCaseLedger().record(
+            case, decision, capability_id=capability_id, subject=subject
+        )
+        if record
+        else {}
+    )
+    response = {
+        "allowed": decision.allowed,
+        "reason_code": decision.reason_code,
+        "detail": decision.detail,
+        "case_type": case.case_type,
+    }
+    return response, decision, entry
+
+
 class InitiatePayload(BaseModel):
     # [AUDIT 2026-09-11 P2] Public /api/initiate gövdesi sınırsız string
     # kabul ediyordu (OpenAI ucu 1 MiB + alan limitliyken burası değildi).
@@ -2181,6 +2325,19 @@ class InitiatePayload(BaseModel):
     playlist: str = Field(default="", max_length=32_000)
     envies: str = Field(default="", max_length=32_000)
     scraper_type: str = Field(default="instagram", max_length=64)
+    # ÇOCUK KIRMIZI ÇİZGİSİ: yeni istemciler ``minor_case`` gönderir.
+    # Aşağıdaki alanlar eski/ince istemciler için geriye dönük top-level biçimdir;
+    # ikisi de aynı MinorGate'e normalize edilir.
+    minor_case: Optional[MinorCasePayload] = None
+    subject_is_minor: bool = False
+    age: Optional[int] = Field(default=None, ge=0, le=150)
+    subject_age: Optional[int] = Field(default=None, ge=0, le=150)
+    case_type: str = Field(default="", max_length=64)
+    family_notified: bool = False
+    reason: str = Field(default="", max_length=4_000)
+    verified: bool = False
+    council_approvals: List[str] = Field(default_factory=list, max_length=16)
+    case_id: str = Field(default="", max_length=128)
     # ASPASIA TRUE CHIEF LAYER: kullanicinin AMACI (goal id'leri) görev
     # verisiyle birlikte tasinir — ama AJAN SECIMI degil; sozlesme tek
     # kaynagi CognitiveRouter.GOAL_FOCUS. Bos = eski davranis (compat).
@@ -2243,10 +2400,23 @@ def _new_task_id() -> str:
 
 async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
     client_id = req.client_id
-    executor = get_executor(client_id)
-    vault = get_vault(client_id)
-    
+
     try:
+        executor = get_executor(client_id)
+        vault = get_vault(client_id)
+        # Defense in depth: the HTTP handler evaluates this before creating the
+        # mission task, but the worker path must not become an API-gate bypass.
+        minor_case = _minor_case_from_request(req)
+        minor_gate = _minor_gate_record(
+            minor_case, capability_id="api.initiate", subject=req.url, record=False
+        )
+        if minor_gate is not None:
+            gate_payload, decision, _entry = minor_gate
+            if not decision.allowed:
+                raise MinorGateBlocked(decision, gate_payload)
+        else:
+            gate_payload = None
+
         # [009] Kullanıcı göndermediyse ASLA örnek/placeholder ritüel ÜRETME.
         # Boş kullanıcı verisi -> boş listeler; MirrorOfTruth "user_data_missing"
         # fallback'iyle çalışır. Sahte ritüel ile kullanıcı frekansı kirletilmez.
@@ -2261,6 +2431,20 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
         payload = {
             **build_user_context(user_rituals, user_playlist, user_envies),
             "target_profile": {"bio": "", "posts": [], "post_times": [], "images": []},
+            "minor_case": (
+                {
+                    "subject_is_minor": minor_case.subject_is_minor,
+                    "case_type": minor_case.case_type,
+                    "family_notified": minor_case.family_notified,
+                    "reason": minor_case.reason,
+                    "verified": minor_case.verified,
+                    "council_approvals": list(minor_case.council_approvals),
+                    "case_id": minor_case.case_id,
+                }
+                if minor_case is not None
+                else None
+            ),
+            "minor_gate": gate_payload,
             # Amaç kaybi fix: Aspasia goal'leri payload'da yasar; router yoksa
             # eski plani aynen kurar. Gecerlilik/uydurma filtresi router'da.
             "aspasia_goals": list(req.aspasia_goals or []),
@@ -2521,6 +2705,7 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                     timeout=task_timeout,
                 )
                 setattr(res, "target_profile", payload.get("target_profile"))
+                setattr(res, "minor_gate", payload.get("minor_gate"))
                 broadcast_result(client_id, res)
                 return
             except (InsufficientEvidenceError, ScraperInsufficientEvidenceError):
@@ -2544,9 +2729,17 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                         task_id,
                     )
                     return
+    except MinorGateBlocked as exc:
+        broadcast_result_error(
+            client_id,
+            "minor_blocked",
+            f"ÇOCUK KİLİDİ: {exc.decision.detail}",
+            task_id,
+        )
     except (InsufficientEvidenceError, ScraperInsufficientEvidenceError):
         broadcast_result_error(
-            client_id, "halted_evidence", "DURDURULDU: YETERSİZ KANIT", task_id
+            client_id,
+            "halted_evidence", "DURDURULDU: YETERSİZ KANIT", task_id,
         )
     except Exception as e:
         broadcast_result_error(
@@ -2590,14 +2783,36 @@ def _finalize_timed_out_mission(client_id: str, task_id: str, budget_seconds: in
     )
 
 
-def broadcast_result_error(client_id, status, msg, task_id: Optional[str] = None):
+def broadcast_result_error(
+    client_id,
+    status,
+    msg,
+    task_id: Optional[str] = None,
+    *,
+    evidence_reason: str | None = None,
+    minor_gate: dict | None = None,
+):
     broadcast_log(client_id, "ERROR", msg)
     # [BOSS-2] Terminal hata bildirimi oda kaydını da kapatır; aksi hâlde
     # snapshot "processing" kalıp odayı kalıcı 503'e kilitliyordu.
     room = app.state.rooms.get(client_id)
+    active_snapshot = None
     if room is not None:
+        active_snapshot = (room.get("active_tasks") or {}).get(task_id)
         _close_active_task(room, task_id, status)
-    payload = {"type": "result", "status": status}
+    payload = {
+        "type": "result",
+        "status": status,
+        "evidence_status": classify_evidence_status(
+            status=status,
+            halted_reason=evidence_reason or msg,
+            runs=getattr(active_snapshot, "agent_runs", None),
+            evidence_chain=getattr(active_snapshot, "evidence_chain", None),
+            reason=evidence_reason or msg,
+        ),
+    }
+    if minor_gate is not None:
+        payload["minor_gate"] = minor_gate
     if task_id:
         payload["task_id"] = task_id
     _enqueue(client_id, ("result_error", payload))
@@ -2634,6 +2849,13 @@ def broadcast_result(client_id, res):
         "type": "result",
         "task_id": res.task_id,
         "status": res.status,
+        "evidence_status": classify_evidence_status(
+            status=getattr(res, "status", None),
+            halted_reason=getattr(res, "halted_reason", None),
+            runs=getattr(res, "agent_runs", None),
+            evidence_chain=getattr(res, "evidence_chain", None),
+        ),
+        "minor_gate": getattr(res, "minor_gate", None),
         "evidence_chain": redact_structure(getattr(res, "evidence_chain", []) or []),
         "mirror": find(res.evidence_chain, "mirror_truth"),
         "reading": find(res.evidence_chain, "human_behavior"),
@@ -2755,8 +2977,60 @@ async def _send_result(room: dict, data: dict):
     data = {**data, "telemetry": result_telemetry}
     await _send_ws(room, _ws_json(data))
 
+class MinorGateCheckPayload(BaseModel):
+    """Preflight-only API for clients that need to explain the child gate."""
+
+    client_id: str = Field(default="default", max_length=_MAX_CLIENT_ID_LENGTH)
+    subject: str = Field(default="", max_length=8_192)
+    minor_case: MinorCasePayload
+
+
+@app.post("/api/safety/minor-gate")
+async def api_minor_gate_check(payload: MinorGateCheckPayload):
+    case = payload.minor_case.to_context()
+    result = _minor_gate_record(
+        case,
+        capability_id="api.safety.minor-gate",
+        subject=payload.subject,
+        record=True,
+    )
+    gate_payload, decision, _entry = result
+    return {
+        "minor_gate": gate_payload,
+        "allowed": decision.allowed,
+        "research_permitted": decision.allowed,
+    }
+
+
 @app.post("/api/initiate")
 async def api_initiate(req: InitiatePayload, request: Request):
+    # Global child gate: run before vault/network dispatch and before a mission
+    # task is created. A denied attempt is ledgered without storing the raw
+    # target identity; the response tells the operator exactly which condition
+    # is missing rather than falling through to a generic 500/empty result.
+    minor_case = _minor_case_from_request(req)
+    minor_gate = _minor_gate_record(
+        minor_case,
+        capability_id="api.initiate",
+        subject=req.url,
+        record=True,
+    )
+    minor_gate_payload = None
+    if minor_gate is not None:
+        minor_gate_payload, decision, _entry = minor_gate
+        if not decision.allowed:
+            return JSONResponse(
+                {
+                    "error": {
+                        "code": "MINOR_GATE_BLOCKED",
+                        "message": decision.detail,
+                        "reason_code": decision.reason_code,
+                    },
+                    "minor_gate": minor_gate_payload,
+                },
+                status_code=403,
+            )
+
     if not rate_limit(f"initiate:{_rate_identity(request)}", "initiate"):
         return JSONResponse(
             {"error": {"code": "RATE_LIMITED", "message": "Çok fazla görev başlatma isteği; bir dakika içinde tekrar deneyin."}},
@@ -2799,8 +3073,8 @@ async def api_initiate(req: InitiatePayload, request: Request):
         try:
             tracker = get_tracker()
             await tracker.set_all_wait()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.exception("Agent Rack başlangıç durumu yazılamadı: %s", type(exc).__name__)
     mission = asyncio.create_task(run_mission(req, task_id))
     room["mission_tasks"][task_id] = mission
 
@@ -2810,7 +3084,11 @@ async def api_initiate(req: InitiatePayload, request: Request):
         _finalize_finished_missions(_room)
 
     mission.add_done_callback(_on_mission_done)
-    return {"status": "started", "task_id": task_id}
+    return {
+        "status": "started",
+        "task_id": task_id,
+        "minor_gate": minor_gate_payload,
+    }
 
 class VaultPayload(BaseModel):
     client_id: str
@@ -3003,10 +3281,10 @@ def _quarantine_learnings(lp: str, problem: str) -> Optional[str]:
         for name in backups[:-keep]:
             try:
                 os.remove(os.path.join(base, name))
-            except OSError:
-                pass
-    except OSError:
-        pass
+            except OSError as exc:
+                logger.warning("Eski kasa yedeği silinemedi: %s", exc)
+    except OSError as exc:
+        logger.warning("Kasa yedekleri okunamadı: %s", exc)
     return backup
 
 
@@ -3137,8 +3415,15 @@ async def api_update_agent_status(agent_id: str, status: str, metadata: Optional
                 # Kuyruga ekle - dogrudan WS gonderimi
                 try:
                     await _send_ws(room, payload)
-                except Exception:
-                    pass
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    # _send_ws normally isolates dead sockets; keep this
+                    # defensive boundary observable if its contract changes.
+                    logger.warning(
+                        "Ajan durumu WS yayını başarısız (%s): %s",
+                        type(exc).__name__, exc,
+                    )
         return {"status": "updated", "agent": result}
     except Exception as e:
         return JSONResponse({"error": {"code": "AGENT_UPDATE_FAILED", "message": str(e)[:200]}}, status_code=500)

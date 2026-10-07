@@ -27,6 +27,8 @@ Dürüstlük sözleşmesi (ev kuralları, değişmedi):
 """
 
 from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
 
 import asyncio
 import json
@@ -287,7 +289,7 @@ async def scan_company(
                 proc.kill()
                 await proc.wait()
             except Exception:
-                pass
+                logger.warning('Suppressed exception observed at agent_core/services/company_recon.py:292 (pass)')
             return HarvesterScan(
                 available=False, reason="timeout", domain=clean, sources=src,
                 duration_ms=int((time.monotonic() - started) * 1000),
@@ -591,7 +593,8 @@ def _people_from_json_ld(blocks: list[str], page: str) -> list[PersonRow]:
         try:
             payload = json.loads(block)
         except Exception:
-            continue  # bozuk JSON-LD: sessizce atlanır, kişi UYDURULMAZ
+            logger.warning('Suppressed exception observed at agent_core/services/company_recon.py:596 (continue)')
+            continue
         _walk(payload)
     return rows
 

@@ -686,7 +686,7 @@ class RoutedChatExecutor:
             )
         except (CatalogError, ModelNotFound, KeyError):
             # Quota bookkeeping must never fail the request itself.
-            pass
+            logger.warning('Suppressed exception observed at agent_core/services/routed_chat.py:689 (pass)')
 
     def _quota_status_value(self, target) -> str:
         return self.quota_governor.status(target.provider.id, target.model.id).value

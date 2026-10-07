@@ -16,6 +16,8 @@ Sözleşme (projenin dürüstlük kurallarıyla birebir aynı):
 """
 
 from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
 
 import hashlib
 import json
@@ -253,7 +255,8 @@ def load_history(storage_path: str, target: str) -> list[ChangeSnapshot]:
         try:
             out.append(ChangeSnapshot.model_validate(row))
         except Exception:
-            continue  # bozuk satır atlanır, dosya gizlenmez
+            logger.warning('Suppressed exception observed at agent_core/services/change_tracker.py:258 (continue)')
+            continue
     return out
 
 
