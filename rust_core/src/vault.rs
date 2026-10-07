@@ -482,6 +482,29 @@ impl StealthVault {
         Ok(())
     }
 
+    /// Kasanın parmak izi: master key'in ilk 8 baytının hex'i (16 karakter).
+    ///
+    /// [VAULT_PERSISTENCE_FIX] `master_key` eskiden her `load`'da RASTGELE
+    /// üretiliyordu ve hiçbir yerde okunmuyordu — yani alan saf dekorasyondu
+    /// (derleyici de `field is never read` diye uyarıyordu). Artık anahtar
+    /// deterministik türetilir (`SHA-256(Argon2id PHC)`) ve bu iz üzerinden
+    /// GÖZLEMLENEBİLİR: aynı kasa + aynı parola → aynı iz, başka kasa → başka
+    /// iz. "Açtığım kasa beklediğim kasa mı?" sorusunun cevabıdır.
+    ///
+    /// Kasa mühürlüyse iz VERİLMEZ (`VaultLocked`): mühürlü bir kasa hakkında
+    /// hiçbir şey söylenmez.
+    pub fn fingerprint(&self) -> Result<String, VaultError> {
+        self.ensure_unlocked()?;
+        Ok(self
+            .master_key
+            .expose_secret()
+            .iter()
+            .take(8)
+            .copied()
+            .map(|byte| format!("{:02x}", byte))
+            .collect())
+    }
+
     /// Kasayı bellekte mühürler. **Kalıcıdır**: sonrasında `store`/`retrieve`
     /// `VaultError::VaultLocked` döndürür.
     ///
@@ -497,6 +520,34 @@ impl StealthVault {
         }
         self.wiped = true;
         tracing::warn!("Vault bellekten güvenli şekilde temizlendi (kasa mühürlendi)");
+    }
+}
+
+/// [VAULT_PERSISTENCE_FIX] `Debug` ELLE yazıldı; `#[derive(Debug)]` burada
+/// hem imkânsız hem tehlikeli olurdu:
+///   - imkânsız: `age::x25519::Identity` `Debug` türetmez (E0277),
+///   - tehlikeli: kasayı `Debug` ile yazdırmak gizli malzemeyi loglara
+///     sızdırırdı — bu modülün varlık sebebiyle çelişir.
+/// Bu impl yalnız güvenli alanları gösterir; `identity`, `master_key` ve
+/// `password_hash` daima `[REDACTED]`.
+///
+/// Somut ihtiyaç: `Result::unwrap_err()` `T: Debug` ister. Kasa açılışının
+/// REDDEDİLDİĞİNİ doğrulayan fail-closed testleri (düz metin kimlikli eski
+/// dosya, kurcalanmış alıcı, yanlış parola) ancak bu impl varsa derlenir;
+/// yoksa derleyici "StealthVault doesn't implement Debug" der ve kasa
+/// denetimleri hiç koşamaz.
+impl std::fmt::Debug for StealthVault {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StealthVault")
+            .field("vault_path", &self.vault_path)
+            // Açık alıcı anahtarı gizli değildir; hangi kasaya bakıldığını
+            // görmek teşhis için gereklidir.
+            .field("recipient", &self.recipient.to_string())
+            .field("unlocked", &!self.wiped)
+            .field("master_key", &"[REDACTED]")
+            .field("identity", &"[REDACTED]")
+            .field("password_hash", &"[REDACTED]")
+            .finish()
     }
 }
 
@@ -730,6 +781,29 @@ mod tests {
             created_key.as_slice(),
             "master key yeniden yüklemede değişti — alan gerçek bir anahtar değil"
         );
+
+        // Parmak izi de aynı: master key artık GÖZLEMLENEBİLİR bir değer
+        // taşıyor, süs eşyası değil.
+        let created_fp = created.fingerprint().unwrap();
+        assert_eq!(created_fp.len(), 16, "iz 8 baytın hex'i olmalı: {:?}", created_fp);
+        assert_eq!(created_fp, reloaded.fingerprint().unwrap());
+
+        // Başka bir kasa (aynı parola bile olsa) BAŞKA iz verir: tuz farklı.
+        let other_path = dir.path().join("other_vault.json");
+        let other = StealthVault::new(&other_path, "parola").unwrap();
+        assert_ne!(
+            other.fingerprint().unwrap(),
+            created_fp,
+            "iki farklı kasa aynı parmak izini verdi — iz hiçbir şey ayırt etmiyor"
+        );
+
+        // Mühürlü kasa iz VERMEZ.
+        let mut sealed = reloaded;
+        sealed.secure_wipe();
+        assert!(matches!(
+            sealed.fingerprint(),
+            Err(VaultError::VaultLocked(_))
+        ));
     }
 
     #[test]

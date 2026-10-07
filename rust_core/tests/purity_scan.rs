@@ -45,6 +45,35 @@ fn count_occurrences(haystack: &str, needle: &str) -> usize {
     haystack.match_indices(needle).count()
 }
 
+/// `fn <signature>` gövdesini küme parantezi dengesiyle çıkarır.
+///
+/// Neden gerekli: kaba "tüm dosyada `.finish()` say" denetimi, age akışıyla
+/// İLGİSİ `.finish()` çağrılarından (örn. `std::fmt::DebugStruct::finish`)
+/// yanılır. Kapsam daraltılınca metin taraması kesinleşir: her age şifreleme
+/// fonksiyonunda TAM OLARAK bir `wrap_output` ve TAM OLARAK bir `finish`
+/// aranır.
+///
+/// Girdi yorumlardan ARINDIRILMIŞ metin olmalıdır (`strip_line_comments`),
+/// yoksa yorum içindeki küme parantezleri dengeyi bozar. String içindeki
+/// `{}` çiftleri dengelidir ve sayaçı etkilemez.
+fn extract_fn_body(source: &str, signature: &str) -> Option<String> {
+    let start = source.find(signature)?;
+    let rest = &source[start..];
+    let brace_open = rest.find('{')?;
+    let mut depth: usize = 0;
+    for (idx, ch) in rest[brace_open..].char_indices() {
+        if ch == '{' {
+            depth += 1;
+        } else if ch == '}' {
+            depth -= 1;
+            if depth == 0 {
+                return Some(rest[brace_open..brace_open + idx + 1].to_string());
+            }
+        }
+    }
+    None
+}
+
 #[test]
 fn token_compressor_has_no_forbidden_deps() {
     let source = fs::read_to_string("src/token_compressor.rs")
@@ -118,24 +147,34 @@ fn vault_has_no_ignored_tests_and_finalizes_age_streams() {
     );
 
     // (2) Her age akışı `finish()` ile KAPATILMAK zorunda.
-    //     vault.rs'te iki şifreleme yolu vardır (veri + kimlik); her biri
-    //     bir `wrap_output` ve tam olarak bir `finish` içerir. Eşitlik
-    //     bozulursa ya kesik dosya yazılıyordur (finish eksik) ya da
-    //     denetim anlamsızlaşmıştır (finish fazla).
-    let wraps = count_occurrences(&scan_text, ".wrap_output(");
-    let finishes = count_occurrences(&scan_text, ".finish()");
-    assert!(
-        wraps >= 2,
-        "beklenenden az age şifreleme yolu bulundu: {} (veri + kimlik = 2)",
-        wraps
-    );
-    assert_eq!(
-        wraps, finishes,
-        "KESİK AGE AKIŞI: {} `wrap_output` çağrısına karşılık {} `.finish()` var. \
-         finish() çağrılmayan age akışı diske KESİK dosya yazar \
-         (\"age file is truncated\") — bu, kasanın veri kaybı arızasının ta kendisidir.",
-        wraps, finishes
-    );
+    //     vault.rs'te iki şifreleme yolu vardır (veri + kimlik). Denetim
+    //     dosya geneli kaba sayımla DEĞİL, her fonksiyonun kendi gövdesi
+    //     üzerinde yapılır; aksi halde age ile ilgisi olmayan bir `.finish()`
+    //     (örn. `DebugStruct::finish`) denetimi yeşile boyardı.
+    for signature in ["fn encrypt_data", "fn encrypt_identity"] {
+        let body = extract_fn_body(&scan_text, signature).unwrap_or_else(|| {
+            panic!(
+                "vault.rs içinde `{}` bulunamadı — age şifreleme yolu kayıp \
+                 (denetim artık hiçbir şey doğrulamıyor)",
+                signature
+            )
+        });
+        let wraps = count_occurrences(&body, ".wrap_output(");
+        let finishes = count_occurrences(&body, ".finish()");
+        assert_eq!(
+            wraps, 1,
+            "`{}` içinde {} adet `.wrap_output(` var; tam olarak 1 beklenir",
+            signature, wraps
+        );
+        assert_eq!(
+            finishes, 1,
+            "KESİK AGE AKIŞI: `{}` içinde `.wrap_output(` var ama {} adet \
+             `.finish()` var (1 beklenir). finish() çağrılmayan age akışı \
+             diske KESİK dosya yazar (\"age file is truncated\") — bu, \
+             kasanın veri kaybı arızasının ta kendisidir.",
+            signature, finishes
+        );
+    }
 
     // (3) Kasa yolunda panik YASAK: bir kasa arızası süreci çökertmek
     //     yerine `VaultError` olarak dönmelidir (sessiz çökme yok).
