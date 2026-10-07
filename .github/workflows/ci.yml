@@ -41,6 +41,10 @@ jobs:
         run: |
           python scripts/generate_routing_shadows.py
           git diff --exit-code
+      - name: Verify skills package committed fresh
+        # [FAZ D · D1] Skills paketi defterden üretilir; elle düzenlenmiş ya da
+        # defterde olmayan bir yetenek dosyası sessizce geçemez (exit 3 = bayat).
+        run: python scripts/export_skills.py --check
       - name: Verify provider catalog contract (OpenRouter + Nous)
         run: |
           OUT="$(python scripts/verify_openrouter_catalog.py)"; RC=$?
@@ -110,6 +114,21 @@ jobs:
           curl -sf "http://127.0.0.1:8000/" | grep -q 'id="app"'
           curl -s -o /dev/null -w "%{http_code}" -X POST "http://127.0.0.1:8000/api/aspasia/chat" -H 'Content-Type: application/json' -d '{"client_id":"ci","user_message":"hi"}' | grep -q 200
           curl -sf "http://127.0.0.1:8000/health" | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d['status'] in ('ready','degraded') else 1)"
+      - name: MCP stdio handshake smoke
+        # [FAZ D · D1] Sunucu gerçekten konuşuyor mu: stateless tools/list +
+        # kasa kapalıyken dürüst ret. stdout'a tek bir günlük satırı sızarsa
+        # bu adım JSON çözümünde patlar (kanal yalnız protokol taşır).
+        # NOT: bu adımda çok satırlı Python KULLANMA — `run: |` bloğunun
+        # girintisini bozup workflow'u geçersiz kılıyor (2026-10-07 dersi).
+        env:
+          PINEAL_ENV: development
+        run: |
+          {
+            printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}'
+            printf '%s\n' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"extractor_text_language","arguments":{"subject":"Merhaba dünya, bugün hava güzel."},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}'
+          } | python -m agent_core.mcp > /tmp/mcp_smoke.ndjson
+
+          python3 -c "import json; lines=[json.loads(l) for l in open('/tmp/mcp_smoke.ndjson') if l.strip()]; listing=lines[0]['result']; assert len(listing['tools']) >= 15, listing; assert listing['resultType'] == 'complete', listing; call=lines[1]['result']; assert call['isError'] is True, call; assert call['structuredContent']['denied_by'] == 'vault', call; print('MCP smoke OK:', len(listing['tools']), 'arac - kasa kapaliyken durust ret')"
 
   rust-core:
     runs-on: ubuntu-latest

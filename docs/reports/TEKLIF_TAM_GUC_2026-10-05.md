@@ -251,4 +251,64 @@ metnin dilini kanıt kapsamına işliyor; kokpitte **DİL** pili bu gerçek tesp
 gösteriyor. Uçlar: `GET /api/language/status` · `POST /api/language/detect` ·
 `POST /api/language/translate`. Her iki yetenek (`extractor.text.language`,
 `extractor.text.translate_local`) omurgada ve `vault` kapısında — kasa
-kilitliyken koşamazlar (istisna yok). Kalan: **D6 → D2 → D1 → D3 → D5**.
+kilitliyken koşamazlar (istisna yok). **D1 TAMAM (2026-10-07) — yetenekler standart kapıdan dışarıda (MCP).**
+`agent_core/mcp/` paketi (`python -m agent_core.mcp`, stdio): defterdeki her
+yetenek MCP aracı olarak yayınlanır ve çağrılar içeridekilerle AYNI mandaldan
+geçer (çocuk kilidi → vault · budget · rate · ENABLE_* → availability → run).
+Güncel protokol 2026-07-28 stateless; eski el sıkışmalı istemciler de desteklenir
+(ikisi birlikte: 2026-07-28 · 2025-11-25 · 2025-06-18 · 2025-03-26 · 2024-11-05).
+Kasa durumu çalışan API'den okunur (yalnız yerel adres; ulaşılamazsa kilitli —
+fail-closed) ve reddin sebebi makine-okunurdur (`denied_by`); `ok` yalnız kanıt
+varsa true'dur. Kokpitte MCP pili + `GET /api/mcp/status`; aynı defterden
+`skills/<araç>/SKILL.md` paketi üretilir (`scripts/export_skills.py --check` CI'da
+bayat paketi yakalar). `docs/MCP.md` kurulum ve sözleşmeyi anlatır.
+Kullanıcı sırası: **D1 → D2 → D6 → D5 → D3**.
+
+**D2 TAMAM (2026-10-07) — yerel jüri: karar makineden çıkmaz.** Aynı iddia ve
+kanıt birden çok YEREL modelde bağımsız oylanır (`services/local_jury.py` +
+`verifier.jury.local`); koltuk = ayrı model (tekrar koltuk sayılmaz), kural
+makine-okunur (oy_birligi · cokluk · berabere · tek_koltuk · gecerli_oy_yok) ve
+konsensüs yoksa kanıt ÜRETİLMEZ (tek koltukla konsensüs ilan edilmez). Uzak uç
+reddedilir; uzak adres yapılandırılmışsa yerel uca bile gidilmez. Oy sözlüğü tek
+kaynaktan (B1); sözlük dışı kelime oy sayılmaz. Kanıt türü `inference` (model
+yargısı ≠ gözlem). Yüzeyler: `GET /api/jury/status` · `POST /api/jury/vote` ·
+kokpitte JÜRİ pili; yetenek omurgada olduğu için MCP aracı ve Skills paketi
+kendiliğinden büyüdü. Kurulum: `docs/YEREL_JURI.md`.
+
+**D6 TAMAM (2026-10-07) — kurum hedefi: theHarvester + açık SEO + kişi künyesi.**
+Üç yetenek omurgada: `sensor.company.harvester` (arama motorlarından e-posta/alt
+alan adı/IP/URL), `sensor.company.seo` (kurumun KENDİ yayınladığı dosyalar:
+robots · sitemap · meta/dil/canonical · security.txt · başlıklar) ve
+`sensor.company.people` (yalnız kurumun kendi sayfalarındaki schema.org/Person
+kayıtları + herkese açık mailto adresleri). Uydurma SEO puanı yok; "yok"
+iddiası yalnız kesin 404'te (`absence`), ağ hatası yokluğa çevrilmez. Araç
+yokluğu ikiye ayrılır (`dependency_missing` / `configured_command_not_found`);
+hedef özel ağa çözülürse tarama reddedilir (SSRF hijyeni). Her satır kaynak
+URL'siyle kanıt olur; kişi avı değildir. Yüzeyler: `GET /api/company/status` ·
+`POST /api/company/scan` · kokpitte KURUM pili; MCP araçları ve Skills paketi
+kendiliğinden büyüdü (19 yetenek). Kurulum: `docs/KURUM_HEDEFI.md`.
+**D5 TAMAM (2026-10-07) — rapor fabrikası: kanıt bağlantılı, mühürlü paket.**
+`services/report_factory.py` + üç RENDERER yeteneği: PDF (reportlab), diyagram
+(Pillow ile deterministik PNG) ve video özet (kareler Pillow, kodlama ffmpeg);
+markdown + `manifest.json` her koşulda yazılır. Rapor UYDURULMAZ: yalnız kanonik
+kanıt çizelgesinden beslenir (strateji çizelge dışı, bozuk satır reddedilir ve
+sayılır); her eserin sha256'sı ve kanıt kimlikleri manifestte mühürlenir —
+manifestin gövdesi de hash'lenir (bütünlük mührü; kriptografik imza değildir,
+manifest bunu açıkça yazar). Eksik bağımlılıkta format dürüstçe kapanır
+(`dependency_missing:...`), yerine uydurma çıktı konmaz. Yüzeyler:
+`GET /api/report/status` · `POST /api/report/build`; kurulum
+`docs/RAPOR_FABRIKASI.md`.
+
+**D3 TAMAM (2026-10-07) — medya adli hattı.** Dört yetenek: `sensor.media.fetch`
+(platform linkleri yt-dlp, doğrudan bağlantılar httpx; sha256 mührü),
+`analyzer.media.frames` (fps/kare/süre/çözünürlük/parlaklık/sahne kesmesi;
+fotoğrafta baskın renk + keskinlik), `extractor.media.transcript` (YALNIZ yerel
+motor: yerel uç ya da yerel CLI; uzak uç reddedilir, video için ffmpeg şart) ve
+`analyzer.media.similarity` (pHash + Hamming, yerel indeks). Bu katman yorum
+değil ÖLÇÜM üretir; indirme özel/yerel adreslere yapılmaz (ortak SSRF kapısı
+`services/net_hygiene.py`), motor boş çıktısı transkript sayılmaz. Yüzeyler:
+`GET /api/media/status` · `POST /api/media/analyze`; kurulum
+`docs/MEDYA_ADLI.md`.
+
+**FAZ D TAMAM: D1 · D2 · D6 · D5 · D3 tamamlandı (kullanıcı sırası D1 → D2 → D6
+→ D5 → D3).**

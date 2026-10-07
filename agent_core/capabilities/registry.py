@@ -158,6 +158,23 @@ def bootstrap(
             SearXNGCapability,
             XTwscrapeCapability,
         )
+        from agent_core.capabilities.adapters_company import (
+            CompanyHarvesterCapability,
+            CompanyPeopleCapability,
+            CompanySeoCapability,
+        )
+        from agent_core.capabilities.adapters_jury import LocalJuryCapability
+        from agent_core.capabilities.adapters_media import (
+            MediaFetchCapability,
+            MediaFramesCapability,
+            MediaSimilarityCapability,
+            MediaTranscriptCapability,
+        )
+        from agent_core.capabilities.adapters_report_factory import (
+            ReportDiagramCapability,
+            ReportPdfCapability,
+            ReportVideoCapability,
+        )
         from agent_core.capabilities.adapters_report import ReportScriptCapability
         from agent_core.capabilities.adapters_voice import (
             LocalSTTCapability,
@@ -194,6 +211,21 @@ def bootstrap(
             # --- dil (FAZ D · D4): tespit deterministik, çeviri yerel
             LanguageDetectCapability(),
             LocalTranslateCapability(),
+            # --- yerel jüri (FAZ D · D2): karar makineden çıkmaz, maliyet 0
+            LocalJuryCapability(),
+            # --- kurum hedefi (FAZ D · D6): theHarvester + açık SEO + kişi künyesi
+            CompanyHarvesterCapability(),
+            CompanySeoCapability(),
+            CompanyPeopleCapability(),
+            # --- rapor fabrikası (FAZ D · D5): pdf · diyagram · video + mühür
+            ReportPdfCapability(),
+            ReportDiagramCapability(),
+            ReportVideoCapability(),
+            # --- medya adli hattı (FAZ D · D3): indir · kare · yazı · benzerlik
+            MediaFetchCapability(),
+            MediaFramesCapability(),
+            MediaTranscriptCapability(),
+            MediaSimilarityCapability(),
         )
     for cap in capabilities:
         if reg.has(cap.id):
