@@ -1,5 +1,39 @@
 # Changelog
 
+## Unreleased — 2026-10-07 — FAZ D · D2: yerel jüri (karar makineden çıkmaz)
+
+- **D2 · YEREL JÜRİ TAMAM.** `agent_core/services/local_jury.py` +
+  `verifier.jury.local` yeteneği: aynı iddia ve kanıt **birden çok yerel
+  modelde** bağımsız oylanır; karar oybirliği ya da yeter sayılı çoğunlukla
+  verilir. Uzak uç `non_local_endpoint` ile REDDEDİLİR ve uzak adres
+  yapılandırılmışsa yerel uca BİLE gidilmez (sessiz düşüş yok, test kilitli).
+- **Koltuk = ayrı model.** Aynı model adı ikinci koltuk SAYILMAZ (tekrar
+  `duplicates_removed` olarak raporlanır); tek modelle alınan hüküm
+  `tek_koltuk` kuralıyla işaretlenir ve `consensus: false` olur — **tek
+  koltukla konsensüs ilan edilmez.** Kural her zaman makine-okunur yazılır:
+  `oy_birligi` · `cokluk` · `berabere` · `tek_koltuk` · `gecerli_oy_yok`.
+- **Oy sözlüğü tek kaynaktan** (`services/jury_consensus`): kapalı küme dışı
+  kelime OY SAYILMAZ (`sozluk_disi`); model JSON döndürmezse
+  `seat_unparseable`. Koltuk hatası, gecikme ve ham kelime yanıtta görünür —
+  tek bir koltuk sessizce yutulmaz.
+- **Konsensüs yoksa kanıt da yok:** berabere/tek koltuk/geçerli oy yok
+  durumlarında kanıt ÜRETİLMEZ (koltuk dökümü `notes` içinde kalır). Konsensüs
+  varsa kanıt `inference` türündedir (model yargısı gözlem değildir) ve güven
+  yalnız koltukların kendi beyanlarının ortalamasıdır.
+- **Yüzeyler:** `GET /api/jury/status` · `POST /api/jury/vote` (kasa + kapı +
+  `jury` hız kovası) · kokpitte **JÜRİ** pili (`3 YEREL KOLTUK` /
+  `1 KOLTUK · BAĞIMSIZ DEĞİL` / `KAPALI`). Yetenek omurgada olduğu için MCP
+  aracı (`verifier_jury_local`) ve Skills paketi kendiliğinden büyüdü.
+- **Env:** `ENABLE_LOCAL_JURY` (varsayılan KAPALI) · `PINEAL_JURY_LOCAL_URL`
+  (varsayılan `LOCAL_LLM_URL` → `http://127.0.0.1:11434/v1`) ·
+  `PINEAL_JURY_LOCAL_MODELS` (virgüllü; boşsa `LOCAL_LLM_MODEL`) ·
+  `PINEAL_JURY_SEATS` (3) · yeter sayı `PINEAL_JURY_QUORUM` (B1 ile ortak).
+  Kurulum: `docs/YEREL_JURI.md`.
+- **Test:** +43 (birim 33 · entegrasyon 10). Yol boyunca bir kusur yakalandı:
+  jüri yapılandırması enjekte edilebilir env sözlüğünden okunurken
+  `jury_consensus.quorum()` süreç ortamını okuyordu (iki env kaynağı sapması);
+  tek kaynağa (`os.environ`) indirildi. Tam koşu: **1953P/0F**.
+
 ## Unreleased — 2026-10-07 — FAZ D · D1: yetenekler standart kapıdan dışarıda (MCP)
 
 - **D1 · MCP SUNUCUSU TAMAM.** ``agent_core/mcp/`` paketi: ``protocol.py`` (JSON-RPC

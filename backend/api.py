@@ -495,6 +495,9 @@ RATE_LIMITS = {
     # [FAZ C · C2] Seslendirme: yerel motor da olsa sınırsız istek kabul
     # edilmez (disk + CPU). Ölçülen ihtiyaç: tur başına birkaç cümle.
     "speech": (30, 60),
+    # [FAZ D · D2] Yerel jüri: her oylama KADAR yerel model çağrısı yapar
+    # (koltuk sayısı × istek). Sınırsız bırakmak yerel GPU'yu kilitler.
+    "jury": (6, 60),
     # [FAZ D · D4] Dil tespiti/çeviri: tespit saf hesaptır ama çeviri yerel
     # motor çalıştırır; ikisi de sınırsız istek kabul etmez.
     "language": (60, 60),
@@ -4589,6 +4592,89 @@ async def api_speech_stop(client_id: str = "default"):
 # [FAZ D · D4] DİL: tespit deterministik (model/ağ yok), çeviri YEREL.
 # Uydurma yok: sinyal yoksa etiket dönmez, motor yoksa çeviri dönmez.
 # ---------------------------------------------------------------------------
+
+
+class JuryVotePayload(BaseModel):
+    """[FAZ D · D2] Yerel jüri oylaması: iddia + kanıt metni."""
+
+    claim: str = Field(min_length=1, max_length=20000)
+    evidence: str = Field(min_length=1, max_length=40000)
+    client_id: str = Field(default="default", max_length=128)
+
+
+@app.get("/api/jury/status")
+async def api_jury_status():
+    """[FAZ D · D2] Jürinin GERÇEK durumu: uç yerel mi, kaç BAĞIMSIZ koltuk,
+    hangi kapı, yeter sayı. Model tanımlı değilse 'hazır' denmez."""
+    from agent_core.services import local_jury
+
+    return local_jury.status()
+
+
+@app.post("/api/jury/vote")
+async def api_jury_vote(req: JuryVotePayload):
+    """[FAZ D · D2] Aynı kanıt yerel jüriye sorulur: kural açıkça döner.
+
+    Konsensüs yoksa sonuç 'karar üretilmedi' olur (``consensus: false`` +
+    ``rule``); koltuk dökümü gizlenmez. Uzak uç yoktur: veri makineden çıkmaz.
+    """
+    from agent_core.capabilities.base import CapabilityContext
+    from agent_core.capabilities.policy import PolicyState
+    from agent_core.capabilities.registry import bootstrap
+    from agent_core.capabilities.runner import CapabilityRunner
+    from agent_core.services import local_jury
+
+    if not rate_limit(f"jury:{req.client_id}", "jury"):
+        return JSONResponse(
+            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla jüri isteği"}},
+            status_code=429,
+        )
+
+    runner = CapabilityRunner(registry=bootstrap())
+    state = PolicyState(
+        enabled_flags={local_jury.GATE: _flag_env(local_jury.GATE)},
+        vault_locked=not _check_vault_interlock(req.client_id),
+        rate_ok=True,
+    )
+    result = await runner.run(
+        "verifier.jury.local",
+        CapabilityContext(subject=req.claim, params={"evidence": req.evidence}),
+        state=state,
+    )
+    notes = dict(result.notes or {})
+    payload = {
+        "available": bool(result.available),
+        "denied_by": result.denied_by,
+        "reason": result.unavailable_reason,
+        "verdict": notes.get("verdict", ""),
+        "rule": notes.get("rule", ""),
+        "consensus": bool(notes.get("consensus", False)),
+        "seats_run": notes.get("seats_run", 0),
+        "counted": notes.get("counted", 0),
+        "quorum_required": notes.get("quorum_required", 1),
+        "tally": notes.get("tally", {}),
+        "dissent": notes.get("dissent", []),
+        "seat_errors": notes.get("seat_errors", {}),
+        "seats": notes.get("seats", []),
+        "endpoint": notes.get("endpoint", ""),
+        "machine_note": notes.get("machine_note", ""),
+        "evidence_ids": [item.evidence_id for item in result.items],
+    }
+    if result.denied_by:
+        broadcast_log(req.client_id, "WARNING", f"JÜRİ: oylama engellendi — kapı:{result.denied_by}")
+    elif payload["consensus"]:
+        broadcast_log(
+            req.client_id,
+            "INFO",
+            f"JÜRİ: {payload['verdict']} ({payload['rule']}, {payload['counted']} koltuk)",
+        )
+    else:
+        broadcast_log(
+            req.client_id,
+            "INFO",
+            f"JÜRİ: konsensüs yok — {payload['rule'] or payload['reason']} (karar iddia edilmedi)",
+        )
+    return payload
 
 
 @app.get("/api/mcp/status")

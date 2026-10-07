@@ -39,6 +39,8 @@ MANAGED_GATE_FLAGS: tuple[str, ...] = (
     "ENABLE_SEARXNG",
     # [FAZ D · D4] Çeviri yerel motora bağlıdır; varsayılan KAPALI.
     "ENABLE_LOCAL_TRANSLATE",
+    # [FAZ D · D2] Yerel jüri: yerel modeller hazır olana kadar varsayılan KAPALI.
+    "ENABLE_LOCAL_JURY",
 )
 
 _TRUTHY = frozenset({"1", "true", "yes", "on", "enabled"})

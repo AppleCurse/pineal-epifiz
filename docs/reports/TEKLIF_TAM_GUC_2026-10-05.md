@@ -262,4 +262,15 @@ fail-closed) ve reddin sebebi makine-okunurdur (`denied_by`); `ok` yalnız kanı
 varsa true'dur. Kokpitte MCP pili + `GET /api/mcp/status`; aynı defterden
 `skills/<araç>/SKILL.md` paketi üretilir (`scripts/export_skills.py --check` CI'da
 bayat paketi yakalar). `docs/MCP.md` kurulum ve sözleşmeyi anlatır.
-Kullanıcı sırası: **D1 → D2 → D6 → D5 → D3**. Kalan: **D2 → D6 → D5 → D3**.
+Kullanıcı sırası: **D1 → D2 → D6 → D5 → D3**.
+
+**D2 TAMAM (2026-10-07) — yerel jüri: karar makineden çıkmaz.** Aynı iddia ve
+kanıt birden çok YEREL modelde bağımsız oylanır (`services/local_jury.py` +
+`verifier.jury.local`); koltuk = ayrı model (tekrar koltuk sayılmaz), kural
+makine-okunur (oy_birligi · cokluk · berabere · tek_koltuk · gecerli_oy_yok) ve
+konsensüs yoksa kanıt ÜRETİLMEZ (tek koltukla konsensüs ilan edilmez). Uzak uç
+reddedilir; uzak adres yapılandırılmışsa yerel uca bile gidilmez. Oy sözlüğü tek
+kaynaktan (B1); sözlük dışı kelime oy sayılmaz. Kanıt türü `inference` (model
+yargısı ≠ gözlem). Yüzeyler: `GET /api/jury/status` · `POST /api/jury/vote` ·
+kokpitte JÜRİ pili; yetenek omurgada olduğu için MCP aracı ve Skills paketi
+kendiliğinden büyüdü. Kurulum: `docs/YEREL_JURI.md`. Kalan: **D6 → D5 → D3**.

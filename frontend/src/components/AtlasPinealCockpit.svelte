@@ -183,6 +183,38 @@
     }
   }
 
+  // --- [FAZ D · D2] JÜRİ PİLİ ---
+  // Karar tek modele bırakılmaz: aynı kanıt birden çok YEREL modelde bağımsız
+  // oylanır. Pil gerçeği gösterir: kaç BAĞIMSIZ koltuk var ve uç yerel mi.
+  // Motor yoksa "KAPALI" yazar (uydurma "hazır" göstergesi yok).
+  let juryInfo: {
+    available: boolean;
+    seats: number;
+    independentSeats: boolean;
+    reason: string | null;
+    quorum: number;
+  } | null = null;
+
+  async function fetchJuryStatus() {
+    try {
+      const res = await apiFetch('/api/jury/status');
+      if (!res.ok) {
+        juryInfo = null;
+        return;
+      }
+      const data = await res.json();
+      juryInfo = {
+        available: Boolean(data?.available),
+        seats: Number(data?.seats ?? 0),
+        independentSeats: Boolean(data?.independent_seats),
+        reason: (data?.reason as string | null) ?? null,
+        quorum: Number(data?.quorum ?? 1),
+      };
+    } catch (_e) {
+      juryInfo = null; // ağ hatası: uydurma koltuk sayısı ÜRETİLMEZ
+    }
+  }
+
   // --- [FAZ D · D1] MCP PİLİ ---
   // Pineal'in yetenekleri standart MCP kapısından dışarıya açılıyor. Pil
   // GERÇEK durumu gösterir: kaç yetenek araç olarak yayınlanıyor ve kasa
@@ -324,6 +356,16 @@
       : `DİL: ${langInfo.language.toUpperCase()} · ${langInfo.confidence.toFixed(2)}`
     : 'DİL: ÖLÇÜLMEDİ';
   $: if ($clientId) fetchLanguageStatus();
+
+  // [FAZ D · D2] JÜRİ pili: koltuk sayısı GERÇEK yapılandırmadan gelir.
+  $: juryLabel = juryInfo
+    ? juryInfo.available
+      ? juryInfo.independentSeats
+        ? `JÜRİ: ${juryInfo.seats} YEREL KOLTUK`
+        : `JÜRİ: 1 KOLTUK · BAĞIMSIZ DEĞİL`
+      : `JÜRİ: KAPALI`
+    : 'JÜRİ: —';
+  $: if ($clientId) fetchJuryStatus();
 
   // [FAZ D · D1] MCP pili: araç sayısı defterden gelir, kasa durumu gizlenmez.
   $: mcpLabel = mcpInfo
@@ -674,6 +716,20 @@
       : 'MCP durumu okunamadı — sunucu kapalı olabilir'}
   >
     {mcpLabel}
+  </div>
+
+  <!-- [FAZ D · D2] JÜRİ PİLİ: kaç bağımsız YEREL koltuk (uydurma hazır yok) -->
+  <div
+    class="jury-pill"
+    class:ready={Boolean(juryInfo?.available && juryInfo?.independentSeats)}
+    class:thin={Boolean(juryInfo?.available && !juryInfo?.independentSeats)}
+    title={juryInfo
+      ? juryInfo.available
+        ? `${juryInfo.seats} koltuk · yeter sayı ${juryInfo.quorum} · uç yalnız yerel`
+        : `Jüri kapalı: ${juryInfo.reason || 'sebep yok'}`
+      : 'Jüri durumu okunamadı'}
+  >
+    {juryLabel}
   </div>
 
   <!-- [FAZ B · B5] EŞİK PİLİ: sabit 0.70 değil, ölçülen değer -->
@@ -1556,6 +1612,36 @@
   .mcp-pill.locked {
     border-color: rgba(248, 113, 113, 0.55);
     color: #fca5a5;
+  }
+
+  .jury-pill {
+    position: absolute;
+    top: 156px;
+    right: 32px;
+    z-index: 104;
+    padding: 6px 14px;
+    background: rgba(10, 15, 29, 0.82);
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    border-radius: 9999px;
+    font-family: 'JetBrains Mono', monospace, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: #94a3b8;
+    backdrop-filter: blur(6px);
+    white-space: nowrap;
+    cursor: help;
+  }
+
+  .jury-pill.ready {
+    border-color: rgba(167, 139, 250, 0.7);
+    color: #ddd6fe;
+    box-shadow: 0 0 14px rgba(167, 139, 250, 0.25);
+  }
+
+  .jury-pill.thin {
+    border-color: rgba(251, 191, 36, 0.6);
+    color: #fcd34d;
   }
 
   .memory-pill {

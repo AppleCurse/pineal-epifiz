@@ -158,6 +158,7 @@ def bootstrap(
             SearXNGCapability,
             XTwscrapeCapability,
         )
+        from agent_core.capabilities.adapters_jury import LocalJuryCapability
         from agent_core.capabilities.adapters_report import ReportScriptCapability
         from agent_core.capabilities.adapters_voice import (
             LocalSTTCapability,
@@ -194,6 +195,8 @@ def bootstrap(
             # --- dil (FAZ D · D4): tespit deterministik, çeviri yerel
             LanguageDetectCapability(),
             LocalTranslateCapability(),
+            # --- yerel jüri (FAZ D · D2): karar makineden çıkmaz, maliyet 0
+            LocalJuryCapability(),
         )
     for cap in capabilities:
         if reg.has(cap.id):
