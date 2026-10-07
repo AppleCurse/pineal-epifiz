@@ -21,6 +21,11 @@ from pathlib import Path
 
 PANEL = Path("frontend/src/components/UnifiedCompactPanel.svelte")
 APP = Path("frontend/src/App.svelte")
+COCKPIT = Path("frontend/src/components/AtlasPinealCockpit.svelte")
+
+#: Ölçüm yokluğunun TEK metni — bileşendeki `INSUFFICIENT_EVIDENCE` ile aynı.
+#: (Statik kontrat testi olduğu için burada dize olarak tekrarlanır.)
+INSUFFICIENT_MARKER = "YETERSİZ KANIT"
 
 
 def _panel() -> str:
@@ -29,6 +34,19 @@ def _panel() -> str:
 
 def _app() -> str:
     return APP.read_text(encoding="utf-8")
+
+
+def _cockpit() -> str:
+    return COCKPIT.read_text(encoding="utf-8")
+
+
+def _cockpit_code() -> str:
+    """Kokpit kaynağı, YORUMLAR AYIKLANMIŞ hâlde.
+
+    Kaldırılanın neden kaldırıldığını anlatan açıklamalar "ölü kod" sayılmaz
+    (`_code_lines` ile aynı gerekçe).
+    """
+    return "\n".join(_code_lines(_cockpit()))
 
 
 def _code_lines(source: str) -> list[str]:
@@ -87,3 +105,63 @@ def test_error_frames_are_not_logged_as_completed():
     assert "OPERASYON SONUÇLANDI" in source
     # Terminal olmayan durumlar ERROR seviyesinde yazılmalı.
     assert '["completed", "partially_completed"]' in source
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# [E6] ADLİ SÜTUN: ÖLÇÜM YOKLUĞU BİR DURUMDUR, DOLGU METNİ DEĞİL
+#
+# Bulunan açık (ölçüldü): AtlasPinealCockpit'in adli sütun modalları eksik
+# alanları `|| 'Veri mevcut değil'` ve `?? 0` ile dolduruyordu. İkisi de AYNI
+# yalanı söylüyordu — ölçüm yokken kart DOLU görünüyor, sayı alanında ise "0"
+# gerçek bir ölçüm gibi okunuyordu (Md.1 uydurma yasağı).
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_cockpit_has_no_neutral_data_placeholder():
+    """DoD: `grep -rn "'Veri mevcut değil'" frontend/src` → **0**."""
+    offenders = [
+        str(path)
+        for path in Path("frontend/src").rglob("*.svelte")
+        if "'Veri mevcut değil'" in path.read_text(encoding="utf-8")
+    ]
+    assert offenders == [], f"nötr dolgu metni geri geldi: {offenders}"
+
+
+def test_cockpit_marks_insufficient_evidence_as_a_state():
+    """Boş alan bir DURUM olarak işaretlenir: metin + uyarı stili + sebep."""
+    code = _cockpit_code()
+    assert INSUFFICIENT_MARKER in code, "YETERSİZ KANIT işareti yok"
+    assert "evidence-insufficient" in code, "uyarı sınıfı kullanılmıyor"
+    assert code.count("evidence-insufficient") >= 14, (
+        "adli sütunların alanları işaretsiz kalmış: "
+        f"{code.count('evidence-insufficient')} kullanım"
+    )
+    # İşaret sebebini SÖYLER: operatör "boş döndü" ile "ölçülmedi"yi ayırt eder.
+    assert 'title="Alan boş döndü — ölçüm yok"' in code
+
+
+def test_insufficient_evidence_has_a_visual_warning_style():
+    """İşaret stil olarak da uyarır (görünmez metin dürüstlük sağlamaz)."""
+    source = _cockpit()
+    match = re.search(r"\.evidence-insufficient\s*\{([^}]*)\}", source)
+    assert match, ".evidence-insufficient stili tanımsız"
+    body = match.group(1)
+    assert "color" in body and "#ef4444" in body, f"uyarı rengi yok: {body[:120]}"
+    assert "border-bottom" in body, "işaret gövde metninden ayrışmıyor"
+
+
+def test_cockpit_does_not_fabricate_zero_metrics():
+    """Ölçüm yokken `0` gösterilmez: `0` GERÇEK ölçümdür (kayıp değil)."""
+    code = _cockpit_code()
+    for pattern in (
+        "reality_index || 0",
+        "compatibility_score ?? 0",
+        "narcissism ?? 0",
+        "night_share ?? 0",
+        "data_completeness ?? 0",
+        "follower_count ?? 0",
+    ):
+        assert pattern not in code, f"uydurma sıfır geri geldi: {pattern}"
+    # Ve `0`'ın kayıp sayılmaması kuralı kodda YAZILI.
+    assert "Number.isFinite" in code, "hasEvidence sayı kuralı kaybolmuş"
+    assert "function hasEvidence(" in code

@@ -640,6 +640,13 @@ def rate_limit(key: str, bucket: str) -> bool:
     return True
 
 app.state.rooms = {}  # client_id -> {"executor": PinealExecutor, "vault": {}, "websockets": set()}
+# [ÇOCUK KİLİDİ — API girişi] Operatörün çocuk BEYANI burada yaşar: oda
+# YAŞAM DÖNGÜSÜNDEN BAĞIMSIZDIR. Bilinçli: kilit "küresel ve istisnasız"dır;
+# odaya bağlansaydı boşta kalan oda tahliye edilince (30 dk) beyan sessizce
+# kaybolur ve kilit KENDİLİĞİNDEN açılırdı. Buradan yalnız operatör siler
+# (`POST /api/minor/clear`), zaman aşımı değil. Yön bilinçli olarak DAR
+# taraftır: unutulan beyan bloklamaya devam eder, sessizce geçirmez.
+app.state.minor_cases = {}  # client_id -> MinorCaseContext (yalnız beyan edilmişse)
 
 # W5: tarayici yetenegi probu (300sn cache). Telemetri artik import basarisi
 # degil, GERCEK capability raporlar (x_scraper / instagram_scraper / browser_installed).
@@ -977,6 +984,8 @@ _MAX_CLIENT_ID_LENGTH = _bounded_env_int("PINEAL_MAX_CLIENT_ID_LENGTH", 64, 8, 4
 _MAX_TASK_ID_LENGTH = _bounded_env_int("PINEAL_MAX_TASK_ID_LENGTH", 128, 8, 4_096)
 _MAX_TERMINATE_REASON_LENGTH = 500
 _ROOM_TTL_SECONDS = float(os.getenv("PINEAL_ROOM_TTL_SECONDS", "1800"))
+#: Çocuk beyanı deposunun üst sınırı (sınırsız büyüme yok; aşımda dürüst 503).
+_MINOR_CASE_MAX_ENTRIES = _bounded_env_int("PINEAL_MINOR_CASE_MAX_ENTRIES", 512, 1, 100_000)
 _rooms_last_seen: Dict[str, float] = {}
 
 
@@ -2518,7 +2527,14 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
         # capability omurgasını çağırırken durumu TAHMİN ETMEZ, operatörün
         # mandalının tek sahibi olan interlock'tan okur (kasa kapalıysa hiçbir
         # dış yetenek koşamaz). İkinci bir "env'den kasa okuma" katmanı yok.
-        payload["policy"] = {"vault_locked": not _check_vault_interlock(client_id)}
+        # [ÇOCUK KİLİDİ] Beyan görev payload'ına da taşınır: omurga (koşucu)
+        # kilidi İKİNCİ kez uygular. Kapı zaten zorunlu tuttu; bu satır kuşak
+        # kuşak savunmadır — beyan kaybolsa bile kilit gevşemez, çünkü
+        # `coerce_minor_case` yarım/bozuk beyanı REDDEDER (fail-closed).
+        payload["policy"] = {
+            "vault_locked": not _check_vault_interlock(client_id),
+            "minor_case": _minor_case_for(client_id),
+        }
         # Arama motoru da aynı gerçeği görür. [KASA MANDALI] Eskiden burada
         # "ücretsiz DuckDuckGo yolu bugünkü davranışını korur" yazıyordu — yani
         # kasa kilitli olsa bile DuckDuckGo'ya istek ÇIKIYORDU. Bu delik
@@ -2791,7 +2807,12 @@ async def api_initiate(req: InitiatePayload, request: Request):
             {"error": {"code": "RATE_LIMITED", "message": "Çok fazla görev başlatma isteği; bir dakika içinde tekrar deneyin."}},
             status_code=429,
         )
-    # VAULT INTERLOCK: anahtar çevrilmeden dış dünyaya OSINT/Scraper isteği yok.
+    # [ÇOCUK KİLİDİ — API GİRİŞİ] Kasa kapısından ÖNCE ve url koşulundan
+    # BAĞIMSIZ: beyan varsa oda kilitlidir; boş url'li görev dâhil hiçbir
+    # istek gövdesi çalışmaz (çocuk kilidi istisnasızdır).
+    if (blocked := _require_minor_clearance(req.client_id, subject=req.url)) is not None:
+        return blocked
+    # VAULT INTERLOCK: anahtar çevrilmeden dünyaya OSINT/Scraper isteği yok.
     # [KASA MANDALI] Artık elle yazılmış ikinci bir kopya değil, tüm
     # dış-çıkış uçlarının paylaştığı TEK kapı (`_require_vault_open`).
     if req.url and req.url.strip():
@@ -3414,6 +3435,278 @@ def _require_vault_open(client_id: str) -> Optional[JSONResponse]:
     return _vault_locked_response(client_id)
 
 
+# ─── ÇOCUK KİLİDİ — API GİRİŞİ (Tüzük Md.2 · değiştirilemez ürün kuralı) ───
+# ÖLÇÜM (2026-10-07): `grep -c 'MinorGate\|minor_gate' backend/api.py` → 0.
+# Kilit yalnız capability koşucusunda yaşıyordu ve oraya da ancak
+# `PolicyState.minor_case` DOLDURULURSA ulaşıyordu; API sınırı hiç
+# doldurmuyordu. Yani operatör bir hedefi çocuk olarak beyan etse bile istek
+# kapıda DURDURULMUYOR, iş derine iniyordu. Kilidin varlığı, ikinci bir yol
+# açık kaldığı sürece güvence değildir — kapı bu yüzden BURADA.
+#
+# SIRA: çocuk kilidi kasa kapısından ÖNCE gelir (koşucudaki sıra: çocuk →
+# politika; `runner.py` "politika kapılarından ÖNCE"). Tersi durumda denetim
+# izinde "VAULT_LOCKED" görünür ve çocuk ihlali maskelenir.
+#
+# YAŞ UYDURULMAZ: istekte yaş sinyali yoktur, bu katman yaş tahmin etmez.
+# Operatör beyan eder; beyan "izin" DEĞİL "dur" demektir — dört şart tamam
+# değilse istek gövdesi HİÇ ÇALIŞMADAN 451 döner ve karar deftere yazılır.
+MINOR_BLOCKED_MESSAGE = (
+    "ÇOCUK KİLİDİ: 18 yaş altı bir hedef için araştırma açılamaz. "
+    "Tek istisna kayıp/yaralanma vakasıdır ve dört şartın TAMAMI gerekir: "
+    "ailenin bilgisi + net sebep + doğrulama + konsorsiyum onayı (en az 2). "
+    "Beyan 'dur' demektir; eksik beyan kilidi açmaz."
+)
+
+
+class MinorCasePayload(BaseModel):
+    """Operatörün çocuk vakası beyanı (oda bazlı; şartlar `MinorGate`'te).
+
+    `subject_is_minor` varsayılanı ``True``'dur: bu uca gelen gövde ZATEN bir
+    çocuk beyanıdır, "emin değilim" diye gönderilmez. Beyan edip dört şartı
+    doldurmamak kilidi açmaz — yalnız `POST /api/minor/clear` kaldırır.
+    """
+
+    client_id: str = Field(default="default", max_length=_MAX_CLIENT_ID_LENGTH)
+    subject_is_minor: bool = True
+    case_type: str = Field(default="", max_length=64)
+    family_notified: bool = False
+    reason: str = Field(default="", max_length=4_000)
+    verified: bool = False
+    council_approvals: List[str] = Field(default_factory=list, max_length=32)
+    case_id: str = Field(default="", max_length=128)
+
+
+class ClientRefPayload(BaseModel):
+    """Yalnız oda kimliği taşıyan gövde (beyan kaldırma vb.)."""
+
+    client_id: str = Field(default="default", max_length=_MAX_CLIENT_ID_LENGTH)
+
+
+def _minor_case_for(client_id: str):
+    """Odaya ait çocuk BEYANI — yoksa ``None``. Oda OLUŞTURMAZ (salt okunur).
+
+    Okuma yolu bilinçli olarak yan etkisizdir: durum sorguları oda açıp
+    bellek tüketmemelidir. Beyan oda sözlüğünde DEĞİL, süreç geneli
+    `app.state.minor_cases` içinde tutulur — oda tahliyesi (30 dk boşta)
+    beyanı düşürseydi kilit sessizce açılırdı.
+    """
+    from agent_core.safety import coerce_minor_case
+
+    return coerce_minor_case(app.state.minor_cases.get(client_id))
+
+
+def _minor_ledger_record(case, decision, *, client_id: str, subject: str = "") -> None:
+    """Kararı denetim defterine yazar — SESSİZ YUTMA YOK.
+
+    Defter yazılamazsa kilit GEVŞEMEZ (karar zaten verilmiş ve uygulanmıştır)
+    ama arıza operatörün göreceği biçimde loglanır.
+    """
+    from agent_core.safety import MinorCaseLedger
+
+    try:
+        MinorCaseLedger().record(
+            case, decision, capability_id="api.door", subject=subject,
+        )
+    except Exception:
+        logger.error(
+            "ÇOCUK KİLİDİ DEFTERİ YAZILAMADI (karar uygulandı, kayıt eksik) "
+            "client_id=%s reason=%s",
+            client_id, getattr(decision, "reason_code", "?"), exc_info=True,
+        )
+
+
+def _minor_blocked_response(client_id: str, decision) -> JSONResponse:
+    """Çocuk kilidi reddi (451: hukuki/etik gerekçeyle reddedildi)."""
+    return JSONResponse(
+        {
+            "error": {
+                "code": "MINOR_BLOCKED",
+                "message": MINOR_BLOCKED_MESSAGE,
+                "reason_code": getattr(decision, "reason_code", ""),
+                "detail": getattr(decision, "detail", ""),
+            },
+            "minor_case": {
+                "subject_is_minor": True,
+                "reason_code": getattr(decision, "reason_code", ""),
+            },
+            "client_id": client_id,
+        },
+        status_code=451,
+    )
+
+
+def _evaluate_declared_case(
+    client_id: str, case, *, subject: str = ""
+) -> Optional[JSONResponse]:
+    """Tek beyanı değerlendirir: ``None`` = geçti, 451 = durdu (defter yazılır)."""
+    from agent_core.safety import MinorDecision, MinorGate
+
+    try:
+        decision = MinorGate().evaluate(case)
+    except Exception:
+        # Sessiz yutma YOK (fail-closed): kilit değerlendirilemiyorsa DAR
+        # taraf seçilir — istek reddedilir, çünkü "belki geçer" demek
+        # kilidin varlığını anlamsız kılardı.
+        logger.error(
+            "ÇOCUK KİLİDİ DEĞERLENDİRİLEMEDİ — dar taraf: RED (client_id=%s)",
+            client_id, exc_info=True,
+        )
+        return _minor_blocked_response(
+            client_id,
+            MinorDecision.deny("gate_error", "Kilit değerlendirilemedi; dar taraf: ret."),
+        )
+    _minor_ledger_record(case, decision, client_id=client_id, subject=subject)
+    if decision.allowed:
+        return None
+    logger.warning(
+        "ÇOCUK KİLİDİ: istek KAPIDA reddedildi (client_id=%s, reason=%s)",
+        client_id, decision.reason_code,
+    )
+    return _minor_blocked_response(client_id, decision)
+
+
+def _require_minor_clearance(
+    client_id: Optional[str], *, subject: str = ""
+) -> Optional[JSONResponse]:
+    """ÇOCUK KİLİDİ KAPISI. Beyan yoksa ``None``; şartlar eksikse 451 döner.
+
+    Her dış-ağ/tarayıcı ucu gövdesinin İLK işi olarak bunu çağırmak zorundadır
+    (kasa kapısından ÖNCE)::
+
+        if (blocked := _require_minor_clearance(req.client_id)) is not None:
+            return blocked
+
+    Beyan YOKLUĞU "yetişkin" demek değildir: bu katman yaş uydurmaz, karar
+    mercii operatördür (ürün kuralı: yetişkin için sistem engel koymaz).
+    Beyan VARSA şartlar `MinorGate` ile değerlendirilir ve karar istisnasız
+    uygulanır; onaylı vakada istek normal akışına devam eder.
+
+    ``client_id=None`` → uç, gövdesinde oda ADI taşımıyor ama hedef materyali
+    işliyor (profil/ileti/görev). "Odayı söyleyemedim" bir KAÇIŞ YOLU DEĞİLDİR:
+    bu modda beyan edilmiş odalardan dört şartı sağlamayan BİRİ varsa istek
+    reddedilir. Fail-closed yön bilinçli: oda adı taşımayan ucun beyanı
+    atlamasına izin vermek, kilidi isteğe bağlı kılardı.
+    """
+    if client_id is None:
+        for other_id in list(app.state.minor_cases):
+            case = _minor_case_for(other_id)
+            if case is None:
+                continue
+            blocked = _evaluate_declared_case(other_id, case, subject=subject)
+            if blocked is not None:
+                return blocked
+        return None
+    case = _minor_case_for(client_id)
+    if case is None:
+        return None
+    return _evaluate_declared_case(client_id, case, subject=subject)
+
+
+@app.post("/api/minor/case")
+async def api_minor_case_register(req: MinorCasePayload):
+    """Operatörün çocuk beyanını kaydeder (oda bazlı — TEK kaynak).
+
+    Kayıt, beyanı "onay" değil "dur" olarak kurar: dört şart tamam değilse
+    yanıt `allowed:false` döner ve o odanın TÜM dış-çıkış kapıları 451 verir.
+    Şartlar tamamlanınca yanıt `allowed:true` olur ve akış normalleşir.
+    """
+    if not req.client_id or len(req.client_id) > _MAX_CLIENT_ID_LENGTH:
+        return JSONResponse(
+            {"error": {"code": "INVALID_CLIENT_ID", "message": "Geçersiz client_id"}},
+            status_code=400,
+        )
+    try:
+        validate_identifier(req.client_id, field="client_id")
+    except ValueError:
+        return JSONResponse(
+            {"error": {"code": "INVALID_CLIENT_ID", "message": "Geçersiz client_id"}},
+            status_code=400,
+        )
+    if (
+        req.client_id not in app.state.minor_cases
+        and len(app.state.minor_cases) >= _MINOR_CASE_MAX_ENTRIES
+    ):
+        return JSONResponse(
+            {
+                "error": {
+                    "code": "MINOR_CASE_CAPACITY",
+                    "message": (
+                        "Çocuk beyanı deposu dolu; önce kapanmış beyanları "
+                        "temizleyin (POST /api/minor/clear)."
+                    ),
+                }
+            },
+            status_code=503,
+        )
+    from agent_core.safety import MinorCaseContext, MinorGate
+
+    case = MinorCaseContext(
+        subject_is_minor=bool(req.subject_is_minor),
+        case_type=req.case_type,
+        family_notified=bool(req.family_notified),
+        reason=req.reason,
+        verified=bool(req.verified),
+        council_approvals=tuple(req.council_approvals),
+        case_id=req.case_id,
+    )
+    app.state.minor_cases[req.client_id] = case
+    decision = MinorGate().evaluate(case)
+    _minor_ledger_record(case, decision, client_id=req.client_id)
+    return {
+        "client_id": req.client_id,
+        "declared": True,
+        "subject_is_minor": case.subject_is_minor,
+        "allowed": decision.allowed,
+        "reason_code": decision.reason_code,
+        "detail": decision.detail,
+        "case_id": case.case_id,
+    }
+
+
+@app.post("/api/minor/clear")
+async def api_minor_case_clear(req: ClientRefPayload):
+    """Çocuk beyanını KALDIRIR (vaka kapandı) — kilidi zaman aşımı açmaz."""
+    had = app.state.minor_cases.pop(req.client_id, None) is not None
+    if had:
+        logger.info("ÇOCUK KİLİDİ: beyan operatör tarafından kaldırıldı (client_id=%s)", req.client_id)
+    return {"client_id": req.client_id, "cleared": had}
+
+
+@app.get("/api/minor/state")
+async def api_minor_case_state(client_id: str = "default"):
+    """Dürüst durum: beyan var mı, geçiyor mu, geçmiyorsa NEDEN."""
+    if not client_id or len(client_id) > _MAX_CLIENT_ID_LENGTH:
+        return JSONResponse(
+            {"error": {"code": "INVALID_CLIENT_ID", "message": "Geçersiz client_id"}},
+            status_code=400,
+        )
+    case = _minor_case_for(client_id)
+    if case is None:
+        return {
+            "client_id": client_id,
+            "declared": False,
+            "cleared": True,
+            "reason_code": "not_declared",
+            "detail": (
+                "Bu oda için çocuk beyanı yok. Bu katman yaş UYDURMAZ; "
+                "hedefin çocuk olduğu biliniyorsa operatör beyan etmelidir."
+            ),
+        }
+    from agent_core.safety import MinorGate
+
+    decision = MinorGate().evaluate(case)
+    return {
+        "client_id": client_id,
+        "declared": True,
+        "cleared": decision.allowed,
+        "subject_is_minor": True,
+        "case_type": case.case_type,
+        "case_id": case.case_id,
+        "allowed": decision.allowed,
+        "reason_code": decision.reason_code,
+        "detail": decision.detail,
+    }
+
 
 @app.get("/api/dialogue/sessions")
 async def api_dialogue_sessions():
@@ -3456,6 +3749,9 @@ async def maigret_scan(payload: MaigretScanPayload):
     Kapı: ENABLE_MAIGRET=true (varsayılan kapalı). Dürüst sonuç: kayıt
     çıkmazsa `available:false` + makine-okunur sebep; site/hesap uydurulmaz.
     """
+    # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız; politika kapılarından öncedir).
+    if (blocked := _require_minor_clearance(payload.client_id, subject=payload.username)) is not None:
+        return blocked
     # [KASA MANDALI] Bu uç 3300+ dış siteye istek atar: kasa kilitliyse motor
     # HİÇ ÇAĞRILMAZ, kapıda 423 Locked döner (Tüzük Md.4).
     if (locked := _require_vault_open(payload.client_id)) is not None:
@@ -3485,6 +3781,9 @@ async def holehe_scan(payload: HoleheScanPayload):
     holehe'nin istisnaları rateLimit olarak maskelemesi hata sayılır —
     kapalı ağda asla "kayıtlı değil" iddia edilmez.
     """
+    # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız; politika kapılarından öncedir).
+    if (blocked := _require_minor_clearance(payload.client_id, subject=payload.email)) is not None:
+        return blocked
     # [KASA MANDALI] Dış site taraması: kasa kilitliyse kapıda 423 Locked.
     if (locked := _require_vault_open(payload.client_id)) is not None:
         return locked
@@ -3510,6 +3809,9 @@ async def crawl_fetch(payload: CrawlFetchPayload):
     binary'si gerektirmez). Dürüst sonuç: içerik çekilemezse `available:false`
     + makine-okunur sebep; ASLA uydurma içerik döner. SSRF guard'lı.
     """
+    # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız; politika kapılarından öncedir).
+    if (blocked := _require_minor_clearance(payload.client_id, subject=payload.url)) is not None:
+        return blocked
     # [KASA MANDALI] Public-web sayfası ÇEKİLİR (dış ağ): kasa kilitliyse 423.
     if (locked := _require_vault_open(payload.client_id)) is not None:
         return locked
@@ -3536,6 +3838,9 @@ async def socid_extract(payload: SocidExtractPayload):
     Dürüst sonuç sözleşmesi: kayıt çıkmazsa `available:false` + makine-okunur
     sebep döner; alan uydurulmaz. SSRF guard'lı (private/loopback engelli).
     """
+    # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız; politika kapılarından öncedir).
+    if (blocked := _require_minor_clearance(payload.client_id, subject=payload.url)) is not None:
+        return blocked
     # [KASA MANDALI] Profil URL'si DIŞARIDAN çekilir: kasa kilitliyse 423.
     if (locked := _require_vault_open(payload.client_id)) is not None:
         return locked
@@ -3547,6 +3852,10 @@ async def socid_extract(payload: SocidExtractPayload):
 @app.post("/api/experimental/shadow/analyze")
 async def shadow_analyze(profile: dict):
     """Dark Triad analizi"""
+    # [ÇOCUK KİLİDİ] Bu uç bir HEDEF PROFİLİ işler ama gövdesinde oda adı
+    # taşımaz: any-mod (beyan edilmiş çözülmemiş vaka varsa ret).
+    if (blocked := _require_minor_clearance(None)) is not None:
+        return blocked
     if shadow_executor is None:
         return {"error": "Shadow Protocol yüklü değil"}
     from agent_core.psychology.dark_triad import DarkTriadAnalyzer
@@ -3557,6 +3866,12 @@ async def shadow_analyze(profile: dict):
 @app.post("/api/experimental/shadow/generate")
 async def shadow_generate(task: dict):
     """Shadow mesaj üretimi"""
+    # [ÇOCUK KİLİDİ] Görev gövdesi oda adı taşıyorsa O oda, yoksa any-mod.
+    declared_room = task.get("client_id") if isinstance(task, dict) else None
+    if (blocked := _require_minor_clearance(
+        declared_room if isinstance(declared_room, str) and declared_room else None
+    )) is not None:
+        return blocked
     if shadow_executor is None:
         return {"error": "Shadow Protocol yüklü değil"}
     result = await shadow_executor.execute(task)
@@ -3573,6 +3888,9 @@ class ChatPayload(BaseModel):
 @app.post("/api/experimental/chat/respond")
 async def chat_respond(payload: ChatPayload):
     """Hedefin mesajına otonom karşı hamle üretir"""
+    # [ÇOCUK KİLİDİ] Hedefe DÖNÜK mesaj üretimi; oda adı yok → any-mod.
+    if (blocked := _require_minor_clearance(None)) is not None:
+        return blocked
     if dialogue_manager is None:
         return {"error": "Gölge Sohbet modülü yüklü değil"}
     
@@ -3924,6 +4242,9 @@ def _browser_error_response(e: Exception):
 
 @app.post("/api/browser/open")
 async def api_browser_open(req: BrowserOpenPayload):
+    # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız).
+    if (blocked := _require_minor_clearance(req.client_id, subject=req.url)) is not None:
+        return blocked
     # [KASA MANDALI] Kasa kilitliyse tarayıcı AÇILAMAZ (dış dünyaya kanal).
     if (locked := _require_vault_open(req.client_id)) is not None:
         return locked
@@ -3938,6 +4259,9 @@ async def api_browser_open(req: BrowserOpenPayload):
 
 @app.get("/api/browser/shot")
 async def api_browser_shot(client_id: str):
+    # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız).
+    if (blocked := _require_minor_clearance(client_id)) is not None:
+        return blocked
     # [KASA MANDALI] Ekran görüntüsü hedef siteden veri çeker -> dış hareket.
     if (locked := _require_vault_open(client_id)) is not None:
         return locked
@@ -3951,6 +4275,9 @@ async def api_browser_shot(client_id: str):
 
 @app.get("/api/browser/state")
 async def api_browser_state(client_id: str):
+    # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız).
+    if (blocked := _require_minor_clearance(client_id)) is not None:
+        return blocked
     # [KASA MANDALI] Durum okuması da kapıdan geçer: kilitliyken "tarayıcı
     # hazır" görüntüsü vermek kilidin etrafından dolaşmaktır.
     if (locked := _require_vault_open(client_id)) is not None:
@@ -3963,6 +4290,9 @@ async def api_browser_state(client_id: str):
 
 @app.post("/api/browser/click")
 async def api_browser_click(req: BrowserClickPayload):
+    # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız).
+    if (blocked := _require_minor_clearance(req.client_id)) is not None:
+        return blocked
     if (locked := _require_vault_open(req.client_id)) is not None:
         return locked
     room = get_room(req.client_id)
@@ -3974,6 +4304,9 @@ async def api_browser_click(req: BrowserClickPayload):
 
 @app.post("/api/browser/type")
 async def api_browser_type(req: BrowserTypePayload):
+    # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız).
+    if (blocked := _require_minor_clearance(req.client_id)) is not None:
+        return blocked
     if (locked := _require_vault_open(req.client_id)) is not None:
         return locked
     room = get_room(req.client_id)
@@ -3986,6 +4319,9 @@ async def api_browser_type(req: BrowserTypePayload):
 
 @app.post("/api/browser/press")
 async def api_browser_press(req: BrowserPressPayload):
+    # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız).
+    if (blocked := _require_minor_clearance(req.client_id)) is not None:
+        return blocked
     if (locked := _require_vault_open(req.client_id)) is not None:
         return locked
     room = get_room(req.client_id)
@@ -3997,6 +4333,9 @@ async def api_browser_press(req: BrowserPressPayload):
 
 @app.post("/api/browser/back")
 async def api_browser_back(req: BrowserClientPayload):
+    # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız).
+    if (blocked := _require_minor_clearance(req.client_id)) is not None:
+        return blocked
     if (locked := _require_vault_open(req.client_id)) is not None:
         return locked
     room = get_room(req.client_id)
@@ -4008,6 +4347,9 @@ async def api_browser_back(req: BrowserClientPayload):
 
 @app.post("/api/browser/save")
 async def api_browser_save(req: BrowserClientPayload):
+    # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız).
+    if (blocked := _require_minor_clearance(req.client_id)) is not None:
+        return blocked
     if (locked := _require_vault_open(req.client_id)) is not None:
         return locked
     room = get_room(req.client_id)
@@ -4038,6 +4380,9 @@ async def api_browser_close(req: BrowserClientPayload):
 
 @app.post("/api/scraper/authorize-alternative")
 async def authorize_scraper_alternative(req: AlternativeAuthorizationPayload):
+    # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız).
+    if (blocked := _require_minor_clearance(req.client_id)) is not None:
+        return blocked
     # [KASA MANDALI] `public_web_search` yetkilendirmesi dış arama tetikler;
     # kasa kilitliyse yetki VERİLEMEZ (yetki kaydı bile kilidin arkasından
     # dolanmak olurdu).
@@ -4133,6 +4478,9 @@ class InterpreterPayload(BaseModel):
 @app.post("/api/experimental/interpreter/execute")
 async def interpreter_execute(req: InterpreterPayload):
     """Open Interpreter ile otonom kod icra eder"""
+    # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız).
+    if (blocked := _require_minor_clearance(req.client_id)) is not None:
+        return blocked
     # [KASA MANDALI] Keyfi kod icrası dış ağa sınırsız çıkış demektir; kasa
     # kilitliyse HİÇ BAŞLAMAZ (env kapısından bile önce: kasa istisnasızdır,
     # bkz. PolicyKernel._GATE_ORDER — kasa, ENABLE_* bayraklarından öncedir).
