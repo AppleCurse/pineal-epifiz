@@ -277,7 +277,7 @@ class TestAgentMerge:
 
 
 class TestEndpoint:
-    def test_endpoint_disabled_by_default(self, monkeypatch):
+    def test_endpoint_disabled_by_default(self, monkeypatch, vault_open):
         from fastapi.testclient import TestClient
         from backend.api import app
 

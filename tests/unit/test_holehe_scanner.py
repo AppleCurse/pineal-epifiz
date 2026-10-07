@@ -300,7 +300,7 @@ class TestAgentMerge:
 
 
 class TestEndpoint:
-    def test_endpoint_disabled_by_default(self, monkeypatch):
+    def test_endpoint_disabled_by_default(self, monkeypatch, vault_open):
         from fastapi.testclient import TestClient
         from backend.api import app
 
@@ -311,7 +311,7 @@ class TestEndpoint:
         assert r.status_code == 200
         assert r.json()["reason"] == "disabled"
 
-    def test_endpoint_gate_on_uses_scanner(self, monkeypatch):
+    def test_endpoint_gate_on_uses_scanner(self, monkeypatch, vault_open):
         from fastapi.testclient import TestClient
         from backend.api import app
 

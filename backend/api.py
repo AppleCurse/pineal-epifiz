@@ -1088,6 +1088,13 @@ def get_room(client_id: str) -> dict:
             emit_event_callback=lambda evt: sync_event(client_id, evt),
             snapshot_callback=lambda s: sync_snapshot(client_id, s)
         )
+        # [KASA MANDALI] Arama motoru kasa gerçeğini CANLI okur (anlık görüntü
+        # bayatlamaz): kasa kilitlendiği anda Tavily/SerpAPI/Exa/DuckDuckGo
+        # dâhil HİÇBİR dış arama isteği oluşturulmaz. Kararın tek sahibi
+        # `_check_vault_interlock`'tur; motor kasa durumunu kendisi uydurmaz.
+        executor.search_engine.set_vault_state(
+            lambda: _check_vault_interlock(client_id)
+        )
         # Otomatik Kasa (.pineal_vault.json / .env) yüklemesi
         vault = _load_vault()
 
@@ -1186,6 +1193,9 @@ def get_room(client_id: str) -> dict:
         executor.llm_gateway.use_local = use_local
 
         app.state.rooms[client_id] = {
+            # [KASA MANDALI] Oda kendi kimliğini taşır: tarayıcı oturumu ve
+            # arama motoru mandalı bu kimlikle interlock'a bağlanır.
+            "client_id": client_id,
             "executor": executor,
             "vault": vault,
             "websockets": set(),
@@ -1234,11 +1244,20 @@ def get_vault(client_id: str) -> dict:
 
 
 def _room_browser(room: dict) -> BrowserSession:
-    """Oda başına tek canlı tarayıcı (lazy)."""
+    """Oda başına tek canlı tarayıcı (lazy).
+
+    [KASA MANDALI] Oturuma CANLI kasa mandalı bağlanır: operatör kasayı
+    kilitlediği anda AÇIK tarayıcı da bir daha dışarı çıkamaz (yalnızca
+    `close()` çalışır — o dış hareket değil, kanalı kapatma eylemidir).
+    """
     sess = room.get("browser")
+    client_id = room.get("client_id", "default")
+    guard = lambda: _check_vault_interlock(client_id)  # noqa: E731 — kapanış, kısa ömürlü
     if sess is None:
-        sess = BrowserSession()
+        sess = BrowserSession(vault_guard=guard)
         room["browser"] = sess
+    else:
+        sess.set_vault_guard(guard)
     return sess
 
 
@@ -2500,13 +2519,23 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
         # mandalının tek sahibi olan interlock'tan okur (kasa kapalıysa hiçbir
         # dış yetenek koşamaz). İkinci bir "env'den kasa okuma" katmanı yok.
         payload["policy"] = {"vault_locked": not _check_vault_interlock(client_id)}
-        # Arama motoru da aynı gerçeği görür: kasa kapalıyken omurga yetenekleri
-        # (SearXNG dâhil) koşamaz. Ücretsiz DuckDuckGo yolu bugünkü davranışını
-        # korur; kararı bu katman uydurmaz, interlock'tan okur.
+        # Arama motoru da aynı gerçeği görür. [KASA MANDALI] Eskiden burada
+        # "ücretsiz DuckDuckGo yolu bugünkü davranışını korur" yazıyordu — yani
+        # kasa kilitli olsa bile DuckDuckGo'ya istek ÇIKIYORDU. Bu delik
+        # kapatıldı: motor artık `search()` içinde, HTTP istemcisi
+        # OLUŞTURULMADAN önce mandala bakar ve kasa kilitliyse Tavily/SerpAPI/
+        # Exa/DuckDuckGo/SearXNG ayrımı yapmadan hepsini reddeder
+        # (status=VAULT_LOCKED, available=False). Canlı mandal oda kurulurken
+        # bağlandığı için bu anlık görüntü yalnız `rate_ok` gibi ek alanları taşır.
         try:
             executor.search_engine.set_policy(payload["policy"])
-        except Exception:  # telemetri/arama asıl görevi düşürmesin
-            logger.debug("search engine policy aktarılamadı")
+        except Exception:
+            # Sessiz yutma YOK: politika aktarılamadıysa arama motoru dar
+            # tarafa (kilitli) düşer ve bunu operatörün görmesi gerekir.
+            logger.error(
+                "ARAMA MOTORU POLİTİKASI AKTARILAMADI — dar taraf: kasa KİLİTLİ "
+                "(dış arama reddedilecek)", exc_info=True,
+            )
         max_attempts = _bounded_env_int("PINEAL_TASK_MAX_ATTEMPTS", 3, 1, 3)
         task_timeout = _bounded_env_int("PINEAL_TASK_TIMEOUT_SECONDS", 300, 1, 1800)
         for attempt in range(1, max_attempts + 1):
@@ -2762,18 +2791,12 @@ async def api_initiate(req: InitiatePayload, request: Request):
             {"error": {"code": "RATE_LIMITED", "message": "Çok fazla görev başlatma isteği; bir dakika içinde tekrar deneyin."}},
             status_code=429,
         )
-    # VAULT INTERLOCK: anahtar çevrilmeden dış dünyaya OSINT/Scraper isteği yok
+    # VAULT INTERLOCK: anahtar çevrilmeden dış dünyaya OSINT/Scraper isteği yok.
+    # [KASA MANDALI] Artık elle yazılmış ikinci bir kopya değil, tüm
+    # dış-çıkış uçlarının paylaştığı TEK kapı (`_require_vault_open`).
     if req.url and req.url.strip():
-        if not _check_vault_interlock(req.client_id):
-            return JSONResponse(
-                {
-                    "error": {
-                        "code": "VAULT_LOCKED",
-                        "message": "VAULT KİLİTLİ: Operatör anahtarı çevirmeden dış dünyaya hiçbir OSINT/Scraper isteği çıkamaz. Önce /api/vault ile anahtar girin veya Tauri kasasını açın."
-                    }
-                },
-                status_code=423,
-            )
+        if (locked := _require_vault_open(req.client_id)) is not None:
+            return locked
     room = get_room(req.client_id)
     if _active_tasks_full(room):
         return JSONResponse(
@@ -2925,7 +2948,10 @@ async def api_vault(req: VaultPayload):
                 {"vault_locked": not _check_vault_interlock(req.client_id)}
             )
         except Exception:
-            logger.debug("search engine policy aktarılamadı")
+            logger.error(
+                "ARAMA MOTORU POLİTİKASI AKTARILAMADI (/api/vault) — dar taraf: "
+                "kasa KİLİTLİ", exc_info=True,
+            )
             vault["search_keys"] = True
             broadcast_log(req.client_id, "INFO", "KASA: Arama Motoru anahtarları mühürlendi.")
         
@@ -3276,7 +3302,117 @@ def _check_vault_interlock(client_id: str) -> bool:
         # Dosya kasası: VARLIK değil, GERÇEK anahtar malzemesi aranır.
         return _vault_bears_key_material(_load_vault())
     except Exception:
+        # Fail-closed (dar taraf: KİLİTLİ) — ama arıza YUTULMAZ: mandalın
+        # neden okunamadığı logda görünür, yoksa "kasa kilitli" ile "kasa
+        # kontrolü çöktü" ayırt edilemez.
+        logger.error(
+            "KASA MANDALI DEĞERLENDİRİLEMEDİ — dar taraf: KİLİTLİ (client_id=%s)",
+            client_id, exc_info=True,
+        )
         return False
+
+
+# ─── KASA MANDALI (Tüzük Md.4) — dış dünyaya açılan HER kapının tek kilidi ───
+#
+# Kural: kasa kilitliyse sistemde TEK BİR dış ağ veya tarayıcı hareketi
+# olamaz. Eskiden bu kural yalnızca `/api/initiate` içinde, elle yazılmış bir
+# `if` bloğu olarak yaşıyordu; tarayıcı uçları (`/api/browser/*`), deneysel
+# OSINT uçları (maigret/holehe/crawl4ai/socid) ve scraper yetkilendirmesi
+# kasanın kilidine HİÇ BAKMIYORDU. Yani "VAULT KİLİTLİ - dış dünya erişimi
+# yok" mesajı ekranda dururken arkada tarayıcı açılabiliyor, profil
+# taranabiliyor ve public-web araması çıkıyordu. Bu bir kilitti değil,
+# dekorasyondu.
+#
+# Şimdi: tek yardımcı (`_require_vault_open`), tek envanter
+# (`VAULT_EGRESS_ROUTES`) ve route tablosuna karşı koşan bir makine denetimi
+# (tests/unit/test_vault_egress_lock.py). Yeni bir dış-çıkış ucu eklenip
+# buraya yazılmamak mümkün değil — test kırmızı yanar.
+
+VAULT_LOCKED_MESSAGE = (
+    "VAULT KİLİTLİ: Operatör anahtarı çevrilmeden dış dünyaya hiçbir istek "
+    "(OSINT, tarama, web kazıma, public-web araması, tarayıcı) çıkamaz. "
+    "Önce /api/vault ile anahtar girin veya Tauri kasasını açın."
+)
+
+#: Kasa kilitliyken SERT reddedilen (HTTP 423 Locked) dış-çıkış uçları.
+VAULT_EGRESS_ROUTES: frozenset = frozenset({
+    "/api/initiate",
+    "/api/browser/open",
+    "/api/browser/shot",
+    "/api/browser/state",
+    "/api/browser/click",
+    "/api/browser/type",
+    "/api/browser/press",
+    "/api/browser/back",
+    "/api/browser/save",
+    "/api/experimental/maigret/scan",
+    "/api/experimental/holehe/scan",
+    "/api/experimental/crawl/fetch",
+    "/api/experimental/socid/extract",
+    # Keyfi kod icrası = keyfi ağ erişimi (üstelik LLM anahtarı da verilir).
+    # ENABLE_INTERPRETER kapalıyken zaten 403; kasa kilitliyken 423.
+    "/api/experimental/interpreter/execute",
+    "/api/scraper/authorize-alternative",
+})
+
+#: Bilinçli muafiyetler — denetimde GÖRÜNÜR olsun diye isim isim yazıldı.
+#: Muafiyet gerekçesi olmayan bir uç buraya EKLENEMEZ (test reddeder).
+VAULT_EGRESS_EXEMPT_ROUTES: frozenset = frozenset({
+    # Dış hareket DEĞİL: açık kanalı KAPATIR. Reddedilirse arkada canlı
+    # Chromium süreci sızar (zombi) — yani muafiyet kilidi güçlendirir.
+    "/api/browser/close",
+    # Salt-okunur envanter raporu: tarayıcı başlatmaz, binary indirme
+    # TETİKLEMEZ (kendi docstring'i de bunu beyan eder).
+    "/api/experimental/stealth",
+    # Yerel hesaplama / LLM yönlendirme; dış OSINT veya tarayıcı yok.
+    "/api/experimental/shadow/analyze",
+    "/api/experimental/shadow/generate",
+    "/api/experimental/chat/respond",
+})
+
+
+def _vault_locked_response(client_id: str) -> JSONResponse:
+    """Kasa kilitli cevabının TEK biçimi (423 Locked + makine-okunur kod)."""
+    return JSONResponse(
+        {
+            "error": {"code": "VAULT_LOCKED", "message": VAULT_LOCKED_MESSAGE},
+            "vault_locked": True,
+            "client_id": client_id,
+        },
+        status_code=423,
+    )
+
+
+def _require_vault_open(client_id: str) -> Optional[JSONResponse]:
+    """DIŞ-ÇIKIŞ KAPISI. Kasa açıksa ``None``, kilitliyse 423 cevabı döner.
+
+    Her dış-ağ/tarayıcı ucu gövdesinin İLK işi olarak bunu çağırmak
+    zorundadır::
+
+        if (locked := _require_vault_open(req.client_id)) is not None:
+            return locked
+
+    Kararın tek sahibi `_check_vault_interlock`'tur (dosya VARLIĞI değil,
+    GERÇEK anahtar malzemesi kilidi açar). Arıza olursa dar taraf: KİLİTLİ.
+    """
+    try:
+        unlocked = _check_vault_interlock(client_id)
+    except Exception:
+        # Sessiz yutma YOK (fail-closed + izlenebilir): mandal okunamadıysa
+        # bu bir arızadır, loglanır ve istek reddedilir.
+        logger.error(
+            "KASA MANDALI OKUNAMADI — dar taraf: KİLİTLİ (client_id=%s)",
+            client_id, exc_info=True,
+        )
+        return _vault_locked_response(client_id)
+    if unlocked:
+        return None
+    logger.warning(
+        "KASA MANDALI: dış-çıkış isteği reddedildi (client_id=%s, kasa kilitli)",
+        client_id,
+    )
+    return _vault_locked_response(client_id)
+
 
 
 @app.get("/api/dialogue/sessions")
@@ -3299,12 +3435,18 @@ async def api_dialogue_sessions():
 
 class SocidExtractPayload(BaseModel):
     url: str
+    # [KASA MANDALI] Kasa ODA bazlıdır; uç artık hangi odanın mandalına
+    # bakacağını bilir. Gönderilmezse varsayılan oda (dar taraf: kilitli).
+    client_id: str = Field(default="default", max_length=_MAX_CLIENT_ID_LENGTH)
 
 
 class MaigretScanPayload(BaseModel):
     username: str
     limit: Optional[int] = None
     timeout: Optional[int] = None
+    # [KASA MANDALI] Kasa ODA bazlıdır; uç artık hangi odanın mandalına
+    # bakacağını bilir. Gönderilmezse varsayılan oda (dar taraf: kilitli).
+    client_id: str = Field(default="default", max_length=_MAX_CLIENT_ID_LENGTH)
 
 
 @app.post("/api/experimental/maigret/scan")
@@ -3314,6 +3456,10 @@ async def maigret_scan(payload: MaigretScanPayload):
     Kapı: ENABLE_MAIGRET=true (varsayılan kapalı). Dürüst sonuç: kayıt
     çıkmazsa `available:false` + makine-okunur sebep; site/hesap uydurulmaz.
     """
+    # [KASA MANDALI] Bu uç 3300+ dış siteye istek atar: kasa kilitliyse motor
+    # HİÇ ÇAĞRILMAZ, kapıda 423 Locked döner (Tüzük Md.4).
+    if (locked := _require_vault_open(payload.client_id)) is not None:
+        return locked
     from agent_core.services.maigret_scanner import scan_username
     result = await scan_username(
         payload.username, limit=payload.limit, site_timeout=payload.timeout
@@ -3325,6 +3471,9 @@ class HoleheScanPayload(BaseModel):
     email: str
     limit: Optional[int] = None
     timeout: Optional[int] = None
+    # [KASA MANDALI] Kasa ODA bazlıdır; uç artık hangi odanın mandalına
+    # bakacağını bilir. Gönderilmezse varsayılan oda (dar taraf: kilitli).
+    client_id: str = Field(default="default", max_length=_MAX_CLIENT_ID_LENGTH)
 
 
 @app.post("/api/experimental/holehe/scan")
@@ -3336,6 +3485,9 @@ async def holehe_scan(payload: HoleheScanPayload):
     holehe'nin istisnaları rateLimit olarak maskelemesi hata sayılır —
     kapalı ağda asla "kayıtlı değil" iddia edilmez.
     """
+    # [KASA MANDALI] Dış site taraması: kasa kilitliyse kapıda 423 Locked.
+    if (locked := _require_vault_open(payload.client_id)) is not None:
+        return locked
     from agent_core.services.holehe_scanner import scan_email
     result = await scan_email(
         payload.email, limit=payload.limit, site_timeout=payload.timeout
@@ -3345,6 +3497,9 @@ async def holehe_scan(payload: HoleheScanPayload):
 
 class CrawlFetchPayload(BaseModel):
     url: str
+    # [KASA MANDALI] Kasa ODA bazlıdır; uç artık hangi odanın mandalına
+    # bakacağını bilir. Gönderilmezse varsayılan oda (dar taraf: kilitli).
+    client_id: str = Field(default="default", max_length=_MAX_CLIENT_ID_LENGTH)
 
 
 @app.post("/api/experimental/crawl/fetch")
@@ -3355,6 +3510,9 @@ async def crawl_fetch(payload: CrawlFetchPayload):
     binary'si gerektirmez). Dürüst sonuç: içerik çekilemezse `available:false`
     + makine-okunur sebep; ASLA uydurma içerik döner. SSRF guard'lı.
     """
+    # [KASA MANDALI] Public-web sayfası ÇEKİLİR (dış ağ): kasa kilitliyse 423.
+    if (locked := _require_vault_open(payload.client_id)) is not None:
+        return locked
     from agent_core.services.crawl_enricher import fetch_readable
     return (await fetch_readable(payload.url)).model_dump()
 
@@ -3378,6 +3536,9 @@ async def socid_extract(payload: SocidExtractPayload):
     Dürüst sonuç sözleşmesi: kayıt çıkmazsa `available:false` + makine-okunur
     sebep döner; alan uydurulmaz. SSRF guard'lı (private/loopback engelli).
     """
+    # [KASA MANDALI] Profil URL'si DIŞARIDAN çekilir: kasa kilitliyse 423.
+    if (locked := _require_vault_open(payload.client_id)) is not None:
+        return locked
     from agent_core.services.socid_enricher import extract_profile
     record = await extract_profile(payload.url)
     return record.model_dump()
@@ -3728,8 +3889,19 @@ def _browser_error_response(e: Exception):
     from agent_core.services.browser_session import (
         BrowserNotOpenError,
         BrowserUnavailableError,
+        VaultLockedError,
     )
 
+    # [KASA MANDALI] Tarayıcı katmanı kasayı kilitli görürse 423 Locked.
+    # API kapısındaki denetim atlanmış olsa bile burası ikinci sürgüdür.
+    if isinstance(e, VaultLockedError):
+        return JSONResponse(
+            {
+                "error": {"code": "VAULT_LOCKED", "message": str(e)[:200]},
+                "vault_locked": True,
+            },
+            status_code=423,
+        )
     if isinstance(e, BrowserUnavailableError):
         return JSONResponse(
             {"error": {"code": "BROWSER_UNAVAILABLE", "message": str(e)[:200]}},
@@ -3752,6 +3924,9 @@ def _browser_error_response(e: Exception):
 
 @app.post("/api/browser/open")
 async def api_browser_open(req: BrowserOpenPayload):
+    # [KASA MANDALI] Kasa kilitliyse tarayıcı AÇILAMAZ (dış dünyaya kanal).
+    if (locked := _require_vault_open(req.client_id)) is not None:
+        return locked
     room = get_room(req.client_id)
     try:
         result = await _room_browser(room).open(req.url)
@@ -3763,6 +3938,9 @@ async def api_browser_open(req: BrowserOpenPayload):
 
 @app.get("/api/browser/shot")
 async def api_browser_shot(client_id: str):
+    # [KASA MANDALI] Ekran görüntüsü hedef siteden veri çeker -> dış hareket.
+    if (locked := _require_vault_open(client_id)) is not None:
+        return locked
     room = get_room(client_id)
     try:
         png = await _room_browser(room).shot()
@@ -3773,6 +3951,10 @@ async def api_browser_shot(client_id: str):
 
 @app.get("/api/browser/state")
 async def api_browser_state(client_id: str):
+    # [KASA MANDALI] Durum okuması da kapıdan geçer: kilitliyken "tarayıcı
+    # hazır" görüntüsü vermek kilidin etrafından dolaşmaktır.
+    if (locked := _require_vault_open(client_id)) is not None:
+        return locked
     room = get_room(client_id)
     st = await _room_browser(room).state()
     st["saved_session"] = "ig_sessionid" in room.get("vault", {})
@@ -3781,6 +3963,8 @@ async def api_browser_state(client_id: str):
 
 @app.post("/api/browser/click")
 async def api_browser_click(req: BrowserClickPayload):
+    if (locked := _require_vault_open(req.client_id)) is not None:
+        return locked
     room = get_room(req.client_id)
     try:
         return await _room_browser(room).click(req.x, req.y)
@@ -3790,6 +3974,8 @@ async def api_browser_click(req: BrowserClickPayload):
 
 @app.post("/api/browser/type")
 async def api_browser_type(req: BrowserTypePayload):
+    if (locked := _require_vault_open(req.client_id)) is not None:
+        return locked
     room = get_room(req.client_id)
     try:
         # NOT: metin yalnızca tarayıcıya yazılır; loga/hafızaya alınmaz.
@@ -3800,6 +3986,8 @@ async def api_browser_type(req: BrowserTypePayload):
 
 @app.post("/api/browser/press")
 async def api_browser_press(req: BrowserPressPayload):
+    if (locked := _require_vault_open(req.client_id)) is not None:
+        return locked
     room = get_room(req.client_id)
     try:
         return await _room_browser(room).press(req.key)
@@ -3809,6 +3997,8 @@ async def api_browser_press(req: BrowserPressPayload):
 
 @app.post("/api/browser/back")
 async def api_browser_back(req: BrowserClientPayload):
+    if (locked := _require_vault_open(req.client_id)) is not None:
+        return locked
     room = get_room(req.client_id)
     try:
         return await _room_browser(room).back()
@@ -3818,6 +4008,8 @@ async def api_browser_back(req: BrowserClientPayload):
 
 @app.post("/api/browser/save")
 async def api_browser_save(req: BrowserClientPayload):
+    if (locked := _require_vault_open(req.client_id)) is not None:
+        return locked
     room = get_room(req.client_id)
     try:
         sessionid = await _room_browser(room).session_cookie()
@@ -3836,12 +4028,21 @@ async def api_browser_save(req: BrowserClientPayload):
 
 @app.post("/api/browser/close")
 async def api_browser_close(req: BrowserClientPayload):
+    # [KASA MANDALI — BİLİNÇLİ MUAFİYET] `close` dışarıya ÇIKMAZ; açık
+    # Chromium kanalını KAPATIR. Kasa kilitliyken reddedilirse arkada canlı
+    # tarayıcı süreci sızar (zombi) — yani muafiyet kilidi zayıflatmaz,
+    # güçlendirir. Bkz. VAULT_EGRESS_EXEMPT_ROUTES.
     room = get_room(req.client_id)
     return await _room_browser(room).close()
 
 
 @app.post("/api/scraper/authorize-alternative")
 async def authorize_scraper_alternative(req: AlternativeAuthorizationPayload):
+    # [KASA MANDALI] `public_web_search` yetkilendirmesi dış arama tetikler;
+    # kasa kilitliyse yetki VERİLEMEZ (yetki kaydı bile kilidin arkasından
+    # dolanmak olurdu).
+    if (locked := _require_vault_open(req.client_id)) is not None:
+        return locked
     room = get_room(req.client_id)
     pending = room.get("pending_alternative_authorization")
     if not pending:
@@ -3932,6 +4133,11 @@ class InterpreterPayload(BaseModel):
 @app.post("/api/experimental/interpreter/execute")
 async def interpreter_execute(req: InterpreterPayload):
     """Open Interpreter ile otonom kod icra eder"""
+    # [KASA MANDALI] Keyfi kod icrası dış ağa sınırsız çıkış demektir; kasa
+    # kilitliyse HİÇ BAŞLAMAZ (env kapısından bile önce: kasa istisnasızdır,
+    # bkz. PolicyKernel._GATE_ORDER — kasa, ENABLE_* bayraklarından öncedir).
+    if (locked := _require_vault_open(req.client_id)) is not None:
+        return locked
     if os.getenv("ENABLE_INTERPRETER", "false").lower() != "true":
         raise HTTPException(status_code=403, detail="Interpreter endpoint is disabled by default for security.")
         

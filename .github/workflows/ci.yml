@@ -142,10 +142,31 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust_core
+      # [SESSİZ-ÇÖKME-YOK] Actions logları Azure blob storage'da tutulur ve her
+      # ortamdan okunamaz; "Process completed with exit code 101" dışında hiçbir
+      # şey görünmediğinde hata fiilen HALI ALTINA süpürülmüş olur. Bu yüzden
+      # derleyici/test hataları ayrıca workflow ANNOTATION'ı olarak yüzeye
+      # çıkarılır — annotation'lar api.github.com üzerinden okunabilir.
       - name: Cargo check (core, no tauri feature)
-        run: cargo check --all-targets
+        run: |
+          set +e
+          cargo check --all-targets --message-format=short 2>&1 | tee /tmp/cargo-check.log
+          code=${PIPESTATUS[0]}
+          # TEK annotation'da ham log kuyruğu: Actions annotation sayısı adım
+          # başına sınırlı, ama annotation METNİ api.github.com'dan okunabilir.
+          blob=$(grep -nE 'error|warning: unused|-->|panicked' /tmp/cargo-check.log \
+                   | head -60 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          echo "::error title=cargo-check-failed::${blob}"
+          exit $code
       - name: Cargo test
-        run: cargo test --locked
+        run: |
+          set +e
+          cargo test --locked 2>&1 | tee /tmp/cargo-test.log
+          code=${PIPESTATUS[0]}
+          blob=$(grep -nE 'panicked at|^error|assertion|failures:|FAILED' /tmp/cargo-test.log \
+                   | head -60 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          echo "::error title=cargo-test-failed::${blob}"
+          exit $code
 
   android:
     runs-on: ubuntu-latest

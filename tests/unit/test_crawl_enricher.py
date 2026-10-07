@@ -307,7 +307,7 @@ class TestQuoteGuardCorpus:
 
 
 class TestEndpoint:
-    def test_endpoint_disabled_by_default(self, monkeypatch):
+    def test_endpoint_disabled_by_default(self, monkeypatch, vault_open):
         from fastapi.testclient import TestClient
         from backend.api import app
 
@@ -319,7 +319,7 @@ class TestEndpoint:
         assert r.json()["reason"] == "disabled"
         assert r.json()["provider"] == "crawl4ai"
 
-    def test_endpoint_ssrf_blocked(self, monkeypatch):
+    def test_endpoint_ssrf_blocked(self, monkeypatch, vault_open):
         from fastapi.testclient import TestClient
         from backend.api import app
 
