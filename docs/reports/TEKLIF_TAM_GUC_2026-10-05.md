@@ -287,4 +287,14 @@ hedef özel ağa çözülürse tarama reddedilir (SSRF hijyeni). Her satır kayn
 URL'siyle kanıt olur; kişi avı değildir. Yüzeyler: `GET /api/company/status` ·
 `POST /api/company/scan` · kokpitte KURUM pili; MCP araçları ve Skills paketi
 kendiliğinden büyüdü (19 yetenek). Kurulum: `docs/KURUM_HEDEFI.md`.
-Kalan: **D5 → D3**.
+**D5 TAMAM (2026-10-07) — rapor fabrikası: kanıt bağlantılı, mühürlü paket.**
+`services/report_factory.py` + üç RENDERER yeteneği: PDF (reportlab), diyagram
+(Pillow ile deterministik PNG) ve video özet (kareler Pillow, kodlama ffmpeg);
+markdown + `manifest.json` her koşulda yazılır. Rapor UYDURULMAZ: yalnız kanonik
+kanıt çizelgesinden beslenir (strateji çizelge dışı, bozuk satır reddedilir ve
+sayılır); her eserin sha256'sı ve kanıt kimlikleri manifestte mühürlenir —
+manifestin gövdesi de hash'lenir (bütünlük mührü; kriptografik imza değildir,
+manifest bunu açıkça yazar). Eksik bağımlılıkta format dürüstçe kapanır
+(`dependency_missing:...`), yerine uydurma çıktı konmaz. Yüzeyler:
+`GET /api/report/status` · `POST /api/report/build`; kurulum
+`docs/RAPOR_FABRIKASI.md`. Kalan: **D3**.

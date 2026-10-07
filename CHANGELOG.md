@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased — 2026-10-07 — FAZ D · D5: rapor fabrikası (PDF · diyagram · video + mühür)
+
+- **D5 · RAPOR FABRİKASI TAMAM.** `services/report_factory.py` + üç RENDERER
+  yeteneği: `renderer.report.pdf` (reportlab), `renderer.report.diagram`
+  (Pillow ile deterministik PNG; tür = renk), `renderer.report.video`
+  (Pillow kareleri → ffmpeg). Markdown + `manifest.json` her koşulda üretilir.
+- **Rapor UYDURULMAZ:** paket yalnız kanonik kanıt zaman çizelgesinden beslenir
+  (`evidence_timeline`): sıra, epistemik tür ve "not independently verified"
+  notu aynen taşınır; `strategy` çizelgeye girmez, bozuk satırlar reddedilir ve
+  `rejected_item_count` olarak rapora yazılır.
+- **Hash'li mühür + kanıt bağlantısı:** her eserin `sha256`'sı, manifest'te
+  eser listesi ve `evidence_ids`; manifestin kendi gövdesi de hash'lenir
+  (`manifest_sha256`) — doğrulaması testlerde kilitli. Manifest açıkça yazar:
+  bu bir bütünlük mührüdür, kriptografik imza DEĞİLDİR.
+- **Eksik format dürüst:** reportlab/Pillow/ffmpeg yoksa ilgili format
+  `available=False` + makine-okunur sebep alır; yerine uydurma dosya konmaz,
+  markdown + manifest teslim edilir ve yetenek bunu kanıt satırıyla söyler.
+- **Yüzeyler:** `GET /api/report/status` · `POST /api/report/build`
+  (kasa + kapı + `report` hız kovası). `reportlab>=4.0` artık
+  `requirements.txt`te AÇIKÇA beyan (lock'ta zaten vardı). Kurulum:
+  `docs/RAPOR_FABRIKASI.md`. MCP araçları ve Skills paketi kendiliğinden
+  büyüdü (22 yetenek).
+- **Test:** +20 (servis 10 · yetenek+uç 10). Tam koşu: **2017P/0F**.
+
 ## Unreleased — 2026-10-07 — FAZ D · D6: kurum hedefi (theHarvester + açık SEO + kişi künyesi)
 
 - **D6 · KURUM HEDEFİ TAMAM.** Üç yetenek omurgada:

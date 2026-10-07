@@ -164,6 +164,11 @@ def bootstrap(
             CompanySeoCapability,
         )
         from agent_core.capabilities.adapters_jury import LocalJuryCapability
+        from agent_core.capabilities.adapters_report_factory import (
+            ReportDiagramCapability,
+            ReportPdfCapability,
+            ReportVideoCapability,
+        )
         from agent_core.capabilities.adapters_report import ReportScriptCapability
         from agent_core.capabilities.adapters_voice import (
             LocalSTTCapability,
@@ -206,6 +211,10 @@ def bootstrap(
             CompanyHarvesterCapability(),
             CompanySeoCapability(),
             CompanyPeopleCapability(),
+            # --- rapor fabrikası (FAZ D · D5): pdf · diyagram · video + mühür
+            ReportPdfCapability(),
+            ReportDiagramCapability(),
+            ReportVideoCapability(),
         )
     for cap in capabilities:
         if reg.has(cap.id):

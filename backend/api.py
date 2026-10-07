@@ -495,6 +495,9 @@ RATE_LIMITS = {
     # [FAZ C · C2] Seslendirme: yerel motor da olsa sınırsız istek kabul
     # edilmez (disk + CPU). Ölçülen ihtiyaç: tur başına birkaç cümle.
     "speech": (30, 60),
+    # [FAZ D · D5] Rapor fabrikası: PDF/diyagram/video üretimi diski ve CPU'yu
+    # kullanır; sınırsız bırakılmaz.
+    "report": (10, 60),
     # [FAZ D · D6] Kurum hedefi: theHarvester koşusu ağır (arama motoru
     # zinciri); SEO/kişi modu birkaç HTTP isteği. Sınırsız bırakılmaz.
     "company": (8, 60),
@@ -4678,6 +4681,124 @@ async def api_jury_vote(req: JuryVotePayload):
             f"JÜRİ: konsensüs yok — {payload['rule'] or payload['reason']} (karar iddia edilmedi)",
         )
     return payload
+
+
+class ReportBuildPayload(BaseModel):
+    """[FAZ D · D5] Rapor paketi: kanıt satırları + istenen formatlar."""
+
+    title: str = Field(min_length=1, max_length=200)
+    client_id: str = Field(default="default", max_length=128)
+    subject: str = Field(default="", max_length=200)
+    evidence: list[dict] = Field(default_factory=list, max_length=200)
+    formats: list[str] = Field(default_factory=lambda: ["markdown", "pdf", "diagram"])
+
+
+@app.get("/api/report/status")
+async def api_report_status():
+    """[FAZ D · D5] Rapor fabrikası: hangi format GERÇEKTEN üretilebilir?
+
+    reportlab/Pillow/ffmpeg yoksa "hazır" denmez; sebep makine-okunurdur.
+    """
+    from agent_core.services import report_factory
+
+    formats = report_factory.availability()
+    return {
+        "gate": report_factory.GATE,
+        "report_dir": str(report_factory.report_dir()),
+        "formats": [
+            {"format": name, "available": ok, "reason": reason}
+            for name, (ok, reason) in sorted(formats.items())
+        ],
+        "any_available": any(ok for ok, _r in formats.values()),
+        "manifest_schema": report_factory.MANIFEST_SCHEMA,
+        "seal": "sha256 (bütünlük mührü; kriptografik imza değil)",
+    }
+
+
+@app.post("/api/report/build")
+async def api_report_build(req: ReportBuildPayload):
+    """[FAZ D · D5] Kanıt satırlarından rapor paketi üretir (hash'li, bağlantılı).
+
+    Rapor UYDURULMAZ: girdi kanonik kanıt satırlarıdır; reddedilen satırlar
+    sayılır ve raporda görünür. Format üretilemezse paket yine teslim edilir
+    (markdown + manifest), eksik format dürüst sebeple işaretlenir.
+    """
+    from agent_core.capabilities.base import CapabilityContext
+    from agent_core.capabilities.policy import PolicyState
+    from agent_core.capabilities.registry import bootstrap
+    from agent_core.capabilities.runner import CapabilityRunner
+    from agent_core.services import report_factory
+
+    if not rate_limit(f"report:{req.client_id}", "report"):
+        return JSONResponse(
+            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla rapor isteği"}},
+            status_code=429,
+        )
+
+    formats = [str(f).strip().lower() for f in (req.formats or [])]
+    unknown = [f for f in formats if f not in ("markdown", "pdf", "diagram", "video")]
+    if unknown:
+        return JSONResponse(
+            {"error": {"code": "UNKNOWN_FORMAT", "message": f"Bilinmeyen format: {', '.join(unknown)}"}},
+            status_code=400,
+        )
+
+    wanted = [f for f in formats if f != "markdown"]  # markdown zaten her pakette
+    cap_by_format = {
+        "pdf": "renderer.report.pdf",
+        "diagram": "renderer.report.diagram",
+        "video": "renderer.report.video",
+    }
+    runner = CapabilityRunner(registry=bootstrap())
+    state = PolicyState(
+        enabled_flags={report_factory.GATE: _flag_env(report_factory.GATE)},
+        vault_locked=not _check_vault_interlock(req.client_id),
+        rate_ok=True,
+    )
+
+    results: dict[str, Any] = {}
+    for fmt in wanted:
+        result = await runner.run(
+            cap_by_format[fmt],
+            CapabilityContext(
+                subject=req.title,
+                params={"title": req.title, "subject": req.subject, "evidence": req.evidence},
+            ),
+            state=state,
+        )
+        results[fmt] = {
+            "capability_id": cap_by_format[fmt],
+            "available": bool(result.available),
+            "denied_by": result.denied_by,
+            "reason": result.unavailable_reason,
+            "artifacts": result.notes.get("artifacts", []),
+            "manifest_path": result.notes.get("manifest_path", ""),
+            "manifest_sha256": result.notes.get("manifest_sha256", ""),
+            "evidence_ids": result.notes.get("evidence_ids", []),
+            "rejected_item_count": result.notes.get("rejected_item_count", 0),
+            "excluded_strategy_count": result.notes.get("excluded_strategy_count", 0),
+            "evidence": [
+                {
+                    "evidence_id": item.evidence_id,
+                    "content": item.content[:300],
+                    "provenance_refs": list(item.provenance_refs)[:5],
+                }
+                for item in result.items[:10]
+            ],
+        }
+        if result.denied_by:
+            broadcast_log(req.client_id, "WARNING", f"RAPOR: {fmt} engellendi — kapı:{result.denied_by}")
+        elif not result.available:
+            broadcast_log(req.client_id, "WARNING", f"RAPOR: {fmt} üretilemedi — {result.unavailable_reason}")
+        else:
+            broadcast_log(req.client_id, "INFO", f"RAPOR: {fmt} üretildi ({req.title[:40]})")
+
+    return {
+        "title": req.title,
+        "subject": req.subject,
+        "gate": report_factory.GATE,
+        "formats": results or {"note": "yalnız markdown + manifest istendi"},
+    }
 
 
 class CompanyScanPayload(BaseModel):

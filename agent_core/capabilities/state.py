@@ -43,6 +43,8 @@ MANAGED_GATE_FLAGS: tuple[str, ...] = (
     "ENABLE_LOCAL_JURY",
     # [FAZ D · D6] Kurum hedefi: theHarvester/ağ koşusu; varsayılan KAPALI.
     "ENABLE_COMPANY_TARGETING",
+    # [FAZ D · D5] Rapor fabrikası: kanıt dışa aktarımı; varsayılan KAPALI.
+    "ENABLE_REPORT_FACTORY",
 )
 
 _TRUTHY = frozenset({"1", "true", "yes", "on", "enabled"})

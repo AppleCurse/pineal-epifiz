@@ -48,6 +48,10 @@ invisible-playwright>=0.7.4
 # Kurulum TEK İŞLEMDE kalır (pillow saf wheel); yoksa motor dürüst
 # None + not döner (çökmez, uydurmaz).
 pillow>=10.0.0
+# [FAZ D · D5] Rapor fabrikası PDF çıktısı. requirements.lock'ta zaten var
+# (4.5.1); burada AÇIKÇA beyan edilir ki "geçişli bağımlılık" sessizce
+# kaybolmasın. Yoksa yetenek dürüstçe dependency_missing:reportlab der.
+reportlab>=4.0
 # v5.0 - Agent Rack canlı köprüsü: Redis Pub/Sub
 redis>=5.0.0
 hiredis>=2.0.0
