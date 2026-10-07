@@ -108,6 +108,15 @@ PINEAL-HERETIC v5.1, operatöre hem derin sinematik sezgi hem de cerrahi şeffaf
 | `POST /api/initiate` | Ana profil görevi; aynı `run_mission` akışını başlatır. |
 | `POST /api/aspasia/chat` | Kullanıcıya görev/kanıt durumu yanıtı. |
 | `POST /api/aspasia/command` | Sınırlı doğal dil intent'i; desteklenen açık Instagram URL'si doğrulanır ve aynı görev akışına dispatch edilir. |
+| `GET /api/media/status` | Medya hattı: yt-dlp/ffmpeg/opencv ve transkript motorunun GERÇEK durumu. |
+| `POST /api/media/analyze` | Paylaşılan medyayı indirir, kare kare ölçer, yazıya döker, görsel benzerlik arar. Ölçülmeyen iddia edilmez. |
+| `GET /api/report/status` | Hangi rapor formatı GERÇEKTEN üretilebilir (reportlab/Pillow/ffmpeg sebepleriyle). |
+| `POST /api/report/build` | Kanıt satırlarından PDF/diyagram/video paketi üretir; manifest eser hash'lerini ve kanıt kimliklerini taşır. |
+| `GET /api/company/status` | Kurum hedefi modlarının gerçek durumu (theHarvester · açık SEO · kişi künyesi). Kapı kapalıysa "hazır" denmez. |
+| `POST /api/company/scan` | Alan adını omurgadan tarar; mod başına kanıt satırları kaynak URL ile döner. Uydurma SEO puanı yok. |
+| `GET /api/jury/status` | Yerel jürinin durumu: kaç BAĞIMSIZ koltuk, uç yerel mi, yeter sayı. Model yoksa `available: false`. |
+| `POST /api/jury/vote` | Aynı kanıtı birden çok yerel modele bağımsız oylatır; kural (oybirliği/çoğunluk) ve koltuk dökümü döner. Konsensüs yoksa karar iddia edilmez. |
+| `GET /api/mcp/status` | MCP ihracının durumu: kaç yetenek araç olarak açık, hangi protokol sürümleri, kasa mandalı. Yetenek KOŞTURMAZ. |
 | `POST /api/experimental/shadow/analyze` | Deneysel Shadow analiz endpoint'i; normal UI akışından ayrı. |
 | `POST /api/experimental/shadow/generate` | Deneysel Shadow taslak üretim endpoint'i; normal UI akışından ayrı. |
 | `POST /api/experimental/chat/respond` | Deneysel, oturumlu DialogueManager yanıtı; normal UI çağırmaz. |

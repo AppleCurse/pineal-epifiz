@@ -58,6 +58,24 @@ def _isolate_response_cache(tmp_path, monkeypatch):
     yield
 
 
+@pytest.fixture
+def vault_open(monkeypatch):
+    """KASA MANDALINI AÇAR — test ÖN KOŞULU, otomatik DEĞİL.
+
+    [KASA MANDALI] `backend/api.py::_check_vault_interlock` dış dünyaya açılan
+    her ucun (tarayıcı, OSINT taramaları, web kazıma, public-web araması)
+    kapısındaki TEK kilittir. Bu fixture BİLİNÇLİ olarak `autouse` değildir:
+    kilidin KAPALI hâlini ölçen testler (tests/unit/test_vault_egress_lock.py)
+    vardır ve otomatik açma onları anlamsızlaştırırdı — yani kasa kilidi hiç
+    test edilmemiş olurdu. Kullanan her test "kasayı ölçmüyorum, kasa açıkken
+    kendi konumu ölçüyorum" demiş olur.
+    """
+    from backend import api
+
+    monkeypatch.setattr(api, "_check_vault_interlock", lambda _cid: True)
+    return True
+
+
 @pytest.fixture(autouse=True)
 def _isolate_threshold_calibration(tmp_path, monkeypatch):
     """[FAZ B · B5] Eşik kalibrasyon ledger'ı testler arasında SIZMASIN.

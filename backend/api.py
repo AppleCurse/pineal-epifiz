@@ -17,6 +17,8 @@ import asyncio
 import io
 import json
 import logging
+import importlib
+import shutil
 import os
 import hashlib
 import time
@@ -495,6 +497,18 @@ RATE_LIMITS = {
     # [FAZ C · C2] Seslendirme: yerel motor da olsa sınırsız istek kabul
     # edilmez (disk + CPU). Ölçülen ihtiyaç: tur başına birkaç cümle.
     "speech": (30, 60),
+    # [FAZ D · D3] Medya hattı: indirme + kare kare çözümleme ağır; sınırsız
+    # bırakılmaz (disk + CPU + ağ).
+    "media": (6, 60),
+    # [FAZ D · D5] Rapor fabrikası: PDF/diyagram/video üretimi diski ve CPU'yu
+    # kullanır; sınırsız bırakılmaz.
+    "report": (10, 60),
+    # [FAZ D · D6] Kurum hedefi: theHarvester koşusu ağır (arama motoru
+    # zinciri); SEO/kişi modu birkaç HTTP isteği. Sınırsız bırakılmaz.
+    "company": (8, 60),
+    # [FAZ D · D2] Yerel jüri: her oylama KADAR yerel model çağrısı yapar
+    # (koltuk sayısı × istek). Sınırsız bırakmak yerel GPU'yu kilitler.
+    "jury": (6, 60),
     # [FAZ D · D4] Dil tespiti/çeviri: tespit saf hesaptır ama çeviri yerel
     # motor çalıştırır; ikisi de sınırsız istek kabul etmez.
     "language": (60, 60),
@@ -1074,6 +1088,13 @@ def get_room(client_id: str) -> dict:
             emit_event_callback=lambda evt: sync_event(client_id, evt),
             snapshot_callback=lambda s: sync_snapshot(client_id, s)
         )
+        # [KASA MANDALI] Arama motoru kasa gerçeğini CANLI okur (anlık görüntü
+        # bayatlamaz): kasa kilitlendiği anda Tavily/SerpAPI/Exa/DuckDuckGo
+        # dâhil HİÇBİR dış arama isteği oluşturulmaz. Kararın tek sahibi
+        # `_check_vault_interlock`'tur; motor kasa durumunu kendisi uydurmaz.
+        executor.search_engine.set_vault_state(
+            lambda: _check_vault_interlock(client_id)
+        )
         # Otomatik Kasa (.pineal_vault.json / .env) yüklemesi
         vault = _load_vault()
 
@@ -1172,6 +1193,9 @@ def get_room(client_id: str) -> dict:
         executor.llm_gateway.use_local = use_local
 
         app.state.rooms[client_id] = {
+            # [KASA MANDALI] Oda kendi kimliğini taşır: tarayıcı oturumu ve
+            # arama motoru mandalı bu kimlikle interlock'a bağlanır.
+            "client_id": client_id,
             "executor": executor,
             "vault": vault,
             "websockets": set(),
@@ -1220,11 +1244,20 @@ def get_vault(client_id: str) -> dict:
 
 
 def _room_browser(room: dict) -> BrowserSession:
-    """Oda başına tek canlı tarayıcı (lazy)."""
+    """Oda başına tek canlı tarayıcı (lazy).
+
+    [KASA MANDALI] Oturuma CANLI kasa mandalı bağlanır: operatör kasayı
+    kilitlediği anda AÇIK tarayıcı da bir daha dışarı çıkamaz (yalnızca
+    `close()` çalışır — o dış hareket değil, kanalı kapatma eylemidir).
+    """
     sess = room.get("browser")
+    client_id = room.get("client_id", "default")
+    guard = lambda: _check_vault_interlock(client_id)  # noqa: E731 — kapanış, kısa ömürlü
     if sess is None:
-        sess = BrowserSession()
+        sess = BrowserSession(vault_guard=guard)
         room["browser"] = sess
+    else:
+        sess.set_vault_guard(guard)
     return sess
 
 
@@ -2486,13 +2519,23 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
         # mandalının tek sahibi olan interlock'tan okur (kasa kapalıysa hiçbir
         # dış yetenek koşamaz). İkinci bir "env'den kasa okuma" katmanı yok.
         payload["policy"] = {"vault_locked": not _check_vault_interlock(client_id)}
-        # Arama motoru da aynı gerçeği görür: kasa kapalıyken omurga yetenekleri
-        # (SearXNG dâhil) koşamaz. Ücretsiz DuckDuckGo yolu bugünkü davranışını
-        # korur; kararı bu katman uydurmaz, interlock'tan okur.
+        # Arama motoru da aynı gerçeği görür. [KASA MANDALI] Eskiden burada
+        # "ücretsiz DuckDuckGo yolu bugünkü davranışını korur" yazıyordu — yani
+        # kasa kilitli olsa bile DuckDuckGo'ya istek ÇIKIYORDU. Bu delik
+        # kapatıldı: motor artık `search()` içinde, HTTP istemcisi
+        # OLUŞTURULMADAN önce mandala bakar ve kasa kilitliyse Tavily/SerpAPI/
+        # Exa/DuckDuckGo/SearXNG ayrımı yapmadan hepsini reddeder
+        # (status=VAULT_LOCKED, available=False). Canlı mandal oda kurulurken
+        # bağlandığı için bu anlık görüntü yalnız `rate_ok` gibi ek alanları taşır.
         try:
             executor.search_engine.set_policy(payload["policy"])
-        except Exception:  # telemetri/arama asıl görevi düşürmesin
-            logger.debug("search engine policy aktarılamadı")
+        except Exception:
+            # Sessiz yutma YOK: politika aktarılamadıysa arama motoru dar
+            # tarafa (kilitli) düşer ve bunu operatörün görmesi gerekir.
+            logger.error(
+                "ARAMA MOTORU POLİTİKASI AKTARILAMADI — dar taraf: kasa KİLİTLİ "
+                "(dış arama reddedilecek)", exc_info=True,
+            )
         max_attempts = _bounded_env_int("PINEAL_TASK_MAX_ATTEMPTS", 3, 1, 3)
         task_timeout = _bounded_env_int("PINEAL_TASK_TIMEOUT_SECONDS", 300, 1, 1800)
         for attempt in range(1, max_attempts + 1):
@@ -2748,18 +2791,12 @@ async def api_initiate(req: InitiatePayload, request: Request):
             {"error": {"code": "RATE_LIMITED", "message": "Çok fazla görev başlatma isteği; bir dakika içinde tekrar deneyin."}},
             status_code=429,
         )
-    # VAULT INTERLOCK: anahtar çevrilmeden dış dünyaya OSINT/Scraper isteği yok
+    # VAULT INTERLOCK: anahtar çevrilmeden dış dünyaya OSINT/Scraper isteği yok.
+    # [KASA MANDALI] Artık elle yazılmış ikinci bir kopya değil, tüm
+    # dış-çıkış uçlarının paylaştığı TEK kapı (`_require_vault_open`).
     if req.url and req.url.strip():
-        if not _check_vault_interlock(req.client_id):
-            return JSONResponse(
-                {
-                    "error": {
-                        "code": "VAULT_LOCKED",
-                        "message": "VAULT KİLİTLİ: Operatör anahtarı çevirmeden dış dünyaya hiçbir OSINT/Scraper isteği çıkamaz. Önce /api/vault ile anahtar girin veya Tauri kasasını açın."
-                    }
-                },
-                status_code=423,
-            )
+        if (locked := _require_vault_open(req.client_id)) is not None:
+            return locked
     room = get_room(req.client_id)
     if _active_tasks_full(room):
         return JSONResponse(
@@ -2911,7 +2948,10 @@ async def api_vault(req: VaultPayload):
                 {"vault_locked": not _check_vault_interlock(req.client_id)}
             )
         except Exception:
-            logger.debug("search engine policy aktarılamadı")
+            logger.error(
+                "ARAMA MOTORU POLİTİKASI AKTARILAMADI (/api/vault) — dar taraf: "
+                "kasa KİLİTLİ", exc_info=True,
+            )
             vault["search_keys"] = True
             broadcast_log(req.client_id, "INFO", "KASA: Arama Motoru anahtarları mühürlendi.")
         
@@ -3262,7 +3302,117 @@ def _check_vault_interlock(client_id: str) -> bool:
         # Dosya kasası: VARLIK değil, GERÇEK anahtar malzemesi aranır.
         return _vault_bears_key_material(_load_vault())
     except Exception:
+        # Fail-closed (dar taraf: KİLİTLİ) — ama arıza YUTULMAZ: mandalın
+        # neden okunamadığı logda görünür, yoksa "kasa kilitli" ile "kasa
+        # kontrolü çöktü" ayırt edilemez.
+        logger.error(
+            "KASA MANDALI DEĞERLENDİRİLEMEDİ — dar taraf: KİLİTLİ (client_id=%s)",
+            client_id, exc_info=True,
+        )
         return False
+
+
+# ─── KASA MANDALI (Tüzük Md.4) — dış dünyaya açılan HER kapının tek kilidi ───
+#
+# Kural: kasa kilitliyse sistemde TEK BİR dış ağ veya tarayıcı hareketi
+# olamaz. Eskiden bu kural yalnızca `/api/initiate` içinde, elle yazılmış bir
+# `if` bloğu olarak yaşıyordu; tarayıcı uçları (`/api/browser/*`), deneysel
+# OSINT uçları (maigret/holehe/crawl4ai/socid) ve scraper yetkilendirmesi
+# kasanın kilidine HİÇ BAKMIYORDU. Yani "VAULT KİLİTLİ - dış dünya erişimi
+# yok" mesajı ekranda dururken arkada tarayıcı açılabiliyor, profil
+# taranabiliyor ve public-web araması çıkıyordu. Bu bir kilitti değil,
+# dekorasyondu.
+#
+# Şimdi: tek yardımcı (`_require_vault_open`), tek envanter
+# (`VAULT_EGRESS_ROUTES`) ve route tablosuna karşı koşan bir makine denetimi
+# (tests/unit/test_vault_egress_lock.py). Yeni bir dış-çıkış ucu eklenip
+# buraya yazılmamak mümkün değil — test kırmızı yanar.
+
+VAULT_LOCKED_MESSAGE = (
+    "VAULT KİLİTLİ: Operatör anahtarı çevrilmeden dış dünyaya hiçbir istek "
+    "(OSINT, tarama, web kazıma, public-web araması, tarayıcı) çıkamaz. "
+    "Önce /api/vault ile anahtar girin veya Tauri kasasını açın."
+)
+
+#: Kasa kilitliyken SERT reddedilen (HTTP 423 Locked) dış-çıkış uçları.
+VAULT_EGRESS_ROUTES: frozenset = frozenset({
+    "/api/initiate",
+    "/api/browser/open",
+    "/api/browser/shot",
+    "/api/browser/state",
+    "/api/browser/click",
+    "/api/browser/type",
+    "/api/browser/press",
+    "/api/browser/back",
+    "/api/browser/save",
+    "/api/experimental/maigret/scan",
+    "/api/experimental/holehe/scan",
+    "/api/experimental/crawl/fetch",
+    "/api/experimental/socid/extract",
+    # Keyfi kod icrası = keyfi ağ erişimi (üstelik LLM anahtarı da verilir).
+    # ENABLE_INTERPRETER kapalıyken zaten 403; kasa kilitliyken 423.
+    "/api/experimental/interpreter/execute",
+    "/api/scraper/authorize-alternative",
+})
+
+#: Bilinçli muafiyetler — denetimde GÖRÜNÜR olsun diye isim isim yazıldı.
+#: Muafiyet gerekçesi olmayan bir uç buraya EKLENEMEZ (test reddeder).
+VAULT_EGRESS_EXEMPT_ROUTES: frozenset = frozenset({
+    # Dış hareket DEĞİL: açık kanalı KAPATIR. Reddedilirse arkada canlı
+    # Chromium süreci sızar (zombi) — yani muafiyet kilidi güçlendirir.
+    "/api/browser/close",
+    # Salt-okunur envanter raporu: tarayıcı başlatmaz, binary indirme
+    # TETİKLEMEZ (kendi docstring'i de bunu beyan eder).
+    "/api/experimental/stealth",
+    # Yerel hesaplama / LLM yönlendirme; dış OSINT veya tarayıcı yok.
+    "/api/experimental/shadow/analyze",
+    "/api/experimental/shadow/generate",
+    "/api/experimental/chat/respond",
+})
+
+
+def _vault_locked_response(client_id: str) -> JSONResponse:
+    """Kasa kilitli cevabının TEK biçimi (423 Locked + makine-okunur kod)."""
+    return JSONResponse(
+        {
+            "error": {"code": "VAULT_LOCKED", "message": VAULT_LOCKED_MESSAGE},
+            "vault_locked": True,
+            "client_id": client_id,
+        },
+        status_code=423,
+    )
+
+
+def _require_vault_open(client_id: str) -> Optional[JSONResponse]:
+    """DIŞ-ÇIKIŞ KAPISI. Kasa açıksa ``None``, kilitliyse 423 cevabı döner.
+
+    Her dış-ağ/tarayıcı ucu gövdesinin İLK işi olarak bunu çağırmak
+    zorundadır::
+
+        if (locked := _require_vault_open(req.client_id)) is not None:
+            return locked
+
+    Kararın tek sahibi `_check_vault_interlock`'tur (dosya VARLIĞI değil,
+    GERÇEK anahtar malzemesi kilidi açar). Arıza olursa dar taraf: KİLİTLİ.
+    """
+    try:
+        unlocked = _check_vault_interlock(client_id)
+    except Exception:
+        # Sessiz yutma YOK (fail-closed + izlenebilir): mandal okunamadıysa
+        # bu bir arızadır, loglanır ve istek reddedilir.
+        logger.error(
+            "KASA MANDALI OKUNAMADI — dar taraf: KİLİTLİ (client_id=%s)",
+            client_id, exc_info=True,
+        )
+        return _vault_locked_response(client_id)
+    if unlocked:
+        return None
+    logger.warning(
+        "KASA MANDALI: dış-çıkış isteği reddedildi (client_id=%s, kasa kilitli)",
+        client_id,
+    )
+    return _vault_locked_response(client_id)
+
 
 
 @app.get("/api/dialogue/sessions")
@@ -3285,12 +3435,18 @@ async def api_dialogue_sessions():
 
 class SocidExtractPayload(BaseModel):
     url: str
+    # [KASA MANDALI] Kasa ODA bazlıdır; uç artık hangi odanın mandalına
+    # bakacağını bilir. Gönderilmezse varsayılan oda (dar taraf: kilitli).
+    client_id: str = Field(default="default", max_length=_MAX_CLIENT_ID_LENGTH)
 
 
 class MaigretScanPayload(BaseModel):
     username: str
     limit: Optional[int] = None
     timeout: Optional[int] = None
+    # [KASA MANDALI] Kasa ODA bazlıdır; uç artık hangi odanın mandalına
+    # bakacağını bilir. Gönderilmezse varsayılan oda (dar taraf: kilitli).
+    client_id: str = Field(default="default", max_length=_MAX_CLIENT_ID_LENGTH)
 
 
 @app.post("/api/experimental/maigret/scan")
@@ -3300,6 +3456,10 @@ async def maigret_scan(payload: MaigretScanPayload):
     Kapı: ENABLE_MAIGRET=true (varsayılan kapalı). Dürüst sonuç: kayıt
     çıkmazsa `available:false` + makine-okunur sebep; site/hesap uydurulmaz.
     """
+    # [KASA MANDALI] Bu uç 3300+ dış siteye istek atar: kasa kilitliyse motor
+    # HİÇ ÇAĞRILMAZ, kapıda 423 Locked döner (Tüzük Md.4).
+    if (locked := _require_vault_open(payload.client_id)) is not None:
+        return locked
     from agent_core.services.maigret_scanner import scan_username
     result = await scan_username(
         payload.username, limit=payload.limit, site_timeout=payload.timeout
@@ -3311,6 +3471,9 @@ class HoleheScanPayload(BaseModel):
     email: str
     limit: Optional[int] = None
     timeout: Optional[int] = None
+    # [KASA MANDALI] Kasa ODA bazlıdır; uç artık hangi odanın mandalına
+    # bakacağını bilir. Gönderilmezse varsayılan oda (dar taraf: kilitli).
+    client_id: str = Field(default="default", max_length=_MAX_CLIENT_ID_LENGTH)
 
 
 @app.post("/api/experimental/holehe/scan")
@@ -3322,6 +3485,9 @@ async def holehe_scan(payload: HoleheScanPayload):
     holehe'nin istisnaları rateLimit olarak maskelemesi hata sayılır —
     kapalı ağda asla "kayıtlı değil" iddia edilmez.
     """
+    # [KASA MANDALI] Dış site taraması: kasa kilitliyse kapıda 423 Locked.
+    if (locked := _require_vault_open(payload.client_id)) is not None:
+        return locked
     from agent_core.services.holehe_scanner import scan_email
     result = await scan_email(
         payload.email, limit=payload.limit, site_timeout=payload.timeout
@@ -3331,6 +3497,9 @@ async def holehe_scan(payload: HoleheScanPayload):
 
 class CrawlFetchPayload(BaseModel):
     url: str
+    # [KASA MANDALI] Kasa ODA bazlıdır; uç artık hangi odanın mandalına
+    # bakacağını bilir. Gönderilmezse varsayılan oda (dar taraf: kilitli).
+    client_id: str = Field(default="default", max_length=_MAX_CLIENT_ID_LENGTH)
 
 
 @app.post("/api/experimental/crawl/fetch")
@@ -3341,6 +3510,9 @@ async def crawl_fetch(payload: CrawlFetchPayload):
     binary'si gerektirmez). Dürüst sonuç: içerik çekilemezse `available:false`
     + makine-okunur sebep; ASLA uydurma içerik döner. SSRF guard'lı.
     """
+    # [KASA MANDALI] Public-web sayfası ÇEKİLİR (dış ağ): kasa kilitliyse 423.
+    if (locked := _require_vault_open(payload.client_id)) is not None:
+        return locked
     from agent_core.services.crawl_enricher import fetch_readable
     return (await fetch_readable(payload.url)).model_dump()
 
@@ -3364,6 +3536,9 @@ async def socid_extract(payload: SocidExtractPayload):
     Dürüst sonuç sözleşmesi: kayıt çıkmazsa `available:false` + makine-okunur
     sebep döner; alan uydurulmaz. SSRF guard'lı (private/loopback engelli).
     """
+    # [KASA MANDALI] Profil URL'si DIŞARIDAN çekilir: kasa kilitliyse 423.
+    if (locked := _require_vault_open(payload.client_id)) is not None:
+        return locked
     from agent_core.services.socid_enricher import extract_profile
     record = await extract_profile(payload.url)
     return record.model_dump()
@@ -3714,8 +3889,19 @@ def _browser_error_response(e: Exception):
     from agent_core.services.browser_session import (
         BrowserNotOpenError,
         BrowserUnavailableError,
+        VaultLockedError,
     )
 
+    # [KASA MANDALI] Tarayıcı katmanı kasayı kilitli görürse 423 Locked.
+    # API kapısındaki denetim atlanmış olsa bile burası ikinci sürgüdür.
+    if isinstance(e, VaultLockedError):
+        return JSONResponse(
+            {
+                "error": {"code": "VAULT_LOCKED", "message": str(e)[:200]},
+                "vault_locked": True,
+            },
+            status_code=423,
+        )
     if isinstance(e, BrowserUnavailableError):
         return JSONResponse(
             {"error": {"code": "BROWSER_UNAVAILABLE", "message": str(e)[:200]}},
@@ -3738,6 +3924,9 @@ def _browser_error_response(e: Exception):
 
 @app.post("/api/browser/open")
 async def api_browser_open(req: BrowserOpenPayload):
+    # [KASA MANDALI] Kasa kilitliyse tarayıcı AÇILAMAZ (dış dünyaya kanal).
+    if (locked := _require_vault_open(req.client_id)) is not None:
+        return locked
     room = get_room(req.client_id)
     try:
         result = await _room_browser(room).open(req.url)
@@ -3749,6 +3938,9 @@ async def api_browser_open(req: BrowserOpenPayload):
 
 @app.get("/api/browser/shot")
 async def api_browser_shot(client_id: str):
+    # [KASA MANDALI] Ekran görüntüsü hedef siteden veri çeker -> dış hareket.
+    if (locked := _require_vault_open(client_id)) is not None:
+        return locked
     room = get_room(client_id)
     try:
         png = await _room_browser(room).shot()
@@ -3759,6 +3951,10 @@ async def api_browser_shot(client_id: str):
 
 @app.get("/api/browser/state")
 async def api_browser_state(client_id: str):
+    # [KASA MANDALI] Durum okuması da kapıdan geçer: kilitliyken "tarayıcı
+    # hazır" görüntüsü vermek kilidin etrafından dolaşmaktır.
+    if (locked := _require_vault_open(client_id)) is not None:
+        return locked
     room = get_room(client_id)
     st = await _room_browser(room).state()
     st["saved_session"] = "ig_sessionid" in room.get("vault", {})
@@ -3767,6 +3963,8 @@ async def api_browser_state(client_id: str):
 
 @app.post("/api/browser/click")
 async def api_browser_click(req: BrowserClickPayload):
+    if (locked := _require_vault_open(req.client_id)) is not None:
+        return locked
     room = get_room(req.client_id)
     try:
         return await _room_browser(room).click(req.x, req.y)
@@ -3776,6 +3974,8 @@ async def api_browser_click(req: BrowserClickPayload):
 
 @app.post("/api/browser/type")
 async def api_browser_type(req: BrowserTypePayload):
+    if (locked := _require_vault_open(req.client_id)) is not None:
+        return locked
     room = get_room(req.client_id)
     try:
         # NOT: metin yalnızca tarayıcıya yazılır; loga/hafızaya alınmaz.
@@ -3786,6 +3986,8 @@ async def api_browser_type(req: BrowserTypePayload):
 
 @app.post("/api/browser/press")
 async def api_browser_press(req: BrowserPressPayload):
+    if (locked := _require_vault_open(req.client_id)) is not None:
+        return locked
     room = get_room(req.client_id)
     try:
         return await _room_browser(room).press(req.key)
@@ -3795,6 +3997,8 @@ async def api_browser_press(req: BrowserPressPayload):
 
 @app.post("/api/browser/back")
 async def api_browser_back(req: BrowserClientPayload):
+    if (locked := _require_vault_open(req.client_id)) is not None:
+        return locked
     room = get_room(req.client_id)
     try:
         return await _room_browser(room).back()
@@ -3804,6 +4008,8 @@ async def api_browser_back(req: BrowserClientPayload):
 
 @app.post("/api/browser/save")
 async def api_browser_save(req: BrowserClientPayload):
+    if (locked := _require_vault_open(req.client_id)) is not None:
+        return locked
     room = get_room(req.client_id)
     try:
         sessionid = await _room_browser(room).session_cookie()
@@ -3822,12 +4028,21 @@ async def api_browser_save(req: BrowserClientPayload):
 
 @app.post("/api/browser/close")
 async def api_browser_close(req: BrowserClientPayload):
+    # [KASA MANDALI — BİLİNÇLİ MUAFİYET] `close` dışarıya ÇIKMAZ; açık
+    # Chromium kanalını KAPATIR. Kasa kilitliyken reddedilirse arkada canlı
+    # tarayıcı süreci sızar (zombi) — yani muafiyet kilidi zayıflatmaz,
+    # güçlendirir. Bkz. VAULT_EGRESS_EXEMPT_ROUTES.
     room = get_room(req.client_id)
     return await _room_browser(room).close()
 
 
 @app.post("/api/scraper/authorize-alternative")
 async def authorize_scraper_alternative(req: AlternativeAuthorizationPayload):
+    # [KASA MANDALI] `public_web_search` yetkilendirmesi dış arama tetikler;
+    # kasa kilitliyse yetki VERİLEMEZ (yetki kaydı bile kilidin arkasından
+    # dolanmak olurdu).
+    if (locked := _require_vault_open(req.client_id)) is not None:
+        return locked
     room = get_room(req.client_id)
     pending = room.get("pending_alternative_authorization")
     if not pending:
@@ -3918,6 +4133,11 @@ class InterpreterPayload(BaseModel):
 @app.post("/api/experimental/interpreter/execute")
 async def interpreter_execute(req: InterpreterPayload):
     """Open Interpreter ile otonom kod icra eder"""
+    # [KASA MANDALI] Keyfi kod icrası dış ağa sınırsız çıkış demektir; kasa
+    # kilitliyse HİÇ BAŞLAMAZ (env kapısından bile önce: kasa istisnasızdır,
+    # bkz. PolicyKernel._GATE_ORDER — kasa, ENABLE_* bayraklarından öncedir).
+    if (locked := _require_vault_open(req.client_id)) is not None:
+        return locked
     if os.getenv("ENABLE_INTERPRETER", "false").lower() != "true":
         raise HTTPException(status_code=403, detail="Interpreter endpoint is disabled by default for security.")
         
@@ -4589,6 +4809,555 @@ async def api_speech_stop(client_id: str = "default"):
 # [FAZ D · D4] DİL: tespit deterministik (model/ağ yok), çeviri YEREL.
 # Uydurma yok: sinyal yoksa etiket dönmez, motor yoksa çeviri dönmez.
 # ---------------------------------------------------------------------------
+
+
+class JuryVotePayload(BaseModel):
+    """[FAZ D · D2] Yerel jüri oylaması: iddia + kanıt metni."""
+
+    claim: str = Field(min_length=1, max_length=20000)
+    evidence: str = Field(min_length=1, max_length=40000)
+    client_id: str = Field(default="default", max_length=128)
+
+
+@app.get("/api/jury/status")
+async def api_jury_status():
+    """[FAZ D · D2] Jürinin GERÇEK durumu: uç yerel mi, kaç BAĞIMSIZ koltuk,
+    hangi kapı, yeter sayı. Model tanımlı değilse 'hazır' denmez."""
+    from agent_core.services import local_jury
+
+    return local_jury.status()
+
+
+@app.post("/api/jury/vote")
+async def api_jury_vote(req: JuryVotePayload):
+    """[FAZ D · D2] Aynı kanıt yerel jüriye sorulur: kural açıkça döner.
+
+    Konsensüs yoksa sonuç 'karar üretilmedi' olur (``consensus: false`` +
+    ``rule``); koltuk dökümü gizlenmez. Uzak uç yoktur: veri makineden çıkmaz.
+    """
+    from agent_core.capabilities.base import CapabilityContext
+    from agent_core.capabilities.policy import PolicyState
+    from agent_core.capabilities.registry import bootstrap
+    from agent_core.capabilities.runner import CapabilityRunner
+    from agent_core.services import local_jury
+
+    if not rate_limit(f"jury:{req.client_id}", "jury"):
+        return JSONResponse(
+            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla jüri isteği"}},
+            status_code=429,
+        )
+
+    runner = CapabilityRunner(registry=bootstrap())
+    state = PolicyState(
+        enabled_flags={local_jury.GATE: _flag_env(local_jury.GATE)},
+        vault_locked=not _check_vault_interlock(req.client_id),
+        rate_ok=True,
+    )
+    result = await runner.run(
+        "verifier.jury.local",
+        CapabilityContext(subject=req.claim, params={"evidence": req.evidence}),
+        state=state,
+    )
+    notes = dict(result.notes or {})
+    payload = {
+        "available": bool(result.available),
+        "denied_by": result.denied_by,
+        "reason": result.unavailable_reason,
+        "verdict": notes.get("verdict", ""),
+        "rule": notes.get("rule", ""),
+        "consensus": bool(notes.get("consensus", False)),
+        "seats_run": notes.get("seats_run", 0),
+        "counted": notes.get("counted", 0),
+        "quorum_required": notes.get("quorum_required", 1),
+        "tally": notes.get("tally", {}),
+        "dissent": notes.get("dissent", []),
+        "seat_errors": notes.get("seat_errors", {}),
+        "seats": notes.get("seats", []),
+        "endpoint": notes.get("endpoint", ""),
+        "machine_note": notes.get("machine_note", ""),
+        "evidence_ids": [item.evidence_id for item in result.items],
+    }
+    if result.denied_by:
+        broadcast_log(req.client_id, "WARNING", f"JÜRİ: oylama engellendi — kapı:{result.denied_by}")
+    elif payload["consensus"]:
+        broadcast_log(
+            req.client_id,
+            "INFO",
+            f"JÜRİ: {payload['verdict']} ({payload['rule']}, {payload['counted']} koltuk)",
+        )
+    else:
+        broadcast_log(
+            req.client_id,
+            "INFO",
+            f"JÜRİ: konsensüs yok — {payload['rule'] or payload['reason']} (karar iddia edilmedi)",
+        )
+    return payload
+
+
+class MediaAnalyzePayload(BaseModel):
+    """[FAZ D · D3] Medya adli hattı: kaynak (URL/yol) + modlar."""
+
+    source: str = Field(min_length=1, max_length=2048)
+    client_id: str = Field(default="default", max_length=128)
+    modes: list[str] = Field(default_factory=lambda: ["fetch", "frames"])
+    sample_every: int = Field(default=5, ge=1, le=120)
+    top_k: int = Field(default=3, ge=1, le=20)
+
+
+#: Mod başına yanıtta taşınan kanıt satırı tavanı.
+MAX_MEDIA_EVIDENCE = 25
+
+_MEDIA_MODES = {
+    "fetch": "sensor.media.fetch",
+    "frames": "analyzer.media.frames",
+    "transcript": "extractor.media.transcript",
+    "similarity": "analyzer.media.similarity",
+}
+
+
+@app.get("/api/media/status")
+async def api_media_status():
+    """[FAZ D · D3] Medya hattının GERÇEK durumu: hangi araç var, hangi mod hazır.
+
+    ffmpeg/yt-dlp/whisper yoksa "hazır" denmez; sebep makine-okunur.
+    """
+    from agent_core.capabilities import bootstrap
+    from agent_core.services import media_forensics
+
+    registry = bootstrap()
+    rows = []
+    for mode, cap_id in _MEDIA_MODES.items():
+        cap = registry.get(cap_id)
+        availability = cap.availability()
+        rows.append(
+            {
+                "mode": mode,
+                "capability_id": cap_id,
+                "available": availability.available,
+                "reason": availability.reason,
+                "gates": sorted(cap.gates),
+            }
+        )
+    return {
+        "gate": media_forensics.GATE,
+        "media_dir": str(media_forensics.media_dir()),
+        "tools": {
+            "yt-dlp": bool(shutil.which("yt-dlp")),
+            "ffmpeg": bool(shutil.which("ffmpeg")),
+            "opencv": bool(importlib.util.find_spec("cv2")),
+            "transcribe_engine": media_forensics.resolve_engine()[0] or "",
+        },
+        "transcribe_engine_reason": media_forensics.resolve_engine()[1],
+        "modes": rows,
+        "any_available": any(row["available"] for row in rows),
+    }
+
+
+@app.post("/api/media/analyze")
+async def api_media_analyze(req: MediaAnalyzePayload):
+    """[FAZ D · D3] Medyayı omurgadan işler: indir · kare kare ölç · yazıya dök · eşleştir.
+
+    Her mod aynı mandaldan geçer (kasa + kapı). Ölçülmeyen şey iddia edilmez;
+    araç yoksa sebep makine-okunurdur.
+    """
+    from agent_core.capabilities.base import CapabilityContext
+    from agent_core.capabilities.policy import PolicyState
+    from agent_core.capabilities.registry import bootstrap
+    from agent_core.capabilities.runner import CapabilityRunner
+    from agent_core.services import media_forensics
+
+    if not rate_limit(f"media:{req.client_id}", "media"):
+        return JSONResponse(
+            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla medya isteği"}},
+            status_code=429,
+        )
+
+    wanted = [str(m).strip().lower() for m in (req.modes or [])]
+    unknown = [m for m in wanted if m not in _MEDIA_MODES]
+    if unknown:
+        return JSONResponse(
+            {"error": {"code": "UNKNOWN_MODE", "message": f"Bilinmeyen mod: {', '.join(unknown)}"}},
+            status_code=400,
+        )
+    if not wanted:
+        wanted = ["fetch", "frames"]
+
+    runner = CapabilityRunner(registry=bootstrap())
+    state = PolicyState(
+        enabled_flags={media_forensics.GATE: _flag_env(media_forensics.GATE)},
+        vault_locked=not _check_vault_interlock(req.client_id),
+        rate_ok=True,
+    )
+
+    results: dict[str, Any] = {}
+    for mode in wanted:
+        cap_id = _MEDIA_MODES[mode]
+        result = await runner.run(
+            cap_id,
+            CapabilityContext(
+                subject=req.source,
+                params={
+                    "source": req.source,
+                    "sample_every": req.sample_every,
+                    "top_k": req.top_k,
+                },
+            ),
+            state=state,
+        )
+        results[mode] = {
+            "capability_id": cap_id,
+            "available": bool(result.available),
+            "denied_by": result.denied_by,
+            "reason": result.unavailable_reason,
+            "evidence": [
+                {
+                    "evidence_id": item.evidence_id,
+                    "epistemic_type": item.epistemic_type,
+                    "source_engine": item.source_engine,
+                    "content": item.content[:400],
+                    "provenance_refs": list(item.provenance_refs)[:5],
+                }
+                for item in result.items[:MAX_MEDIA_EVIDENCE]
+            ],
+            "notes": dict(result.notes or {}),
+        }
+        if result.denied_by:
+            broadcast_log(req.client_id, "WARNING", f"MEDYA: {mode} engellendi — kapı:{result.denied_by}")
+        elif not result.available:
+            broadcast_log(req.client_id, "WARNING", f"MEDYA: {mode} hazır değil — {result.unavailable_reason}")
+        else:
+            broadcast_log(req.client_id, "INFO", f"MEDYA: {mode} tamam — {len(result.items)} kanıt")
+
+    return {
+        "source": req.source,
+        "gate": media_forensics.GATE,
+        "modes": results,
+        "evidence_total": sum(len(r["evidence"]) for r in results.values()),
+    }
+
+
+class ReportBuildPayload(BaseModel):
+    """[FAZ D · D5] Rapor paketi: kanıt satırları + istenen formatlar."""
+
+    title: str = Field(min_length=1, max_length=200)
+    client_id: str = Field(default="default", max_length=128)
+    subject: str = Field(default="", max_length=200)
+    evidence: list[dict] = Field(default_factory=list, max_length=200)
+    formats: list[str] = Field(default_factory=lambda: ["markdown", "pdf", "diagram"])
+
+
+@app.get("/api/report/status")
+async def api_report_status():
+    """[FAZ D · D5] Rapor fabrikası: hangi format GERÇEKTEN üretilebilir?
+
+    reportlab/Pillow/ffmpeg yoksa "hazır" denmez; sebep makine-okunurdur.
+    """
+    from agent_core.services import report_factory
+
+    formats = report_factory.availability()
+    return {
+        "gate": report_factory.GATE,
+        "report_dir": str(report_factory.report_dir()),
+        "formats": [
+            {"format": name, "available": ok, "reason": reason}
+            for name, (ok, reason) in sorted(formats.items())
+        ],
+        "any_available": any(ok for ok, _r in formats.values()),
+        "manifest_schema": report_factory.MANIFEST_SCHEMA,
+        "seal": "sha256 (bütünlük mührü; kriptografik imza değil)",
+    }
+
+
+@app.post("/api/report/build")
+async def api_report_build(req: ReportBuildPayload):
+    """[FAZ D · D5] Kanıt satırlarından rapor paketi üretir (hash'li, bağlantılı).
+
+    Rapor UYDURULMAZ: girdi kanonik kanıt satırlarıdır; reddedilen satırlar
+    sayılır ve raporda görünür. Format üretilemezse paket yine teslim edilir
+    (markdown + manifest), eksik format dürüst sebeple işaretlenir.
+    """
+    from agent_core.capabilities.base import CapabilityContext
+    from agent_core.capabilities.policy import PolicyState
+    from agent_core.capabilities.registry import bootstrap
+    from agent_core.capabilities.runner import CapabilityRunner
+    from agent_core.services import report_factory
+
+    if not rate_limit(f"report:{req.client_id}", "report"):
+        return JSONResponse(
+            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla rapor isteği"}},
+            status_code=429,
+        )
+
+    formats = [str(f).strip().lower() for f in (req.formats or [])]
+    unknown = [f for f in formats if f not in ("markdown", "pdf", "diagram", "video")]
+    if unknown:
+        return JSONResponse(
+            {"error": {"code": "UNKNOWN_FORMAT", "message": f"Bilinmeyen format: {', '.join(unknown)}"}},
+            status_code=400,
+        )
+
+    wanted = [f for f in formats if f != "markdown"]  # markdown zaten her pakette
+    cap_by_format = {
+        "pdf": "renderer.report.pdf",
+        "diagram": "renderer.report.diagram",
+        "video": "renderer.report.video",
+    }
+    runner = CapabilityRunner(registry=bootstrap())
+    state = PolicyState(
+        enabled_flags={report_factory.GATE: _flag_env(report_factory.GATE)},
+        vault_locked=not _check_vault_interlock(req.client_id),
+        rate_ok=True,
+    )
+
+    results: dict[str, Any] = {}
+    for fmt in wanted:
+        result = await runner.run(
+            cap_by_format[fmt],
+            CapabilityContext(
+                subject=req.title,
+                params={"title": req.title, "subject": req.subject, "evidence": req.evidence},
+            ),
+            state=state,
+        )
+        results[fmt] = {
+            "capability_id": cap_by_format[fmt],
+            "available": bool(result.available),
+            "denied_by": result.denied_by,
+            "reason": result.unavailable_reason,
+            "artifacts": result.notes.get("artifacts", []),
+            "manifest_path": result.notes.get("manifest_path", ""),
+            "manifest_sha256": result.notes.get("manifest_sha256", ""),
+            "evidence_ids": result.notes.get("evidence_ids", []),
+            "rejected_item_count": result.notes.get("rejected_item_count", 0),
+            "excluded_strategy_count": result.notes.get("excluded_strategy_count", 0),
+            "evidence": [
+                {
+                    "evidence_id": item.evidence_id,
+                    "content": item.content[:300],
+                    "provenance_refs": list(item.provenance_refs)[:5],
+                }
+                for item in result.items[:10]
+            ],
+        }
+        if result.denied_by:
+            broadcast_log(req.client_id, "WARNING", f"RAPOR: {fmt} engellendi — kapı:{result.denied_by}")
+        elif not result.available:
+            broadcast_log(req.client_id, "WARNING", f"RAPOR: {fmt} üretilemedi — {result.unavailable_reason}")
+        else:
+            broadcast_log(req.client_id, "INFO", f"RAPOR: {fmt} üretildi ({req.title[:40]})")
+
+    return {
+        "title": req.title,
+        "subject": req.subject,
+        "gate": report_factory.GATE,
+        "formats": results or {"note": "yalnız markdown + manifest istendi"},
+    }
+
+
+class CompanyScanPayload(BaseModel):
+    """[FAZ D · D6] Kurum hedefi taraması: alan adı + mod seçimi."""
+
+    domain: str = Field(min_length=1, max_length=253)
+    client_id: str = Field(default="default", max_length=128)
+    modes: list[str] = Field(default_factory=lambda: ["harvester", "seo", "people"])
+    limit: int = Field(default=200, ge=1, le=1000)
+
+
+_COMPANY_MODES = {
+    "harvester": "sensor.company.harvester",
+    "seo": "sensor.company.seo",
+    "people": "sensor.company.people",
+}
+
+
+@app.get("/api/company/status")
+async def api_company_status():
+    """[FAZ D · D6] Kurum hedefi yeteneklerinin GERÇEK durumu (defterden).
+
+    Kapı kapalıysa ya da theHarvester yoksa "hazır" denmez; sebep makine-okunur.
+    """
+    from agent_core.capabilities import bootstrap
+
+    registry = bootstrap()
+    rows = []
+    for mode, cap_id in _COMPANY_MODES.items():
+        cap = registry.get(cap_id)
+        availability = cap.availability()
+        rows.append(
+            {
+                "mode": mode,
+                "capability_id": cap_id,
+                "available": availability.available,
+                "reason": availability.reason,
+                "gates": sorted(cap.gates),
+            }
+        )
+    return {
+        "gate": "ENABLE_COMPANY_TARGETING",
+        "domain_hint": "yalnız alan adı (örn. ornek.com); özel/yerel adresler reddedilir",
+        "modes": rows,
+        "any_available": any(row["available"] for row in rows),
+    }
+
+
+@app.post("/api/company/scan")
+async def api_company_scan(req: CompanyScanPayload):
+    """[FAZ D · D6] Kurum hedefini omurgadan tarar (theHarvester · SEO · kişi).
+
+    Her mod aynı mandaldan geçer: kasa + `ENABLE_COMPANY_TARGETING` + hız.
+    Mod reddedilirse sebep gizlenmez; kanıt üretilmediyse `evidence` boş kalır.
+    """
+    from agent_core.capabilities.base import CapabilityContext
+    from agent_core.capabilities.policy import PolicyState
+    from agent_core.capabilities.registry import bootstrap
+    from agent_core.capabilities.runner import CapabilityRunner
+    from agent_core.services import company_recon
+
+    if not rate_limit(f"company:{req.client_id}", "company"):
+        return JSONResponse(
+            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla kurum taraması"}},
+            status_code=429,
+        )
+
+    domain = company_recon.normalize_domain(req.domain)
+    if not domain:
+        return JSONResponse(
+            {
+                "error": {
+                    "code": "INVALID_DOMAIN",
+                    "message": "Geçerli bir alan adı verin (örn. ornek.com).",
+                }
+            },
+            status_code=400,
+        )
+
+    wanted = [str(m).strip().lower() for m in (req.modes or [])]
+    unknown = [m for m in wanted if m not in _COMPANY_MODES]
+    if unknown:
+        return JSONResponse(
+            {"error": {"code": "UNKNOWN_MODE", "message": f"Bilinmeyen mod: {', '.join(unknown)}"}},
+            status_code=400,
+        )
+    if not wanted:
+        wanted = list(_COMPANY_MODES)
+
+    runner = CapabilityRunner(registry=bootstrap())
+    state = PolicyState(
+        enabled_flags={company_recon.GATE: _flag_env(company_recon.GATE)},
+        vault_locked=not _check_vault_interlock(req.client_id),
+        rate_ok=True,
+    )
+
+    results: dict[str, Any] = {}
+    for mode in wanted:
+        cap_id = _COMPANY_MODES[mode]
+        params: dict[str, Any] = {"domain": domain}
+        if mode == "harvester":
+            params["limit"] = req.limit
+        result = await runner.run(
+            cap_id,
+            CapabilityContext(subject=domain, params=params),
+            state=state,
+        )
+        results[mode] = {
+            "capability_id": cap_id,
+            "available": bool(result.available),
+            "denied_by": result.denied_by,
+            "reason": result.unavailable_reason,
+            "counts": {
+                "evidence": len(result.items),
+            },
+            "evidence": [
+                {
+                    "evidence_id": item.evidence_id,
+                    "epistemic_type": item.epistemic_type,
+                    "source_engine": item.source_engine,
+                    "content": item.content[:400],
+                    "provenance_refs": list(item.provenance_refs)[:5],
+                }
+                for item in result.items[:25]
+            ],
+            "notes": dict(result.notes or {}),
+        }
+        if result.denied_by:
+            broadcast_log(
+                req.client_id, "WARNING",
+                f"KURUM: {mode} engellendi — kapı:{result.denied_by}",
+            )
+        elif not result.available:
+            broadcast_log(
+                req.client_id, "WARNING",
+                f"KURUM: {mode} hazır değil — {result.unavailable_reason}",
+            )
+        else:
+            broadcast_log(
+                req.client_id, "INFO",
+                f"KURUM: {mode} tamam — {len(result.items)} kanıt ({domain})",
+            )
+
+    return {
+        "domain": domain,
+        "gate": company_recon.GATE,
+        "modes": results,
+        "evidence_total": sum(r["counts"]["evidence"] for r in results.values()),
+    }
+
+
+@app.get("/api/mcp/status")
+async def api_mcp_status(client_id: str = "default"):
+    """[FAZ D · D1] MCP ihracının GERÇEK durumu: kaç yetenek araç olarak açık,
+    hangi sürümler konuşuluyor, kasa mandalı ne durumda.
+
+    Yetenek sayısı ``CapabilityRegistry``den okunur (ikinci envanter yok);
+    kasa durumu ``_check_vault_interlock`` ile ``/api/initiate`` ile AYNI
+    kapıdan gelir. Bu uç hiçbir yeteneği KOŞTURMAZ; yalnızca rapor eder.
+    """
+    from agent_core.mcp import protocol as _mcp_protocol
+    from agent_core.mcp.tools import build_tools
+
+    try:
+        from agent_core.capabilities import bootstrap as _caps_bootstrap
+
+        registry = _caps_bootstrap()
+        capabilities = len(registry.ids())
+        tools = len(build_tools(registry)) + 1  # + pineal_status (sunucunun kendi aracı)
+    except Exception as exc:  # envanter okunamazsa uydurma sayı dönmez
+        logger.warning("MCP durumu okunamadı: %s", type(exc).__name__)
+        return JSONResponse(
+            {"available": False, "reason": f"registry_error:{type(exc).__name__}"},
+            status_code=503,
+        )
+
+    unlocked = _check_vault_interlock(client_id)
+    try:
+        from agent_core.mcp.state_bridge import limiter_from_env
+
+        limiter = limiter_from_env()
+        rate_limit = {"limit": limiter.limit, "window_seconds": limiter.window}
+    except Exception:  # pragma: no cover - savunma
+        rate_limit = {}
+    from agent_core.mcp.server import server_version
+
+    return {
+        "available": True,
+        "transport": "stdio",
+        "command": "python -m agent_core.mcp",
+        "capabilities": capabilities,
+        "tools": tools,
+        "server_version": server_version(),
+        "protocol_current": _mcp_protocol.PROTOCOL_VERSION,
+        "protocol_supported": list(_mcp_protocol.SUPPORTED_PROTOCOL_VERSIONS),
+        "vault_locked": not unlocked,
+        "rate_limit": rate_limit,
+        "skills_dir": "skills",
+        "gate": "vault",
+        "message": (
+            "MCP açık — her yetenek araç olarak yayınlanıyor; çağrılar aynı "
+            "kapılardan geçer."
+            if unlocked
+            else "MCP araçları KİLİTLİ — kasa kapalıyken hiçbir yetenek koşmaz."
+        ),
+    }
 
 
 class LanguageDetectPayload(BaseModel):

@@ -1,5 +1,165 @@
 # Changelog
 
+## Unreleased — 2026-10-07 — FAZ D · D3: medya adli hattı (indir · kare · yazı · eşleştir)
+
+- **D3 · MEDYA ADLİ HATTI TAMAM.** Dört yetenek omurgada:
+  `sensor.media.fetch` (platform linkleri yt-dlp, doğrudan bağlantılar httpx;
+  sonuç sha256 ile mühürlenir), `analyzer.media.frames` (fps · kare · süre ·
+  çözünürlük · parlaklık ±std · sahne kesmeleri; fotoğrafta baskın renk +
+  Laplacian keskinliği), `extractor.media.transcript` (ses → metin; dil tespiti
+  kendi deterministik ölçümümüz) ve `analyzer.media.similarity` (pHash + Hamming
+  ile yerel indeks araması).
+- **Yorum yok, ölçüm var:** bu katman "videoda ne oluyor?" sorusunu yanıtlamaz;
+  ölçüleni yazar, kanıt satırını dosya yoluna/kaynağa bağlar.
+- **Yerellik:** transkript YALNIZ yerel motorla üretilir; uzak uç reddedilir ve
+  CLI'ye sessizce düşülmez. Video girdide ses kanalı için `ffmpeg` gerekir —
+  yoksa `dependency_missing:ffmpeg`, uydurma transkript yok.
+- **Dürüstlük:** yt-dlp yoksa platform indirmesi kapalı; indirme **özel/yerel
+  adreslere yapılmaz** (SSRF kapısı `net_hygiene`, istisna yalnız
+  `PINEAL_MEDIA_ALLOW_PRIVATE=1`); boyut tavanı 80 MB; motor boş çıktısı
+  `empty_transcript` — transkript iddia edilmez. pHash DC terimini dışarıda
+  bırakır (düz renkli iki fotoğraf "aynı" sayılmaz).
+- **Ortak kapı servisi:** SSRF kontrolü `services/net_hygiene.py`ye taşındı;
+  kurum taraması (D6) ve medya hattı (D3) aynı kuralı, ayrı istisna
+  anahtarlarıyla paylaşır — kopya yok.
+- **Yüzeyler:** `GET /api/media/status` · `POST /api/media/analyze` (kasa +
+  kapı + `media` hız kovası). Kurulum: `docs/MEDYA_ADLI.md`. MCP araçları ve
+  Skills paketi kendiliğinden büyüdü (26 yetenek).
+- **Test:** +30 (servis 18 · uç+yetenek 12). Tam koşu: **2047P/0F**.
+
+## Unreleased — 2026-10-07 — FAZ D · D5: rapor fabrikası (PDF · diyagram · video + mühür)
+
+- **D5 · RAPOR FABRİKASI TAMAM.** `services/report_factory.py` + üç RENDERER
+  yeteneği: `renderer.report.pdf` (reportlab), `renderer.report.diagram`
+  (Pillow ile deterministik PNG; tür = renk), `renderer.report.video`
+  (Pillow kareleri → ffmpeg). Markdown + `manifest.json` her koşulda üretilir.
+- **Rapor UYDURULMAZ:** paket yalnız kanonik kanıt zaman çizelgesinden beslenir
+  (`evidence_timeline`): sıra, epistemik tür ve "not independently verified"
+  notu aynen taşınır; `strategy` çizelgeye girmez, bozuk satırlar reddedilir ve
+  `rejected_item_count` olarak rapora yazılır.
+- **Hash'li mühür + kanıt bağlantısı:** her eserin `sha256`'sı, manifest'te
+  eser listesi ve `evidence_ids`; manifestin kendi gövdesi de hash'lenir
+  (`manifest_sha256`) — doğrulaması testlerde kilitli. Manifest açıkça yazar:
+  bu bir bütünlük mührüdür, kriptografik imza DEĞİLDİR.
+- **Eksik format dürüst:** reportlab/Pillow/ffmpeg yoksa ilgili format
+  `available=False` + makine-okunur sebep alır; yerine uydurma dosya konmaz,
+  markdown + manifest teslim edilir ve yetenek bunu kanıt satırıyla söyler.
+- **Yüzeyler:** `GET /api/report/status` · `POST /api/report/build`
+  (kasa + kapı + `report` hız kovası). `reportlab>=4.0` artık
+  `requirements.txt`te AÇIKÇA beyan (lock'ta zaten vardı). Kurulum:
+  `docs/RAPOR_FABRIKASI.md`. MCP araçları ve Skills paketi kendiliğinden
+  büyüdü (22 yetenek).
+- **Test:** +20 (servis 10 · yetenek+uç 10). Tam koşu: **2017P/0F**.
+
+## Unreleased — 2026-10-07 — FAZ D · D6: kurum hedefi (theHarvester + açık SEO + kişi künyesi)
+
+- **D6 · KURUM HEDEFİ TAMAM.** Üç yetenek omurgada:
+  `sensor.company.harvester` (theHarvester CLI: e-posta · alt alan adı · IP ·
+  URL · arama motoru kişi satırları), `sensor.company.seo` (yalnız kurumun
+  KENDİ yayınladığı dosyalar: robots.txt · sitemap.xml · ana sayfa
+  başlık/açıklama/dil/canonical · security.txt · sunucu/HSTS/CSP başlıkları)
+  ve `sensor.company.people` (yalnız kurumun kendi sayfalarındaki
+  **schema.org/Person** kayıtları + herkese açık `mailto:` adresleri).
+- **Uydurma metrik yok:** SEO "puanı" hesaplanmaz; ölçülen yazılır. Harici SEO
+  servisi çağrılmaz, LinkedIn kazınmaz. Kişi verisi yalnız kurumun kendi
+  yapılandırılmış kaynağından gelir ve her satır KAYNAK URL'siyle kanıt olur.
+- **Yokluk disiplini:** "yayınlanmamış" iddiası yalnız kesin 404'te
+  (`absence`); ağ hatası (timeout/refused) ne varlık ne yokluk üretir — yalnız
+  `notes.errors` içinde görünür. theHarvester boş dönerse sıfır hatayla
+  bittiği için yokluk kanıtı üretilir; araç/çıktı hatasında ÜRETİLMEZ.
+- **Araç yokluğu ikiye ayrılır:** `dependency_missing:theHarvester` (PATH'te
+  yok) ile `configured_command_not_found:PINEAL_HARVESTER_CMD` (yazılan komut
+  bulunamadı) karıştırılmaz. Kova tavanı 25; aşan `truncated` ile işaretlenir.
+- **SSRF hijyeni:** hedef özel/yerel ağa çözülürse tarama REDDEDİLİR; yalnız
+  `PINEAL_COMPANY_ALLOW_PRIVATE=1` ile geçer.
+- **Yüzeyler:** `GET /api/company/status` · `POST /api/company/scan`
+  (kasa + kapı + `company` hız kovası) · kokpitte **KURUM** pili. Yetenekler
+  omurgada olduğu için MCP araçları ve Skills paketi kendiliğinden büyüdü
+  (19 yetenek / 20 MCP aracı). Kurulum: `docs/KURUM_HEDEFI.md`.
+- **Test:** +41 (servis 18 · yetenek 13 · uç 10). Tam koşu: **1994P/0F**.
+
+## Unreleased — 2026-10-07 — FAZ D · D2: yerel jüri (karar makineden çıkmaz)
+
+- **D2 · YEREL JÜRİ TAMAM.** `agent_core/services/local_jury.py` +
+  `verifier.jury.local` yeteneği: aynı iddia ve kanıt **birden çok yerel
+  modelde** bağımsız oylanır; karar oybirliği ya da yeter sayılı çoğunlukla
+  verilir. Uzak uç `non_local_endpoint` ile REDDEDİLİR ve uzak adres
+  yapılandırılmışsa yerel uca BİLE gidilmez (sessiz düşüş yok, test kilitli).
+- **Koltuk = ayrı model.** Aynı model adı ikinci koltuk SAYILMAZ (tekrar
+  `duplicates_removed` olarak raporlanır); tek modelle alınan hüküm
+  `tek_koltuk` kuralıyla işaretlenir ve `consensus: false` olur — **tek
+  koltukla konsensüs ilan edilmez.** Kural her zaman makine-okunur yazılır:
+  `oy_birligi` · `cokluk` · `berabere` · `tek_koltuk` · `gecerli_oy_yok`.
+- **Oy sözlüğü tek kaynaktan** (`services/jury_consensus`): kapalı küme dışı
+  kelime OY SAYILMAZ (`sozluk_disi`); model JSON döndürmezse
+  `seat_unparseable`. Koltuk hatası, gecikme ve ham kelime yanıtta görünür —
+  tek bir koltuk sessizce yutulmaz.
+- **Konsensüs yoksa kanıt da yok:** berabere/tek koltuk/geçerli oy yok
+  durumlarında kanıt ÜRETİLMEZ (koltuk dökümü `notes` içinde kalır). Konsensüs
+  varsa kanıt `inference` türündedir (model yargısı gözlem değildir) ve güven
+  yalnız koltukların kendi beyanlarının ortalamasıdır.
+- **Yüzeyler:** `GET /api/jury/status` · `POST /api/jury/vote` (kasa + kapı +
+  `jury` hız kovası) · kokpitte **JÜRİ** pili (`3 YEREL KOLTUK` /
+  `1 KOLTUK · BAĞIMSIZ DEĞİL` / `KAPALI`). Yetenek omurgada olduğu için MCP
+  aracı (`verifier_jury_local`) ve Skills paketi kendiliğinden büyüdü.
+- **Env:** `ENABLE_LOCAL_JURY` (varsayılan KAPALI) · `PINEAL_JURY_LOCAL_URL`
+  (varsayılan `LOCAL_LLM_URL` → `http://127.0.0.1:11434/v1`) ·
+  `PINEAL_JURY_LOCAL_MODELS` (virgüllü; boşsa `LOCAL_LLM_MODEL`) ·
+  `PINEAL_JURY_SEATS` (3) · yeter sayı `PINEAL_JURY_QUORUM` (B1 ile ortak).
+  Kurulum: `docs/YEREL_JURI.md`.
+- **Test:** +43 (birim 33 · entegrasyon 10). Yol boyunca bir kusur yakalandı:
+  jüri yapılandırması enjekte edilebilir env sözlüğünden okunurken
+  `jury_consensus.quorum()` süreç ortamını okuyordu (iki env kaynağı sapması);
+  tek kaynağa (`os.environ`) indirildi. Tam koşu: **1953P/0F**.
+
+## Unreleased — 2026-10-07 — FAZ D · D1: yetenekler standart kapıdan dışarıda (MCP)
+
+- **D1 · MCP SUNUCUSU TAMAM.** ``agent_core/mcp/`` paketi: ``protocol.py`` (JSON-RPC
+  2.0 + sürüm anlaşması), ``tools.py`` (defter → araç), ``results.py`` (dürüst
+  sonuç zarfı), ``state_bridge.py`` (kasa + hız), ``status.py`` (``pineal_status``),
+  ``server.py`` (sevkiyat + stdio). Çalıştırma: ``python -m agent_core.mcp``.
+  **Tek kaynak:** araç listesi ``CapabilityRegistry``den her istekte türetilir;
+  bayat liste diye bir şey yoktur (deftere yetenek eklenince araç kendiliğinden
+  görünür, silinince kaybolur).
+- **Çift protokol (ölçüldü, 2026-10-07).** MCP'nin güncel sürümü **2026-07-28**
+  ve protokol artık **stateless** (``initialize`` kaldırıldı; sürüm her isteğin
+  ``_meta``'sında, keşif ``server/discover``). Eski istemciler el sıkışma
+  konuşur. Sunucu **ikisini birlikte** destekler: 2026-07-28 · 2025-11-25 ·
+  2025-06-18 · 2025-03-26 · 2024-11-05. Bilinmeyen sürüm sessizce en yenisi
+  sanılmaz: legacy el sıkışmada sunucu desteklediği en yeni sürümü döner,
+  stateless istekte ``-32022`` + desteklenen sürüm listesi döner.
+- **Ayrı dış yol YOK.** Her çağrı ``CapabilityRunner`` üzerinden koşar: çocuk
+  kilidi → politika kapıları (vault · budget · rate · ENABLE_*) → availability
+  → ``run()``. Reddedilen çağrı ``isError: true`` ve makine-okunur sebeple
+  döner (``denied_by`` / ``unavailable_reason`` / ``error``); ``ok`` yalnız
+  kanıt varsa ``true``'dur.
+- **Kasa tek kaynaktan ve fail-closed.** Sunucu kasa mandalını çalışan Pineal
+  API'sinden (``GET /api/vault/status``) okur — kararı kendi kopyasında yeniden
+  üretmez (kural [009]). Adres **yalnız yerel** olabilir; uzak adres reddedilir,
+  HTTP yönlendirmeleri TAKİP EDİLMEZ ve API'ye ulaşılamıyorsa kasa KİLİTLİ
+  sayılır (``vault_api_unreachable`` / ``vault_api_bad_shape`` gibi sebeplerle).
+- **Kokpit + dış istemci durumu.** ``GET /api/mcp/status`` (yetenek/araç sayısı
+  defterden, kasa mandalı ``/api/initiate`` ile aynı kapıdan, sürümler, hız
+  sınırı; uç hiçbir yeteneği koşturmaz) ve kokpitte **MCP pili**:
+  ``MCP: 16 ARAÇ · AÇIK`` / ``MCP: … · KİLİTLİ``.
+- **Skills ihracı:** ``scripts/export_skills.py`` aynı defterden
+  ``skills/<araç>/SKILL.md`` üretir; ``--check`` bayat paketi yakalar (exit 3).
+  CI bu adımı koşar: elle düzenlenmiş ya da defterde olmayan yetenek dosyası
+  sessizce geçemez.
+- **Dış istemci girdisi:** ``PINEAL_API_URL`` · ``PINEAL_MCP_CLIENT_ID`` ·
+  ``PINEAL_MCP_RATE_LIMIT`` (20) · ``PINEAL_MCP_RATE_WINDOW`` (60 sn) ·
+  ``PINEAL_MCP_MINOR_SUBJECTS`` (operatör beyanı: hedef 18 altıysa MCP yolunda
+  kilitlenir — vaka bağlamı taşınmadığı için ``MinorGate`` reddeder; beyan
+  "izin" değil "dur" demektir).
+- **stdout yalnız protokol taşır.** Günlükler stderr'e yazar; bozuk bir satır
+  kanalı düşürmez (``PARSE_ERROR`` döner, döngü devam eder), beklenmedik bir
+  istisna ``INTERNAL_ERROR`` olur ve kanal açık kalır. Windows kod sayfası
+  tuzağı için stdio UTF-8'e sabitlenir.
+- **Test:** +129 (birim 115 · entegrasyon 14). Entegrasyon testi sunucuyu
+  GERÇEK alt süreç olarak başlatıp stdio'dan konuşur; yalnız kasa cevabı taklit
+  edilir. Tam koşu: **1910P/0F**, ``ruff`` temiz, ``svelte-check`` 0 hata,
+  build başarılı.
+
 ## Unreleased — 2026-10-05 — FAZ A/D · A8 + D4: site listesi tazeleniyor, dil ölçülüyor
 
 - **A8 · MAIGRET DB TAZELEME.** maigret paketlenmiş bir site anlık görüntüsüyle

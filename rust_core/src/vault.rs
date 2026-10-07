@@ -1,11 +1,44 @@
 //! PINEAL-HERETIC v5.0 - Stealth Vault
-//! 
+//!
 //! API anahtarları ve oturum verileri için bellek-içi şifreli kasa.
 //! age + argon2 ile diskte şifreli, RAM'de sadece ihtiyaç anında açık.
+//!
+//! # [VAULT_PERSISTENCE_FIX 2026-10-07] — halı altından çıkarılan üç gerçek arıza
+//!
+//! Bu modülde uzun süre `VAULT_PERSISTENCE_BUG: age file truncated on
+//! store->reload` hatası yaşandı ve hata çözülmek yerine ilgili test
+//! `#[ignore]` ile susturuldu. Kök nedenler tek tek bulundu ve onarıldı:
+//!
+//! 1. **Kesik age akışı (veri kaybının asıl sebebi).**
+//!    `age::Encryptor::wrap_output` bir `StreamWriter` döndürür ve bu
+//!    yazarın SON chunk'ı + MAC'i yazması için `finish()` ÇAĞRILMALIDIR.
+//!    age kaynak sözleşmesi (age 0.10.1, `primitives/stream.rs`):
+//!    "You **MUST** call `finish` … Failing to call `finish` will result in a
+//!    truncated file that will fail to decrypt."
+//!    Eski kod `write_all` sonrası writer'ı sadece scope sonunda düşürüyordu;
+//!    `Drop` son chunk'ı YAZMAZ. Sonuç: diske her zaman kesik `.cipher`
+//!    dosyası indi, reload'da `age file is truncated` patladı.
+//!
+//! 2. **Gizli anahtar diskte DÜZ METİN duruyordu.**
+//!    `vault.json` age x25519 GİZLİ anahtarını (`AGE-SECRET-KEY-…`) açık
+//!    metin yazıyordu. Yani "diskte şifreli kasa" iddiası boştu: `.cipher`
+//!    dosyalarını çözen anahtar, şifreli metnin hemen yanında duruyordu.
+//!    Artık kimlik, operatör parolasıyla (age scrypt) şifrelenmiş
+//!    `identity_encrypted` alanında tutulur. Düz metin `identity` alanı
+//!    taşıyan eski/bozuk dosyalar **fail-closed** reddedilir.
+//!
+//! 3. **Kilit, kilit gibi davranmıyordu.**
+//!    `secure_wipe()` anahtarın BİR KOPYASINI sıfırlayıp atıyordu (asıl
+//!    sıfırlanan hiçbir şey yoktu) ve wipe sonrası `store`/`retrieve`
+//!    çalışmaya devam ediyordu. Artık wipe kalıcıdır: kasa mühürlenir ve
+//!    sonraki her okuma/yazma `VaultError::VaultLocked` ile reddedilir.
+//!
+//! Ek olarak: şifreleme yolundaki `.expect(...)` panikleri kaldırıldı —
+//! bir kasa arızası süreci çökertmek yerine `VaultError` olarak döner.
 
-use age::secrecy::{ExposeSecret, Secret};
+use age::secrecy::{ExposeSecret, Secret, SecretString};
 use argon2::{password_hash::SaltString, Argon2, PasswordHasher, PasswordVerifier};
-use rand::{rngs::OsRng, RngCore};
+use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -17,18 +50,28 @@ use zeroize::Zeroize;
 pub enum VaultError {
     #[error("Şifreleme hatası: {0}")]
     EncryptionError(String),
-    
+
     #[error("Şifre çözme hatası: {0}")]
     DecryptionError(String),
-    
+
     #[error("Dosya erişim hatası: {0}")]
     FileError(String),
-    
+
     #[error("Anahtar üretimi hatası: {0}")]
     KeyGenerationError(String),
-    
+
     #[error("Parola doğrulama hatası: {0}")]
     PasswordError(String),
+
+    /// [VAULT_PERSISTENCE_FIX] Kasa mühürlendi (`secure_wipe`) ama kullanılmaya
+    /// çalışıldı. Sessizce devam edilmez; işlem reddedilir.
+    #[error("Kasa kilitli: {0}")]
+    VaultLocked(String),
+
+    /// [VAULT_PERSISTENCE_FIX] Diskteki kasa dosyası güvenli biçimde
+    /// yazılmamış (age gizli anahtarı düz metin). Fail-closed: açılmaz.
+    #[error("Güvensiz kasa dosyası: {0}")]
+    InsecureVaultFile(String),
 }
 
 /// Şifrelenmiş veri paketi (age formatında)
@@ -37,6 +80,26 @@ pub struct EncryptedPayload {
     pub ciphertext: Vec<u8>,
     pub recipient: String,
 }
+
+/// Kasanın disk şeması (`vault.json`).
+///
+/// [VAULT_PERSISTENCE_FIX] Eski şema `identity` alanına age GİZLİ anahtarını
+/// düz metin yazıyordu. Yeni şemada gizli anahtar yalnızca parola ile
+/// şifrelenmiş `identity_encrypted` içinde yaşar; `recipient` (açık anahtar)
+/// gizli değildir ve bütünlük denetimi için saklanır.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct VaultFile {
+    /// Parolayla (age scrypt) şifrelenmiş age x25519 kimliği.
+    identity_encrypted: Vec<u8>,
+    /// Açık alıcı anahtarı (`age1…`): kimlikle eşleşmek ZORUNDADIR.
+    recipient: String,
+    /// Argon2id parola hash'i (PHC biçimi) — aynı zamanda master key türevinin girdisi.
+    password_hash: String,
+    version: String,
+}
+
+/// Kasa dosyası şema sürümü.
+const VAULT_SCHEMA_VERSION: &str = "5.1";
 
 /// Stealth Vault - Ana şifreli kasa yapısı
 /// [W4.3] Tek sahiplikli vault yolu. create/open/get komutları (src-tauri)
@@ -60,6 +123,8 @@ pub struct StealthVault {
     recipient: age::x25519::Recipient,
     identity: age::x25519::Identity,
     password_hash: Option<String>,
+    /// [VAULT_PERSISTENCE_FIX] `true` = kasa mühürlendi; store/retrieve REDDEDİLİR.
+    wiped: bool,
 }
 
 impl StealthVault {
@@ -71,22 +136,19 @@ impl StealthVault {
             .map(|h| h.to_string())
             .map_err(|e| VaultError::KeyGenerationError(format!("Argon2id hatası: {}", e)))?;
 
-        let mut key_bytes = vec![0u8; 32];
-        OsRng.fill_bytes(&mut key_bytes);
-        let master_key = Secret::new(key_bytes);
-
         let identity = age::x25519::Identity::generate();
         let recipient = identity.to_public();
 
         let vault = Self {
             vault_path: vault_path.to_path_buf(),
-            master_key,
+            master_key: Self::derive_master_key(&password_hash),
             recipient,
             identity,
             password_hash: Some(password_hash),
+            wiped: false,
         };
 
-        vault.save_to_disk()?;
+        vault.save_to_disk(password)?;
         Ok(vault)
     }
 
@@ -98,43 +160,94 @@ impl StealthVault {
         let identity_data = fs::read(vault_path)
             .map_err(|e| VaultError::FileError(format!("Dosya okuma hatası: {}", e)))?;
 
-        let vault_data: serde_json::Value = serde_json::from_slice(&identity_data)
+        let vault_value: serde_json::Value = serde_json::from_slice(&identity_data)
             .map_err(|e| VaultError::DecryptionError(format!("JSON parse hatası: {}", e)))?;
 
-        let identity_str = vault_data.get("identity")
+        // `to_owned()`: `vault_value` aşağıda `serde_json::from_value` ile
+        // TAŞINACAK; ondan ödünç alınmış bir `&str` taşınmayı engellemesin.
+        let stored_hash = vault_value
+            .get("password_hash")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| VaultError::DecryptionError("Identity bulunamadı".to_string()))?;
+            .ok_or_else(|| VaultError::DecryptionError("Password hash bulunamadı".to_string()))?
+            .to_owned();
 
-        let stored_hash = vault_data.get("password_hash")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| VaultError::DecryptionError("Password hash bulunamadı".to_string()))?;
+        // 1) Parola ÖNCE doğrulanır: dosya biçimi hakkında bilgi sızdırmadan
+        //    önce "bu kasayı açmaya yetkin misin?" sorusu cevaplanır.
+        {
+            let argon2 = Argon2::default();
+            let parsed_hash = argon2::PasswordHash::new(&stored_hash)
+                .map_err(|e| VaultError::PasswordError(format!("Hash parse hatası: {}", e)))?;
 
-        let argon2 = Argon2::default();
-        let parsed_hash = argon2::PasswordHash::new(stored_hash)
-            .map_err(|e| VaultError::PasswordError(format!("Hash parse hatası: {}", e)))?;
+            argon2
+                .verify_password(password.as_bytes(), &parsed_hash)
+                .map_err(|_| VaultError::PasswordError("Yanlış parola".to_string()))?;
+        }
 
-        argon2.verify_password(password.as_bytes(), &parsed_hash)
-            .map_err(|_| VaultError::PasswordError("Yanlış parola".to_string()))?;
+        // 2) [VAULT_PERSISTENCE_FIX] Eski şema age GİZLİ anahtarını düz metin
+        //    taşıyordu. Böyle bir dosya "açılıp kullanılabilir" sayılmaz:
+        //    fail-closed reddedilir (güvenli kasa iddiası geriye dönük olarak
+        //    da geçerli olmak zorunda).
+        if vault_value.get("identity").and_then(|v| v.as_str()).is_some() {
+            return Err(VaultError::InsecureVaultFile(
+                "Kasa dosyası age GİZLİ anahtarını düz metin içeriyor (şema <5.1). \
+                 Bu dosya açılamaz; kasayı yeniden oluşturun ve anahtarları tekrar mühürleyin."
+                    .to_string(),
+            ));
+        }
 
-        let identity: age::x25519::Identity = identity_str.parse()
+        let vault_file: VaultFile = serde_json::from_value(vault_value).map_err(|e| {
+            VaultError::DecryptionError(format!("Kasa şeması okunamadı (şema 5.1 beklenir): {}", e))
+        })?;
+
+        // 3) Tanınmayan şema sürümü sessizce açılmaz (fail-closed).
+        if !vault_file.version.starts_with("5.") {
+            return Err(VaultError::DecryptionError(format!(
+                "Tanınmayan kasa şema sürümü: {}",
+                vault_file.version
+            )));
+        }
+
+        // 4) Gizli anahtar yalnızca parola ile çözülür (age scrypt).
+        let identity_secret = Self::decrypt_identity(&vault_file.identity_encrypted, password)?;
+        let identity: age::x25519::Identity = identity_secret
+            .expose_secret()
+            .trim()
+            .parse()
             .map_err(|e| VaultError::DecryptionError(format!("Identity parse hatası: {}", e)))?;
 
         let recipient = identity.to_public();
 
-        let mut key_bytes = vec![0u8; 32];
-        OsRng.fill_bytes(&mut key_bytes);
-        let master_key = Secret::new(key_bytes);
+        // 5) Bütünlük: dosyadaki açık alıcı, çözülen kimliğin alıcısı olmalı.
+        //    Aksi halde dosya kurcalanmıştır → reddedilir (sessiz devam yok).
+        if !vault_file.recipient.is_empty() && vault_file.recipient != recipient.to_string() {
+            return Err(VaultError::DecryptionError(
+                "Kasa dosyasındaki alıcı anahtarı çözülen kimlikle eşleşmiyor (dosya kurcalanmış)"
+                    .to_string(),
+            ));
+        }
+
+        // Master key, struct literalinden ÖNCE türetilir: `vault_file.password_hash`
+        // literalin içinde TAŞINIR; türetme ödünç alması taşınmayı engellemesin.
+        let master_key = Self::derive_master_key(&vault_file.password_hash);
 
         Ok(Self {
             vault_path: vault_path.to_path_buf(),
             master_key,
             recipient,
             identity,
-            password_hash: Some(stored_hash.to_string()),
+            password_hash: Some(vault_file.password_hash),
+            wiped: false,
         })
     }
 
+    /// Kasa açık mı? (`secure_wipe` sonrası `false` ve kalıcıdır.)
+    pub fn is_unlocked(&self) -> bool {
+        !self.wiped
+    }
+
     pub fn store<T: Serialize>(&self, label: &str, data: &T) -> Result<(), VaultError> {
+        self.ensure_unlocked()?;
+
         let plaintext = serde_json::to_vec(data)
             .map_err(|e| VaultError::EncryptionError(e.to_string()))?;
 
@@ -145,20 +258,23 @@ impl StealthVault {
             recipient: self.recipient.to_string(),
         };
 
-        let cipher_path = self.vault_path.with_file_name(format!("{}.cipher", label));
+        let cipher_path = self.cipher_path(label);
         let cipher_json = serde_json::to_vec(&payload)
             .map_err(|e| VaultError::EncryptionError(e.to_string()))?;
-        
-        fs::write(&cipher_path, cipher_json)
-            .map_err(|e| VaultError::FileError(e.to_string()))?;
+
+        // [VAULT_PERSISTENCE_FIX] Atomik yazım: yarım kalmış `.cipher` dosyası
+        // bir sonraki açılışta "kesik age dosyası" olarak geri dönmesin.
+        Self::write_atomic(&cipher_path, &cipher_json)?;
 
         tracing::info!("Veri '{}' etiketiyle şifrelenerek kasaya kondu", label);
         Ok(())
     }
 
     pub fn retrieve<T: for<'de> Deserialize<'de>>(&self, label: &str) -> Result<T, VaultError> {
-        let cipher_path = self.vault_path.with_file_name(format!("{}.cipher", label));
-        
+        self.ensure_unlocked()?;
+
+        let cipher_path = self.cipher_path(label);
+
         let cipher_data = fs::read(&cipher_path)
             .map_err(|e| VaultError::FileError(format!("Dosya okuma hatası: {}", e)))?;
 
@@ -173,20 +289,61 @@ impl StealthVault {
         Ok(result)
     }
 
+    fn cipher_path(&self, label: &str) -> PathBuf {
+        self.vault_path.with_file_name(format!("{}.cipher", label))
+    }
+
+    fn ensure_unlocked(&self) -> Result<(), VaultError> {
+        if self.wiped {
+            return Err(VaultError::VaultLocked(
+                "secure_wipe çağrıldı; kasa mühürlü. Yeniden açmadan okuma/yazma yapılamaz."
+                    .to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// [VAULT_PERSISTENCE_FIX] Master key artık her `load`'da RASTGELE
+    /// üretilmiyor (eski davranış: aynı kasa iki kez açıldığında iki farklı
+    /// "master key" — yani alan süs eşyasıydı). Argon2id PHC çıktısının
+    /// SHA-256'sı türetilir: aynı parola + aynı tuz → aynı anahtar, hem
+    /// `new` hem `load` yolunda. Argon2id yavaş türetmeyi yapar; SHA-256
+    /// yalnızca 32 baytlık sabit uzunluğa indirger.
+    fn derive_master_key(password_hash_phc: &str) -> Secret<Vec<u8>> {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(password_hash_phc.as_bytes());
+        Secret::new(hasher.finalize().to_vec())
+    }
+
     fn encrypt_data(&self, plaintext: &[u8]) -> Result<Vec<u8>, VaultError> {
         use age::Encryptor;
         use std::io::Write;
 
         let mut encrypted = Vec::new();
         {
-            let recipients: Vec<Box<dyn age::Recipient + Send>> = vec![Box::new(self.recipient.clone())];
-            let mut writer = Encryptor::with_recipients(recipients)
-                .expect("Recipient oluşturulamadı")
-                .wrap_output(&mut encrypted)
-                .expect("Output wrap edilemedi");
+            let recipients: Vec<Box<dyn age::Recipient + Send>> =
+                vec![Box::new(self.recipient.clone())];
+            // [VAULT_PERSISTENCE_FIX] `.expect(...)` YOK: kasa arızası panik
+            // değil `VaultError` döndürür (sessiz çökme / süreci düşürme yok).
+            let encryptor = Encryptor::with_recipients(recipients).ok_or_else(|| {
+                VaultError::EncryptionError("age alıcı listesi boş; şifreleme başlatılamadı".to_string())
+            })?;
+            let mut writer = encryptor.wrap_output(&mut encrypted).map_err(|e| {
+                VaultError::EncryptionError(format!("age wrap_output hatası: {}", e))
+            })?;
 
-            writer.write_all(plaintext)
+            writer
+                .write_all(plaintext)
                 .map_err(|e| VaultError::EncryptionError(format!("age write hatası: {}", e)))?;
+
+            // ★ KÖK NEDEN DÜZELTMESİ ★
+            // `finish()` çağrılmadan age akışının SON chunk'ı ve MAC'i diske
+            // inmez; dosya kesik kalır ve reload'da "age file is truncated"
+            // verir. `Drop` bu işi YAPMAZ (age 0.10.1 sözleşmesi).
+            writer
+                .finish()
+                .map_err(|e| VaultError::EncryptionError(format!("age finish hatası: {}", e)))?;
         }
 
         Ok(encrypted)
@@ -203,43 +360,194 @@ impl StealthVault {
         {
             let recipient_decryptor = match decryptor {
                 Decryptor::Recipients(d) => d,
-                _ => return Err(VaultError::DecryptionError("Beklenmeyen age decryptor tipi".to_string())),
+                _ => {
+                    return Err(VaultError::DecryptionError(
+                        "Beklenmeyen age decryptor tipi (kasa alıcı-şifreli değil)".to_string(),
+                    ))
+                }
             };
-            
+
             let identities: Vec<Box<dyn age::Identity>> = vec![Box::new(self.identity.clone())];
-            let mut reader = recipient_decryptor.decrypt(identities.iter().map(|i| i.as_ref()))
+            let mut reader = recipient_decryptor
+                .decrypt(identities.iter().map(|i| i.as_ref()))
                 .map_err(|e| VaultError::DecryptionError(format!("age decrypt hatası: {}", e)))?;
-            
-            reader.read_to_end(&mut decrypted)
+
+            reader
+                .read_to_end(&mut decrypted)
                 .map_err(|e| VaultError::DecryptionError(format!("age read hatası: {}", e)))?;
         }
 
         Ok(decrypted)
     }
 
-    fn save_to_disk(&self) -> Result<(), VaultError> {
-        let identity_str = self.identity.to_string();
-        
-        let vault_data = serde_json::json!({
-            "identity": identity_str.expose_secret().as_str(),
-            "password_hash": self.password_hash,
-            "version": "5.0"
-        });
+    /// age x25519 GİZLİ anahtarını operatör parolasıyla şifreler (age scrypt).
+    fn encrypt_identity(identity_secret: &str, password: &str) -> Result<Vec<u8>, VaultError> {
+        use age::Encryptor;
+        use std::io::Write;
 
-        let vault_bytes = serde_json::to_vec(&vault_data)
+        let passphrase: SecretString = Secret::new(password.to_owned());
+        let encryptor = Encryptor::with_user_passphrase(passphrase);
+
+        let mut encrypted = Vec::new();
+        let mut writer = encryptor.wrap_output(&mut encrypted).map_err(|e| {
+            VaultError::EncryptionError(format!("age wrap_output (parola) hatası: {}", e))
+        })?;
+        writer
+            .write_all(identity_secret.as_bytes())
+            .map_err(|e| VaultError::EncryptionError(format!("age write (parola) hatası: {}", e)))?;
+        // finish() zorunlu — bkz. encrypt_data'daki kök neden notu.
+        writer
+            .finish()
+            .map_err(|e| VaultError::EncryptionError(format!("age finish (parola) hatası: {}", e)))?;
+
+        Ok(encrypted)
+    }
+
+    /// Parolayla şifrelenmiş kimliği çözer; yanlış parola → `PasswordError`.
+    fn decrypt_identity(ciphertext: &[u8], password: &str) -> Result<SecretString, VaultError> {
+        use age::Decryptor;
+        use std::io::Read;
+
+        let decryptor = Decryptor::new(ciphertext).map_err(|e| {
+            VaultError::DecryptionError(format!("age decryptor (parola) hatası: {}", e))
+        })?;
+
+        let passphrase_decryptor = match decryptor {
+            Decryptor::Passphrase(d) => d,
+            _ => {
+                return Err(VaultError::DecryptionError(
+                    "Kasa kimliği parola-şifreli bir age dosyası değil (dosya bozuk/kurcalanmış)"
+                        .to_string(),
+                ))
+            }
+        };
+
+        let passphrase: SecretString = Secret::new(password.to_owned());
+        let mut reader = passphrase_decryptor.decrypt(&passphrase, None).map_err(|e| {
+            // age, yanlış parolayı MAC hatası olarak bildirir. Operatöre
+            // dürüst cevap: parola uyuşmadı.
+            VaultError::PasswordError(format!("Kasa kimliği çözülemedi (yanlış parola?): {}", e))
+        })?;
+
+        let mut plaintext = Vec::new();
+        reader
+            .read_to_end(&mut plaintext)
+            .map_err(|e| VaultError::DecryptionError(format!("age read (parola) hatası: {}", e)))?;
+
+        // `String::from_utf8` tamponu TAŞIYARAK devralır: arkada kopya kalmaz,
+        // gizli anahtar bundan sonra `Secret` içinde yaşar ve `Drop`'ta sıfırlanır.
+        let identity_string = String::from_utf8(plaintext).map_err(|e| {
+            VaultError::DecryptionError(format!("Kasa kimliği UTF-8 değil: {}", e))
+        })?;
+        Ok(Secret::new(identity_string))
+    }
+
+    fn save_to_disk(&self, password: &str) -> Result<(), VaultError> {
+        let identity_secret = self.identity.to_string();
+
+        let vault_file = VaultFile {
+            // [VAULT_PERSISTENCE_FIX] Gizli anahtar DÜZ METİN YAZILMAZ.
+            identity_encrypted: Self::encrypt_identity(
+                identity_secret.expose_secret().as_str(),
+                password,
+            )?,
+            recipient: self.recipient.to_string(),
+            password_hash: self.password_hash.clone().ok_or_else(|| {
+                VaultError::KeyGenerationError("Parola hash'i yok; kasa diske yazılamaz".to_string())
+            })?,
+            version: VAULT_SCHEMA_VERSION.to_string(),
+        };
+
+        let vault_bytes = serde_json::to_vec(&vault_file)
             .map_err(|e| VaultError::FileError(e.to_string()))?;
 
-        fs::write(&self.vault_path, vault_bytes)
-            .map_err(|e| VaultError::FileError(e.to_string()))?;
+        Self::write_atomic(&self.vault_path, &vault_bytes)?;
 
         tracing::info!("Vault {} konumuna kaydedildi", self.vault_path.display());
         Ok(())
     }
 
+    /// Yarım dosya bırakmayan yazım: önce `<hedef>.tmp`, sonra `rename`.
+    ///
+    /// `rename` aynı dosya sisteminde atomiktir; süreç yazım sırasında
+    /// ölürse hedef ya eski tam hâlinde kalır ya da hiç oluşmaz — asla
+    /// kesik kalmaz (veri kaybı arızasının ikinci ayağı).
+    fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), VaultError> {
+        let tmp = path.with_extension("tmp");
+        fs::write(&tmp, bytes).map_err(|e| VaultError::FileError(e.to_string()))?;
+        fs::rename(&tmp, path).map_err(|e| {
+            let _ = fs::remove_file(&tmp);
+            VaultError::FileError(format!("Atomik yeniden adlandırma hatası: {}", e))
+        })?;
+        Ok(())
+    }
+
+    /// Kasanın parmak izi: master key'in ilk 8 baytının hex'i (16 karakter).
+    ///
+    /// [VAULT_PERSISTENCE_FIX] `master_key` eskiden her `load`'da RASTGELE
+    /// üretiliyordu ve hiçbir yerde okunmuyordu — yani alan saf dekorasyondu
+    /// (derleyici de `field is never read` diye uyarıyordu). Artık anahtar
+    /// deterministik türetilir (`SHA-256(Argon2id PHC)`) ve bu iz üzerinden
+    /// GÖZLEMLENEBİLİR: aynı kasa + aynı parola → aynı iz, başka kasa → başka
+    /// iz. "Açtığım kasa beklediğim kasa mı?" sorusunun cevabıdır.
+    ///
+    /// Kasa mühürlüyse iz VERİLMEZ (`VaultLocked`): mühürlü bir kasa hakkında
+    /// hiçbir şey söylenmez.
+    pub fn fingerprint(&self) -> Result<String, VaultError> {
+        self.ensure_unlocked()?;
+        Ok(self
+            .master_key
+            .expose_secret()
+            .iter()
+            .take(8)
+            .copied()
+            .map(|byte| format!("{:02x}", byte))
+            .collect())
+    }
+
+    /// Kasayı bellekte mühürler. **Kalıcıdır**: sonrasında `store`/`retrieve`
+    /// `VaultError::VaultLocked` döndürür.
+    ///
+    /// [VAULT_PERSISTENCE_FIX] Eski kod anahtarın BİR KOPYASINI sıfırlıyordu
+    /// (`expose_secret().clone()` → `zeroize()`), yani asıl alan hiç
+    /// temizlenmiyordu — saf tiyatro. `secrecy::Secret` `Drop`'ta sıfırlar;
+    /// alanı boş bir secret ile DEĞİŞTİRMEK eski değeri düşürür ve gerçek
+    /// sıfırlamayı tetikler.
     pub fn secure_wipe(&mut self) {
-        let mut key_bytes = self.master_key.expose_secret().clone();
-        key_bytes.zeroize();
-        tracing::warn!("Vault bellekten güvenli şekilde temizlendi");
+        self.master_key = Secret::new(Vec::new());
+        if let Some(mut hash) = self.password_hash.take() {
+            hash.zeroize();
+        }
+        self.wiped = true;
+        tracing::warn!("Vault bellekten güvenli şekilde temizlendi (kasa mühürlendi)");
+    }
+}
+
+/// [VAULT_PERSISTENCE_FIX] `Debug` ELLE yazıldı; `#[derive(Debug)]` burada
+/// hem imkânsız hem tehlikeli olurdu:
+///   - imkânsız: `age::x25519::Identity` `Debug` türetmez (E0277),
+///   - tehlikeli: kasayı `Debug` ile yazdırmak gizli malzemeyi loglara
+///     sızdırırdı — bu modülün varlık sebebiyle çelişir.
+/// Bu impl yalnız güvenli alanları gösterir; `identity`, `master_key` ve
+/// `password_hash` daima `[REDACTED]`.
+///
+/// Somut ihtiyaç: `Result::unwrap_err()` `T: Debug` ister. Kasa açılışının
+/// REDDEDİLDİĞİNİ doğrulayan fail-closed testleri (düz metin kimlikli eski
+/// dosya, kurcalanmış alıcı, yanlış parola) ancak bu impl varsa derlenir;
+/// yoksa derleyici "StealthVault doesn't implement Debug" der ve kasa
+/// denetimleri hiç koşamaz.
+impl std::fmt::Debug for StealthVault {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StealthVault")
+            .field("vault_path", &self.vault_path)
+            // Açık alıcı anahtarı gizli değildir; hangi kasaya bakıldığını
+            // görmek teşhis için gereklidir.
+            .field("recipient", &self.recipient.to_string())
+            .field("unlocked", &!self.wiped)
+            .field("master_key", &"[REDACTED]")
+            .field("identity", &"[REDACTED]")
+            .field("password_hash", &"[REDACTED]")
+            .finish()
     }
 }
 
@@ -274,11 +582,12 @@ mod tests {
         vault_mut.secure_wipe();
     }
 
-    // [CI BULGUSU 2026-08-26, kayit altinda] StealthVault store->disk->reload
-    // zinciri "age file is truncated" veriyor (17/18 test yesil, yalniz bu duser).
-    // Bu GERCEK kaliclilik bug'i; sonraki oturumda vault.rs icinde duzeltilecek.
+    // [VAULT_PERSISTENCE_FIX 2026-10-07] Bu test eskiden
+    // `#[ignore = "VAULT_PERSISTENCE_BUG: age file truncated on store->reload"]`
+    // ile susturulmuştu: hata çözülmek yerine CI'dan gizlenmişti. Etiket
+    // KALDIRILDI, kök neden (eksik `StreamWriter::finish()`) onarıldı ve test
+    // artık hilesiz koşuyor.
     #[test]
-    #[ignore = "VAULT_PERSISTENCE_BUG: age file truncated on store->reload (CI 2026-08-26)"]
     fn test_vault_roundtrip_store_reload_retrieve() {
         // [047] sözleşme: oluştur -> yaz -> (diskten) aç -> oku -> değer aynı
         let dir = tempdir().unwrap();
@@ -294,6 +603,207 @@ mod tests {
         struct Credential { value: String }
         let cred: Credential = reloaded.retrieve("OPENROUTER_API_KEY").unwrap();
         assert_eq!(cred.value, "sk-or-v1-x");
+    }
+
+    /// Kesik age akışının REGRESYON KİLİDİ: diske inen `.cipher` yükü
+    /// eksiksiz bir age v1 dosyası olmalı (sihirli başlık + tam gövde) ve
+    /// kasayı yeniden yüklemeden da çözülebilmeli.
+    #[test]
+    fn test_vault_persisted_cipher_is_a_complete_age_file() {
+        let dir = tempdir().unwrap();
+        let vault_path = dir.path().join("complete_vault.json");
+        let vault = StealthVault::new(&vault_path, "parola").unwrap();
+
+        #[derive(Serialize, Deserialize, Debug)]
+        struct Credential { value: String }
+        vault
+            .store("TOKEN", &Credential { value: "sk-or-v1-tam-akis".to_string() })
+            .unwrap();
+
+        let cipher_path = dir.path().join("TOKEN.cipher");
+        assert!(cipher_path.exists(), ".cipher dosyası diske inmedi");
+
+        let raw = fs::read(&cipher_path).unwrap();
+        let payload: EncryptedPayload = serde_json::from_slice(&raw).unwrap();
+        assert!(
+            !payload.ciphertext.is_empty(),
+            "şifreli gövde boş — veri kaybı"
+        );
+        assert!(
+            payload.ciphertext.starts_with(b"age-encryption.org/v1\n"),
+            "age v1 sihirli başlığı yok: {:?}",
+            &payload.ciphertext[..payload.ciphertext.len().min(32)]
+        );
+
+        // Kesik akış tam burada patlardı ("age file is truncated").
+        let plaintext = vault.decrypt_data(&payload.ciphertext).unwrap();
+        let cred: Credential = serde_json::from_slice(&plaintext).unwrap();
+        assert_eq!(cred.value, "sk-or-v1-tam-akis");
+    }
+
+    /// [VAULT_PERSISTENCE_FIX] Kasa dosyası age GİZLİ anahtarını DÜZ METİN
+    /// taşıyamaz: "diskte şifreli kasa" iddiasının altı dolu olmak zorunda.
+    #[test]
+    fn test_vault_file_never_stores_identity_in_plaintext() {
+        let dir = tempdir().unwrap();
+        let vault_path = dir.path().join("no_plaintext_vault.json");
+        let vault = StealthVault::new(&vault_path, "parola").unwrap();
+        let identity_string = vault.identity.to_string();
+        let plaintext_secret = identity_string.expose_secret().as_str().to_owned();
+        assert!(plaintext_secret.starts_with("AGE-SECRET-KEY-1"));
+
+        let on_disk = fs::read_to_string(&vault_path).unwrap();
+        assert!(
+            !on_disk.contains(&plaintext_secret),
+            "GİZLİ age anahtarı düz metin olarak diske yazıldı"
+        );
+        assert!(
+            !on_disk.contains("AGE-SECRET-KEY-"),
+            "kasa dosyasında düz metin gizli anahtar öneki bulundu"
+        );
+        assert!(
+            on_disk.contains("identity_encrypted"),
+            "kimlik şifreli alanda saklanmıyor"
+        );
+        // Açık alıcı anahtarı gizli değildir; bütünlük denetimi için yazılır.
+        assert!(on_disk.contains(&vault.recipient.to_string()));
+    }
+
+    /// Eski (güvensiz) şemayla yazılmış bir kasa dosyası fail-closed
+    /// reddedilir — parola doğru olsa bile.
+    #[test]
+    fn test_legacy_plaintext_identity_vault_is_rejected() {
+        let dir = tempdir().unwrap();
+        let vault_path = dir.path().join("legacy_vault.json");
+
+        let legacy_identity = age::x25519::Identity::generate();
+        let salt = SaltString::generate(&mut OsRng);
+        let legacy_hash = Argon2::default()
+            .hash_password(b"parola", &salt)
+            .unwrap()
+            .to_string();
+        let legacy = serde_json::json!({
+            "identity": legacy_identity.to_string().expose_secret().as_str(),
+            "password_hash": legacy_hash,
+            "version": "5.0",
+        });
+        fs::write(&vault_path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+
+        let err = StealthVault::load(&vault_path, "parola").unwrap_err();
+        assert!(
+            matches!(err, VaultError::InsecureVaultFile(_)),
+            "beklenen InsecureVaultFile, gelen: {:?}",
+            err
+        );
+        // Yanlış parola hâlâ parola hatasıdır (biçim bilgisi sızmaz).
+        let err = StealthVault::load(&vault_path, "yanlis").unwrap_err();
+        assert!(matches!(err, VaultError::PasswordError(_)), "gelen: {:?}", err);
+    }
+
+    /// Kasa kurcalanırsa (açık alıcı ≠ kimliğin alıcısı) sessizce açılmaz.
+    #[test]
+    fn test_vault_rejects_tampered_recipient() {
+        let dir = tempdir().unwrap();
+        let vault_path = dir.path().join("tampered_vault.json");
+        StealthVault::new(&vault_path, "parola").unwrap();
+
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&fs::read(&vault_path).unwrap()).unwrap();
+        let bogus_recipient = age::x25519::Identity::generate().to_public().to_string();
+        value["recipient"] = serde_json::Value::String(bogus_recipient);
+        fs::write(&vault_path, serde_json::to_vec(&value).unwrap()).unwrap();
+
+        let err = StealthVault::load(&vault_path, "parola").unwrap_err();
+        assert!(
+            matches!(err, VaultError::DecryptionError(_)),
+            "beklenen DecryptionError, gelen: {:?}",
+            err
+        );
+    }
+
+    /// [VAULT_PERSISTENCE_FIX] Mühürlenen kasa okuma/yazmayı REDDEDER.
+    /// Kilit, kilit gibi davranmak zorunda.
+    #[test]
+    fn test_wiped_vault_refuses_store_and_retrieve() {
+        let dir = tempdir().unwrap();
+        let vault_path = dir.path().join("wiped_vault.json");
+        let mut vault = StealthVault::new(&vault_path, "parola").unwrap();
+
+        #[derive(Serialize, Deserialize, Debug)]
+        struct Credential { value: String }
+        vault
+            .store("K", &Credential { value: "v".to_string() })
+            .unwrap();
+        assert!(vault.is_unlocked());
+
+        // Mühürlemeden ÖNCE kasa gerçekten okunabilir olmalı (boş bir
+        // "reddedildi" iddiasıyla değil, çalışan bir kasayla karşılaştırma).
+        let before: Credential = vault.retrieve("K").unwrap();
+        assert_eq!(before.value, "v");
+
+        vault.secure_wipe();
+        assert!(!vault.is_unlocked());
+
+        let store_err = vault
+            .store("K", &Credential { value: "v2".to_string() })
+            .unwrap_err();
+        assert!(
+            matches!(store_err, VaultError::VaultLocked(_)),
+            "mühürlü kasa yazmayı reddetmedi: {:?}",
+            store_err
+        );
+
+        let retrieve_err = vault.retrieve::<Credential>("K").unwrap_err();
+        assert!(
+            matches!(retrieve_err, VaultError::VaultLocked(_)),
+            "mühürlü kasa okumayı reddetmedi: {:?}",
+            retrieve_err
+        );
+
+        // secure_wipe idempotent olmalı (Drop da çağırır).
+        vault.secure_wipe();
+        assert!(!vault.is_unlocked());
+    }
+
+    /// Master key artık süs değil: aynı parola + aynı dosya → aynı anahtar.
+    /// (Eski davranış: her `load`'da rastgele 32 bayt, yani hiçbir anlamı yoktu.)
+    #[test]
+    fn test_master_key_is_stable_across_reload() {
+        let dir = tempdir().unwrap();
+        let vault_path = dir.path().join("stable_key_vault.json");
+        let created = StealthVault::new(&vault_path, "parola").unwrap();
+        let created_key = created.master_key.expose_secret().clone();
+        assert_eq!(created_key.len(), 32);
+
+        let reloaded = StealthVault::load(&vault_path, "parola").unwrap();
+        assert_eq!(
+            reloaded.master_key.expose_secret().as_slice(),
+            created_key.as_slice(),
+            "master key yeniden yüklemede değişti — alan gerçek bir anahtar değil"
+        );
+
+        // Parmak izi de aynı: master key artık GÖZLEMLENEBİLİR bir değer
+        // taşıyor, süs eşyası değil.
+        let created_fp = created.fingerprint().unwrap();
+        assert_eq!(created_fp.len(), 16, "iz 8 baytın hex'i olmalı: {:?}", created_fp);
+        assert_eq!(created_fp, reloaded.fingerprint().unwrap());
+
+        // Başka bir kasa (aynı parola bile olsa) BAŞKA iz verir: tuz farklı.
+        let other_path = dir.path().join("other_vault.json");
+        let other = StealthVault::new(&other_path, "parola").unwrap();
+        assert_ne!(
+            other.fingerprint().unwrap(),
+            created_fp,
+            "iki farklı kasa aynı parmak izini verdi — iz hiçbir şey ayırt etmiyor"
+        );
+
+        // Mühürlü kasa iz VERMEZ.
+        let mut sealed = reloaded;
+        sealed.secure_wipe();
+        assert!(matches!(
+            sealed.fingerprint(),
+            Err(VaultError::VaultLocked(_))
+        ));
     }
 
     #[test]
