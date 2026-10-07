@@ -33,7 +33,7 @@ Bu plan hazırlanırken ölçülmemişti; #113 ile kapandı: **kasa kilitliyken 
 
 | Kalem | Durum | Kim çalışıyor |
 |---|---|---|
-| **E0** regresyon paketi (şemsiye) | Açık | — |
+| **E0** regresyon paketi (şemsiye) | **Kapandı** (24 bulgu bekçide) | bu oturum |
 | **E1** vault truncate + `#[ignore]` kaldırma | **Kapandı** (#113, birleşme bekliyor) | paralel oturum |
 | **E2** MinorGate API sınırı | **Kapandı** (bu PR) | bu oturum |
 | **E3** omurga tek yol (8 `httpx` dosyası) | Açık 🟡 | — |
@@ -108,6 +108,38 @@ Depo bu kültüre sahip (`tests/unit/test_ui_honesty_contract.py`, `tests/unit/t
 - **Ne:** `JULES_DENETIM_2026-10-06.md` içindeki tüm `DOĞRULA` komutlarını tek koşuda çalıştıran `scripts/audit_regression.sh` + CI adımı. Bilinen-açık listesi boşalana dek daralır.
 - **Neden:** Denetim bulguları sessizce geri gelmesin; "/v1/models" gibi bayat iddialar bu paketle kesinleşir.
 - **DoD:** CI'da koşar; çıktı `reports/` altına JSON olarak yazılır; her FAZ E maddesi bir satırını "AÇIK → KAPALI" gösterir.
+
+#### E0 · UYGULANDI (2026-10-07) — ne yapıldı, DoD'dan nerede ayrıldı
+
+**Dosyalar:** `scripts/audit_regression.py` (bekçi) · `reports/audit_regression.json` (commit'lenen ölçüm) · `tests/unit/test_audit_regression.py` (37 test) · `.github/workflows/ci.yml` (`backend` işine adım).
+
+**Ne yapar:** Denetim raporunu AYRIŞTIRIR (24 bulgu · 8 alan · hayalet kayıt iki yönde yasak) → her bulguyu **statik / test-kapılı / doğrulanamaz** olarak sınıflar → `reports/audit_regression.json` üretir → `KNOWN_OPEN` dışında AÇILAN bulguda **exit 1**. Liste bayatlarsa (onarılan bulgu listede kalırsa) da exit 1: iyileşme kayda geçmek **zorunda**.
+
+**Ölçülen taban (2026-10-07, `main` @ `d73e9d2`):** 24 bulgu → **9 kapandı · 1 kapandı\* (tasarım) · 11 açık · 3 doğrulanamaz**. `KNOWN_OPEN` = 11 ve ölçülen açık kümeyle **birebir**.
+> \* `closed_by_design`: kusur giderilmiş ama denetimin istediği *biçimde* değil — evin testle kilitli, bilinçli tasarım kararı. Tek örnek E-GÖZ2-4 (`/api/speech/say`): denetim 400/503 istedi; ev 200 + dürüst `available:false` + WebSocket `denied` yayını kurdu ve bunu testle kilitledi. Ayrım halı altına süpürülmedi, raporda gerekçesiyle yazılı.
+
+**Planın beklediği iki "bayat iddia" bu paketle KESİNLEŞTİ:**
+- **E-GÖZ2-2 (`/v1/models`)** → plan "denetimin `[]` döner iddiası bayat görünüyor, kanıtı E0 getirir" diyordu. Getirdi: uç envanteri `routed.executable_models(gateway)` · `MODEL_PRICING` · `local_model` kaynaklarından kuruyor, sabit `[]` döndürmüyor; `tests/e2e/test_openai_compatibility.py` kilidiyle **KAPANDI**.
+- **E-GÖZ2-8 (çocuk kilidi)** → denetimin `grep -r 'minor_gate' backend/api.py` komutu bugün **yalnız bir ölçüm yorumu** buluyor (satır ~3439). Kapı `_require_minor_clearance` + `MinorCasePayload` adıyla yaşıyor. Komut birebir koşulsaydı E2'yi **"açık"** ilan ederdi → bekçi kalıbı değil **kusuru** arar ve bulguyu doğru okur.
+- **E-GÖZ3-4 (UI tiyatrosu)** → aynı tuzak: `|| "Veri mevcut değil"` kalıbı bugün yalnız satır ~150'deki **açıklama yorumunda** yaşıyor. Onarım `INSUFFICIENT_EVIDENCE` sabiti (17 kullanım) + `hasEvidence()` kapısıyla yapılmış. Bekçi "yorum ≠ canlı kusur" ayrımını ölçer; ikisini karıştırmak iki yönde de sahte hüküm üretirdi.
+
+**Bekçinin KENDİ kusurları (geliştirme sırasında yakalandı, her biri testle kilitlendi):**
+1. Satır-satır eşleşme çok satırlı kalıbı (`except Exception:\n    pass`) **görmüyordu** → 2 sahte açık.
+2. `browser/open` yol adı dosyada iki kez geçiyor (dış-çıkış envanteri + route); ilk eşleşmeye bakmak sahte "bağlı değil" üretiyordu.
+3. Route gövdesi sabit karakter penceresiyle ölçülünce komşu fonksiyondaki kapı sızıp **kapısız route'u "bağlı"** gösteriyordu (sahte yeşil — en tehlikelisi). Doğru ölçüm: tanım satırını atla, bir sonraki üst-düzey tanıma kadar gövdeyi al.
+4. `generated_at`'e anlık damga yazmak CI'daki `git diff --exit-code` adımını **her koşuda kırmızıya** boyuyordu → damga kaynağa bağlandı (denetim raporunu son değiştiren commit), çıktı bayt bayt deterministik.
+5. Test-kilit işaretleri zayıftı: `("minor", "423")` — `423` o dosyada yalnız bir **yorumda** geçiyordu, yani içi boş bir dosya bile "kilit var" dedirtirdi → çocuk kilidine özgü işaretlere çevrildi (`_require_minor_clearance` · `MINOR_BLOCKED` · `451`).
+6. `_glob_hits` "iğne mi regex mi" tahminiyle `|` alternation'ı bozuyordu.
+8. **İkincisini de CI yakaladı ve ancak annotation ile okunabildi:** kanıt dizeleri `shutil.which` sonucunu MUTLAK YOL olarak gömüyordu; GitHub'ın `ubuntu-latest` imajı Rust araç zincirini KURULU getirdiği için CI `…/.cargo/bin/cargo`, geliştirme ortamı `None` üretti → aynı kaynak, iki farklı JSON, tazelik kapısı yine "bayat". Araç VAR/YOK gözlemi hükmü değiştirmese bile kanıt metnini makineye bağlıyordu; gözlem tamamen kaldırıldı, sınıflandırma MİMARİYE bağlandı (bekçi saf-Python, Rust otoritesi `rust-core` işi).
+9. **Kendi testlerim de sahte pozitif üretti:** `/usr/` sızıntı kalıbı betiğin *shebang*'ını yakalıyordu → shebang muaf tutuldu. (Bekçi yanlış yeşil üretemez, ama yanlış kırmızı da üretmemeli; ikisi de ölçüldü.)
+7. **Bunu ancak CI yakaladı:** damga `git log -1 --format=%cI` (git yoksa mtime) ile üretiliyordu. Actions **sığ klon** yaptığı için commit tarihi KOŞU ZAMANINA eşitleniyor, checkout da mtime'ı her ortamda farklı yazıyor → aynı içerik iki farklı damga üretiyor ve `git diff` kapısı "bayat rapor" diye yanıyordu (run `37585688805` · adım 7; adım 6'daki tam test paketi **yeşildi**). Üstelik Actions logları Azure blob'dan okunamadığı için sebep de görünmüyordu. İki onarım: damga artık denetim raporunun **içerik mühürü** (`sha256`, ortamdan bağımsız) ve adım başarısızlık ayrıntısını **annotation** olarak yüzeye çıkarıyor (repo'nun "sessiz-çökme-yok" kuralı, `rust-core` emsali).
+
+**DoD'dan sapmalar (bilinçli):**
+- **Kabuk değil Python:** DoD `scripts/audit_regression.sh` diyordu. 24 bulgunun sınıflanması çok satırlı regex, JSON üretimi ve iki yönlü hayalet denetimi istiyor; kabukta bu ya kırılgan ya sahte olurdu. Ayrıca `.sh` sürümü CI'ın `git diff` tazelik kapısını kuramazdı.
+- **Rapor tazeliği de kapılı:** CI adımı bekçiyi koşmakla yetinmez, `git diff --exit-code -- reports/audit_regression.json` ile commit'lenen JSON'un bayatlamadığını denetler (depo emsali: routing shadows adımı).
+- **Rust bulguları bilinçli olarak "doğrulanamaz":** `cargo`/`rustc` bu ortamda yok; otorite CI'ın `rust-core` işi. Statik *gözlem* (kaynakta `#[ignore]` kalmamış, `purity_scan` bekçisi var) rapora GÖZLEM olarak yazılır ama **hükme çevrilmez** — çevirmek tam olarak denetimin eleştirdiği tiyatro olurdu.
+
+**Kanıt:** `tests/unit/test_audit_regression.py` **41 test** (ayrıştırma tamlığı · hayalet iki yönde yasak · `KNOWN_OPEN` ölçülen açık kümeyle birebir · **kapı ısırıyor**: taban boşaltılınca 11 regresyon + exit 1, tek bulgu açılınca yakalanır, onarılan listede kalınca "bayat" · kanıtsız `closed` hükmü **kurulamaz** · `unverifiable` yapısal olarak `closed`/`open` **dönüştüremez** · boş test dosyası kilit sayılmaz · statik kontroller sahte repoda kusurla onarımı **ayırt eder** · "yorum ≠ canlı kusur" · route gövdesi ölçümü · determinizm · damga içeriği izler ama ortamı izlemez · kaynak okunamazsa damga UYDURULMAZ · raporda makine izi SIFIR (sahte PATH ile iki yönde ölçülür) · CI adımı yapısal kilitli + annotation'lı). Tam paket: **taban 2223 passed / 4 skipped / 0 failed** → E0 ile **2264 passed / 4 skipped / 0 failed** (+41, **regresyon yok**). `ruff check .` temiz. Python ürün-yolu saflık testi yeşil (betik Rust dizinini alt çizgiyle anmaz, CI işinin adıyla anar).
 
 ### E1 · Kasa mührü: vault kalıcılık bug'ı 🔴 KRİTİK
 - **Ne:** `rust_core` — age yazma/okuma döngüsündeki truncate bug'ı onarılır; `vault.rs:281`'deki `#[ignore]` **kaldırılır**; roundtrip testi aktive edilir.

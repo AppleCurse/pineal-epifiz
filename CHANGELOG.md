@@ -97,6 +97,63 @@ madde, kusuru YENİDEN getirmeyi engelleyen testlerle kilitlendi; her düzeltme
   (`tests/unit/test_uncompiled_language_integrity.py`); **asıl doğrulama
   CI'da yapıldı ve her ikisi de geçti** — Rust tarafında `Cargo.lock`
   güncellemesi de (`cargo test --locked` koştuğu için zorunluydu) doğrulandı.
+## Unreleased — 2026-10-07 — FAZ E · E0: denetim regresyon bekçisi (24 bulgu makine denetiminde)
+
+- **E0 · DENETİM REGRESYON PAKETİ TAMAM** (FAZ E şemsiye kalemi).
+  `docs/reports/JULES_DENETIM_2026-10-06.md` 24 bulgu üretmiş ve her birine
+  insan gözü için bir `DOĞRULA` komutu yazmıştı; **hiçbiri makine tarafından
+  koşulmuyordu**. Yani bir bulgu onarıldıktan sonra aynı kusurun geri gelmesini
+  engelleyen hiçbir şey yoktu. `scripts/audit_regression.py` o raporu çalışan
+  bekçiye çevirir: rapor ayrıştırılır (hayalet kayıt iki yönde yasak), her bulgu
+  **statik / test-kapılı / doğrulanamaz** sınıflanır, `reports/audit_regression.json`
+  üretilir ve `KNOWN_OPEN` dışında açılan bulguda **exit 1**.
+- **Ölçülen taban:** 24 bulgu → **9 kapandı · 1 kapandı (tasarım) · 11 açık ·
+  3 doğrulanamaz**. Taban çizgisi ölçülen açık kümeyle **birebir**; onarılan bir
+  bulgu listede bırakılırsa da kırmızı yanar → iyileşme kayda geçmek zorunda.
+- **Bekçi kalıbı değil KUSURU arar.** Denetimin iki `DOĞRULA` komutu bugün
+  **bayat** ve birebir koşulsaydı yanlış hüküm verirdi: `grep 'minor_gate'
+  backend/api.py` yalnız bir ölçüm yorumu bulur (kapı `_require_minor_clearance`
+  adıyla yaşıyor → E2 yanlışlıkla "açık" ilan edilirdi); `|| "Veri mevcut değil"`
+  kalıbı yalnız kaldırılmış kusuru anlatan bir **yorumda** durur (onarım
+  `INSUFFICIENT_EVIDENCE` + `hasEvidence()` ile yapılmış → E6). Her ikisi de
+  raporda `audit_verify_stale` alanıyla belgelendi.
+- **Planın beklediği bayat iddia kesinleşti:** `/v1/models` sabit `[]`
+  **döndürmüyor** — envanter `executable_models` · `MODEL_PRICING` · `local_model`
+  kaynaklarından kuruluyor ve e2e testiyle kilitli (E-GÖZ2-2 kapandı).
+- **UYDURMA YASAĞI yapısal:** kanıtsız `closed` hükmü **kurulamaz** (RuntimeError),
+  `unverifiable` sınıfı `closed`/`open` **dönüştüremez**, test-kapılı kapanış
+  ancak test dosyası **gerçek işaretleri** içeriyorsa geçer (boş dosya yetmez).
+  Rust bulguları bilerek "doğrulanamaz" bırakıldı: `cargo` bu ortamda yok,
+  otorite CI'ın `rust-core` işi. Statik gözlem rapora *gözlem* olarak yazılır,
+  hükme çevrilmez.
+- **Bekçinin kendi kusurları yakalanıp kilitlendi** (dürüstlük kaydı): çok
+  satırlı kalıbı görmeyen satır-satır eşleşme (2 sahte açık) · `browser/open`
+  yol adının envanter listesiyle karışması · route gövdesinin sabit pencereyle
+  ölçülüp komşu fonksiyondaki kapıyı sızdırması (**sahte yeşil**) · anlık
+  `generated_at` damgasının CI'daki `git diff --exit-code` adımını her koşuda
+  kırmızıya boyaması · zayıf test-kilit işaretleri (`423` o dosyada yalnız
+  yorumdaydı) → hepsi düzeltildi ve her biri bir testle kilitlendi.
+- **Yedincisini ancak CI yakaladı:** damga `git log`/mtime'dan türetiliyordu; Actions
+  **sığ klon** yaptığı için commit tarihi koşu zamanına eşitleniyor ve checkout mtime'ı
+  her ortamda farklı yazılıyor → aynı içerik iki farklı damga üretip `git diff` kapısını
+  "bayat rapor" diye kırmızıya boyuyordu. Damga artık denetim raporunun **içerik mühürü**
+  (`sha256`) ve adım başarısızlık ayrıntısını **annotation** olarak yüzeye çıkarıyor
+  (loglar Azure blob'dan okunamıyor — repo'nun "sessiz-çökme-yok" kuralı).
+- **Sekizincisi de CI'dan geldi ve annotation sayesinde okundu:** kanıt dizeleri araç
+  zincirinin yolunu gömüyordu; GitHub imajı Rust'ı KURULU getirdiği için CI ile geliştirme
+  ortamı farklı JSON üretti. Araç VAR/YOK gözlemi hükmü değiştirmese de raporu makineye
+  bağlıyordu → gözlem kaldırıldı, sınıflandırma mimariye bağlandı. Kural artık testle
+  kilitli: commit'lenen raporda makine izi SIFIR (sahte `PATH` ile iki yönde ölçülür).
+- **Test:** +41 (`tests/unit/test_audit_regression.py`). Tam koşu: taban
+  **2223P/0F** → E0 ile **2264P/0F** (regresyon yok). `ruff check .` temiz.
+- **CI:** `backend` işine adım olarak eklendi; bekçiyi koşmakla yetinmez,
+  `git diff -- reports/audit_regression.json` ile commit'lenen ölçümün
+  bayatlamadığını da denetler (emsal: routing shadows adımı) ve kırmızıyı
+  **annotation** ile yüzeye çıkarır (log okunamadığında sessiz çökme olmasın).
+- **Ölçülmüş boşluk (bu PR'ın işi değil, kayda geçsin):** CHANGELOG'da FAZ E'nin
+  birleşmiş kalemleri (E2 · E5 · E6 · E7, PR #115) için **hiç kayıt yok**
+  (`grep -c 'FAZ E' CHANGELOG.md` → 0); FAZ E kabul kapısı 6 "CHANGELOG güncel"
+  şartı koşuyor. Bu dosyaya en son FAZ D · D3 yazılmış.
 
 ## Unreleased — 2026-10-07 — FAZ D · D3: medya adli hattı (indir · kare · yazı · eşleştir)
 
