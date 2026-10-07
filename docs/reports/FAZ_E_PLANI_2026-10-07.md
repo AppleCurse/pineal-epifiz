@@ -38,7 +38,7 @@ Bu plan hazırlanırken ölçülmemişti; #113 ile kapandı: **kasa kilitliyken 
 | **E2** MinorGate API sınırı | **Kapandı** (bu PR) | bu oturum |
 | **E3** omurga tek yol (8 `httpx` dosyası) | Açık 🟡 | — |
 | **E4** fail-closed worker | **Çalışılıyor** | paralel oturum (talep 3) |
-| **E5** motor yoksa `400` | Açık 🟡 | — |
+| **E5** motor yoksa `400` | **Kapandı** (bu PR) | bu oturum |
 | **E6** UI "Yetersiz Kanıt" | **Kapandı** (bu PR) | bu oturum |
 | **E7** `gather` koruması | Açık 🟡 | — |
 | **E8** Pydantic (169 → 10-15) | Açık 🟢 | — |
@@ -149,6 +149,16 @@ Depo bu kültüre sahip (`tests/unit/test_ui_honesty_contract.py`, `tests/unit/t
 - **Neden:** Md.1 uydurma yasağı; "boş süreç başlıyor" görüntüsü kalkar. (Not: docstring bugün dürüstlük iddia ediyor → **önce ölç**, sonra sıkılaştır; docstring'e güvenilmez.)
 - **DoD:** Motor kapalıyken 3 deneysel uç → **400 + makine-okunur sebep**; contract testi yazılır.
 - **Boyut:** küçük (saat).
+
+#### E5 · UYGULANDI (2026-10-07) — sınır çizildi: HATA ≠ DÜRÜST SONUÇ
+- **Ölçüm (öncesi, kasa açık + motorlar kapalı):** maigret · holehe · crawl uçları **200** dönüyordu (`available:false`, `reason:"disabled"`); socid `network_error` ile yine 200. Gövde dürüsttü ama HTTP seviyesi "istek işlendi" diyordu — arayüz boş bir süreci başarılmış iş gibi okuyabilirdi.
+- **Kural (tek yardımcı):** `_engine_unavailable_response` → `available:false` **ve** sebep `{disabled · library_missing · dependency_broken · db_unavailable}` ise **400 `MOTOR_UNAVAILABLE`**; dürüst gövde (tüm alanlar) KORUNUR, üzerine makine-okunur `error` eklenir. Dört uca bağlandı (maigret · holehe · crawl4ai · socid).
+- **Sınır bilinçli — "her şeyi reddeden kapı" yazılmadı:** motor ÇALIŞIP da dürüstçe "sonuç yok/hata" döndüğünde (`timeout` · `scan_error` · `network_error` · `no_record` · `provider_errors`) sözleşme **200 + `available:false`** olarak aynen kalır. Bu ayrım olmadan E5, dürüst boş sonuçları da hata gibi gösterirdi (Md.1'in aynası). İki yön de test edilir.
+- **Kardeş kural — modül/ajan yüklü değil → 503 `MODULE_UNAVAILABLE`:** yapısal envanter 4 uç daha buldu (`shadow/analyze` · `shadow/generate` · `chat/respond` · `interpreter/execute`). Bunlar modül yokken **200 + `{"error": "..."}`** dönüyordu — yani çalışmayan çağrı "tamamlandı" görünüyordu. Ek olarak `chat/respond` üretim hatasını da 200 ile bildiriyordu; artık **502 + `DIALOGUE_FAILED`** (kod korunur, durum düzelir) ve `interpreter/execute`'ta oda kurulmamışken oluşan `AttributeError → 500` sızıntısı dürüst 503'e çevrildi.
+- **Yapısal denetim:** deneysel her uç ya `_engine_unavailable_response` ya `_module_unavailable_response` çağırır ya da gerekçeli muafiyettedir (tek muaf: salt-okunur `/api/experimental/stealth`). Sebep sözlüğü servis kaynaklarına bağlanır (yeni bir sebep uydurulursa test kırmızı yanar).
+- **DoD'dan sapma değil, genişleme:** plan iki ucu (maigret/holehe) sayıyordu; aynı sınıftan 5 nokta daha ölçülüp kapatıldı (`crawl` · `socid` · `shadow/analyze` · `shadow/generate` · `chat/respond`) — dosya kümesi aynı, risk aynı, sözleşme aynı.
+- **Kanıt:** yeni `tests/unit/test_experimental_engine_contract.py` **54 test** (4 uç × 4 motor-sebebi → 400 · 4 uç × 5 çalışma-zamanı sebebi → 200 · başarı → 200 · modül yokluğu → 503 · `DIALOGUE_FAILED` → 502 · yapısal envanter · sözlük denetimi). Mevcut 3 uç testi (maigret · holehe · crawl) **yeni sözleşmeye** güncellendi. Tam paket: **2178 passed**, kırmızılar temiz tabanla (`4da3918`) **birebir aynı** (32, ortam kaynaklı) → **regresyon yok**; kapsam **%85.95** (≥%80); `ruff check .` temiz.
+- **AÇIK KALAN (dürüstçe — E5b):** `200 + {"error": ...}` kalıbı repoda hâlâ **67** yerde (çoğu LLM/oturum hatası). E5 bunların yalnız deneysel yüzeydeki 5 noktasını kapattı; geri kalanı ayrı bir dilimdir (E5b) ve kullanıcıya görünen etkisi ölçülmeden toplu değiştirilmemelidir.
 
 ### E6 · UI dürüstlüğü: "Yetersiz Kanıt" 🟡 ORTA
 - **Ne:** `AtlasPinealCockpit.svelte:973,979` başta olmak üzere `|| 'Veri mevcut değil'` kalıpları **state bazlı "Yetersiz Kanıt"** uyarısına çevrilir; `tests/unit/test_ui_honesty_contract.py` bu bileşeni de kapsayacak şekilde genişletilir.

@@ -3742,6 +3742,83 @@ class MaigretScanPayload(BaseModel):
     client_id: str = Field(default="default", max_length=_MAX_CLIENT_ID_LENGTH)
 
 
+# ─── [E5 · Md.1] MOTOR YOKSA "ÇALIŞIYOR" GÖRÜNTÜSÜ DE YOK ────────────────────
+# ÖLÇÜM (2026-10-07, kasa açık + motorlar kapalı): maigret/holehe/crawl uçları
+# **200** dönüyordu (`available:false`, `reason:"disabled"`). Gövde dürüsttü ama
+# HTTP seviyesi "istek işlendi" diyordu; arayüz/istemci akışı boş bir süreci
+# başarılmış bir iş gibi okuyabiliyordu. Bu, motorun kendisi YOKKEN doğan bir
+# görüntüdür ve Md.1 (uydurma yasağı) kapsamındadır.
+#
+# SINIR BİLİNÇLİ: 400 yalnız MOTOR/KAPI yokluğunda verilir. Motor ÇALIŞIP da
+# dürüstçe "sonuç yok/hata" döndüğünde sözleşme AYNEN korunur (200 +
+# `available:false` + makine-okunur sebep): `timeout`, `scan_error`,
+# `network_error`, `no_record`, `provider_errors` bir başarısızlık değil,
+# dürüst bir sonuçtur. Bu ayrım olmadan "her şeyi 400 yapan kapı" yazmış olurduk.
+ENGINE_UNAVAILABLE_REASONS: frozenset = frozenset({
+    "disabled",          # ENABLE_* kapısı kapalı (operatör açmadı)
+    "library_missing",   # motor kütüphanesi kurulu değil
+    "dependency_broken", # bağımlılık yüklendi ama kırık/eksik
+    "db_unavailable",    # motorun veritabanı (ör. maigret DB) yüklenemedi
+})
+
+
+def _module_unavailable_response(
+    client_id: Optional[str], module: str, *, detail: str = ""
+) -> JSONResponse:
+    """Modül/ajan bu süreçte YÜKLÜ DEĞİL → 503 ``MODULE_UNAVAILABLE``.
+
+    E5'in kardeşi: motor kapısı kapalıyken 400 `MOTOR_UNAVAILABLE` döner;
+    burada ise sunucu tarafı YETENEK yok (modül/ajan hiç yüklenmemiş). Ortak
+    kural aynı — "çalışmayan şey 200 dönmez". İstek istemci hatası olmadığı
+    için 400 değil **503** seçildi; ayrıntılı gerekçe:
+    `tests/unit/test_experimental_engine_contract.py`.
+
+    Gövde makine-okunur: `error.code` + `error.module` + `available:false`.
+    """
+    body: Dict[str, Any] = {
+        "error": {
+            "code": "MODULE_UNAVAILABLE",
+            "message": f"{module} bu süreçte yüklü değil; istek İŞLENMEDİ.",
+            "module": module,
+            "detail": detail,
+        },
+        "module": module,
+        "available": False,
+    }
+    if client_id:
+        body["client_id"] = client_id
+    return JSONResponse(body, status_code=503)
+
+
+def _engine_unavailable_response(result) -> Optional[JSONResponse]:
+    """Motor/kapı YOKSA 400 ``MOTOR_UNAVAILABLE``; aksi hâlde ``None``.
+
+    Gövde, dürüst sözleşmeyi KAYBETMEZ: sonucun tüm alanları (`available:false`,
+    `reason`, ...) korunur ve üzerine makine-okunur bir `error` bloğu eklenir.
+    Çağrı biçimi (kasa/kilit kapılarıyla aynı):
+
+        result = await motor(...)
+        if (unavailable := _engine_unavailable_response(result)) is not None:
+            return unavailable
+    """
+    if getattr(result, "available", True) is not False:
+        return None
+    reason = getattr(result, "reason", None)
+    if reason not in ENGINE_UNAVAILABLE_REASONS:
+        return None
+    body = result.model_dump()
+    body["error"] = {
+        "code": "MOTOR_UNAVAILABLE",
+        "message": (
+            f"Deneysel motor kullanılamıyor (sebep: {reason}): istek "
+            "ÇALIŞTIRILMADI. Sonuç yok — boş sonuç da yok. İlgili ENABLE_* "
+            "bayrağını ve motor bağımlılıklarını kontrol edin."
+        ),
+        "reason": reason,
+    }
+    return JSONResponse(body, status_code=400)
+
+
 @app.post("/api/experimental/maigret/scan")
 async def maigret_scan(payload: MaigretScanPayload):
     """Kullanıcı adını maigret DB'sinde tarar (FAZ 2).
@@ -3760,6 +3837,8 @@ async def maigret_scan(payload: MaigretScanPayload):
     result = await scan_username(
         payload.username, limit=payload.limit, site_timeout=payload.timeout
     )
+    if (unavailable := _engine_unavailable_response(result)) is not None:
+        return unavailable
     return result.model_dump()
 
 
@@ -3791,6 +3870,8 @@ async def holehe_scan(payload: HoleheScanPayload):
     result = await scan_email(
         payload.email, limit=payload.limit, site_timeout=payload.timeout
     )
+    if (unavailable := _engine_unavailable_response(result)) is not None:
+        return unavailable
     return result.model_dump()
 
 
@@ -3816,7 +3897,10 @@ async def crawl_fetch(payload: CrawlFetchPayload):
     if (locked := _require_vault_open(payload.client_id)) is not None:
         return locked
     from agent_core.services.crawl_enricher import fetch_readable
-    return (await fetch_readable(payload.url)).model_dump()
+    result = await fetch_readable(payload.url)
+    if (unavailable := _engine_unavailable_response(result)) is not None:
+        return unavailable
+    return result.model_dump()
 
 
 @app.get("/api/experimental/stealth")
@@ -3846,6 +3930,8 @@ async def socid_extract(payload: SocidExtractPayload):
         return locked
     from agent_core.services.socid_enricher import extract_profile
     record = await extract_profile(payload.url)
+    if (unavailable := _engine_unavailable_response(record)) is not None:
+        return unavailable
     return record.model_dump()
 
 
@@ -3857,7 +3943,9 @@ async def shadow_analyze(profile: dict):
     if (blocked := _require_minor_clearance(None)) is not None:
         return blocked
     if shadow_executor is None:
-        return {"error": "Shadow Protocol yüklü değil"}
+        # [E5] "Modül yüklü değil" 200 dönmez: çalışmayan bir çağrı başarılı
+        # görünmesin (Md.1).
+        return _module_unavailable_response(None, "shadow_protocol")
     from agent_core.psychology.dark_triad import DarkTriadAnalyzer
     analyzer = DarkTriadAnalyzer()
     result = analyzer.analyze(profile)
@@ -3873,7 +3961,7 @@ async def shadow_generate(task: dict):
     )) is not None:
         return blocked
     if shadow_executor is None:
-        return {"error": "Shadow Protocol yüklü değil"}
+        return _module_unavailable_response(declared_room, "shadow_protocol")
     result = await shadow_executor.execute(task)
     return result.model_dump()
 
@@ -3892,8 +3980,9 @@ async def chat_respond(payload: ChatPayload):
     if (blocked := _require_minor_clearance(None)) is not None:
         return blocked
     if dialogue_manager is None:
-        return {"error": "Gölge Sohbet modülü yüklü değil"}
-    
+        # [E5] Çalışmayan çağrı 200 dönmez (Md.1).
+        return _module_unavailable_response(payload.task_id, "dialogue_manager")
+
     try:
         if payload.task_id not in dialogue_manager.sessions:
             dialogue_manager.start_session(payload.task_id, payload.target_profile, payload.user_profile)
@@ -3901,8 +3990,26 @@ async def chat_respond(payload: ChatPayload):
         res = await dialogue_manager.generate_response(payload.task_id, payload.target_message)
         return res.model_dump()
     except Exception as e:
+        # [E5] Üretim BAŞARISIZ olursa yanıt da başarısız olmalı: eskiden
+        # `200 + {"error": {...}}` dönüyordu — yani başarısız bir çağrı HTTP
+        # seviyesinde "tamamlandı" görünüyordu. Kod (DIALOGUE_FAILED) korunur;
+        # yalnız durum düzeltilir. 502: hata YUKARI AKIŞTAN (LLM/oturum) gelir.
         logger.error("Dialogue generation failed: %s", type(e).__name__)
-        return {"error": {"code": "DIALOGUE_FAILED", "message": type(e).__name__}}
+        return JSONResponse(
+            {
+                "error": {
+                    "code": "DIALOGUE_FAILED",
+                    "message": (
+                        f"Karşı hamle üretilemedi ({type(e).__name__}); istek "
+                        "TAMAMLANMADI."
+                    ),
+                    "detail": type(e).__name__,
+                },
+                "available": False,
+                "task_id": payload.task_id,
+            },
+            status_code=502,
+        )
 
 class AspasiaChatPayload(BaseModel):
     client_id: str
@@ -4491,10 +4598,16 @@ async def interpreter_execute(req: InterpreterPayload):
         
     room = get_room(req.client_id)
     executor = room.get("executor")
-    interpreter_agent = executor.agents.get("interpreter")
-    
+    # [E5] Oda kurulmamışsa `executor` None olabilir; eskiden burada
+    # AttributeError → 500 sızıyordu. Artık dürüst 503.
+    interpreter_agent = executor.agents.get("interpreter") if executor else None
+
     if not interpreter_agent:
-        return {"error": "Interpreter Agent aktif değil"}
+        # [E5] Ajan aktif değilse çağrı 200 dönmez: kod icra edilmedi.
+        return _module_unavailable_response(
+            req.client_id, "interpreter_agent",
+            detail="ENABLE_INTERPRETER açık ama ajan bu odada kayıtlı değil.",
+        )
         
     broadcast_log(req.client_id, "INFO", f"INTERPRETER: Görev icra ediliyor -> {req.prompt[:60]}...")
     res = await interpreter_agent.execute_task(
