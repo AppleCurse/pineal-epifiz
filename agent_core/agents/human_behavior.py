@@ -136,6 +136,8 @@ class HumanBehaviorAnalyzer:
             ) as client:
                 # Use a shared httpx.AsyncClient to enable connection pooling for concurrent requests
                 tasks = [_fetch_and_analyze_image(client, url) for url in images[: self.MAX_IMAGES]]
+                # [E7-muaf] İç coroutine (`_fetch_and_analyze_image`) her
+                # hatayı yakalar ve [] döner; düşen URL diğerlerini düşürmez.
                 results = await asyncio.gather(*tasks)
                 for res in results:
                     visual_signals.extend(res)

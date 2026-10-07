@@ -278,11 +278,23 @@ class TestAgentMerge:
 
 class TestEndpoint:
     def test_endpoint_disabled_by_default(self, monkeypatch, vault_open):
+        """[E5 sözleşme değişikliği] Motor kapalıyken 200 DEĞİL 400.
+
+        Eskiden 200 + `available:false` dönüyordu: gövde dürüsttü ama HTTP
+        seviyesi "istek işlendi" diyordu. Motorun kendisi YOKKEN doğan bu
+        görüntü Md.1 kapsamındadır; ayrıntılı sözleşme:
+        `tests/unit/test_experimental_engine_contract.py`.
+        """
         from fastapi.testclient import TestClient
         from backend.api import app
 
         monkeypatch.delenv("ENABLE_MAIGRET", raising=False)
         with TestClient(app) as client:
             r = client.post("/api/experimental/maigret/scan", json={"username": "soxoj"})
-        assert r.status_code == 200
-        assert r.json()["reason"] == "disabled"
+        assert r.status_code == 400
+        body = r.json()
+        assert body["error"]["code"] == "MOTOR_UNAVAILABLE"
+        assert body["error"]["reason"] == "disabled"
+        # Dürüst sözleşme KAYBOLMADI: gövde hâlâ makine-okunur sebebi taşır.
+        assert body["available"] is False
+        assert body["reason"] == "disabled"

@@ -392,6 +392,9 @@ async def evaluate(
         return LocalJuryVerdict(available=False, reason="dependency_missing:httpx")
 
     async with httpx.AsyncClient() as client:
+        # [E7-muaf] `_ask_seat` ağ/JSON/şekil hatalarını yakalayıp
+        # SeatVote(error=...) döner — düşen koltuk jüriyi düşürmez, karar
+        # `quorum`/hata sayımıyla dürüstçe raporlanır.
         votes = await asyncio.gather(
             *(
                 _ask_seat(client, endpoint, model, claim_text, evidence, timeout=timeout)
