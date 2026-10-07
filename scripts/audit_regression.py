@@ -53,7 +53,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import shutil
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -959,20 +958,46 @@ def check_goz2_8() -> CheckResult:
 # ─────────────────────────────────────────────────────────────────────────────
 # GÖZ 3 — Üçüncü göz bulguları
 # ─────────────────────────────────────────────────────────────────────────────
-def _cargo_missing_evidence() -> List[str]:
-    """Rust bulgularının bu ortamda neden ölçülemediğini GERÇEKLE kanıtlar."""
+def _rust_authority_evidence() -> List[str]:
+    """Rust bulguları neden bu bekçide ÖLÇÜLMÜYOR — ve bu hüküm ortama bağlı mı?
+
+    İKİ kez düzeltilmesi gerekti (ikisi de CI'da kırmızı üretti, ikincisini
+    annotation sayesinde okuyabildik):
+
+      1. Damga ortam bağımlıydı (git/mtime) → içerik mührüne bağlandı.
+      2. Bu kanıt dizeleri ``shutil.which`` sonucunu MUTLAK YOL olarak gömüyordu
+         (CI koşucusunda ``…/.cargo/bin/cargo``). GitHub'ın ``ubuntu-latest`` imajı
+         Rust araç zincirini ÖNCEDEN KURULU getirir; geliştirme ortamında ise yok. Aynı
+         kaynak metin iki farklı JSON üretti → tazelik kapısı "bayat" dedi.
+
+    Çıkarılan kural: **commit'lenen rapor makineden bağımsız olmalı.** Üçüncü
+    bir kırmızı daha bunun üzerine geldi: araç zincirinin VAR/YOK gözlemi hükmü
+    değiştirmese bile KANIT METNİNİ makineye bağlıyordu (GitHub imajında VAR,
+    geliştirme ortamında YOK → aynı kaynak, iki farklı JSON). Bu yüzden:
+      (a) makineye özgü yol yazılmaz,
+      (b) makineye özgü GÖZLEM de yazılmaz,
+      (c) "doğrulanamaz" hükmü aracın o makinede bulunup bulunmamasına değil
+          MİMARİYE bağlanır.
+    Mimari gerekçe: bu bekçi saf-Python ve deterministiktir; Rust bulgularının
+    ölçüm otoritesi CI'ın ``rust-core`` işidir (``cargo check`` + ``cargo test``,
+    hataları annotation olarak yayınlar). Bekçi, araç zinciri kurulu olsa bile
+    onu ÇAĞIRMAZ — çağırsaydı rapor çalıştığı makineye göre değişirdi.
+    """
     return [
-        f"`cargo` bu ortamda kurulu değil: shutil.which('cargo') → {shutil.which('cargo')}",
-        f"`rustc` bu ortamda kurulu değil: shutil.which('rustc') → {shutil.which('rustc')}",
-        "denetimin DOĞRULA komutu `cargo test --manifest-path …` → bu sandbox'ta koşamaz",
-        "ölçüm otoritesi CI'ın `rust-core` işi (cargo check + cargo test adımları, "
-        "annotation yayınlar)",
+        "ölçüm otoritesi: CI'ın `rust-core` işi (`cargo check` + `cargo test` "
+        "adımları, hataları annotation olarak yayınlar)",
+        "bu bekçi saf-Python ve DETERMİNİSTİKTİR: Rust araç zincirini KURULU "
+        "OLDUĞUNDA BİLE çağırmaz — commit'lenen raporun üretildiği makineye göre "
+        "değişmesi yasak (yol, saat dilimi ve araç varlığı gömülmez)",
+        "denetimin DOĞRULA komutu (`cargo test`/`cargo check`) bu bekçide KOŞULMAZ",
+        "araç zincirinin bu makinede kurulu olup olmadığı hükmü DEĞİŞTİRMEZ; "
+        "bu yüzden rapora hiç yazılmaz (yazılsaydı rapor makineye bağlanırdı)",
     ]
 
 
 def check_goz3_1() -> CheckResult:
     """Vault roundtrip testi `#[ignore]` ile halı altına süpürülmüş mü?"""
-    ev = _cargo_missing_evidence()
+    ev = _rust_authority_evidence()
     # Ölçülemeyen şey hakkında HÜKÜM VERİLMEZ; ama gözlem kaydedilir (dürüstlük:
     # gözlem ≠ kanıt). Bu yüzden status UNVERIFIABLE kalır.
     obs = _glob_hits("rust_*/src/vault.rs", r"^\s*#\[ignore")
@@ -1030,7 +1055,7 @@ def check_goz3_2() -> CheckResult:
 
 def check_goz3_3() -> CheckResult:
     """`from_str_id` ölü kod mu (cargo derleme uyarısı)?"""
-    ev = _cargo_missing_evidence()
+    ev = _rust_authority_evidence()
     decl = _glob_hits("rust_*/src/token_compressor.rs", r"fn from_str_id")
     use = _glob_hits("rust_*/src/token_compressor.rs", r"from_str_id\(")
     call_sites = [u for u in use if "fn from_str_id" not in u]
@@ -1182,7 +1207,7 @@ def check_goz3_7() -> CheckResult:
 
 def check_goz3_8() -> CheckResult:
     """Test piramidi 'mock'lanmış gerçeklik' üzerine mi kurulu?"""
-    ev = _cargo_missing_evidence()
+    ev = _rust_authority_evidence()
     # Python tarafı ölçülebilir mi? Kısmen: kapsayıcı bir 'gerçek entegrasyon'
     # ölçütü yok; bulgu 'gerçek Redis/filesystem ile e2e' ister.
     e2e = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "tests" / "e2e").glob("*.py"))
@@ -1192,7 +1217,7 @@ def check_goz3_8() -> CheckResult:
             ev
             + [
                 f"GÖZLEM: tests/e2e altında {len(e2e)} dosya var ama bulgunun istediği "
-                "'gerçek Redis + gerçek dosya sistemi + gerçek ağ' koşusu bu sandbox'ta yok "
+                "'gerçek Redis + gerçek dosya sistemi + gerçek ağ' koşusu bu bekçide YOK "
                 "(Redis sunucusu yok, ağ kapalı, cargo yok)",
                 "python tarafı `pytest` ile ölçülebilir ama bu bulgunun hükmü (mock oranı / "
                 "gerçek dünya dayanıklılığı) tek bir statik kalıba indirgenemez",

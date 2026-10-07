@@ -726,6 +726,84 @@ def test_stamp_is_never_invented_when_the_source_is_unreadable(tmp_path, monkeyp
     assert not stamp.startswith("sha256:")
 
 
+#: Rapor determinizmini bozan çevresel izler. İkisi de CI'da GERÇEK kırmızı
+#: üretti: mutlak araç yolu (`/home/runner/.cargo/bin/cargo` — GitHub imajında
+#: Rust kurulu, sandbox'ta değil) ve ortama özgü anlatım.
+ENVIRONMENT_LEAKS = (
+    "/home/",
+    "/usr/",
+    "/tmp/",
+    "C:\\",
+    "sandbox",
+)
+
+
+def test_committed_report_carries_no_machine_specific_trace(report):
+    """Commit'lenen rapor HANGİ makinede üretildiğini ele veremez.
+
+    Bu kural iki CI kırmızısının ortak köküydü ve ikincisini ancak annotation
+    sayesinde okuyabildik. Bekçinin hükmü kaynak koddan türer; makineden değil.
+    Tarama betik KAYNAĞINI da kapsar: kanıt dizeleri oradan kopyalandığı için
+    kaynak temizse rapor da temizdir (tek istisna, bu kusurun tarihçesini
+    anlatan belge dizesi — `shutil.which` anması bir ölçüm değil, kayıttır).
+    """
+    blob = json.dumps(report, ensure_ascii=False)
+    for leak in ENVIRONMENT_LEAKS:
+        assert leak not in blob, f"raporda makine izi sızıyor: {leak!r}"
+
+    source = SCRIPT.read_text(encoding="utf-8")
+    history_line = "shutil.which"  # kusurun tarihçesini anlatan tek belge dizesi
+    for leak in ENVIRONMENT_LEAKS:
+        offenders = [
+            line
+            for line in source.splitlines()
+            # Muaf: shebang (`#!/usr/bin/env python3`) bir ortam izi değil,
+            # çalıştırılabilir betiğin yorumlayıcı bildirimi — CI'ın `python
+            # scripts/...` çağrısı da ona dayanmaz. Bu muafiyet olmadan test
+            # kendi sahte pozitifini üretiyor (ölçüldü).
+            if leak in line
+            and history_line not in line
+            and not line.startswith("#!")
+        ]
+        assert not offenders, f"betik kaynağında makine izi: {leak!r} → {offenders[:2]}"
+
+
+def test_unverifiable_status_does_not_depend_on_the_local_toolchain(report, monkeypatch, tmp_path):
+    """"Doğrulanamaz" hükmü araç zincirinin burada olup olmamasına bağlanamaz.
+
+    GitHub `ubuntu-latest` imajı Rust'ı KURULU getirir; geliştirme ortamı
+    getirmiyor. Hüküm ikisinde de aynı kalmalı — aksi hâlde rapor makineye göre
+    değişir ve tazelik kapısı anlamsızlaşır.
+
+    Ölçüm SAHTE `PATH` ile yapılır (içi boş bir mock değil): bir uçta PATH
+    tamamen boşaltılır, diğer uçta sahte ama ÇALIŞAN bir `cargo`/`rustc`
+    konur. Bekçi ikisinde de bayt bayt aynı raporu üretmeli — çünkü artık araç
+    zincirini HİÇ sorgulamıyor (sorgulamak raporu makineye bağlardı).
+    """
+    before = json.dumps(report, ensure_ascii=False, sort_keys=True)
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for tool in ("cargo", "rustc"):
+        stub = bin_dir / tool
+        stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        stub.chmod(0o755)
+
+    monkeypatch.setenv("PATH", str(bin_dir))
+    with_tool = json.dumps(
+        ar.build_report(_fresh_findings()), ensure_ascii=False, sort_keys=True
+    )
+    monkeypatch.setenv("PATH", str(tmp_path / "bos"))
+    without_tool = json.dumps(
+        ar.build_report(_fresh_findings()), ensure_ascii=False, sort_keys=True
+    )
+
+    assert with_tool == without_tool, "rapor araç zincirine göre değişiyor"
+    assert with_tool == before, "rapor PATH'e göre değişiyor (CI'da sahte bayatlık)"
+    unverifiable = [f for f, e in report["findings"].items() if e["check_kind"] == "unverifiable"]
+    assert unverifiable, "doğrulanamaz bulgu yok — test anlamsız"
+
+
 def _fresh_findings():
     return ar.parse_findings(ar.AUDIT_REPORT.read_text(encoding="utf-8"))
 

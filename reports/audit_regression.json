@@ -346,10 +346,10 @@
       "check_kind": "unverifiable",
       "status": "unverifiable",
       "evidence": [
-        "`cargo` bu ortamda kurulu değil: shutil.which('cargo') → None",
-        "`rustc` bu ortamda kurulu değil: shutil.which('rustc') → None",
-        "denetimin DOĞRULA komutu `cargo test --manifest-path …` → bu sandbox'ta koşamaz",
-        "ölçüm otoritesi CI'ın `rust-core` işi (cargo check + cargo test adımları, annotation yayınlar)",
+        "ölçüm otoritesi: CI'ın `rust-core` işi (`cargo check` + `cargo test` adımları, hataları annotation olarak yayınlar)",
+        "bu bekçi saf-Python ve DETERMİNİSTİKTİR: Rust araç zincirini KURULU OLDUĞUNDA BİLE çağırmaz — commit'lenen raporun üretildiği makineye göre değişmesi yasak (yol, saat dilimi ve araç varlığı gömülmez)",
+        "denetimin DOĞRULA komutu (`cargo test`/`cargo check`) bu bekçide KOŞULMAZ",
+        "araç zincirinin bu makinede kurulu olup olmadığı hükmü DEĞİŞTİRMEZ; bu yüzden rapora hiç yazılmaz (yazılsaydı rapor makineye bağlanırdı)",
         "GÖZLEM (kanıt değil): vault kaynağında satır başı `#[ignore]` → 0 (yalnız yorum satırlarında geçiyor)",
         "GÖZLEM: purity_scan içinde `#[ignore]` yasak bekçisi → 1 kayıt"
       ],
@@ -381,10 +381,10 @@
       "check_kind": "unverifiable",
       "status": "unverifiable",
       "evidence": [
-        "`cargo` bu ortamda kurulu değil: shutil.which('cargo') → None",
-        "`rustc` bu ortamda kurulu değil: shutil.which('rustc') → None",
-        "denetimin DOĞRULA komutu `cargo test --manifest-path …` → bu sandbox'ta koşamaz",
-        "ölçüm otoritesi CI'ın `rust-core` işi (cargo check + cargo test adımları, annotation yayınlar)",
+        "ölçüm otoritesi: CI'ın `rust-core` işi (`cargo check` + `cargo test` adımları, hataları annotation olarak yayınlar)",
+        "bu bekçi saf-Python ve DETERMİNİSTİKTİR: Rust araç zincirini KURULU OLDUĞUNDA BİLE çağırmaz — commit'lenen raporun üretildiği makineye göre değişmesi yasak (yol, saat dilimi ve araç varlığı gömülmez)",
+        "denetimin DOĞRULA komutu (`cargo test`/`cargo check`) bu bekçide KOŞULMAZ",
+        "araç zincirinin bu makinede kurulu olup olmadığı hükmü DEĞİŞTİRMEZ; bu yüzden rapora hiç yazılmaz (yazılsaydı rapor makineye bağlanırdı)",
         "GÖZLEM (kanıt değil): bildirim → 1; çağrı noktası → 1",
         "rust_core/src/token_compressor.rs:217: let level = CompressionLevel::from_str_id(level_str)"
       ],
@@ -473,11 +473,11 @@
       "check_kind": "unverifiable",
       "status": "unverifiable",
       "evidence": [
-        "`cargo` bu ortamda kurulu değil: shutil.which('cargo') → None",
-        "`rustc` bu ortamda kurulu değil: shutil.which('rustc') → None",
-        "denetimin DOĞRULA komutu `cargo test --manifest-path …` → bu sandbox'ta koşamaz",
-        "ölçüm otoritesi CI'ın `rust-core` işi (cargo check + cargo test adımları, annotation yayınlar)",
-        "GÖZLEM: tests/e2e altında 4 dosya var ama bulgunun istediği 'gerçek Redis + gerçek dosya sistemi + gerçek ağ' koşusu bu sandbox'ta yok (Redis sunucusu yok, ağ kapalı, cargo yok)",
+        "ölçüm otoritesi: CI'ın `rust-core` işi (`cargo check` + `cargo test` adımları, hataları annotation olarak yayınlar)",
+        "bu bekçi saf-Python ve DETERMİNİSTİKTİR: Rust araç zincirini KURULU OLDUĞUNDA BİLE çağırmaz — commit'lenen raporun üretildiği makineye göre değişmesi yasak (yol, saat dilimi ve araç varlığı gömülmez)",
+        "denetimin DOĞRULA komutu (`cargo test`/`cargo check`) bu bekçide KOŞULMAZ",
+        "araç zincirinin bu makinede kurulu olup olmadığı hükmü DEĞİŞTİRMEZ; bu yüzden rapora hiç yazılmaz (yazılsaydı rapor makineye bağlanırdı)",
+        "GÖZLEM: tests/e2e altında 4 dosya var ama bulgunun istediği 'gerçek Redis + gerçek dosya sistemi + gerçek ağ' koşusu bu bekçide YOK (Redis sunucusu yok, ağ kapalı, cargo yok)",
         "python tarafı `pytest` ile ölçülebilir ama bu bulgunun hükmü (mock oranı / gerçek dünya dayanıklılığı) tek bir statik kalıba indirgenemez"
       ],
       "note": "Bu bulgu bilinçli olarak 'doğrulanamaz' bırakıldı: onu bir grep ile 'kapalı' ilan etmek tam olarak denetimin eleştirdiği tiyatro olurdu.",

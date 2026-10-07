@@ -42,8 +42,13 @@
   "bayat rapor" diye kırmızıya boyuyordu. Damga artık denetim raporunun **içerik mühürü**
   (`sha256`) ve adım başarısızlık ayrıntısını **annotation** olarak yüzeye çıkarıyor
   (loglar Azure blob'dan okunamıyor — repo'nun "sessiz-çökme-yok" kuralı).
-- **Test:** +39 (`tests/unit/test_audit_regression.py`). Tam koşu: taban
-  **2223P/0F** → E0 ile **2262P/0F** (regresyon yok). `ruff check .` temiz.
+- **Sekizincisi de CI'dan geldi ve annotation sayesinde okundu:** kanıt dizeleri araç
+  zincirinin yolunu gömüyordu; GitHub imajı Rust'ı KURULU getirdiği için CI ile geliştirme
+  ortamı farklı JSON üretti. Araç VAR/YOK gözlemi hükmü değiştirmese de raporu makineye
+  bağlıyordu → gözlem kaldırıldı, sınıflandırma mimariye bağlandı. Kural artık testle
+  kilitli: commit'lenen raporda makine izi SIFIR (sahte `PATH` ile iki yönde ölçülür).
+- **Test:** +41 (`tests/unit/test_audit_regression.py`). Tam koşu: taban
+  **2223P/0F** → E0 ile **2264P/0F** (regresyon yok). `ruff check .` temiz.
 - **CI:** `backend` işine adım olarak eklendi; bekçiyi koşmakla yetinmez,
   `git diff -- reports/audit_regression.json` ile commit'lenen ölçümün
   bayatlamadığını da denetler (emsal: routing shadows adımı) ve kırmızıyı
