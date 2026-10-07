@@ -41,6 +41,8 @@ MANAGED_GATE_FLAGS: tuple[str, ...] = (
     "ENABLE_LOCAL_TRANSLATE",
     # [FAZ D · D2] Yerel jüri: yerel modeller hazır olana kadar varsayılan KAPALI.
     "ENABLE_LOCAL_JURY",
+    # [FAZ D · D6] Kurum hedefi: theHarvester/ağ koşusu; varsayılan KAPALI.
+    "ENABLE_COMPANY_TARGETING",
 )
 
 _TRUTHY = frozenset({"1", "true", "yes", "on", "enabled"})

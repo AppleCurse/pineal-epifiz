@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased — 2026-10-07 — FAZ D · D6: kurum hedefi (theHarvester + açık SEO + kişi künyesi)
+
+- **D6 · KURUM HEDEFİ TAMAM.** Üç yetenek omurgada:
+  `sensor.company.harvester` (theHarvester CLI: e-posta · alt alan adı · IP ·
+  URL · arama motoru kişi satırları), `sensor.company.seo` (yalnız kurumun
+  KENDİ yayınladığı dosyalar: robots.txt · sitemap.xml · ana sayfa
+  başlık/açıklama/dil/canonical · security.txt · sunucu/HSTS/CSP başlıkları)
+  ve `sensor.company.people` (yalnız kurumun kendi sayfalarındaki
+  **schema.org/Person** kayıtları + herkese açık `mailto:` adresleri).
+- **Uydurma metrik yok:** SEO "puanı" hesaplanmaz; ölçülen yazılır. Harici SEO
+  servisi çağrılmaz, LinkedIn kazınmaz. Kişi verisi yalnız kurumun kendi
+  yapılandırılmış kaynağından gelir ve her satır KAYNAK URL'siyle kanıt olur.
+- **Yokluk disiplini:** "yayınlanmamış" iddiası yalnız kesin 404'te
+  (`absence`); ağ hatası (timeout/refused) ne varlık ne yokluk üretir — yalnız
+  `notes.errors` içinde görünür. theHarvester boş dönerse sıfır hatayla
+  bittiği için yokluk kanıtı üretilir; araç/çıktı hatasında ÜRETİLMEZ.
+- **Araç yokluğu ikiye ayrılır:** `dependency_missing:theHarvester` (PATH'te
+  yok) ile `configured_command_not_found:PINEAL_HARVESTER_CMD` (yazılan komut
+  bulunamadı) karıştırılmaz. Kova tavanı 25; aşan `truncated` ile işaretlenir.
+- **SSRF hijyeni:** hedef özel/yerel ağa çözülürse tarama REDDEDİLİR; yalnız
+  `PINEAL_COMPANY_ALLOW_PRIVATE=1` ile geçer.
+- **Yüzeyler:** `GET /api/company/status` · `POST /api/company/scan`
+  (kasa + kapı + `company` hız kovası) · kokpitte **KURUM** pili. Yetenekler
+  omurgada olduğu için MCP araçları ve Skills paketi kendiliğinden büyüdü
+  (19 yetenek / 20 MCP aracı). Kurulum: `docs/KURUM_HEDEFI.md`.
+- **Test:** +41 (servis 18 · yetenek 13 · uç 10). Tam koşu: **1994P/0F**.
+
 ## Unreleased — 2026-10-07 — FAZ D · D2: yerel jüri (karar makineden çıkmaz)
 
 - **D2 · YEREL JÜRİ TAMAM.** `agent_core/services/local_jury.py` +

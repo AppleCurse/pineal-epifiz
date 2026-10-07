@@ -273,4 +273,18 @@ reddedilir; uzak adres yapılandırılmışsa yerel uca bile gidilmez. Oy sözl�
 kaynaktan (B1); sözlük dışı kelime oy sayılmaz. Kanıt türü `inference` (model
 yargısı ≠ gözlem). Yüzeyler: `GET /api/jury/status` · `POST /api/jury/vote` ·
 kokpitte JÜRİ pili; yetenek omurgada olduğu için MCP aracı ve Skills paketi
-kendiliğinden büyüdü. Kurulum: `docs/YEREL_JURI.md`. Kalan: **D6 → D5 → D3**.
+kendiliğinden büyüdü. Kurulum: `docs/YEREL_JURI.md`.
+
+**D6 TAMAM (2026-10-07) — kurum hedefi: theHarvester + açık SEO + kişi künyesi.**
+Üç yetenek omurgada: `sensor.company.harvester` (arama motorlarından e-posta/alt
+alan adı/IP/URL), `sensor.company.seo` (kurumun KENDİ yayınladığı dosyalar:
+robots · sitemap · meta/dil/canonical · security.txt · başlıklar) ve
+`sensor.company.people` (yalnız kurumun kendi sayfalarındaki schema.org/Person
+kayıtları + herkese açık mailto adresleri). Uydurma SEO puanı yok; "yok"
+iddiası yalnız kesin 404'te (`absence`), ağ hatası yokluğa çevrilmez. Araç
+yokluğu ikiye ayrılır (`dependency_missing` / `configured_command_not_found`);
+hedef özel ağa çözülürse tarama reddedilir (SSRF hijyeni). Her satır kaynak
+URL'siyle kanıt olur; kişi avı değildir. Yüzeyler: `GET /api/company/status` ·
+`POST /api/company/scan` · kokpitte KURUM pili; MCP araçları ve Skills paketi
+kendiliğinden büyüdü (19 yetenek). Kurulum: `docs/KURUM_HEDEFI.md`.
+Kalan: **D5 → D3**.

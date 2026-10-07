@@ -183,6 +183,40 @@
     }
   }
 
+  // --- [FAZ D · D6] KURUM PİLİ ---
+  // Kurum/kuruluş hedefi: theHarvester + açık SEO + kişi künyesi. Pil
+  // GERÇEK yetenek durumunu gösterir (defterden): kapı kapalıysa ya da
+  // theHarvester yoksa "hazır" DENMEZ.
+  let companyInfo: {
+    anyAvailable: boolean;
+    gate: string;
+    modes: { mode: string; available: boolean; reason: string | null }[];
+  } | null = null;
+
+  async function fetchCompanyStatus() {
+    try {
+      const res = await apiFetch('/api/company/status');
+      if (!res.ok) {
+        companyInfo = null;
+        return;
+      }
+      const data = await res.json();
+      companyInfo = {
+        anyAvailable: Boolean(data?.any_available),
+        gate: String(data?.gate ?? ''),
+        modes: Array.isArray(data?.modes)
+          ? data.modes.map((row: { mode?: string; available?: boolean; reason?: string | null }) => ({
+              mode: String(row?.mode ?? ''),
+              available: Boolean(row?.available),
+              reason: (row?.reason as string | null) ?? null,
+            }))
+          : [],
+      };
+    } catch (_e) {
+      companyInfo = null; // ağ hatası: uydurma "hazır" göstergesi ÜRETİLMEZ
+    }
+  }
+
   // --- [FAZ D · D2] JÜRİ PİLİ ---
   // Karar tek modele bırakılmaz: aynı kanıt birden çok YEREL modelde bağımsız
   // oylanır. Pil gerçeği gösterir: kaç BAĞIMSIZ koltuk var ve uç yerel mi.
@@ -356,6 +390,16 @@
       : `DİL: ${langInfo.language.toUpperCase()} · ${langInfo.confidence.toFixed(2)}`
     : 'DİL: ÖLÇÜLMEDİ';
   $: if ($clientId) fetchLanguageStatus();
+
+  // [FAZ D · D6] KURUM pili: mod sayısı gerçek yetenek durumundan gelir.
+  $: companyLabel = companyInfo
+    ? companyInfo.anyAvailable
+      ? `KURUM: ${companyInfo.modes.filter((m) => m.available).length}/${companyInfo.modes.length} MOD`
+      : companyInfo.modes.length > 0
+        ? 'KURUM: KAPALI'
+        : 'KURUM: —'
+    : 'KURUM: —';
+  $: if ($clientId) fetchCompanyStatus();
 
   // [FAZ D · D2] JÜRİ pili: koltuk sayısı GERÇEK yapılandırmadan gelir.
   $: juryLabel = juryInfo
@@ -730,6 +774,21 @@
       : 'Jüri durumu okunamadı'}
   >
     {juryLabel}
+  </div>
+
+  <!-- [FAZ D · D6] KURUM PİLİ: theHarvester + açık SEO + kişi künyesi -->
+  <div
+    class="company-pill"
+    class:ready={Boolean(companyInfo?.anyAvailable)}
+    title={companyInfo
+      ? companyInfo.anyAvailable
+        ? companyInfo.modes
+            .map((m) => `${m.mode}:${m.available ? 'hazır' : m.reason || 'kapalı'}`)
+            .join(' · ')
+        : `Kurum hedefi kapalı — kapı ${companyInfo.gate}`
+      : 'Kurum durumu okunamadı'}
+  >
+    {companyLabel}
   </div>
 
   <!-- [FAZ B · B5] EŞİK PİLİ: sabit 0.70 değil, ölçülen değer -->
@@ -1642,6 +1701,31 @@
   .jury-pill.thin {
     border-color: rgba(251, 191, 36, 0.6);
     color: #fcd34d;
+  }
+
+  .company-pill {
+    position: absolute;
+    top: 190px;
+    right: 32px;
+    z-index: 104;
+    padding: 6px 14px;
+    background: rgba(10, 15, 29, 0.82);
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    border-radius: 9999px;
+    font-family: 'JetBrains Mono', monospace, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: #94a3b8;
+    backdrop-filter: blur(6px);
+    white-space: nowrap;
+    cursor: help;
+  }
+
+  .company-pill.ready {
+    border-color: rgba(52, 211, 153, 0.65);
+    color: #a7f3d0;
+    box-shadow: 0 0 14px rgba(52, 211, 153, 0.22);
   }
 
   .memory-pill {
