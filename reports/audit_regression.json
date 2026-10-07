@@ -1,0 +1,487 @@
+{
+  "meta": {
+    "generated_at": "2026-10-07T09:25:13+03:00",
+    "generated_at_meaning": "denetim raporunu son değiştiren commit'in tarihi (deterministik — CI'daki `git diff --exit-code` tazelik denetimi her koşuda kırmızı yanmasın)",
+    "audit_report": "docs/reports/JULES_DENETIM_2026-10-06.md",
+    "finding_count": 24,
+    "counts": {
+      "open": 11,
+      "closed": 9,
+      "closed_by_design": 1,
+      "unverifiable": 3
+    },
+    "known_open": [
+      "E-GÖZ1-1",
+      "E-GÖZ1-3",
+      "E-GÖZ1-4",
+      "E-GÖZ1-5",
+      "E-GÖZ1-6",
+      "E-GÖZ1-7",
+      "E-GÖZ1-8",
+      "E-GÖZ2-1",
+      "E-GÖZ2-3",
+      "E-GÖZ3-2",
+      "E-GÖZ3-5"
+    ],
+    "regressions": [],
+    "stale_known_open": [],
+    "gate_passed": true
+  },
+  "findings": {
+    "E-GÖZ1-1": {
+      "eye": 1,
+      "severity": "YÜKSEK",
+      "criticism": "`agent_core/workers/agent_worker.py` içindeki REST fallback mekanizmasında httpx post isteği başarısız olursa exception sessizce yutuluyor, loglanmıyor ve durum operatörden gizleniyor (FAIL-OPEN).",
+      "audit_verify": "grep -n \"Backend yoksa sessizce devam\" agent_core/workers/agent_worker.py",
+      "audit_verify_stale": null,
+      "check_kind": "static",
+      "status": "open",
+      "evidence": [
+        "agent_core/workers/agent_worker.py:77: pass  # Backend yoksa sessizce devam",
+        "onarımın istediği log satırı: 2 adet (bu bloğa bağlı değil)"
+      ],
+      "note": "Kusur yerinde: httpx REST-fallback istisnası hâlâ yorumsuz `pass` ile yutuluyor. Denetimin istediği `logger.warning(..., exc_info=True)` yok.",
+      "regression": false
+    },
+    "E-GÖZ1-2": {
+      "eye": 1,
+      "severity": "ORTA",
+      "criticism": "`agent_core/agents/human_behavior.py` içinde birden fazla asenkron görev `asyncio.gather(*tasks)` ile çağrılırken `return_exceptions=True` argümanı kullanılmıyor (FAIL-OPEN), bu yüzden bir görevin patlaması tüm süreci çökertiyor veya yakalanmayan hata oluşturuyor.",
+      "audit_verify": "grep -n \"asyncio.gather(\\*tasks)\" agent_core/agents/human_behavior.py",
+      "audit_verify_stale": "Denetimin `grep -n \"asyncio.gather(*tasks)\"` komutu bu satırı bugün de bulur, ama satır artık kusur değil: hemen üstünde gerekçeli [E7-muaf] kaydı var ve test_gather_contract.py muafiyet listesini sabitliyor. Kalıp tek başına çalıştırılsaydı yanlış hüküm verirdi.",
+      "check_kind": "test_gated",
+      "status": "closed",
+      "evidence": [
+        "agent_core/agents/human_behavior.py:141: results = await asyncio.gather(*tasks)",
+        "agent_core/agents/human_behavior.py:139: # [E7-muaf] İç coroutine (`_fetch_and_analyze_image`) her",
+        "tests/unit/test_gather_contract.py: kilit işaretleri 4/4 → EXPECTED_EXEMPT_FILES, [E7-muaf], MIN_RATIONALE_CHARS, return_exceptions",
+        "anlamsal denetim: 11 çağrının 3'ü return_exceptions=True, 7'si iç coroutine hatayı yakaladığı için korumalı, 1'i bilinçli all-or-nothing; gerçekten korumasız tek nokta (socid_enricher.enrich_urls) onarıldı"
+      ],
+      "note": "E7: kural `gather` sayımı değil, `ya return_exceptions ya gerekçeli muafiyet` olarak makine bekçisine bağlandı; muafiyet listesi SABİT, gerekçe uzunluğu asgari.",
+      "regression": false
+    },
+    "E-GÖZ1-3": {
+      "eye": 1,
+      "severity": "YÜKSEK",
+      "criticism": "`agent_core/services/search_engine.py` içinde yetenek omurgası ve registry atlanıp doğrudan `httpx` ile internet araması (Google/DuckDuckGo vs.) yapılıyor; paralel yol kuralı ihlal ediliyor.",
+      "audit_verify": "grep -n \"import httpx\" agent_core/services/search_engine.py",
+      "audit_verify_stale": null,
+      "check_kind": "static",
+      "status": "open",
+      "evidence": [
+        "satır başı `import httpx` → 8 dosya (denetim 8 ölçmüştü):",
+        "agent_core/agents/human_behavior.py",
+        "agent_core/capabilities/adapters_sensors.py",
+        "agent_core/services/llm_gateway.py",
+        "agent_core/services/media_forensics.py",
+        "agent_core/services/search_engine.py",
+        "agent_core/services/socid_enricher.py",
+        "agent_core/services/vision_analyzer.py",
+        "agent_core/utils/security.py"
+      ],
+      "note": "E3 açık: search_engine · vision_analyzer · socid_enricher · human_behavior · media_forensics · adapters_sensors · llm_gateway · utils/security. Sayı denetimle birebir aynı (8) → hiçbir dosya omurgaya alınmamış.",
+      "regression": false
+    },
+    "E-GÖZ1-4": {
+      "eye": 1,
+      "severity": "ORTA",
+      "criticism": "`agent_core/capabilities/adapters_web.py` içindeki `detect_language` çağrısında tespit yapılamazsa hata sessizce yutuluyor (FAIL-OPEN davranış) ve \"unknown\" değeri dönülüyor.",
+      "audit_verify": "sed -n '70,73p' agent_core/capabilities/adapters_web.py",
+      "audit_verify_stale": null,
+      "check_kind": "static",
+      "status": "open",
+      "evidence": [
+        "agent_core/capabilities/adapters_web.py:71: except Exception:  # tespit çıkarıcıyı düşürmez; sessizlik de yok",
+        "agent_core/capabilities/adapters_web.py:72: return {\"language\": \"unknown\", \"language_reason\": \"detect_error\"}",
+        "dil tespiti hatasını loglayan satır: 0 (yok)"
+      ],
+      "note": "KISMİ: gövde dürüst (uydurma dil yok, `language_reason: detect_error` makine-okunur) ama bulgunun asıl konusu olan İZLENEBİLİRLİK yok — hata hiçbir log bırakmıyor. Denetimin istediği `logger.error(...)` eklenmedi.",
+      "regression": false
+    },
+    "E-GÖZ1-5": {
+      "eye": 1,
+      "severity": "ORTA",
+      "criticism": "`agent_core/agents/human_behavior.py` içinde `input_data` ve `memory` için `Dict[str, Any]` ve `Any` tipleri kullanılmış; payload doğrulanmıyor ve şema (schema) kontrolü eksik.",
+      "audit_verify": "grep -n \"input_data: Dict\\[str, Any\\]\" agent_core/agents/human_behavior.py",
+      "audit_verify_stale": null,
+      "check_kind": "static",
+      "status": "open",
+      "evidence": [
+        "agent_core/agents/human_behavior.py:61: self, input_data: Dict[str, Any], memory: Any, llm_gateway: Any",
+        "agent_core/agents/human_behavior.py:511: self, wound: Dict[str, Any], input_data: Dict[str, Any]",
+        "agent_core genelinde `Dict[str, Any]` → 169 satır (denetim 169 ölçmüştü → değişim +0)"
+      ],
+      "note": "E8 açık ve İLERLEME YOK: sayı denetimin ölçümüyle birebir aynı (169). Hedef 10-15'e indirmekti; Pydantic şema dönüşümü hiç başlamamış.",
+      "regression": false
+    },
+    "E-GÖZ1-6": {
+      "eye": 1,
+      "severity": "YÜKSEK",
+      "criticism": "`agent_core/workers/agent_worker.py` içindeki worker loop'ta, `run_worker` iptal edildiğinde (CancelledError) `await tracker.set_wait(agent_id)` bloğunda exception yutuluyor (pass).",
+      "audit_verify": "sed -n '83,86p' agent_core/workers/agent_worker.py",
+      "audit_verify_stale": null,
+      "check_kind": "static",
+      "status": "open",
+      "evidence": [
+        "agent_core/workers/agent_worker.py:83: `await tracker.set_wait(agent_id)` sonrası `except Exception: pass` (log yok)",
+        "kapanış arızası izlenemiyor → ajan 'zombi Ready' kalabilir"
+      ],
+      "note": "Denetimin istediği `logger.error(\"Failed to set Wait status...\")` eklenmedi.",
+      "regression": false
+    },
+    "E-GÖZ1-7": {
+      "eye": 1,
+      "severity": "DÜŞÜK",
+      "criticism": "`agent_core/capabilities/adapters_web.py` içindeki URL metadata çıkarma fonksiyonunda `except Exception:` ile tüm hatalar gizleniyor (title boş atanıyor).",
+      "audit_verify": "sed -n '141,144p' agent_core/capabilities/adapters_web.py",
+      "audit_verify_stale": null,
+      "check_kind": "static",
+      "status": "open",
+      "evidence": [
+        "agent_core/capabilities/adapters_web.py:142: except Exception:  # metadata opsiyoneldir; metin varsa devam",
+        "metadata hatasını loglayan satır: 0 (yok)"
+      ],
+      "note": "Kusur yerinde: `except Exception: title = \"\"`. Başlıksız gelen web analizinin nedeni loglardan teşhis edilemiyor. Denetimin istediği `logger.debug(..., exc_info=True)` yok.",
+      "regression": false
+    },
+    "E-GÖZ1-8": {
+      "eye": 1,
+      "severity": "ORTA",
+      "criticism": "`agent_core/scraper/instagram_ghost.py` içinde profil çekilirken proxy/timeout hatası `except Exception` bloğunda pass geçiliyor ve işlem boş text ile devam ediyor.",
+      "audit_verify": "sed -n '213,216p' agent_core/scraper/instagram_ghost.py",
+      "audit_verify_stale": null,
+      "check_kind": "static",
+      "status": "open",
+      "evidence": [
+        "agent_core/scraper/instagram_ghost.py:207: `_caption_of` içinde `except Exception: pass`",
+        "kısmi/eksik veri 'başarılı çekim' gibi görünmeye devam ediyor"
+      ],
+      "note": "Denetimin istediği log + izlenebilir hata objesi yok.",
+      "regression": false
+    },
+    "E-GÖZ2-1": {
+      "eye": 2,
+      "severity": "YÜKSEK",
+      "criticism": "API ayağa kalktığında Redis sunucusuna bağlanamadığı için `agent_worker` sessizce \"in-memory fallback\" durumuna düşüyor ve hata `INFO` ile kapatılıyor, operatör gerçek ajanların neden hiçbir zaman devreye girmediğini göremiyor.",
+      "audit_verify": "Redis kapalıyken `uvicorn backend.api:app` başlatıp logu incelemek.",
+      "audit_verify_stale": null,
+      "check_kind": "static",
+      "status": "open",
+      "evidence": [
+        "agent_core/workers/agent_worker.py:40: logger.warning(f\"[{agent_id}] Redis baglanamadi: {e} — in-memory fallback\")",
+        "ERROR/CRITICAL seviyesinde log: 0 (yok) — hâlâ WARNING",
+        "worker'da `degraded_mode` bayrağı: 0 (yok)"
+      ],
+      "note": "Denetimin iki isteği de karşılanmadı: (1) Redis bağlantı hatası kritik seviyede loglanmalı, (2) in-memory fallback kullanılıyorsa UI/API'de açık `degraded_mode: true` uyarısı olmalı. Bugün ikisi de yok.",
+      "regression": false
+    },
+    "E-GÖZ2-2": {
+      "eye": 2,
+      "severity": "ORTA",
+      "criticism": "`/v1/models` uç noktası (endpoint) çağrıldığında boş bir liste (`{\"object\":\"list\",\"data\":[]}`) dönüyor, oysa `/health` ucu model gruplarının (claude, deepseek, gemini vb.) konfigüre edildiğini iddia ediyor.",
+      "audit_verify": "curl -s -f \"http://127.0.0.1:8000/v1/models\"",
+      "audit_verify_stale": "Denetimin `curl -s -f http://127.0.0.1:8000/v1/models` komutu canlı sunucu ister; ayrıca boş liste DÖNÜŞÜ yapılandırmaya bağlıdır (bulut kilidi kapalı + yerel motor yoksa liste meşru olarak boş kalır). Bu yüzden kontrol, gövdenin statik `[]` döndürmediğini ve envanteri gerçek kaynaklardan kurduğunu ölçer.",
+      "check_kind": "test_gated",
+      "status": "closed",
+      "evidence": [
+        "backend/api.py:1346: @app.get(\"/v1/models\")",
+        "backend/api.py:1355: for model_id in routed.executable_models(gateway)",
+        "backend/api.py:1372: \"owned_by\": owner,",
+        "tests/e2e/test_openai_compatibility.py: kilit işaretleri 2/2 → /v1/models, data",
+        "envanter sabit `[]` değil: unified modda router'ın executable_models'ı, bulut açıksa MODEL_PRICING, yerel motor varsa local_model — hepsi OpenAI Model nesnesi biçiminde (id/object/created/owned_by)"
+      ],
+      "note": "OpenAI uyumluluk kırılması giderilmiş ve testle kilitli.",
+      "regression": false
+    },
+    "E-GÖZ2-3": {
+      "eye": 2,
+      "severity": "YÜKSEK",
+      "criticism": "Tüzük Madde 4 \"Kasa Kapısı (Vault)\" uyarınca, vault kilitliyken OSINT ve Scraper kapalı olmalıdır, ancak `agent_core/scraper/run_scraper.py` ve `agent_core/services/holehe_scanner.py` vault state'ini kontrol etmiyor.",
+      "audit_verify": "grep -r 'vault' agent_core/scraper/",
+      "audit_verify_stale": "`grep -r 'vault' agent_core/scraper/` çıktısı (6 satır) kapı varmış gibi okunabilir; gerçek ölçüm kilit denetimi arar ve sonuç 0.",
+      "check_kind": "static",
+      "status": "open",
+      "evidence": [
+        "scraper katmanında kasa KAPISI izi: 0 (yok)",
+        "holehe_scanner'da kasa KAPISI izi: 0 (yok)",
+        "`vault` kelimesi scraper'da 7 yerde geçiyor ama hiçbiri kilit denetimi değil (cookie kaynağı/yorum) → sahte pozitif tuzağı",
+        "backend/api.py:3407: def _require_vault_open(client_id: str) -> Optional[JSONResponse]:"
+      ],
+      "note": "KATMAN FARKI: API sınırı kilitli — `_require_vault_open` dışa açılan uçları 423 VAULT_LOCKED ile reddediyor ve route tablosuna karşı yapısal testle (test_vault_egress_lock.py) kilitli; E-GÖZ2-5/3-6 oradan kapanıyor. Ama bu bulgunun istediği şey YAPRAK KATMAN: scraper/OSINT servislerinin kendisi kasanın durumunu okumuyor. Kapı atlanırsa (yeni bir iç çağrı yolu, MCP, worker) yaprakta ikinci bir savunma yok.",
+      "regression": false
+    },
+    "E-GÖZ2-4": {
+      "eye": 2,
+      "severity": "DÜŞÜK",
+      "criticism": "Ses yetenekleri (`voice.tts.local`, `voice.stt.local`) ortam değişkenleriyle kapatılmış veya eksik olduğunda `/api/speech/status` ucu 200 OK ve `available: false` dönüyor, ancak `/api/speech/say` çağrıldığında fail-fast yapıp 400 veya 503 dönmek yerine sessizce işi yutuyor veya hata fırlatmıyor.",
+      "audit_verify": "Ses kapalıyken `curl -X POST /api/speech/say -d ...` atmak.",
+      "audit_verify_stale": null,
+      "check_kind": "test_gated",
+      "status": "closed_by_design",
+      "evidence": [
+        "backend/api.py:5213: broadcast_log(req.client_id, \"WARNING\", f\"SES ÜRETİLEMEDİ: {result.reason}\")",
+        "backend/api.py:5106: broadcast_speech(req.client_id, {\"state\": \"denied\", **payload})",
+        "backend/api.py:5178: broadcast_speech(client_id, {\"state\": \"denied\", \"reason\": result.reason})",
+        "backend/api.py:5212: broadcast_speech(req.client_id, {\"state\": \"denied\", **payload})",
+        "backend/api.py:2348: vault_locked=not _check_vault_interlock(client_id),",
+        "backend/api.py:4229: web_state = policy_state(vault_locked=not _check_vault_interlock(client_id))",
+        "backend/api.py:5097: vault_locked=not _check_vault_interlock(req.client_id),",
+        "backend/api.py:5171: vault_locked=not _check_vault_interlock(client_id),",
+        "backend/api.py:5203: vault_locked=not _check_vault_interlock(req.client_id),",
+        "backend/api.py:5314: vault_locked=not _check_vault_interlock(req.client_id),",
+        "backend/api.py:5449: vault_locked=not _check_vault_interlock(req.client_id),",
+        "backend/api.py:5569: vault_locked=not _check_vault_interlock(req.client_id),",
+        "tests/integration/test_speech_api_faz_c.py: kilit işaretleri 4/4 → test_say_refuses_when_gate_is_closed, test_remote_endpoint_is_never_called, test_locked_vault_blocks_speech, result[\"available\"] is False",
+        "motor yokken: available=false + makine-okunur reason + WebSocket `denied` yayını + WARNING log; uydurma ses ÜRETİLMİYOR, uzak uç HİÇ çağrılmıyor (test_remote_endpoint_is_never_called)"
+      ],
+      "note": "TASARIM FARKI AÇIKÇA YAZILIR: denetim 400/503 istedi; ev bu ucu 200 + dürüst `available:false` + `denied` yayın olarak kurdu ve bu davranış testle kilitli. Bulguyu doğuran kusur (sessiz yutma, 'söyledim' sanma) YOK: gövde dürüst, UI reddi görüyor. Yine de HTTP seviyesi 'istek işlendi' der — E5'in motor ucu (400 MOTOR_UNAVAILABLE) bu sınıfta daha serttir; konuşma ucu bilinçli olarak yumuşak bırakıldı.",
+      "regression": false
+    },
+    "E-GÖZ2-5": {
+      "eye": 2,
+      "severity": "YÜKSEK",
+      "criticism": "`/api/browser/open` ve `/api/browser/state` uç noktaları çağrıldığında, hata fırlatıp çökmemesi için `client_id` bekliyor. Ancak tarayıcı durumunu çekerken \"kilitli (vault) kontrolü\" yapılmıyor.",
+      "audit_verify": "Kasa kilitliyken `curl -X POST /api/browser/open ...` atmak.",
+      "audit_verify_stale": "Denetimin `curl` komutu canlı sunucu ve kilitli kasa durumu ister. Kontrol aynı şeyi statik+yapısal ölçer: kapı fonksiyonu var mı, browser ucuna bağlı mı, route tablosunu denetleyen test var mı.",
+      "check_kind": "test_gated",
+      "status": "closed",
+      "evidence": [
+        "backend/api.py:3407: def _require_vault_open(client_id: str) -> Optional[JSONResponse]:",
+        "backend/api.py:4350: @app.post(\"/api/browser/open\")",
+        "route gövdesi: 15 satır ölçüldü (tanım satırı atlandı: True)",
+        "tests/unit/test_vault_egress_lock.py: kilit işaretleri 4/4 → 423, VAULT_LOCKED, YAPI DENETİMİ, muafiyet",
+        "browser ucu kapıyı ÇAĞIRIYOR: `_require_vault_open` route'un kendi fonksiyon gövdesinde (komşu fonksiyondan sızma değil)",
+        "yapısal denetim: route tablosuna karşı koşuyor — yeni bir dış-çıkış ucu eklenip kapıyı unutmak mümkün değil"
+      ],
+      "note": "Kasa kilidi dekorasyon değil: 423 Locked + servis katmanında ikinci savunma.",
+      "regression": false
+    },
+    "E-GÖZ2-6": {
+      "eye": 2,
+      "severity": "ORTA",
+      "criticism": "Ajan izleme ucu (`/api/agents/status`) in-memory modunda listeyi dönerken tüm ajanları \"Wait\" durumunda ve \"timestamp\"lerini aynı (API'nin başladığı an) raporluyor. Gerçek durumu yansıtmıyor.",
+      "audit_verify": "Redis yokken arayüzün/API'nin ajan sekmesine bakmak.",
+      "audit_verify_stale": "Denetimin `curl | grep -o 'Wait' | wc -l → 12` ölçümü canlı Redis'siz sunucu ister ve 'Wait' sayısını kusurun kendisi sayar. Asıl kusur SAHTE ETİKET'ti; kontrol onu ve onu kilitleyen testi ölçer.",
+      "check_kind": "test_gated",
+      "status": "closed",
+      "evidence": [
+        "backend/api.py:3158: return {\"agents\": agents, \"source\": source, \"count\": len(agents)}",
+        "backend/api.py:3156: state_fn = getattr(getattr(tracker, \"redis_bus\", None), \"connection_state\", None)",
+        "backend/api.py:3152: return {\"agents\": [], \"source\": \"fallback\", \"count\": 0}",
+        "backend/api.py:3161: return {\"agents\": [], \"source\": \"error\", \"error\": str(e)[:100], \"count\": 0}",
+        "tests/unit/test_status_source_honesty.py: kilit işaretleri 3/3 → source, in_memory, redis_bus",
+        "`source` alanı gerçek taşıyıcıyı beyan eder: redis_bus (PING'lenmiş bağlantı) · in_memory · fallback (rack hiç yüklenmedi) · error; koşulsuz `redis_bus` etiketi kalktı, sahte Ready basan yollar (simulate_processing · set_all_ready) kaldırıldı"
+      ],
+      "note": "Bulguyu doğuran tiyatro (Redis yokken 12 ajanı 'Wait/hazır' göstermek) ölçülür durumda: etiket artık bağlantının gerçek durumundan türetiliyor.",
+      "regression": false
+    },
+    "E-GÖZ2-7": {
+      "eye": 2,
+      "severity": "YÜKSEK",
+      "criticism": "`/api/experimental/maigret/scan` ve `/api/experimental/holehe/scan` uçları, test bağımlılıklarıyla (ör. Redis yokken) bile çağrılabiliyor ve 200 OK ile başlıyor, ama arka planda sessizce çöküyor (veya boş dönecek şekilde simüle ediliyor).",
+      "audit_verify": "Maigret motoru kurulu değilken `/api/experimental/maigret/scan` ucu çağırmak.",
+      "audit_verify_stale": "Denetimin doğrulaması 'maigret kurulu değilken ucu çağırmak' — canlı ortam ister. Kontrol kapının kodunu + sebep sözlüğünü + kuralı kilitleyen testi ölçer.",
+      "check_kind": "test_gated",
+      "status": "closed",
+      "evidence": [
+        "backend/api.py:3811: \"code\": \"MOTOR_UNAVAILABLE\",",
+        "backend/api.py:1082: raise HTTPException(status_code=400, detail=\"INVALID_CLIENT_ID\")",
+        "backend/api.py:1086: raise HTTPException(status_code=400, detail=\"INVALID_CLIENT_ID\") from None",
+        "backend/api.py:1461: status_code=400,",
+        "backend/api.py:1471: status_code=400,",
+        "backend/api.py:1483: status_code=400,",
+        "backend/api.py:1494: status_code=400,",
+        "backend/api.py:1594: status_code=400,",
+        "backend/api.py:2881: status_code=400,",
+        "backend/api.py:3759: \"library_missing\",   # motor kütüphanesi kurulu değil",
+        "tests/unit/test_experimental_engine_contract.py: kilit işaretleri 4/4 → MOTOR_UNAVAILABLE, MODULE_UNAVAILABLE, disabled, library_missing",
+        "4 uç bağlı: maigret · holehe · crawl · socid → motor yoksa 400 MOTOR_UNAVAILABLE; dürüst gövde KORUNUR, üzerine makine-okunur error biner",
+        "SINIR: motor çalışıp dürüstçe 'sonuç yok' derse (timeout · scan_error · no_record) sözleşme 200 + available:false kalır — iki yön de test edilir"
+      ],
+      "note": "E5: 'çalışmayan çağrı 200 dönmez' kuralı makine bekçisine bağlı.",
+      "regression": false
+    },
+    "E-GÖZ2-8": {
+      "eye": 2,
+      "severity": "YÜKSEK",
+      "criticism": "Çocuk Kırmızı Çizgisi (Tüzük Md. 5), doğrudan API controller veya agent layer seviyesinde zorunlu tutulmuyor; sadece spesifik yeteneklerde kontrol ediliyor olabilir veya hiç izi yoktur.",
+      "audit_verify": "grep -r 'minor_gate' backend/api.py",
+      "audit_verify_stale": "KRİTİK: denetimin `grep -r 'minor_gate' backend/api.py` komutu bugün yalnız 1 satır bulur ve o da bir ÖLÇÜM YORUMU (satır ~3439: 'grep -c → 0'). Kapı `_require_minor_clearance` + `MinorCasePayload` adıyla yaşıyor. Denetimin komutu birebir koşsaydı E2'yi 'açık' ilan ederdi — yanlış hüküm. Bu kontrol kusurun kendisini (API sınırında zorlama var mı) ölçer.",
+      "check_kind": "test_gated",
+      "status": "closed",
+      "evidence": [
+        "backend/api.py:2813: if (blocked := _require_minor_clearance(req.client_id, subject=req.url)) is not None:",
+        "backend/api.py:3568: def _require_minor_clearance(",
+        "backend/api.py:3576: if (blocked := _require_minor_clearance(req.client_id)) is not None:",
+        "backend/api.py:3830: if (blocked := _require_minor_clearance(payload.client_id, subject=payload.username)) is not None:",
+        "backend/api.py:3864: if (blocked := _require_minor_clearance(payload.client_id, subject=payload.email)) is not None:",
+        "backend/api.py:3894: if (blocked := _require_minor_clearance(payload.client_id, subject=payload.url)) is not None:",
+        "backend/api.py:3926: if (blocked := _require_minor_clearance(payload.client_id, subject=payload.url)) is not None:",
+        "backend/api.py:3943: if (blocked := _require_minor_clearance(None)) is not None:",
+        "backend/api.py:3461: class MinorCasePayload(BaseModel):",
+        "backend/api.py:649: app.state.minor_cases = {}  # client_id -> MinorCaseContext (yalnız beyan edilmişse)",
+        "backend/api.py:3490: `app.state.minor_cases` içinde tutulur — oda tahliyesi (30 dk boşta)",
+        "backend/api.py:3495: return coerce_minor_case(app.state.minor_cases.get(client_id))",
+        "backend/api.py:3591: for other_id in list(app.state.minor_cases):",
+        "backend/api.py:3626: req.client_id not in app.state.minor_cases",
+        "backend/api.py:3627: and len(app.state.minor_cases) >= _MINOR_CASE_MAX_ENTRIES",
+        "backend/api.py:3652: app.state.minor_cases[req.client_id] = case",
+        "backend/api.py:3669: had = app.state.minor_cases.pop(req.client_id, None) is not None",
+        "backend/api.py:3453: MINOR_BLOCKED_MESSAGE = (",
+        "backend/api.py:3524: \"message\": MINOR_BLOCKED_MESSAGE,",
+        "tests/unit/test_minor_gate_api.py: kilit işaretleri 3/3 → _require_minor_clearance, MINOR_BLOCKED, 451",
+        "oda bazlı beyan: POST ile çocuk vakası beyan edilir, yalnız `POST /api/minor/clear` kaldırır (zaman aşımı değil); `coerce_minor_case` yarım/bozuk beyanı REDDEDER (fail-closed)",
+        "SIRA bilinçli: çocuk kilidi kasa kapısından ÖNCE koşar — izinde 'VAULT_LOCKED' görünür, çocuk ihlali maskelenir",
+        "DoD'dan bilinçli sapma: HTTP 403 değil **451** (Unavailable For Legal Reasons) + makine-okunur `MINOR_BLOCKED`; gerekçeli ret, düz 'yasak' değil"
+      ],
+      "note": "Tüzük Md.5 artık API sınır kapısında; içerideki yeteneklere güvenmiyor.",
+      "regression": false
+    },
+    "E-GÖZ3-1": {
+      "eye": 3,
+      "severity": "YÜKSEK",
+      "criticism": "Rust (rust_core) tarafındaki Vault testlerinde `VAULT_PERSISTENCE_BUG: age file truncated on store->reload` hatası `#[ignore]` etiketiyle halının altına süpürülmüş ve CI geçiyormuş gibi (yeşil) gösterilmiş. (Tiyatro).",
+      "audit_verify": "cargo test --manifest-path rust_core/Cargo.toml",
+      "audit_verify_stale": null,
+      "check_kind": "unverifiable",
+      "status": "unverifiable",
+      "evidence": [
+        "`cargo` bu ortamda kurulu değil: shutil.which('cargo') → None",
+        "`rustc` bu ortamda kurulu değil: shutil.which('rustc') → None",
+        "denetimin DOĞRULA komutu `cargo test --manifest-path …` → bu sandbox'ta koşamaz",
+        "ölçüm otoritesi CI'ın `rust-core` işi (cargo check + cargo test adımları, annotation yayınlar)",
+        "GÖZLEM (kanıt değil): vault kaynağında satır başı `#[ignore]` → 0 (yalnız yorum satırlarında geçiyor)",
+        "GÖZLEM: purity_scan içinde `#[ignore]` yasak bekçisi → 1 kayıt"
+      ],
+      "note": "Testin gerçekten KOŞUP koşmadığı (roundtrip'in geçtiği) yalnız `cargo test` ile ölçülür; bu ortamda cargo yok. Statik gözlem umut verici ama bu bekçi gözlemi hükme çevirmez — çevirse 'uydurma' olurdu.",
+      "regression": false
+    },
+    "E-GÖZ3-2": {
+      "eye": 3,
+      "severity": "YÜKSEK",
+      "criticism": "`agent_core/workers/agent_worker.py` içinde worker başlatıldığında `init_redis_bus` import edilemezse (bağımlılık yoksa) hata fırlatmak yerine \"in-memory fallback\" yaparak hiçbir uyarıda bulunmuyor, ancak docker-compose mimarisinde Redis olmadan sistem dağıtık (distributed) kalamaz.",
+      "audit_verify": "agent_core/workers/agent_worker.py dosyasında \"fallback in-memory\" satırını okumak.",
+      "audit_verify_stale": null,
+      "check_kind": "static",
+      "status": "open",
+      "evidence": [
+        "agent_core/workers/agent_worker.py:29: logger.warning(f\"Tracker import hatasi (fallback in-memory): {e}\")",
+        "worker'da ortam kapısı (`PINEAL_ENV`/`production`): False (yok)",
+        "worker'da sert başarısızlık (`raise RuntimeError`): False (yok)"
+      ],
+      "note": "Denetimin istediği kural yok: üretim modunda Redis import/bağlantı hatası hâlâ `logger.warning` + in-memory fallback ile yutuluyor. Dağıtık mimari sessizce tekil sürece düşebiliyor.",
+      "regression": false
+    },
+    "E-GÖZ3-3": {
+      "eye": 3,
+      "severity": "DÜŞÜK",
+      "criticism": "`rust_core/src/token_compressor.rs` içinde `from_str_id` fonksiyonu yazılmış ancak asla kullanılmamış (dead code), `cargo test` derleme uyarılarında dead_code olarak görünüyor.",
+      "audit_verify": "cargo check --manifest-path rust_core/Cargo.toml",
+      "audit_verify_stale": null,
+      "check_kind": "unverifiable",
+      "status": "unverifiable",
+      "evidence": [
+        "`cargo` bu ortamda kurulu değil: shutil.which('cargo') → None",
+        "`rustc` bu ortamda kurulu değil: shutil.which('rustc') → None",
+        "denetimin DOĞRULA komutu `cargo test --manifest-path …` → bu sandbox'ta koşamaz",
+        "ölçüm otoritesi CI'ın `rust-core` işi (cargo check + cargo test adımları, annotation yayınlar)",
+        "GÖZLEM (kanıt değil): bildirim → 1; çağrı noktası → 1",
+        "rust_core/src/token_compressor.rs:217: let level = CompressionLevel::from_str_id(level_str)"
+      ],
+      "note": "Bulgunun kendisi bir DERLEYİCİ UYARISI iddiası (`warning: … is never used`); uyarının varlığı yalnız `cargo check` çıktısıyla ölçülür. Statik gözlem çağrı noktası gösteriyor ama bu bekçi gözlemi hükme çevirmez.",
+      "regression": false
+    },
+    "E-GÖZ3-4": {
+      "eye": 3,
+      "severity": "ORTA",
+      "criticism": "Frontend tarafında \"ADLİ RAPOR\" UI'sında sahte dinamizm / TİYATRO yapılıyor. Gerçek verilerin boş veya \"Veri mevcut değil\" olması ihtimaline karşın arayüzde dolu görünmesi için sabit statik dolgu (`\"—\"` veya rastgele string) kullanılıyor.",
+      "audit_verify": "Adli panel kodunda `|| \"Veri mevcut değil\"` kullanımlarını aramak.",
+      "audit_verify_stale": "Denetim `|| \"Veri mevcut değil\"` arıyordu; o kalıp bugün yalnız satır ~150'deki AÇIKLAMA YORUMUNDA yaşıyor (kaldırılmış kusuru anlatır). Onarım farklı adla yapıldı: `INSUFFICIENT_EVIDENCE` sabiti + `hasEvidence()` kapısı. Denetimin kalıbı 'Yetersiz Kanıt'ı frontend'de 0 hit diye ölçmüştü; bugün gerçek durumda büyük harfli sabit olarak var.",
+      "check_kind": "static",
+      "status": "closed",
+      "evidence": [
+        "frontend/src/components/AtlasPinealCockpit.svelte:166: const INSUFFICIENT_EVIDENCE = 'YETERSİZ KANIT';",
+        "frontend/src/components/AtlasPinealCockpit.svelte:157: function hasEvidence(value: unknown): boolean {",
+        "`INSUFFICIENT_EVIDENCE` kullanımı → 17 satır",
+        "`hasEvidence(...)` kapısı → 17 satır",
+        "CANLI dolgu kalıbı (yorum olmayan satırda) → 0 (yok)",
+        "kalıbın geçtiği tek yer: kaldırılmış kusuru anlatan AÇIKLAMA YORUMU → 2 satır"
+      ],
+      "note": "E6: null/undefined/boş metin/NaN/boş dizi 'kanıt yok' sayılıyor ve alan `YETERSİZ KANIT` etiketi + `evidence-insufficient` sınıfıyla basılıyor; graf kanıt yoksa boş kalıyor (uydurma yok).",
+      "regression": false
+    },
+    "E-GÖZ3-5": {
+      "eye": 3,
+      "severity": "YÜKSEK",
+      "criticism": "`agent_core` içinde birden çok agent (örneğin `human_behavior`, `cognitive_profiler`), `asyncio.gather` ile paralelize ettiği işleri \"Mock\" nesneler (ör. magic string dönüşleri) veya tamamen yutulmuş Exception'lar üzerinden yürütüp analiz varmış gibi (TİYATRO) davranıyor. Gerçekte yetenek omurgasından veya LLM'den hiçbir anlamlı veri gelmemiş olabilir.",
+      "audit_verify": "Redis yokken /api/agents/status çıktısını okumak.",
+      "audit_verify_stale": null,
+      "check_kind": "static",
+      "status": "open",
+      "evidence": [
+        "bileşen durumları: E-GÖZ1-1=open, E-GÖZ1-6=open, E-GÖZ2-6=closed",
+        "açık bileşen: E-GÖZ1-1, E-GÖZ1-6 → üst küme açık kalır",
+        "agent_core/workers/agent_worker.py:77: pass  # Backend yoksa sessizce devam",
+        "onarımın istediği log satırı: 2 adet (bu bloğa bağlı değil)"
+      ],
+      "note": "Durum beyanı tarafı onarıldı (agents/status gerçek taşıyıcıyı yazıyor) ama 'tüm sessiz yutmalar kaldırılmalı + Degraded modu resmileşmeli' isteği karşılanmadı: worker'da hâlâ logsuz `except: pass` blokları var.",
+      "regression": false
+    },
+    "E-GÖZ3-6": {
+      "eye": 3,
+      "severity": "ORTA",
+      "criticism": "PINEAL-HERETIC deposunun \"Kusursuz Otonomi\" ve \"Yerellik\" iddiaları, tarayıcı işlemlerinde (playwright proxy vb.) dışarıya (internet, auth vb.) bağlı olan ve vault kilitli iken bile endpointleri açık bırakan kısımlarla yalanlanıyor (ör. `/api/browser/open` uç noktası).",
+      "audit_verify": "Kasa kilitliyken `curl /api/browser/open`",
+      "audit_verify_stale": "Denetimin `curl` komutu canlı sunucu ve kilitli kasa durumu ister. Kontrol aynı şeyi statik+yapısal ölçer: kapı fonksiyonu var mı, browser ucuna bağlı mı, route tablosunu denetleyen test var mı.",
+      "check_kind": "test_gated",
+      "status": "closed",
+      "evidence": [
+        "E-GÖZ2-5 ölçümü: closed",
+        "backend/api.py:3407: def _require_vault_open(client_id: str) -> Optional[JSONResponse]:",
+        "backend/api.py:4350: @app.post(\"/api/browser/open\")",
+        "route gövdesi: 15 satır ölçüldü (tanım satırı atlandı: True)",
+        "tests/unit/test_vault_egress_lock.py: kilit işaretleri 4/4 → 423, VAULT_LOCKED, YAPI DENETİMİ, muafiyet"
+      ],
+      "note": "Bu bulgu E-GÖZ2-5'in mimari ifadesidir (aynı delik, farklı göz). Ölçüm paylaşılır: kasa kilitliyken browser uçları 423 Locked döner, servis katmanında `BrowserSession` ayrıca `VaultLockedError` fırlatır → tek kapıya güvenilmiyor.",
+      "regression": false
+    },
+    "E-GÖZ3-7": {
+      "eye": 3,
+      "severity": "DÜŞÜK",
+      "criticism": "`requirements-retina.txt` ve `requirements-osint.txt` gibi bağımlılıklar, ana `requirements.lock` içine manuel veya zayıf bir şekilde dahil ediliyor. Ajan servisleri (örn. Maigret, Holehe) dinamik çağrılıyor ama CI/CD testleri `--no-install` veya mock'lanmış ortamlarda bu eksiklikleri (örn. missing dependency hatası) görmüyor.",
+      "audit_verify": "Holehe kurulu değilken `/api/experimental/holehe/scan` ucu.",
+      "audit_verify_stale": "Denetim 'holehe kurulu değilken ucu çağırmak' istiyordu (canlı ortam). Kontrol sebep sözlüğünü + kapıyı + kilidi statik ölçer.",
+      "check_kind": "test_gated",
+      "status": "closed",
+      "evidence": [
+        "backend/api.py:3759: \"library_missing\",   # motor kütüphanesi kurulu değil",
+        "backend/api.py:3760: \"dependency_broken\", # bağımlılık yüklendi ama kırık/eksik",
+        "backend/api.py:3912: yoksa makine-okunur sebep (binary_missing / library_missing).",
+        "tests/unit/test_experimental_engine_contract.py: kilit işaretleri 3/3 → library_missing, dependency_broken, holehe",
+        "sebep sözlüğü servis kaynaklarına bağlı: disabled · library_missing · dependency_broken · db_unavailable → 400 MOTOR_UNAVAILABLE; uydurma sebep testi kırmızı yakar",
+        "holehe ucu da aynı kapıdan geçiyor (E5 kapsamı 4 uç)"
+      ],
+      "note": "ImportError yutulup 'temiz' dönmek yerine makine-okunur sebep dönüyor.",
+      "regression": false
+    },
+    "E-GÖZ3-8": {
+      "eye": 3,
+      "severity": "YÜKSEK",
+      "criticism": "Test piramidinin büyük bir kısmı \"Mock'lanmış Gerçeklik\" üzerine kurulu. Örneğin, Vault (Kasa) şifreleme/çözme döngüsünün testinde (rust_core'da) kritik bir okuma/yazma hatası var ama bu hata (VAULT_PERSISTENCE_BUG) CI'dan gizlenmiş. Python tarafında da birçok asenkron ağ çağrısı (httpx) tam entegrasyon (VCR/cassette) yerine, basit `pytest-mock` ile başarılı varsayılarak testleri yeşil tutuyor.",
+      "audit_verify": "`cargo test` ve `pytest` çıktıları.",
+      "audit_verify_stale": null,
+      "check_kind": "unverifiable",
+      "status": "unverifiable",
+      "evidence": [
+        "`cargo` bu ortamda kurulu değil: shutil.which('cargo') → None",
+        "`rustc` bu ortamda kurulu değil: shutil.which('rustc') → None",
+        "denetimin DOĞRULA komutu `cargo test --manifest-path …` → bu sandbox'ta koşamaz",
+        "ölçüm otoritesi CI'ın `rust-core` işi (cargo check + cargo test adımları, annotation yayınlar)",
+        "GÖZLEM: tests/e2e altında 4 dosya var ama bulgunun istediği 'gerçek Redis + gerçek dosya sistemi + gerçek ağ' koşusu bu sandbox'ta yok (Redis sunucusu yok, ağ kapalı, cargo yok)",
+        "python tarafı `pytest` ile ölçülebilir ama bu bulgunun hükmü (mock oranı / gerçek dünya dayanıklılığı) tek bir statik kalıba indirgenemez"
+      ],
+      "note": "Bu bulgu bilinçli olarak 'doğrulanamaz' bırakıldı: onu bir grep ile 'kapalı' ilan etmek tam olarak denetimin eleştirdiği tiyatro olurdu.",
+      "regression": false
+    }
+  }
+}
