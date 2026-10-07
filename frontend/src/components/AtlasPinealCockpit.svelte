@@ -183,6 +183,43 @@
     }
   }
 
+  // --- [FAZ D · D1] MCP PİLİ ---
+  // Pineal'in yetenekleri standart MCP kapısından dışarıya açılıyor. Pil
+  // GERÇEK durumu gösterir: kaç yetenek araç olarak yayınlanıyor ve kasa
+  // mandalı ne durumda. Kasa kapalıyken araçlar KİLİTLİ yazar (yetenekler
+  // koşmaz) — uydurma "hazır" göstergesi yok.
+  let mcpInfo: {
+    tools: number;
+    capabilities: number;
+    vaultLocked: boolean;
+    protocol: string;
+    command: string;
+  } | null = null;
+
+  async function fetchMcpStatus() {
+    try {
+      const res = await apiFetch(`/api/mcp/status?client_id=${encodeURIComponent($clientId)}`);
+      if (!res.ok) {
+        mcpInfo = null;
+        return;
+      }
+      const data = await res.json();
+      if (!data?.available) {
+        mcpInfo = null;
+        return;
+      }
+      mcpInfo = {
+        tools: Number(data?.tools ?? 0),
+        capabilities: Number(data?.capabilities ?? 0),
+        vaultLocked: Boolean(data?.vault_locked),
+        protocol: String(data?.protocol_current ?? ''),
+        command: String(data?.command ?? ''),
+      };
+    } catch (_e) {
+      mcpInfo = null; // ağ hatası: uydurma araç sayısı ÜRETİLMEZ
+    }
+  }
+
   async function fetchEvidenceGraph(taskId: string) {
     try {
       const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}/graph?client_id=${encodeURIComponent($clientId)}`);
@@ -287,6 +324,14 @@
       : `DİL: ${langInfo.language.toUpperCase()} · ${langInfo.confidence.toFixed(2)}`
     : 'DİL: ÖLÇÜLMEDİ';
   $: if ($clientId) fetchLanguageStatus();
+
+  // [FAZ D · D1] MCP pili: araç sayısı defterden gelir, kasa durumu gizlenmez.
+  $: mcpLabel = mcpInfo
+    ? mcpInfo.vaultLocked
+      ? `MCP: ${mcpInfo.tools} ARAÇ · KİLİTLİ`
+      : `MCP: ${mcpInfo.tools} ARAÇ · AÇIK`
+    : 'MCP: —';
+  $: if ($clientId) fetchMcpStatus();
 
   function nowTime() {
     return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -617,6 +662,18 @@
       : 'Henüz dil ölçümü yok — web çıkarıcıları çıkardıkları metnin dilini işler'}
   >
     {langLabel}
+  </div>
+
+  <!-- [FAZ D · D1] MCP PİLİ: yetenekler standart kapıdan dışarıda (gerçek sayı) -->
+  <div
+    class="mcp-pill"
+    class:ready={Boolean(mcpInfo && !mcpInfo.vaultLocked)}
+    class:locked={Boolean(mcpInfo && mcpInfo.vaultLocked)}
+    title={mcpInfo
+      ? `${mcpInfo.capabilities} yetenek · protokol ${mcpInfo.protocol} · ${mcpInfo.command}`
+      : 'MCP durumu okunamadı — sunucu kapalı olabilir'}
+  >
+    {mcpLabel}
   </div>
 
   <!-- [FAZ B · B5] EŞİK PİLİ: sabit 0.70 değil, ölçülen değer -->
@@ -1467,6 +1524,36 @@
   }
 
   .language-pill.unknown {
+    border-color: rgba(248, 113, 113, 0.55);
+    color: #fca5a5;
+  }
+
+  .mcp-pill {
+    position: absolute;
+    top: 122px;
+    right: 32px;
+    z-index: 104;
+    padding: 6px 14px;
+    background: rgba(10, 15, 29, 0.82);
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    border-radius: 9999px;
+    font-family: 'JetBrains Mono', monospace, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: #94a3b8;
+    backdrop-filter: blur(6px);
+    white-space: nowrap;
+    cursor: help;
+  }
+
+  .mcp-pill.ready {
+    border-color: rgba(56, 189, 248, 0.7);
+    color: #bae6fd;
+    box-shadow: 0 0 14px rgba(56, 189, 248, 0.25);
+  }
+
+  .mcp-pill.locked {
     border-color: rgba(248, 113, 113, 0.55);
     color: #fca5a5;
   }

@@ -1,5 +1,53 @@
 # Changelog
 
+## Unreleased — 2026-10-07 — FAZ D · D1: yetenekler standart kapıdan dışarıda (MCP)
+
+- **D1 · MCP SUNUCUSU TAMAM.** ``agent_core/mcp/`` paketi: ``protocol.py`` (JSON-RPC
+  2.0 + sürüm anlaşması), ``tools.py`` (defter → araç), ``results.py`` (dürüst
+  sonuç zarfı), ``state_bridge.py`` (kasa + hız), ``status.py`` (``pineal_status``),
+  ``server.py`` (sevkiyat + stdio). Çalıştırma: ``python -m agent_core.mcp``.
+  **Tek kaynak:** araç listesi ``CapabilityRegistry``den her istekte türetilir;
+  bayat liste diye bir şey yoktur (deftere yetenek eklenince araç kendiliğinden
+  görünür, silinince kaybolur).
+- **Çift protokol (ölçüldü, 2026-10-07).** MCP'nin güncel sürümü **2026-07-28**
+  ve protokol artık **stateless** (``initialize`` kaldırıldı; sürüm her isteğin
+  ``_meta``'sında, keşif ``server/discover``). Eski istemciler el sıkışma
+  konuşur. Sunucu **ikisini birlikte** destekler: 2026-07-28 · 2025-11-25 ·
+  2025-06-18 · 2025-03-26 · 2024-11-05. Bilinmeyen sürüm sessizce en yenisi
+  sanılmaz: legacy el sıkışmada sunucu desteklediği en yeni sürümü döner,
+  stateless istekte ``-32022`` + desteklenen sürüm listesi döner.
+- **Ayrı dış yol YOK.** Her çağrı ``CapabilityRunner`` üzerinden koşar: çocuk
+  kilidi → politika kapıları (vault · budget · rate · ENABLE_*) → availability
+  → ``run()``. Reddedilen çağrı ``isError: true`` ve makine-okunur sebeple
+  döner (``denied_by`` / ``unavailable_reason`` / ``error``); ``ok`` yalnız
+  kanıt varsa ``true``'dur.
+- **Kasa tek kaynaktan ve fail-closed.** Sunucu kasa mandalını çalışan Pineal
+  API'sinden (``GET /api/vault/status``) okur — kararı kendi kopyasında yeniden
+  üretmez (kural [009]). Adres **yalnız yerel** olabilir; uzak adres reddedilir,
+  HTTP yönlendirmeleri TAKİP EDİLMEZ ve API'ye ulaşılamıyorsa kasa KİLİTLİ
+  sayılır (``vault_api_unreachable`` / ``vault_api_bad_shape`` gibi sebeplerle).
+- **Kokpit + dış istemci durumu.** ``GET /api/mcp/status`` (yetenek/araç sayısı
+  defterden, kasa mandalı ``/api/initiate`` ile aynı kapıdan, sürümler, hız
+  sınırı; uç hiçbir yeteneği koşturmaz) ve kokpitte **MCP pili**:
+  ``MCP: 16 ARAÇ · AÇIK`` / ``MCP: … · KİLİTLİ``.
+- **Skills ihracı:** ``scripts/export_skills.py`` aynı defterden
+  ``skills/<araç>/SKILL.md`` üretir; ``--check`` bayat paketi yakalar (exit 3).
+  CI bu adımı koşar: elle düzenlenmiş ya da defterde olmayan yetenek dosyası
+  sessizce geçemez.
+- **Dış istemci girdisi:** ``PINEAL_API_URL`` · ``PINEAL_MCP_CLIENT_ID`` ·
+  ``PINEAL_MCP_RATE_LIMIT`` (20) · ``PINEAL_MCP_RATE_WINDOW`` (60 sn) ·
+  ``PINEAL_MCP_MINOR_SUBJECTS`` (operatör beyanı: hedef 18 altıysa MCP yolunda
+  kilitlenir — vaka bağlamı taşınmadığı için ``MinorGate`` reddeder; beyan
+  "izin" değil "dur" demektir).
+- **stdout yalnız protokol taşır.** Günlükler stderr'e yazar; bozuk bir satır
+  kanalı düşürmez (``PARSE_ERROR`` döner, döngü devam eder), beklenmedik bir
+  istisna ``INTERNAL_ERROR`` olur ve kanal açık kalır. Windows kod sayfası
+  tuzağı için stdio UTF-8'e sabitlenir.
+- **Test:** +129 (birim 115 · entegrasyon 14). Entegrasyon testi sunucuyu
+  GERÇEK alt süreç olarak başlatıp stdio'dan konuşur; yalnız kasa cevabı taklit
+  edilir. Tam koşu: **1910P/0F**, ``ruff`` temiz, ``svelte-check`` 0 hata,
+  build başarılı.
+
 ## Unreleased — 2026-10-05 — FAZ A/D · A8 + D4: site listesi tazeleniyor, dil ölçülüyor
 
 - **A8 · MAIGRET DB TAZELEME.** maigret paketlenmiş bir site anlık görüntüsüyle

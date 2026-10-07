@@ -108,6 +108,7 @@ PINEAL-HERETIC v5.1, operatöre hem derin sinematik sezgi hem de cerrahi şeffaf
 | `POST /api/initiate` | Ana profil görevi; aynı `run_mission` akışını başlatır. |
 | `POST /api/aspasia/chat` | Kullanıcıya görev/kanıt durumu yanıtı. |
 | `POST /api/aspasia/command` | Sınırlı doğal dil intent'i; desteklenen açık Instagram URL'si doğrulanır ve aynı görev akışına dispatch edilir. |
+| `GET /api/mcp/status` | MCP ihracının durumu: kaç yetenek araç olarak açık, hangi protokol sürümleri, kasa mandalı. Yetenek KOŞTURMAZ. |
 | `POST /api/experimental/shadow/analyze` | Deneysel Shadow analiz endpoint'i; normal UI akışından ayrı. |
 | `POST /api/experimental/shadow/generate` | Deneysel Shadow taslak üretim endpoint'i; normal UI akışından ayrı. |
 | `POST /api/experimental/chat/respond` | Deneysel, oturumlu DialogueManager yanıtı; normal UI çağırmaz. |

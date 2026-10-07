@@ -251,4 +251,15 @@ metnin dilini kanıt kapsamına işliyor; kokpitte **DİL** pili bu gerçek tesp
 gösteriyor. Uçlar: `GET /api/language/status` · `POST /api/language/detect` ·
 `POST /api/language/translate`. Her iki yetenek (`extractor.text.language`,
 `extractor.text.translate_local`) omurgada ve `vault` kapısında — kasa
-kilitliyken koşamazlar (istisna yok). Kalan: **D6 → D2 → D1 → D3 → D5**.
+kilitliyken koşamazlar (istisna yok). **D1 TAMAM (2026-10-07) — yetenekler standart kapıdan dışarıda (MCP).**
+`agent_core/mcp/` paketi (`python -m agent_core.mcp`, stdio): defterdeki her
+yetenek MCP aracı olarak yayınlanır ve çağrılar içeridekilerle AYNI mandaldan
+geçer (çocuk kilidi → vault · budget · rate · ENABLE_* → availability → run).
+Güncel protokol 2026-07-28 stateless; eski el sıkışmalı istemciler de desteklenir
+(ikisi birlikte: 2026-07-28 · 2025-11-25 · 2025-06-18 · 2025-03-26 · 2024-11-05).
+Kasa durumu çalışan API'den okunur (yalnız yerel adres; ulaşılamazsa kilitli —
+fail-closed) ve reddin sebebi makine-okunurdur (`denied_by`); `ok` yalnız kanıt
+varsa true'dur. Kokpitte MCP pili + `GET /api/mcp/status`; aynı defterden
+`skills/<araç>/SKILL.md` paketi üretilir (`scripts/export_skills.py --check` CI'da
+bayat paketi yakalar). `docs/MCP.md` kurulum ve sözleşmeyi anlatır.
+Kullanıcı sırası: **D1 → D2 → D6 → D5 → D3**. Kalan: **D2 → D6 → D5 → D3**.

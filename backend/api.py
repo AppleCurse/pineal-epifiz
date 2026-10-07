@@ -4591,6 +4591,63 @@ async def api_speech_stop(client_id: str = "default"):
 # ---------------------------------------------------------------------------
 
 
+@app.get("/api/mcp/status")
+async def api_mcp_status(client_id: str = "default"):
+    """[FAZ D · D1] MCP ihracının GERÇEK durumu: kaç yetenek araç olarak açık,
+    hangi sürümler konuşuluyor, kasa mandalı ne durumda.
+
+    Yetenek sayısı ``CapabilityRegistry``den okunur (ikinci envanter yok);
+    kasa durumu ``_check_vault_interlock`` ile ``/api/initiate`` ile AYNI
+    kapıdan gelir. Bu uç hiçbir yeteneği KOŞTURMAZ; yalnızca rapor eder.
+    """
+    from agent_core.mcp import protocol as _mcp_protocol
+    from agent_core.mcp.tools import build_tools
+
+    try:
+        from agent_core.capabilities import bootstrap as _caps_bootstrap
+
+        registry = _caps_bootstrap()
+        capabilities = len(registry.ids())
+        tools = len(build_tools(registry)) + 1  # + pineal_status (sunucunun kendi aracı)
+    except Exception as exc:  # envanter okunamazsa uydurma sayı dönmez
+        logger.warning("MCP durumu okunamadı: %s", type(exc).__name__)
+        return JSONResponse(
+            {"available": False, "reason": f"registry_error:{type(exc).__name__}"},
+            status_code=503,
+        )
+
+    unlocked = _check_vault_interlock(client_id)
+    try:
+        from agent_core.mcp.state_bridge import limiter_from_env
+
+        limiter = limiter_from_env()
+        rate_limit = {"limit": limiter.limit, "window_seconds": limiter.window}
+    except Exception:  # pragma: no cover - savunma
+        rate_limit = {}
+    from agent_core.mcp.server import server_version
+
+    return {
+        "available": True,
+        "transport": "stdio",
+        "command": "python -m agent_core.mcp",
+        "capabilities": capabilities,
+        "tools": tools,
+        "server_version": server_version(),
+        "protocol_current": _mcp_protocol.PROTOCOL_VERSION,
+        "protocol_supported": list(_mcp_protocol.SUPPORTED_PROTOCOL_VERSIONS),
+        "vault_locked": not unlocked,
+        "rate_limit": rate_limit,
+        "skills_dir": "skills",
+        "gate": "vault",
+        "message": (
+            "MCP açık — her yetenek araç olarak yayınlanıyor; çağrılar aynı "
+            "kapılardan geçer."
+            if unlocked
+            else "MCP araçları KİLİTLİ — kasa kapalıyken hiçbir yetenek koşmaz."
+        ),
+    }
+
+
 class LanguageDetectPayload(BaseModel):
     """[FAZ D · D4] Dil tespiti isteği."""
 
