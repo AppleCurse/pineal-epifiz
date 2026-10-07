@@ -4,6 +4,50 @@
 **Tarih:** 2026-10-07
 **Dayanak:** `main` @ `162d7ec` (FAZ D tamam · PR #112 birleşti)
 **Durum:** **ÖNERİ** — onay bekliyor. Bu belge bir hüküm değil, kanıta dayalı bir tekliftir.
+**Güncelleme:** 2026-10-07 akşam — **E1 kapandı** (PR #113 ile, `main`'e birleşmedi). Ayrıntı: aşağıdaki "Durum Güncellemesi" bölümü.
+
+---
+
+## ⟳ DURUM GÜNCELLEMESİ — 2026-10-07 akşam
+
+Bu bölüm **CI kanıtı + bağımsız kaynak denetimi** ile yazıldı. Aşağıdaki plan metni tarihsel kayıt olarak korundu; ölçüm anı `main` @ `162d7ec` idi ve hâlâ öyle.
+
+### E1 — KAPANDI ✅ (PR #113 ile)
+
+Planın açılış sorusu — *"E1 Rust onarımı bu fazda mı, ayrı bir vault PR'ı olarak mı yürüsün?"* — **fiilen cevaplandı: ayrı bir PR olarak yürüdü** ve onarıldı.
+
+- **Künye:** PR **#113** · dal `arena/51add43a-pineal-epifiz` · head `1518017d` (4 commit) · 16 dosya · durum **AÇIK**, `main`'e göre `BEHIND`, **7/7 kontrol yeşil**.
+- **rust-core adım kanıtı** (run `37562185866` · job `112601776418`): adım 5 "Cargo check (core, no tauri feature)" → **success** · adım 6 "Cargo test" → **success** — yani yalnız derlenmiyor, `#[ignore]`'lı test **gerçekten koşuyor**.
+- **Bağımsız kaynak denetimi** (`rust_core/src/vault.rs` @ `1518017d`): `#[ignore]` özniteliği **yok** (yalnız yorumlarda, satır 10 ve 586); `cfg!(test)` / erken `return` / `should_panic` gibi kaçış yolu **yok**; `writer.finish()` üç yerde (345, 400, 550). Roundtrip testinin gövdesi hile değil: oluştur → `store` → kapsamdan çık → diskten `load` → `retrieve` → `assert_eq!`.
+- **Süreç kanıtı (dürüstlük notu):** ilk CI denemesi kırmızı yandı — `E0277`: `StealthVault` `Debug` türetmiyor, çünkü `unwrap_err()` `T: Debug` ister ve `age::x25519::Identity` `Debug` türetmez. Onarım: elle yazılmış, sır **sızdırmayan** `Debug` impl'i (`master_key` · `identity` · `password_hash` → `[REDACTED]`). Yalnız `--all-targets` ile görünen bir trait-bound hatasıydı; "sandbox'ta derleme yok" riskinin gerçek olduğunu ve CI'ın yakaladığını gösterir.
+
+### Kasa egress kapısı — plana girmeyen, ölçülmemiş bir yara kapandı
+
+Bu plan hazırlanırken ölçülmemişti; #113 ile kapandı: **kasa kilitliyken dış-çıkış**.
+
+- 15 dış-çıkış ucu `_require_vault_open` → **423 `VAULT_LOCKED`** ile sert reddediliyor; 5 muafiyet (örn. `/api/browser/close` — açık kanalı *kapatır*, zombi Chromium bırakmasın) gerekçesiyle adıyla yazılı.
+- `SearchEngine` kilitliyken **hiç `httpx` istemcisi kurmuyor** (`status="VAULT_LOCKED"`, `available=False`) — DuckDuckGo dâhil. Öncesinde yalnız SearXNG omurga yolu kapılıydı, ücretsiz yollar açıktı.
+- Kapı, route tablosuna karşı koşan **yapısal testle** makine denetiminde: yeni bir dış-çıkış ucu eklenip listeye yazılmamak mümkün değil.
+
+### FAZ E tablosunun bugünkü hâli
+
+| Kalem | Durum | Kim çalışıyor |
+|---|---|---|
+| **E0** regresyon paketi (şemsiye) | Açık | — |
+| **E1** vault truncate + `#[ignore]` kaldırma | **Kapandı** (#113, birleşme bekliyor) | paralel oturum |
+| **E2** MinorGate API sınırı | **Açık** 🔴 | — |
+| **E3** omurga tek yol (8 `httpx` dosyası) | Açık 🟡 | — |
+| **E4** fail-closed worker | **Çalışılıyor** | paralel oturum (talep 3) |
+| **E5** motor yoksa `400` | Açık 🟡 | — |
+| **E6** UI "Yetersiz Kanıt" | Açık 🟡 | — |
+| **E7** `gather` koruması | Açık 🟡 | — |
+| **E8** Pydantic (169 → 10-15) | Açık 🟢 | — |
+
+**Sıra notu (çakışma uyarısı):** E4 şu an paralel oturumun elinde ve E3/E7 ile **aynı dosyalara** dokunuyor. #113 `backend/api.py`'yi ağır biçimde değiştirdiği için **E2 de aynı dosyada** yaşar → E2 · E3 · E7'yi #113 birleşmeden başlatmak çakışma üretir.
+
+### DOĞRULANAMAYANLAR (güncel)
+
+Yerel `cargo`/`rustc` bu ortamda **yok**; tüm Rust aynaları ağdan erişilemez (`static.rust-lang.org` · `crates.io` · `rsproxy` → bağlantı yok). **Actions logları da erişilemez** — Azure blob TLS-engelli, açık olan tek uç `api.github.com`. Bu yüzden Rust doğrulaması (a) pinli crate kaynaklarına karşı satır satır okuma (age `v0.10.1` · secrecy `v0.8.0`), (b) CI adım sonuçları ve (c) `api.github.com`'dan okunabilen workflow annotation'ları ile yapıldı. **Annotation ile okunabilirlik bu sayede kalıcılaştırıldı:** #113'te `cargo check`/`cargo test` çıktısı artık annotation olarak da yayınlanıyor; düşen bir Rust koşusunun hatası log indirmeden okunabiliyor.
 
 ---
 
