@@ -16,6 +16,7 @@ from agent_core.safety.minor_gate import (  # noqa: F401
     MinorCaseLedger,
     MinorDecision,
     MinorGate,
+    coerce_minor_case,
 )
 
 __all__ = [
@@ -27,4 +28,5 @@ __all__ = [
     "MinorDecision",
     "MinorGate",
     "MinorCaseLedger",
+    "coerce_minor_case",
 ]

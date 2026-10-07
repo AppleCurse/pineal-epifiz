@@ -41,13 +41,21 @@ class OsintInvestigatorAgent:
         Kasa interlock'u API sınırında uygulanır (`/api/initiate` → 423); ajan
         içinde bilinmiyorsa dar taraf seçilir: `vault_locked=True` (hiçbir
         dış yetenek koşmaz). Payload'da `policy` varsa o değerler geçerlidir.
+
+        [ÇOCUK KİLİDİ — API girişi] `policy.minor_case` de aynı yerden taşınır:
+        operatör bir hedefi çocuk olarak beyan ettiyse o beyan kapıda
+        REDDEDİLMEDİYSE bile omurga onu GÖRÜR ve koşucu kendi katmanında ikinci
+        kez uygular (kuşak kuşak savunma; beyan kaybolursa kilit gevşemez,
+        çünkü çeviri `coerce_minor_case` ile fail-closed yapılır).
         """
         from agent_core.capabilities.state import policy_state
+        from agent_core.safety import coerce_minor_case
 
         overrides = (payload or {}).get("policy") or {}
         return policy_state(
             vault_locked=bool(overrides.get("vault_locked", True)),
             rate_ok=overrides.get("rate_ok"),
+            minor_case=coerce_minor_case(overrides.get("minor_case")),
         )
 
     @staticmethod

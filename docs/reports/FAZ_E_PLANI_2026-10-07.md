@@ -35,7 +35,7 @@ Bu plan hazırlanırken ölçülmemişti; #113 ile kapandı: **kasa kilitliyken 
 |---|---|---|
 | **E0** regresyon paketi (şemsiye) | Açık | — |
 | **E1** vault truncate + `#[ignore]` kaldırma | **Kapandı** (#113, birleşme bekliyor) | paralel oturum |
-| **E2** MinorGate API sınırı | **Açık** 🔴 | — |
+| **E2** MinorGate API sınırı | **Kapandı** (bu PR) | bu oturum |
 | **E3** omurga tek yol (8 `httpx` dosyası) | Açık 🟡 | — |
 | **E4** fail-closed worker | **Çalışılıyor** | paralel oturum (talep 3) |
 | **E5** motor yoksa `400` | Açık 🟡 | — |
@@ -121,6 +121,16 @@ Depo bu kültüre sahip (`tests/unit/test_ui_honesty_contract.py`, `tests/unit/t
 - **Neden:** Tüzük Md.5. Bugün API'den doğrudan hedef sorgulanabiliyor; kapı yalnız omurga derinliğinde.
 - **DoD:** (a) `grep -c 'minor_gate\|MinorGate' backend/api.py` **> 0**; (b) contract testi: reşit olmayan işaretli hedef → **403 + ledger kaydı**, onaylı/yetişkin → geçer; (c) omurga dışı hiçbir hedef ucu kapısız kalmaz.
 - **Boyut:** orta (gün) · **Bağımlılık:** yok.
+
+#### E2 · UYGULANDI (2026-10-07) — ne yapıldı, DoD'dan nerede ayrıldı
+- **Kapı:** `backend/api.py::_require_minor_clearance` — kasa kapısı `_require_vault_open` ile **aynı desen**, ama **ondan ÖNCE** çağrılır (koşucudaki sıra: çocuk → politika). 15 dış-çıkış ucunun (+`/api/initiate`) gövdesine bağlandı; sıra hem davranış hem **yapısal testle** kilitli.
+- **DoD'dan sapma (bilinçli): HTTP 403 değil 451.** 403 "yasak" der ama gerekçeyi söylemez; çocuk kırmızı çizgisi hukuki/etik gerekçeli bir ret olduğu için `451 Unavailable For Legal Reasons` seçildi (kasa kapısının 423 seçimiyle aynı çizgi). Kod makine-okunur: `MINOR_BLOCKED` + `reason_code`.
+- **Tek beyan kaynağı:** operatör beyanı `app.state.minor_cases` içinde yaşar — **oda sözlüğünde DEĞİL**. Bilinçli: odaya bağlansaydı 30 dk boşta kalan oda tahliye edilince beyan düşer ve **kilit kendiliğinden açılırdı** (`_evict_rooms` → `_close_room`). Beyanı yalnız operatör siler (`POST /api/minor/clear`), zaman aşımı değil; unutulan beyan **bloklamaya devam eder**.
+- **Beyan ≠ izin:** `POST /api/minor/case` beyanı kaydeder, "onay" vermez; dört şart eksikse o odanın tüm dış-çıkışları 451'dir ve yanıt `allowed:false` + `reason_code` döner. Operatör durumu `GET /api/minor/state` ile şeffaf görür (`not_declared` / ret gerekçesi).
+- **İki uçlu fail-closed (`coerce_minor_case`):** dört şart **katı** okunur (`"true"` metni sayılmaz), ama **beyanın kendisi** ters yönde korunur — `{"subject_is_minor": "true"}` gönderen istemci "çocuk değil" hükmü **alamaz**. Yarım/bozuk beyan "dur" demektir; tanınmayan tip → çocuk sayılır.
+- **"Odayı söyleyemedim" kaçışı kapalı:** gövdesinde `client_id` taşımayan ama hedef materyali işleyen uçlar (`shadow/analyze`, `shadow/generate`, `chat/respond`) **any-mod** kapıdan geçer: beyan edilmiş çözülmemiş bir vaka varsa istek reddedilir. Muafiyet yalnız `/api/browser/close` (zombi tarayıcı) ve `/api/experimental/stealth` (hedef materyali yok) — ikisi de **gerekçesiyle** deklare edilir ve yapısal testle denetlenir.
+- **Kuşak kuşak savunma:** beyan görev payload'ına da konur (`payload["policy"]["minor_case"]`) ve `OsintInvestigatorAgent._policy_state` onu `coerce_minor_case` ile omurgaya taşır; koşucu kilidi ikinci kez uygular (`agent_core/safety/minor_gate.py` **tek kaynak**, kapı yeniden yazılmadı).
+- **Kanıt:** `tests/unit/test_minor_gate_api.py` **69 test** (yapısal envanter + sıra · 14 dış-çıkış ucunun tamamı 451 + motora inilmiyor · tahliye sonrası kilit ayakta · any-mod · defter · kapasite 503 · onaylı vakanın **geçmesi**). Toplam ilgili: 129 test yeşil. Tam paket: **1764 passed**, kırmızılar birebir baz çizgisiyle aynı (29, ortam kaynaklı — `opencv`/sistem bağımlılıkları), **regresyon yok**. `ruff check .` temiz.
 
 ### E3 · Omurga tek yol (spine-only) 🟡 YÜKSEK
 - **Ne:** §1'de listelenen 8 dosyadaki doğrudan `httpx` kullanımı `run_capability` yoluna taşınır (ya da policy kontrolünden geçirilir). Sıra: önce `search_engine` (denetimin işaret ettiği), sonra sıcak yollar; `adapters_*` ve `llm_gateway` için **gerekçeli izin listesi** kararı ayrıca yazılır.
