@@ -183,13 +183,56 @@ async fn start_analysis(
     result.map_err(|e| format!("Analiz baslatilamadi: {}", e))
 }
 
+/// GPU hızlandırma iddiasını ÖLÇEREK söyle; uydurarak değil.
+///
+/// [AUDIT 2026-10-07 · P2] Eski kod `"gpu_acceleration": true` döndürüyordu:
+/// doğruluğu hiç sınanmamış, sabit bir iddia. Bir Tauri süreci WebView'nin
+/// gerçekten GPU ile birleştirip birleştirmediğini BİLEMEZ — o kararı
+/// WebView/GPU sürücüsü verir. Bu yüzden alanlar açıkça ayrılır:
+///   * `gpu_node_detected`       — işletim sistemi bir GPU düğümü sunuyor mu?
+///                                 (yalnızca Linux'ta bağımlılıksız sonda)
+///   * `webview_gpu_acceleration`— her zaman `null`: süreç bunu GÖZLEMEZ.
+///   * `claim`                   — `"measured"` | `"unverified"` (kaynak etiketi)
+///   * `probe`                   — kullanılan yöntem; `null` ise sonda yok.
+#[cfg(target_os = "linux")]
+fn gpu_probe() -> serde_json::Value {
+    let detected = match std::fs::read_dir("/dev/dri") {
+        Ok(entries) => entries
+            .filter_map(|entry| entry.ok())
+            .any(|entry| entry.file_name().to_string_lossy().starts_with("card")),
+        Err(_) => false,
+    };
+    serde_json::json!({
+        "gpu_node_detected": detected,
+        "webview_gpu_acceleration": serde_json::Value::Null,
+        "claim": "measured",
+        "probe": "linux:/dev/dri/card*"
+    })
+}
+
+/// Linux dışı platformlar: bağımlılıksız, güvenilir bir GPU sondası yok.
+/// Bilinmeyen bir şeyi `false` (veya eskiden olduğu gibi `true`) diye
+/// uydurmak yerine `null` + `unverified` etiketi döndürülür.
+#[cfg(not(target_os = "linux"))]
+fn gpu_probe() -> serde_json::Value {
+    serde_json::json!({
+        "gpu_node_detected": serde_json::Value::Null,
+        "webview_gpu_acceleration": serde_json::Value::Null,
+        "claim": "unverified",
+        "probe": serde_json::Value::Null
+    })
+}
+
 #[tauri::command]
 async fn get_system_info() -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({
         "product": "ATLAS PINEAL OBSERVATORY",
-        "version": "5.0.0",
+        // [AUDIT 2026-10-07 · Madde 2] Sabit "5.0.0" yazılıydı ve kök VERSION
+        // dosyasıyla (3.0.0-rc.2) çelişiyordu. Sürüm artık crate'ten gelir;
+        // crate sürümü de VERSION ile senkron tutulur (bkz. identity testi).
+        "version": env!("CARGO_PKG_VERSION"),
         "build": "tauri-native",
-        "gpu_acceleration": true,
+        "gpu": gpu_probe(),
         "vault_path": default_vault_path().to_string_lossy(),
         "timestamp": chrono::Utc::now().to_rfc3339()
     }))

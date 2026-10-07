@@ -1,3 +1,4 @@
+import inspect
 import os
 import tempfile
 from contextlib import contextmanager
@@ -344,6 +345,62 @@ class PinealExecutor:
             raise AgentTimeoutError(f"{label} {limit:g}s sınırını aştı") from exc
 
     @staticmethod
+    def _agent_takes_full_signature(agent: Any) -> bool:
+        """``agent.execute`` ``(input_data, memory, gateway)`` imzasını kabul ediyor mu?
+
+        [AUDIT 2026-10-07 · Madde 5] ESKİ YÖNTEM (kusur)::
+
+            try:
+                return await agent.execute(input_data, memory, gateway)
+            except TypeError:
+                return await agent.execute(input_data)
+
+        Bu bir "imza pazarlığı" gibi görünüyordu, ama ``TypeError``
+        YALNIZCA "yanlış argüman sayısı" demek değildir: ajanın GÖVDESİNDEKİ
+        gerçek bir hatadan da gelir (``None + 1``, beklenmeyen tipte LLM
+        yanıtının açılması, hatalı sözlük erişimi...). O durumda eski kod
+        ajanı **İKİNCİ KEZ** koşturuyordu:
+
+          * Yan etkiler TEKRAR tetiklenirdi — ücretli LLM çağrıları, ağ
+            istekleri, kanıt/kayıt yazımları bir kez daha yapılırdı.
+          * Asıl hata MASKELENİRDİ: kullanıcı "execute() missing 2 required
+            positional arguments" gibi aldatıcı bir mesajla, gerçek
+            hatanın izini süremeden baş başa kalırdı.
+          * Maskeleme, 1 argümanlı ajanlarda ikinci çağrının da patlaması
+            anlamına geldiğinden görev yine başarısız oluyor, ama iki katı
+            maliyetle ve yanlış teşhisle.
+
+        Yeni yöntem: imza, ajanı ÇALIŞTIRMADAN ``inspect.signature`` ile
+        okunur. Ajan TAM BİR KEZ koşar; gövdeden gelen TypeError olduğu
+        gibi yükselir.
+
+        Returns:
+            ``True`` -> tam imzayla (3 konumsal argüman) çağır.
+            ``False`` -> yalnızca ``input_data`` ile çağır.
+        """
+        try:
+            parameters = inspect.signature(agent.execute).parameters
+        except (TypeError, ValueError):
+            # İmza okunamıyor (C uzantısı, egzotik çağrılabilir, Mock
+            # davranışı): baskın sözleşme olan tam imzayı dene.
+            return True
+
+        kinds = [parameter.kind for parameter in parameters.values()]
+        if inspect.Parameter.VAR_POSITIONAL in kinds:
+            return True  # *args var: her iki çağrı biçimini de yer.
+
+        positional = sum(
+            1
+            for kind in kinds
+            if kind
+            in (
+                inspect.Parameter.POSITIONAL_ONLY,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            )
+        )
+        return positional >= 3
+
+    @staticmethod
     async def _execute_with_timeout(agent: Any, input_data: Dict[str, Any], memory: Any,
                                     gateway: Any, limit: float):
         """[BOSS-8] Ajanı ajan-başı duvar saati sınırıyla koşar.
@@ -351,16 +408,18 @@ class PinealExecutor:
         `limit <= 0` ise sınır yoktur (eski davranış). Süre aşımı DİĞER
         hatalardan ayrı raporlanır: hangi ajanın bütçeyi yediği görünür olur
         ve görev, tüm emeği çöpe atan bir "baştan koş" turuna girmez.
+
+        [AUDIT 2026-10-07 · Madde 5] İmza, ÇAĞIRMADAN (inspect ile) okunur.
+        Ayrıntı: :meth:`_agent_takes_full_signature`.
         """
-        import asyncio as _asyncio
-
         async def _call():
-            try:
+            # TEK koşu. TypeError burada yakalanMAZ: ajanın gövdesinden
+            # gelen gerçek bir hata olduğu gibi yükselir, ajan ikinci kez
+            # koşturulmaz (yan etki tekrarı + hata maskeleme kusuru).
+            if PinealExecutor._agent_takes_full_signature(agent):
                 return await agent.execute(input_data, memory, gateway)
-            except TypeError:
-                return await agent.execute(input_data)
+            return await agent.execute(input_data)
 
-        del _asyncio  # tek uygulama yeri _bounded
         return await PinealExecutor._bounded(
             _call(), limit, f"{getattr(agent, 'AGENT_NAME', type(agent).__name__)} ajanı"
         )
@@ -2051,5 +2110,18 @@ class PinealExecutor:
             self._log("WARNING", f"Vektör hesaplanamadı; veri kullanılamaz olarak işaretlendi: {e}")
             return None
 
-executor = PinealExecutor()
+# [AUDIT 2026-10-07 · P2] Burada `executor = PinealExecutor()` duruyordu.
+# Kaldırıldı. Gerekçe — `PinealExecutor.__init__` AĞIR ve YAN ETKİLİDİR:
+#   * `build_memory_from_env()` / `DecisionConfig.load()` -> ortam + DİSK okur
+#     (bozuk/eksik yapılandırmada içe aktarım PATLAR),
+#   * `LLMGateway()` / `SearchEngine()` / `VisionAnalyzer()` ve 13 ajanı kurar
+#     (içe aktarımda onlarca nesne, gereksiz bellek),
+#   * `agent_status_tracker.get_tracker()` çağırır -> modül içe aktarımı
+#     yan etkisiyle GLOBAL durum tekilini (singleton) oluşturur.
+# Yani `from agent_core.task_executor import AgentTimeoutError` yazmak bile
+# tüm bu işleri tetikliyordu. İhtiyacı olan YERİNDE kursun:
+#   * FastAPI/API katmanı istemci başına `get_executor(client_id)` ile kurar,
+#   * betikler (`main.py`, `scripts/run_task.py`) kendi örneğini kurar.
+# Tek tüketici `scripts/archive/e2e_test.py` idi; o da artık kendi örneğini
+# kuruyor. Sözleşmeyi `tests/unit/test_task_executor_import_purity.py` kilitler.
 
