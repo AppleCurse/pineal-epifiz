@@ -85,12 +85,18 @@ madde, kusuru YENİDEN getirmeyi engelleyen testlerle kilitlendi; her düzeltme
   --check` + `verify_openrouter_catalog.py` geçti.
 - Frontend: `npm ci`, `npm run check` (svelte-check 0 hata), `npm run build`
   ve CI'nin `grep PINEAL-HERETIC dist/assets/*.js` kontrolü geçti.
-- **CI'da doğrulanacak (bu ortamda koşturulamadı):** `cargo check`/`cargo test
-  --locked` ve `gradle` Android işleri. Gerekçe: JDK/Gradle/Rust araç zinciri
-  yok ve dağıtım adreslerine çıkış kapalı (`static.rust-lang.org`,
-  `services.gradle.org`, `repo1.maven.org`, `dl.google.com` → bağlantı yok).
-  Bu yüzden Kotlin/Rust değişiklikleri için yapısal bütünlük testi eklendi:
-  `tests/unit/test_uncompiled_language_integrity.py`.
+- **CI — TÜM KAPILAR YEŞİL** (PR #117, Actions koşusu `37592447572`):
+  `backend` 3m23s · `frontend` 19s · `smoke` 58s · `rust-core` 49s ·
+  `android` 1m41s · CodeRabbit · Cloudflare Workers Builds (2).
+
+  Not: `cargo check`/`cargo test --locked` ve `gradle` işleri YEREL koşumda
+  doğrulanamadı (JDK/Gradle/Rust araç zinciri yok ve dağıtım adreslerine
+  çıkış kapalı: `static.rust-lang.org`, `crates.io`, `services.gradle.org`,
+  `repo1.maven.org`, `dl.google.com` → bağlantı yok). Bu yüzden
+  Kotlin/Rust için yapısal bütünlük testi eklendi
+  (`tests/unit/test_uncompiled_language_integrity.py`); **asıl doğrulama
+  CI'da yapıldı ve her ikisi de geçti** — Rust tarafında `Cargo.lock`
+  güncellemesi de (`cargo test --locked` koştuğu için zorunluydu) doğrulandı.
 
 ## Unreleased — 2026-10-07 — FAZ D · D3: medya adli hattı (indir · kare · yazı · eşleştir)
 
