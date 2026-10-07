@@ -297,4 +297,18 @@ manifestin gövdesi de hash'lenir (bütünlük mührü; kriptografik imza değil
 manifest bunu açıkça yazar). Eksik bağımlılıkta format dürüstçe kapanır
 (`dependency_missing:...`), yerine uydurma çıktı konmaz. Yüzeyler:
 `GET /api/report/status` · `POST /api/report/build`; kurulum
-`docs/RAPOR_FABRIKASI.md`. Kalan: **D3**.
+`docs/RAPOR_FABRIKASI.md`.
+
+**D3 TAMAM (2026-10-07) — medya adli hattı.** Dört yetenek: `sensor.media.fetch`
+(platform linkleri yt-dlp, doğrudan bağlantılar httpx; sha256 mührü),
+`analyzer.media.frames` (fps/kare/süre/çözünürlük/parlaklık/sahne kesmesi;
+fotoğrafta baskın renk + keskinlik), `extractor.media.transcript` (YALNIZ yerel
+motor: yerel uç ya da yerel CLI; uzak uç reddedilir, video için ffmpeg şart) ve
+`analyzer.media.similarity` (pHash + Hamming, yerel indeks). Bu katman yorum
+değil ÖLÇÜM üretir; indirme özel/yerel adreslere yapılmaz (ortak SSRF kapısı
+`services/net_hygiene.py`), motor boş çıktısı transkript sayılmaz. Yüzeyler:
+`GET /api/media/status` · `POST /api/media/analyze`; kurulum
+`docs/MEDYA_ADLI.md`.
+
+**FAZ D TAMAM: D1 · D2 · D6 · D5 · D3 tamamlandı (kullanıcı sırası D1 → D2 → D6
+→ D5 → D3).**

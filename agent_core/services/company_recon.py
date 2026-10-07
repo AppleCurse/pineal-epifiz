@@ -29,19 +29,19 @@ Dürüstlük sözleşmesi (ev kuralları, değişmedi):
 from __future__ import annotations
 
 import asyncio
-import ipaddress
 import json
 import os
 import re
 import shlex
 import shutil
-import socket
 import tempfile
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from typing import Any
+
+from agent_core.services import net_hygiene
 
 __all__ = [
     "GATE",
@@ -108,28 +108,13 @@ def normalize_domain(value: str) -> str:
     return text if _DOMAIN_RE.match(text) else ""
 
 
-def _allow_private() -> bool:
-    return os.getenv("PINEAL_COMPANY_ALLOW_PRIVATE", "").strip().lower() in {"1", "true", "yes", "on"}
+#: SSRF kapısının bu aileye özel istisna anahtarı (tek kaynak: net_hygiene).
+PRIVATE_ALLOW_ENV = "PINEAL_COMPANY_ALLOW_PRIVATE"
 
 
 def _is_private_target(domain: str) -> bool:
     """Hedef özel/yerel ağa mı çözülüyor? (SSRF hijyeni — fail-closed)."""
-    if _allow_private():
-        return False
-    if domain in {"localhost", "localhost.localdomain"}:
-        return True
-    try:
-        infos = socket.getaddrinfo(domain, None)
-    except Exception:
-        return False  # çözülemiyorsa kararı ağ katmanı verir (uydurma ret yok)
-    for info in infos:
-        try:
-            ip = ipaddress.ip_address(info[4][0])
-        except Exception:
-            continue
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
-            return True
-    return False
+    return net_hygiene.is_private_host(domain, env_name=PRIVATE_ALLOW_ENV)
 
 
 # ---------------------------------------------------------------- theHarvester

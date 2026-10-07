@@ -17,6 +17,8 @@ import asyncio
 import io
 import json
 import logging
+import importlib
+import shutil
 import os
 import hashlib
 import time
@@ -495,6 +497,9 @@ RATE_LIMITS = {
     # [FAZ C · C2] Seslendirme: yerel motor da olsa sınırsız istek kabul
     # edilmez (disk + CPU). Ölçülen ihtiyaç: tur başına birkaç cümle.
     "speech": (30, 60),
+    # [FAZ D · D3] Medya hattı: indirme + kare kare çözümleme ağır; sınırsız
+    # bırakılmaz (disk + CPU + ağ).
+    "media": (6, 60),
     # [FAZ D · D5] Rapor fabrikası: PDF/diyagram/video üretimi diski ve CPU'yu
     # kullanır; sınırsız bırakılmaz.
     "report": (10, 60),
@@ -4681,6 +4686,148 @@ async def api_jury_vote(req: JuryVotePayload):
             f"JÜRİ: konsensüs yok — {payload['rule'] or payload['reason']} (karar iddia edilmedi)",
         )
     return payload
+
+
+class MediaAnalyzePayload(BaseModel):
+    """[FAZ D · D3] Medya adli hattı: kaynak (URL/yol) + modlar."""
+
+    source: str = Field(min_length=1, max_length=2048)
+    client_id: str = Field(default="default", max_length=128)
+    modes: list[str] = Field(default_factory=lambda: ["fetch", "frames"])
+    sample_every: int = Field(default=5, ge=1, le=120)
+    top_k: int = Field(default=3, ge=1, le=20)
+
+
+#: Mod başına yanıtta taşınan kanıt satırı tavanı.
+MAX_MEDIA_EVIDENCE = 25
+
+_MEDIA_MODES = {
+    "fetch": "sensor.media.fetch",
+    "frames": "analyzer.media.frames",
+    "transcript": "extractor.media.transcript",
+    "similarity": "analyzer.media.similarity",
+}
+
+
+@app.get("/api/media/status")
+async def api_media_status():
+    """[FAZ D · D3] Medya hattının GERÇEK durumu: hangi araç var, hangi mod hazır.
+
+    ffmpeg/yt-dlp/whisper yoksa "hazır" denmez; sebep makine-okunur.
+    """
+    from agent_core.capabilities import bootstrap
+    from agent_core.services import media_forensics
+
+    registry = bootstrap()
+    rows = []
+    for mode, cap_id in _MEDIA_MODES.items():
+        cap = registry.get(cap_id)
+        availability = cap.availability()
+        rows.append(
+            {
+                "mode": mode,
+                "capability_id": cap_id,
+                "available": availability.available,
+                "reason": availability.reason,
+                "gates": sorted(cap.gates),
+            }
+        )
+    return {
+        "gate": media_forensics.GATE,
+        "media_dir": str(media_forensics.media_dir()),
+        "tools": {
+            "yt-dlp": bool(shutil.which("yt-dlp")),
+            "ffmpeg": bool(shutil.which("ffmpeg")),
+            "opencv": bool(importlib.util.find_spec("cv2")),
+            "transcribe_engine": media_forensics.resolve_engine()[0] or "",
+        },
+        "transcribe_engine_reason": media_forensics.resolve_engine()[1],
+        "modes": rows,
+        "any_available": any(row["available"] for row in rows),
+    }
+
+
+@app.post("/api/media/analyze")
+async def api_media_analyze(req: MediaAnalyzePayload):
+    """[FAZ D · D3] Medyayı omurgadan işler: indir · kare kare ölç · yazıya dök · eşleştir.
+
+    Her mod aynı mandaldan geçer (kasa + kapı). Ölçülmeyen şey iddia edilmez;
+    araç yoksa sebep makine-okunurdur.
+    """
+    from agent_core.capabilities.base import CapabilityContext
+    from agent_core.capabilities.policy import PolicyState
+    from agent_core.capabilities.registry import bootstrap
+    from agent_core.capabilities.runner import CapabilityRunner
+    from agent_core.services import media_forensics
+
+    if not rate_limit(f"media:{req.client_id}", "media"):
+        return JSONResponse(
+            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla medya isteği"}},
+            status_code=429,
+        )
+
+    wanted = [str(m).strip().lower() for m in (req.modes or [])]
+    unknown = [m for m in wanted if m not in _MEDIA_MODES]
+    if unknown:
+        return JSONResponse(
+            {"error": {"code": "UNKNOWN_MODE", "message": f"Bilinmeyen mod: {', '.join(unknown)}"}},
+            status_code=400,
+        )
+    if not wanted:
+        wanted = ["fetch", "frames"]
+
+    runner = CapabilityRunner(registry=bootstrap())
+    state = PolicyState(
+        enabled_flags={media_forensics.GATE: _flag_env(media_forensics.GATE)},
+        vault_locked=not _check_vault_interlock(req.client_id),
+        rate_ok=True,
+    )
+
+    results: dict[str, Any] = {}
+    for mode in wanted:
+        cap_id = _MEDIA_MODES[mode]
+        result = await runner.run(
+            cap_id,
+            CapabilityContext(
+                subject=req.source,
+                params={
+                    "source": req.source,
+                    "sample_every": req.sample_every,
+                    "top_k": req.top_k,
+                },
+            ),
+            state=state,
+        )
+        results[mode] = {
+            "capability_id": cap_id,
+            "available": bool(result.available),
+            "denied_by": result.denied_by,
+            "reason": result.unavailable_reason,
+            "evidence": [
+                {
+                    "evidence_id": item.evidence_id,
+                    "epistemic_type": item.epistemic_type,
+                    "source_engine": item.source_engine,
+                    "content": item.content[:400],
+                    "provenance_refs": list(item.provenance_refs)[:5],
+                }
+                for item in result.items[:MAX_MEDIA_EVIDENCE]
+            ],
+            "notes": dict(result.notes or {}),
+        }
+        if result.denied_by:
+            broadcast_log(req.client_id, "WARNING", f"MEDYA: {mode} engellendi — kapı:{result.denied_by}")
+        elif not result.available:
+            broadcast_log(req.client_id, "WARNING", f"MEDYA: {mode} hazır değil — {result.unavailable_reason}")
+        else:
+            broadcast_log(req.client_id, "INFO", f"MEDYA: {mode} tamam — {len(result.items)} kanıt")
+
+    return {
+        "source": req.source,
+        "gate": media_forensics.GATE,
+        "modes": results,
+        "evidence_total": sum(len(r["evidence"]) for r in results.values()),
+    }
 
 
 class ReportBuildPayload(BaseModel):

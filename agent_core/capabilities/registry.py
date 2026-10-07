@@ -164,6 +164,12 @@ def bootstrap(
             CompanySeoCapability,
         )
         from agent_core.capabilities.adapters_jury import LocalJuryCapability
+        from agent_core.capabilities.adapters_media import (
+            MediaFetchCapability,
+            MediaFramesCapability,
+            MediaSimilarityCapability,
+            MediaTranscriptCapability,
+        )
         from agent_core.capabilities.adapters_report_factory import (
             ReportDiagramCapability,
             ReportPdfCapability,
@@ -215,6 +221,11 @@ def bootstrap(
             ReportPdfCapability(),
             ReportDiagramCapability(),
             ReportVideoCapability(),
+            # --- medya adli hattı (FAZ D · D3): indir · kare · yazı · benzerlik
+            MediaFetchCapability(),
+            MediaFramesCapability(),
+            MediaTranscriptCapability(),
+            MediaSimilarityCapability(),
         )
     for cap in capabilities:
         if reg.has(cap.id):

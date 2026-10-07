@@ -108,6 +108,8 @@ PINEAL-HERETIC v5.1, operatöre hem derin sinematik sezgi hem de cerrahi şeffaf
 | `POST /api/initiate` | Ana profil görevi; aynı `run_mission` akışını başlatır. |
 | `POST /api/aspasia/chat` | Kullanıcıya görev/kanıt durumu yanıtı. |
 | `POST /api/aspasia/command` | Sınırlı doğal dil intent'i; desteklenen açık Instagram URL'si doğrulanır ve aynı görev akışına dispatch edilir. |
+| `GET /api/media/status` | Medya hattı: yt-dlp/ffmpeg/opencv ve transkript motorunun GERÇEK durumu. |
+| `POST /api/media/analyze` | Paylaşılan medyayı indirir, kare kare ölçer, yazıya döker, görsel benzerlik arar. Ölçülmeyen iddia edilmez. |
 | `GET /api/report/status` | Hangi rapor formatı GERÇEKTEN üretilebilir (reportlab/Pillow/ffmpeg sebepleriyle). |
 | `POST /api/report/build` | Kanıt satırlarından PDF/diyagram/video paketi üretir; manifest eser hash'lerini ve kanıt kimliklerini taşır. |
 | `GET /api/company/status` | Kurum hedefi modlarının gerçek durumu (theHarvester · açık SEO · kişi künyesi). Kapı kapalıysa "hazır" denmez. |

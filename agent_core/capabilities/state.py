@@ -45,6 +45,8 @@ MANAGED_GATE_FLAGS: tuple[str, ...] = (
     "ENABLE_COMPANY_TARGETING",
     # [FAZ D · D5] Rapor fabrikası: kanıt dışa aktarımı; varsayılan KAPALI.
     "ENABLE_REPORT_FACTORY",
+    # [FAZ D · D3] Medya adli hattı: indirme/kare/transkript; varsayılan KAPALI.
+    "ENABLE_MEDIA_FORENSICS",
 )
 
 _TRUTHY = frozenset({"1", "true", "yes", "on", "enabled"})

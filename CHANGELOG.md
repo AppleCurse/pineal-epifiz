@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased — 2026-10-07 — FAZ D · D3: medya adli hattı (indir · kare · yazı · eşleştir)
+
+- **D3 · MEDYA ADLİ HATTI TAMAM.** Dört yetenek omurgada:
+  `sensor.media.fetch` (platform linkleri yt-dlp, doğrudan bağlantılar httpx;
+  sonuç sha256 ile mühürlenir), `analyzer.media.frames` (fps · kare · süre ·
+  çözünürlük · parlaklık ±std · sahne kesmeleri; fotoğrafta baskın renk +
+  Laplacian keskinliği), `extractor.media.transcript` (ses → metin; dil tespiti
+  kendi deterministik ölçümümüz) ve `analyzer.media.similarity` (pHash + Hamming
+  ile yerel indeks araması).
+- **Yorum yok, ölçüm var:** bu katman "videoda ne oluyor?" sorusunu yanıtlamaz;
+  ölçüleni yazar, kanıt satırını dosya yoluna/kaynağa bağlar.
+- **Yerellik:** transkript YALNIZ yerel motorla üretilir; uzak uç reddedilir ve
+  CLI'ye sessizce düşülmez. Video girdide ses kanalı için `ffmpeg` gerekir —
+  yoksa `dependency_missing:ffmpeg`, uydurma transkript yok.
+- **Dürüstlük:** yt-dlp yoksa platform indirmesi kapalı; indirme **özel/yerel
+  adreslere yapılmaz** (SSRF kapısı `net_hygiene`, istisna yalnız
+  `PINEAL_MEDIA_ALLOW_PRIVATE=1`); boyut tavanı 80 MB; motor boş çıktısı
+  `empty_transcript` — transkript iddia edilmez. pHash DC terimini dışarıda
+  bırakır (düz renkli iki fotoğraf "aynı" sayılmaz).
+- **Ortak kapı servisi:** SSRF kontrolü `services/net_hygiene.py`ye taşındı;
+  kurum taraması (D6) ve medya hattı (D3) aynı kuralı, ayrı istisna
+  anahtarlarıyla paylaşır — kopya yok.
+- **Yüzeyler:** `GET /api/media/status` · `POST /api/media/analyze` (kasa +
+  kapı + `media` hız kovası). Kurulum: `docs/MEDYA_ADLI.md`. MCP araçları ve
+  Skills paketi kendiliğinden büyüdü (26 yetenek).
+- **Test:** +30 (servis 18 · uç+yetenek 12). Tam koşu: **2047P/0F**.
+
 ## Unreleased — 2026-10-07 — FAZ D · D5: rapor fabrikası (PDF · diyagram · video + mühür)
 
 - **D5 · RAPOR FABRİKASI TAMAM.** `services/report_factory.py` + üç RENDERER
