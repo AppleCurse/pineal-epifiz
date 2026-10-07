@@ -32,7 +32,6 @@ import json
 import logging
 import os
 import sys
-from pathlib import Path
 from typing import Any
 
 from agent_core.capabilities.base import CapabilityResult
@@ -54,6 +53,7 @@ from agent_core.mcp.tools import (
     build_tool_index,
     build_tools,
 )
+from agent_core.version import read_version
 
 logger = logging.getLogger(__name__)
 
@@ -66,13 +66,14 @@ _SERVER_TOOLS = frozenset({STATUS_TOOL_NAME})
 
 
 def server_version() -> str:
-    """Sürüm tek kaynaktan: depo kökündeki ``VERSION`` dosyası."""
-    version_file = Path(__file__).resolve().parents[2] / "VERSION"
-    try:
-        text = version_file.read_text(encoding="utf-8").strip()
-    except OSError:
-        return "unknown"
-    return text or "unknown"
+    """Sürüm tek kaynaktan: depo kökündeki ``VERSION`` dosyası.
+
+    [AUDIT 2026-10-07 · Madde 2] Okuma mantığı ``agent_core.version``
+    modülüne taşındı; burası artık yalnızca bir cephe (facade). Böylece
+    MCP sunucusu ile FastAPI başlığı aynı kaynağı paylaşır ve biri güncel
+    kalıp diğerinin bayatlaması mümkün olmaz.
+    """
+    return read_version()
 
 
 def _capabilities_declaration() -> dict[str, Any]:

@@ -97,7 +97,20 @@
 <div class="agent-rack {compact ? 'compact' : ''}" role="region" aria-label="Agent Rack">
   <div class="rack-header">
     <div class="rack-title">AGENT RACK</div>
-    <div class="rack-subtitle">12 AUTONOMOUS NODES · {busLabel}</div>
+    <!--
+      [AUDIT 2026-10-07 · Madde 3] Etiket "12 AUTONOMOUS NODES" idi: bu
+      slotların her birinin BAĞIMSIZ/OTONOM bir işlemci olduğu iddiasını
+      taşıyordu. Gerçek: bunlar orkestratörün (PinealExecutor) süreç içinde
+      sırayla yürüttüğü 12 analiz ROLÜDÜR. Docker'daki 12 `beacon-*`
+      servisi ise analiz yürütmez; yalnızca "yuva ayakta ve boşta" canlılık
+      sinyali yayınlar. Etiket + ipucu (title) dürüst hâle getirildi.
+    -->
+    <div
+      class="rack-subtitle"
+      title="12 analiz rolü — çekirdek orkestratör tarafından süreç içinde yürütülür. Docker'daki beacon-* servisleri analiz yürütmez; yalnızca canlılık sinyali yayınlar."
+    >
+      12 ANALYSIS ROLES · {busLabel}
+    </div>
     <div class="rack-live-dot" class:live={$isProcessing}></div>
   </div>
 

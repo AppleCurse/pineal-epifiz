@@ -1,6 +1,6 @@
 {
   "name": "pineal-clean",
-  "version": "3.0.0",
+  "version": "3.0.0-rc.2",
   "private": true,
   "description": "PINEAL EPIFIZ — kök derleme kabuğu (Cloudflare Workers Builds / Pages burada `npm run build` çalıştırır).",
   "scripts": {
