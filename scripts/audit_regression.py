@@ -54,10 +54,8 @@ import argparse
 import json
 import re
 import shutil
-import subprocess
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -1263,33 +1261,34 @@ KNOWN_OPEN: frozenset = frozenset(
 # Bekçi
 # ─────────────────────────────────────────────────────────────────────────────
 def _source_stamp() -> str:
-    """Raporun zaman damgası — DETERMİNİSTİK.
+    """Raporun kaynağa bağlı, ORTAMDAN BAĞIMSIZ damgası.
 
-    `datetime.now()` yazmak bekçiyi CI'da kırardı: adım ``git diff --exit-code``
-    ile raporun tazeliğini denetliyor, her koşuda değişen bir damga ise dosyayı
-    sonsuza dek "bayat" gösterir (kırmızı gürültü = gerçek regresyonun
-    görmezden gelinmesi). Bu yüzden damga KAYNAĞA bağlanır: denetim raporunu
-    son değiştiren commit'in tarihi; git yoksa dosyanın mtime'ı. Depo aynı
-    commit'te olduğu sürece üretilen JSON bayt bayt aynı kalır.
+    CI adımı ``git diff --exit-code`` ile raporun tazeliğini denetlediği için
+    üretilen JSON'un bayt bayt deterministik olması şart. İki bariz aday da
+    **CI'da kırmızı üretti** (ölçüldü, run 37585688805 · adım 7):
+
+      · ``datetime.now()``        → her koşuda farklı, adım asla geçmez.
+      · ``git log -1 --format=%cI``→ Actions sığ klon yapar (``fetch-depth: 1``)
+        ve commit tarihi KOŞU ZAMANINA eşit olur; yerelde ise gerçek tarih.
+        Aynı içerik, iki farklı damga → sahte "bayat rapor".
+      · ``stat().st_mtime``        → checkout dosyayı koşu anında yazar;
+        hiçbir ortamda diğerini tutmaz.
+
+    Çözüm: damga denetim raporunun **İÇERİĞİNDEN** türetilir (sha256). Aynı
+    kaynak metin → aynı damga; git derinliği, saat dilimi, mtime ve çalışma
+    dizini hükmü değiştiremez. Alan adı bu yüzden ``generated_at`` değil
+    ``source_stamp``: bu bir "ne zaman koştum" bilgisi DEĞİL, "hangi kaynaktan
+    ölçtüm" mührüdür.
     """
+    import hashlib
+
     try:
-        out = subprocess.run(
-            ["git", "log", "-1", "--format=%cI", "--", AUDIT_REPORT.relative_to(ROOT).as_posix()],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            timeout=20,
-        )
-        stamp = out.stdout.strip()
-        if out.returncode == 0 and stamp:
-            return stamp
-    except (OSError, subprocess.SubprocessError):
-        pass
-    try:
-        mtime = AUDIT_REPORT.stat().st_mtime
-    except OSError:
-        return "unknown"
-    return datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat(timespec="seconds")
+        digest = hashlib.sha256(AUDIT_REPORT.read_bytes()).hexdigest()[:16]
+    except OSError as exc:
+        # Kaynak okunamıyorsa damga UYDURULMAZ; rapor yine de üretilir ama
+        # mühürsüz olduğu açıkça görünür (sessiz sahte değer yok).
+        return f"unreadable-source:{exc.errno}"
+    return f"sha256:{digest}"
 
 
 def build_report(findings: Sequence[Finding]) -> Dict[str, object]:
@@ -1338,10 +1337,13 @@ def build_report(findings: Sequence[Finding]) -> Dict[str, object]:
 
     return {
         "meta": {
-            "generated_at": _source_stamp(),
-            "generated_at_meaning": (
-                "denetim raporunu son değiştiren commit'in tarihi (deterministik — "
-                "CI'daki `git diff --exit-code` tazelik denetimi her koşuda kırmızı yanmasın)"
+            "source_stamp": _source_stamp(),
+            "source_stamp_meaning": (
+                "denetim raporunun içerik mühürü (sha256) — 'ne zaman koştum' değil, "
+                "'hangi kaynaktan ölçtüm'. Deterministik: git derinliği, saat dilimi ve "
+                "dosya mtime'ı damgayı değiştiremez; CI'daki `git diff --exit-code` "
+                "tazelik kapısı ancak böyle anlamlı (anlık damga adımı her koşuda "
+                "kırmızıya boyar, gerçek regresyon gürültüye boğulur)."
             ),
             "audit_report": AUDIT_REPORT.relative_to(ROOT).as_posix(),
             "finding_count": len(findings),

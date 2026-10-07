@@ -45,10 +45,26 @@ jobs:
         # `reports/audit_regression.json` üretilir ve KNOWN_OPEN dışında AÇILAN
         # bir bulgu olursa exit 1 (regresyon). Liste bayatlarsa da exit 1 —
         # yani onarılan bulgu kayda geçmek ZORUNDA (halı altına süpürme yok).
-        # Rapor commit edilir: iyileşme PR diff'inde görünür.
+        #
+        # [SESSİZ-ÇÖKME-YOK] Actions logları Azure blob'da tutulur ve her ortamdan
+        # okunamaz (bu adımın ilk denemesinde tam olarak bu oldu: "exit code 1"
+        # dışında hiçbir şey görünmüyordu). Bu yüzden başarısızlık AYRINTISI
+        # ayrıca workflow ANNOTATION'ı olarak yüzeye çıkarılır — annotation'lar
+        # api.github.com'dan okunabilir.
         run: |
-          python scripts/audit_regression.py
-          git diff --exit-code -- reports/audit_regression.json
+          set +e
+          python scripts/audit_regression.py | tee /tmp/audit-guard.log
+          guard_rc=${PIPESTATUS[0]}
+          git diff -- reports/audit_regression.json > /tmp/audit-report.diff
+          if [ -s /tmp/audit-report.diff ]; then
+            blob=$(head -60 /tmp/audit-report.diff | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error title=audit-report-stale::Commit'lenen reports/audit_regression.json bayat — bekçi yeniden koşunca farklı ölçüm üretti. Diff:%0A${blob}"
+            guard_rc=1
+          fi
+          if [ "$guard_rc" -ne 0 ]; then
+            tail -40 /tmp/audit-guard.log
+          fi
+          exit $guard_rc
       - name: Verify routing shadows committed fresh
         run: |
           python scripts/generate_routing_shadows.py

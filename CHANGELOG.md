@@ -36,11 +36,18 @@
   `generated_at` damgasının CI'daki `git diff --exit-code` adımını her koşuda
   kırmızıya boyaması · zayıf test-kilit işaretleri (`423` o dosyada yalnız
   yorumdaydı) → hepsi düzeltildi ve her biri bir testle kilitlendi.
+- **Yedincisini ancak CI yakaladı:** damga `git log`/mtime'dan türetiliyordu; Actions
+  **sığ klon** yaptığı için commit tarihi koşu zamanına eşitleniyor ve checkout mtime'ı
+  her ortamda farklı yazılıyor → aynı içerik iki farklı damga üretip `git diff` kapısını
+  "bayat rapor" diye kırmızıya boyuyordu. Damga artık denetim raporunun **içerik mühürü**
+  (`sha256`) ve adım başarısızlık ayrıntısını **annotation** olarak yüzeye çıkarıyor
+  (loglar Azure blob'dan okunamıyor — repo'nun "sessiz-çökme-yok" kuralı).
+- **Test:** +39 (`tests/unit/test_audit_regression.py`). Tam koşu: taban
+  **2223P/0F** → E0 ile **2262P/0F** (regresyon yok). `ruff check .` temiz.
 - **CI:** `backend` işine adım olarak eklendi; bekçiyi koşmakla yetinmez,
-  `git diff --exit-code -- reports/audit_regression.json` ile commit'lenen
-  ölçümün bayatlamadığını da denetler (emsal: routing shadows adımı).
-- **Test:** +37 (`tests/unit/test_audit_regression.py`). Tam koşu: taban
-  **2223P/0F** → E0 ile **2260P/0F** (regresyon yok). `ruff check .` temiz.
+  `git diff -- reports/audit_regression.json` ile commit'lenen ölçümün
+  bayatlamadığını da denetler (emsal: routing shadows adımı) ve kırmızıyı
+  **annotation** ile yüzeye çıkarır (log okunamadığında sessiz çökme olmasın).
 - **Ölçülmüş boşluk (bu PR'ın işi değil, kayda geçsin):** CHANGELOG'da FAZ E'nin
   birleşmiş kalemleri (E2 · E5 · E6 · E7, PR #115) için **hiç kayıt yok**
   (`grep -c 'FAZ E' CHANGELOG.md` → 0); FAZ E kabul kapısı 6 "CHANGELOG güncel"

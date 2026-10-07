@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
@@ -633,7 +634,12 @@ def test_ci_runs_the_guard_as_a_gate():
     body = (step.group("run") or "") + (step.group("body") or "")
     assert "scripts/audit_regression.py" in body, "adım var ama bekçiyi KOŞMUYOR"
     # Rapor tazeliği de denetlenmeli: üretilen JSON commit'lenenden sapamaz.
-    assert "git diff --exit-code" in body, "rapor tazeliği CI'da kilitli değil"
+    assert "git diff" in body and "audit_regression.json" in body, (
+        "rapor tazeliği CI'da kilitli değil"
+    )
+    # [SESSİZ-ÇÖKME-YOK] Actions logları her ortamdan okunamaz; başarısızlık
+    # ayrıntısı annotation olarak yüzeye çıkmalı (repo kuralı, rust-core emsali).
+    assert "::error title=" in body, "bekçi kırmızısı CI'da sessiz çöker"
 
     # Adım `backend` işinde olmalı: bağımlılık kurulumu orada yapılıyor.
     backend_job = text.split("  backend:", 1)[1].split("\n  frontend:", 1)[0]
@@ -681,10 +687,43 @@ def test_report_is_deterministic_so_the_ci_diff_gate_is_meaningful():
     first = json.dumps(ar.build_report(_fresh_findings()), ensure_ascii=False, sort_keys=True)
     second = json.dumps(ar.build_report(_fresh_findings()), ensure_ascii=False, sort_keys=True)
     assert first == second
-    assert "generated_at" in json.loads(first)["meta"]
-    # Damga "şimdi" değil, kaynağın son değişimidir.
-    stamp = json.loads(first)["meta"]["generated_at"]
-    assert stamp != "unknown", "denetim raporunun kaynağı damgalanamadı"
+    assert "source_stamp" in json.loads(first)["meta"]
+    # Damga "şimdi" değil, KAYNAĞIN mührüdür.
+    stamp = json.loads(first)["meta"]["source_stamp"]
+    assert stamp.startswith("sha256:"), stamp
+
+
+def test_stamp_follows_content_not_the_environment(tmp_path, monkeypatch):
+    """Damga git derinliğinden, saat diliminden ve mtime'dan BAĞIMSIZ olmalı.
+
+    Bu, CI'da gerçekten kırmızı üreten bir kusurdu (run 37585688805 · adım 7):
+    Actions sığ klon yaptığı için `git log -1 --format=%cI` commit tarihini KOŞU
+    ZAMANINA eşitliyordu ve checkout mtime'ı her ortamda farklıydı. Aynı içerik
+    iki farklı damga üretince `git diff` kapısı "bayat rapor" diye yanıyordu —
+    üstelik Actions logları okunamadığı için sebep de görünmüyordu.
+    """
+    fake = tmp_path / "repo"
+    (fake / "docs" / "reports").mkdir(parents=True)
+    report_path = fake / "docs" / "reports" / "JULES_DENETIM_2026-10-06.md"
+    report_path.write_text("sürüm A\n", encoding="utf-8")
+    monkeypatch.setattr(ar, "AUDIT_REPORT", report_path)
+
+    first = ar._source_stamp()
+    # Yalnız mtime değişir (içerik aynı) → damga DEĞİŞMEMELİ.
+    os.utime(report_path, (0, 0))
+    assert ar._source_stamp() == first, "damga mtime'a bağlı — CI'da sahte bayatlık üretir"
+    # İçerik değişir → damga DEĞİŞMELİ (mühür kaynağı gerçekten izler).
+    report_path.write_text("sürüm B\n", encoding="utf-8")
+    assert ar._source_stamp() != first, "damga içeriği izlemiyor — mühür sahte"
+    assert ar._source_stamp().startswith("sha256:")
+
+
+def test_stamp_is_never_invented_when_the_source_is_unreadable(tmp_path, monkeypatch):
+    """Kaynak okunamıyorsa damga UYDURULMAZ; mühürsüzlük açıkça görünür."""
+    monkeypatch.setattr(ar, "AUDIT_REPORT", tmp_path / "yok.md")
+    stamp = ar._source_stamp()
+    assert stamp.startswith("unreadable-source:"), stamp
+    assert not stamp.startswith("sha256:")
 
 
 def _fresh_findings():
