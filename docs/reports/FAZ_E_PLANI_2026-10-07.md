@@ -39,7 +39,7 @@ Bu plan hazırlanırken ölçülmemişti; #113 ile kapandı: **kasa kilitliyken 
 | **E3** omurga tek yol (8 `httpx` dosyası) | Açık 🟡 | — |
 | **E4** fail-closed worker | **Çalışılıyor** | paralel oturum (talep 3) |
 | **E5** motor yoksa `400` | Açık 🟡 | — |
-| **E6** UI "Yetersiz Kanıt" | Açık 🟡 | — |
+| **E6** UI "Yetersiz Kanıt" | **Kapandı** (bu PR) | bu oturum |
 | **E7** `gather` koruması | Açık 🟡 | — |
 | **E8** Pydantic (169 → 10-15) | Açık 🟢 | — |
 
@@ -155,6 +155,13 @@ Depo bu kültüre sahip (`tests/unit/test_ui_honesty_contract.py`, `tests/unit/t
 - **Neden:** Md.3. Boş veri, bugün "dolu" gibi görünüyor.
 - **DoD:** `grep -rn "'Veri mevcut değil'" frontend/src` → **0**; yeni contract testi AtlasPinealCockpit'i kilitler; boş veri → kırmızı/uyarı durumu.
 - **Boyut:** küçük (saat).
+
+#### E6 · UYGULANDI (2026-10-07) — dolgudan daha büyük bir açık çıktı
+- **Ölçüm (öncesi):** `'Veri mevcut değil'` 2 yerde (depth · visual) **ama asıl açık daha genişti**: yedi adli sütunun ölçüm alanları ölçüm YOKKEN `?? 0` / `|| 0` basıyordu (gerçeklik indeksi · uyum skoru · narsisizm · gece payı · veri tamlığı · takipçi sayısı). Yani eksik kanıt **"0"** olarak görünüyordu — bu, nötr dolgu metninden **daha ağır** bir uydurma: sayı gerçek ölçüm gibi okunur (Md.1).
+- **Kural kodda tek yerde:** `hasEvidence()` — `0` **GEÇERLİ** ölçümdür (ölçülmüş sıfır), yalnız `null`/`undefined`/boş metin/`NaN`/boş dizi "kanıt yok" sayılır. Ölçüm yoksa tek metin: **`YETERSİZ KANIT`** (`INSUFFICIENT_EVIDENCE`), uyarı rengi (`#ef4444`, depo konvansiyonu) + kesikli alt çizgi + sebep tooltip'i ("Alan boş döndü — ölçüm yok").
+- **Ayrım korunur:** `—` (tire) ile "kanıt yok" karıştırılmaz; tire "değer yok" der, `YETERSİZ KANIT` **"ölçüm yapılmadı"** der ve görsel olarak uyarır.
+- **Kanıt:** (a) `grep -rn "'Veri mevcut değil'" frontend/src` → **0**; (b) **4 yeni** kontrat testi (`test_ui_honesty_contract.py`) — nötr dolgu yasağı, işaretin durum olarak varlığı (≥14 kullanım + tooltip), uyarı stilinin varlığı, uydurma sıfır yasağı; (c) **mutasyon denetimi**: eski `|| 0` kalıbı geri konduğunda test **kırmızı** yanıyor (test ısırıyor, süs değil); (d) `node` ile **gerçek SSR render** (bileşenin yardımcısı ve şablonu dosyadan birebir alınarak): boş alan → `YETERSİZ KANIT` + uyarı sınıfı DOM'da, `%0` **uydurulmuyor**; gerçek `0` → `%0` olarak görünüyor (kanıt var); (e) `npm run build` ✅ · `npm run check` **0 error / 0 warning**.
+- **Kapsam dışı bırakılan (dürüstçe):** görev/**durum ayrıştırma** katmanındaki `Number(data?.x ?? 0)` dönüşümleri (ör. bellek kristali alanları) bu turda **değiştirilmedi** — bunlar API sözleşmesi alanlarını okur, modal dolgusu değildir; ayrı bir dilim (E6b) olarak işaretlenir.
 
 ### E7 · `gather` = `return_exceptions` 🟡 ORTA
 - **Ne:** 8 korumasız dosyada `asyncio.gather` çağrılarına `return_exceptions=True` + **kısmi sonuç raporlama**: tek ajan hatası tüm analizi düşürmez; düşen parça dürüstçe "alınamadı" olarak raporlanır (sessizce yutulmaz).

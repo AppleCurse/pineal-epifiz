@@ -146,6 +146,25 @@
     }
   }
 
+  // --- [E6 · Md.1 UYDURMA YASAĞI] ADLİ SÜTUN KANIT KONTROLÜ ---
+  // Bulunan açık: modal alanları `|| "Veri mevcut değil"` benzeri dolgu ve `?? 0` ile
+  // dolduruluyordu. İkisi de aynı yalanı söylüyordu: ÖLÇÜM YOKKEN kart DOLU
+  // görünüyordu (sayı alanında ise "0" gerçek bir ölçüm gibi okunuyordu).
+  // Kural: alan boşsa uydurma değer değil, DURUM gösterilir.
+  //
+  // `0` GEÇERLİ bir ölçümdür (sıfır takipçi = ölçülmüş sıfır); yalnız
+  // null/undefined/boş metin/NaN/boş dizi "kanıt yok" sayılır.
+  function hasEvidence(value: unknown): boolean {
+    if (value === null || value === undefined) return false;
+    if (typeof value === 'number') return Number.isFinite(value);
+    if (typeof value === 'string') return value.trim().length > 0;
+    if (Array.isArray(value)) return value.length > 0;
+    return true;
+  }
+
+  //: Ölçüm yokluğunun TEK metni (arama/değiştirme ve test için tek kaynak).
+  const INSUFFICIENT_EVIDENCE = 'YETERSİZ KANIT';
+
   // --- [FAZ D · D4] DİL PİLİ ---
   // Kanıta işlenen GERÇEK tespiti gösterir: web çıkarıcıları (trafilatura →
   // crawl4ai → scrapling) çıkardıkları metnin dilini ölçer ve kaydeder; pil
@@ -955,45 +974,49 @@
             <div class="report-block">
               <h4>Takipçi & Kitle Bütünlüğü</h4>
               <p>Hüküm: <strong>{followerAudit.verdict || 'BİLİNMİYOR'}</strong> ({followerAudit.verdict_code || 'nominal'})</p>
-              <p>Takipçi Sayısı: {followerAudit.follower_count ?? 0} · Takip: {followerAudit.following_count ?? '—'}</p>
-              <p>Etkileşim Katsayısı: {followerAudit.engagement_rate ?? '—'}</p>
-              <p>Veri Tamlığı: %{((followerAudit.data_completeness ?? 0) * 100).toFixed(0)}</p>
+              <p>
+                Takipçi Sayısı:
+                {#if hasEvidence(followerAudit.follower_count)}{followerAudit.follower_count}{:else}<span class="evidence-insufficient" title="Alan boş döndü — ölçüm yok">{INSUFFICIENT_EVIDENCE}</span>{/if}
+                · Takip: {#if hasEvidence(followerAudit.following_count)}{followerAudit.following_count}{:else}<span class="evidence-insufficient" title="Alan boş döndü — ölçüm yok">{INSUFFICIENT_EVIDENCE}</span>{/if}
+              </p>
+              <p>Etkileşim Katsayısı: {#if hasEvidence(followerAudit.engagement_rate)}{followerAudit.engagement_rate}{:else}<span class="evidence-insufficient" title="Alan boş döndü — ölçüm yok">{INSUFFICIENT_EVIDENCE}</span>{/if}</p>
+              <p>Veri Tamlığı: {#if hasEvidence(followerAudit.data_completeness)}%{(followerAudit.data_completeness * 100).toFixed(0)}{:else}<span class="evidence-insufficient" title="Alan boş döndü — ölçüm yok">{INSUFFICIENT_EVIDENCE}</span>{/if}</p>
             </div>
           {:else if activePillarModal === 'timing' && timingForensics}
             <div class="report-block">
               <h4>Zaman & Sirkadiyen Forensik</h4>
-              <p>Gece Payı: %{((timingForensics.night_share ?? 0) * 100).toFixed(0)}</p>
-              <p>Tepe Saati: {timingForensics.peak_hour ?? '—'}</p>
-              <p>Medyan Kayma: {timingForensics.median_drift_hours ?? '—'} saat</p>
+              <p>Gece Payı: {#if hasEvidence(timingForensics.night_share)}%{(timingForensics.night_share * 100).toFixed(0)}{:else}<span class="evidence-insufficient" title="Alan boş döndü — ölçüm yok">{INSUFFICIENT_EVIDENCE}</span>{/if}</p>
+              <p>Tepe Saati: {#if hasEvidence(timingForensics.peak_hour)}{timingForensics.peak_hour}{:else}<span class="evidence-insufficient" title="Alan boş döndü — ölçüm yok">{INSUFFICIENT_EVIDENCE}</span>{/if}</p>
+              <p>Medyan Kayma: {#if hasEvidence(timingForensics.median_drift_hours)}{timingForensics.median_drift_hours}{:else}<span class="evidence-insufficient" title="Alan boş döndü — ölçüm yok">{INSUFFICIENT_EVIDENCE}</span>{/if} saat</p>
             </div>
           {:else if activePillarModal === 'depth' && depthReport}
             <div class="report-block">
               <h4>Derinlik & Alıntı Kalkanı</h4>
-              <p>Gerçeklik İndeksi: %{((depthReport.reality_index || 0) * 100).toFixed(0)}</p>
-              <p>Öz Çıkarım: {depthReport.essence_one_liner || 'Veri mevcut değil'}</p>
+              <p>Gerçeklik İndeksi: {#if hasEvidence(depthReport.reality_index)}%{(depthReport.reality_index * 100).toFixed(0)}{:else}<span class="evidence-insufficient" title="Alan boş döndü — ölçüm yok">{INSUFFICIENT_EVIDENCE}</span>{/if}</p>
+              <p>Öz Çıkarım: {#if hasEvidence(depthReport.essence_one_liner)}{depthReport.essence_one_liner}{:else}<span class="evidence-insufficient" title="Alan boş döndü — ölçüm yok">{INSUFFICIENT_EVIDENCE}</span>{/if}</p>
             </div>
           {:else if activePillarModal === 'visual' && visualEvidence}
             <div class="report-block">
               <h4>Görsel & Estetik Forensik</h4>
-              <p>Estetik Stil: {visualEvidence.aesthetic_style || '—'}</p>
-              <p>Özet: {visualEvidence.visual_evidence_summary || 'Veri mevcut değil'}</p>
+              <p>Estetik Stil: {#if hasEvidence(visualEvidence.aesthetic_style)}{visualEvidence.aesthetic_style}{:else}<span class="evidence-insufficient" title="Alan boş döndü — ölçüm yok">{INSUFFICIENT_EVIDENCE}</span>{/if}</p>
+              <p>Özet: {#if hasEvidence(visualEvidence.visual_evidence_summary)}{visualEvidence.visual_evidence_summary}{:else}<span class="evidence-insufficient" title="Alan boş döndü — ölçüm yok">{INSUFFICIENT_EVIDENCE}</span>{/if}</p>
             </div>
           {:else if activePillarModal === 'shadow' && shadowProfile}
             <div class="report-block">
               <h4>Gölge Profili (Karanlık Üçlü)</h4>
-              <p>Narsisizm Skoru: {shadowProfile.dark_profile?.narcissism ?? 0}</p>
-              <p>Tespit Edilen Strateji: {shadowProfile.strategy || '—'}</p>
+              <p>Narsisizm Skoru: {#if hasEvidence(shadowProfile.dark_profile?.narcissism)}{shadowProfile.dark_profile?.narcissism}{:else}<span class="evidence-insufficient" title="Alan boş döndü — ölçüm yok">{INSUFFICIENT_EVIDENCE}</span>{/if}</p>
+              <p>Tespit Edilen Strateji: {#if hasEvidence(shadowProfile.strategy)}{shadowProfile.strategy}{:else}<span class="evidence-insufficient" title="Alan boş döndü — ölçüm yok">{INSUFFICIENT_EVIDENCE}</span>{/if}</p>
             </div>
           {:else if activePillarModal === 'osint' && osintFootprint}
             <div class="report-block">
               <h4>OSINT Dijital Ayak İzi</h4>
-              <p>İlişkili Platformlar: {(osintFootprint.associated_platforms || []).join(', ') || '—'}</p>
+              <p>İlişkili Platformlar: {#if hasEvidence(osintFootprint.associated_platforms)}{osintFootprint.associated_platforms.join(', ')}{:else}<span class="evidence-insufficient" title="Alan boş döndü — ölçüm yok">{INSUFFICIENT_EVIDENCE}</span>{/if}</p>
             </div>
           {:else if activePillarModal === 'resonance' && resonanceCalc}
             <div class="report-block">
               <h4>Rezonans & Uyum</h4>
-              <p>Uyum Skoru: %{((resonanceCalc.compatibility_score ?? 0) * 100).toFixed(0)}</p>
-              <p>Yaklaşım Protokolü: {resonanceCalc.recommended_approach || '—'}</p>
+              <p>Uyum Skoru: {#if hasEvidence(resonanceCalc.compatibility_score)}%{(resonanceCalc.compatibility_score * 100).toFixed(0)}{:else}<span class="evidence-insufficient" title="Alan boş döndü — ölçüm yok">{INSUFFICIENT_EVIDENCE}</span>{/if}</p>
+              <p>Yaklaşım Protokolü: {#if hasEvidence(resonanceCalc.recommended_approach)}{resonanceCalc.recommended_approach}{:else}<span class="evidence-insufficient" title="Alan boş döndü — ölçüm yok">{INSUFFICIENT_EVIDENCE}</span>{/if}</p>
             </div>
           {:else}
             <div class="report-block">
@@ -1544,6 +1567,16 @@
     font-size: 12px;
     color: #fde68a;
     line-height: 1.5;
+  }
+
+  /* [E6 · Md.1] ÖLÇÜM YOKLUĞU BİR DURUMDUR, dolgu metni değil: kart "dolu"
+     görünmesin diye uyarı rengi + altı çizili + sebep tooltip'i. */
+  .evidence-insufficient {
+    color: #ef4444;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    border-bottom: 1px dashed #ef4444;
+    cursor: help;
   }
 
   @keyframes amberPulse {
