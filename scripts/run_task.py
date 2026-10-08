@@ -25,6 +25,10 @@ Sözleşme (sahte veri YASAK):
 """
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import asyncio
 import json
 import os
@@ -112,8 +116,10 @@ async def main() -> None:
     # Operatör CLI'si kasa bilmez; omurga politikası payload ile aynıdır.
     try:
         executor.search_engine.set_policy(payload.get("policy") or {})
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning(
+            "[main] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+        )
     try:
         status = await executor.execute_task(payload, task_id)
     except Exception as e:

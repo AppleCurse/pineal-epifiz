@@ -10,6 +10,10 @@ Mimari sözleşme:
 """
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import contextlib
 import os
 import re
@@ -740,8 +744,10 @@ def build_oversight_digest(
                 + (f" indirim={selected.get('discount_pct')}%" if selected.get("discount_pct") else "")
                 + fact_suffix
             )
-    except Exception:  # pragma: no cover
-        pass
+    except Exception as exc:  # pragma: no cover
+        logger.warning(
+            "[build_oversight_digest] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+        )
     try:
         anomalies = TelemetryReader(gateway).anomalies()
         counts = {k: len(v) for k, v in anomalies.items()}
@@ -759,8 +765,10 @@ def build_oversight_digest(
                 + "' saglayici dondurdu='" + str(denial.get("actual_model"))
                 + "' (" + str(denial.get("provider")) + ") — ikame reddedildi, zincir durdu"
             )
-    except Exception:  # pragma: no cover
-        pass
+    except Exception as exc:  # pragma: no cover
+        logger.warning(
+            "[build_oversight_digest] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+        )
     try:
         snap = CostReader(gateway).snapshot()
         if "error" not in snap:
@@ -769,8 +777,10 @@ def build_oversight_digest(
                 f"MALİYET: harcama=${snap.get('spend_usd', 0):.4f} rezerve=${snap.get('reserved_usd', 0):.4f} "
                 f"limit={'sinirsiz' if not snap.get('cap_usd') else '$%.2f' % snap.get('cap_usd', 0)}"
             )
-    except Exception:  # pragma: no cover
-        pass
+    except Exception as exc:  # pragma: no cover
+        logger.warning(
+            "[build_oversight_digest] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+        )
     try:
         quotas = []
         for provider in ("groq", "cerebras"):
@@ -783,8 +793,10 @@ def build_oversight_digest(
             ))
         if quotas and has_content:
             lines.append("KOTA: " + " | ".join(quotas))
-    except Exception:  # pragma: no cover
-        pass
+    except Exception as exc:  # pragma: no cover
+        logger.warning(
+            "[build_oversight_digest] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+        )
     try:
         # ROUTING-HARDENING: saglayici saglik devresi gorunur (gateway'in kendi
         # durumu okunur; yeni store yok). Bos ise satir eklenmez — gurultu yok.
@@ -795,8 +807,10 @@ def build_oversight_digest(
                 has_content = True
                 lines.append("SAĞLIK: " + " | ".join(
                     f"{p} cooldown={s:.0f}s" for p, s in sorted(cooling.items())))
-    except Exception:  # pragma: no cover
-        pass
+    except Exception as exc:  # pragma: no cover
+        logger.warning(
+            "[build_oversight_digest] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+        )
     if executor is not None:
         try:
             status = AgentInspector(executor).run_status(room_state)
@@ -852,8 +866,10 @@ def build_oversight_digest(
                         "HAFIZA-DISK: " + (" | ".join(chunks) if chunks else "kayıt-yok")
                         + suffix + " (RAM boş; diskten okundu)"
                     )
-        except Exception:  # pragma: no cover
-            pass
+        except Exception as exc:  # pragma: no cover
+            logger.warning(
+                "[build_oversight_digest] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+            )
     if command_gateway is not None:
         for entry in command_gateway.audit()[-3:]:
             has_content = True

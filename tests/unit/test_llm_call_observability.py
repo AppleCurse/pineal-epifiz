@@ -54,7 +54,7 @@ async def test_executor_evidence_records_agent_llm_calls():
         try:
             await llm_gateway.query("agent prompt")
         except RuntimeError:
-            pass
+            pass  # beklenen: kapı kapalı -> RuntimeError; test bunu doğrular
         return CognitiveStyle(
             communication_tone="analitik",
             complexity_level="teknik",

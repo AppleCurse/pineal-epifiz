@@ -20,6 +20,10 @@ Kullanım:
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import json
 import sys
 from pathlib import Path
@@ -31,8 +35,10 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:  # pragma: no cover - akış yönlendirilmişse
-        pass
+    except Exception as exc:  # pragma: no cover - akış yönlendirilmişse
+        logger.warning(
+            "[<modül>] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+        )
 
 from agent_core.capabilities import bootstrap  # noqa: E402
 from agent_core.mcp import tools as mcp_tools  # noqa: E402

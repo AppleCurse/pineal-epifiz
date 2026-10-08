@@ -1,3 +1,6 @@
+import logging
+
+logger = logging.getLogger(__name__)
 import contextvars
 import hashlib
 import json
@@ -12,7 +15,10 @@ from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Iterator, List, Mapping, Optional, Type, TypeVar
 
 import httpcore
-import httpx
+# [AUDIT 2026-10-08 · E-GÖZ1-3] `from httpx import ...` — satır başı `import httpx`
+# bypass kalıbı burası dahil hiçbir ürün dosyasında kalmaz. İstenen isimler
+# açıkça alınır; istemci üretimi merkezi fabrikadan (build_secure_client) geçer.
+from httpx import AsyncHTTPTransport, URL
 from httpcore._backends.auto import AutoBackend
 from openai import AsyncOpenAI
 from pydantic import BaseModel, ValidationError
@@ -60,7 +66,7 @@ def provider_label_for_endpoint(base_url: str, *, explicit_local: bool = False) 
         return "9router"
     host = ""
     try:
-        host = (httpx.URL(base_url).host or "").lower()
+        host = (URL(base_url).host or "").lower()
     except Exception:
         host = ""
     return "9router" if host in _LOOPBACK_HOSTS else "openrouter"
@@ -147,7 +153,7 @@ class _PinnedNetworkBackend:
         await self._backend.sleep(seconds)
 
 
-class _PinnedAsyncHTTPTransport(httpx.AsyncHTTPTransport):
+class _PinnedAsyncHTTPTransport(AsyncHTTPTransport):
     """httpx transport that preserves TLS SNI while preventing DNS rebinding."""
 
     def __init__(self, hostname: str, address: str):
@@ -1246,8 +1252,10 @@ class LLMGateway:
             from openai import APIConnectionError, APITimeoutError
             if isinstance(exc, (APITimeoutError, APIConnectionError)):
                 return True
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "[_is_retryable_error] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+            )
 
         err = str(exc).lower()
         if "in_flight" in err or "in-flight" in err:
@@ -1278,8 +1286,10 @@ class LLMGateway:
 
             if isinstance(exc, (APITimeoutError, APIConnectionError)):
                 return True
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "[_is_strict_retryable_error] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+            )
         if isinstance(exc, (TimeoutError, ConnectionError, OSError)):
             return True
         status = getattr(exc, "status_code", None)
@@ -1399,8 +1409,10 @@ class LLMGateway:
                 )
             else:
                 governor.record_failure(route.provider_id, "*")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "[_record_route_attempt] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+            )
 
     def _route_cooldown_remaining(self, provider_id: str) -> float:
         return max(0.0, self._provider_block_until.get(provider_id, 0.0) - time.monotonic())
@@ -1719,8 +1731,10 @@ class LLMGateway:
                 # tasiyen snapshot turleriyle de uyumlu kalir.
                 if getattr(st, "status", st) is QuotaStatus.EXHAUSTED:
                     continue
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "[agent_route_variants] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+                )
             variants.append((
                 _price_sum(pricing),
                 0,
@@ -1887,8 +1901,10 @@ class LLMGateway:
                 if getattr(st, "status", st) is QuotaStatus.EXHAUSTED:
                     skipped[provider_id] = {"reason": "exhausted", **info}
                     continue
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "[route_diagnostics] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+                )
             offered.append({
                 "route_key": f"{matched_id}@{provider_id}", "provider": provider_id,
                 "model": matched_id, "priced": priced, "source": matched_source,
@@ -2033,7 +2049,11 @@ class LLMGateway:
         if client is None:
             http_client = None
             if route.hostname and route.pinned_address:
-                http_client = httpx.AsyncClient(
+                # Merkezi fabrika: varsayılan timeout/limits uygulanır;
+                # transport-level DNS pinning (rebinding'e karşı) korunur.
+                from agent_core.utils.security import build_secure_client
+
+                http_client = build_secure_client(
                     transport=_PinnedAsyncHTTPTransport(
                         route.hostname,
                         route.pinned_address,
@@ -2957,21 +2977,27 @@ class LLMGateway:
             for b in reversed(blocks):
                 try:
                     return json.loads(b)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning(
+                        "[extract_json] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+                    )
         elif "```" in text:
             blocks = [b.split("```")[0].strip() for b in text.split("```")[1:]]
             for b in reversed(blocks):
                 try:
                     return json.loads(b)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning(
+                        "[extract_json] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+                    )
 
         # 2. Doğrudan parse dene
         try:
             return json.loads(text)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "[extract_json] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+            )
 
         # 3. Metin içindeki tüm JSON nesnelerini tara
         decoder = json.JSONDecoder()

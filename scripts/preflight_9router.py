@@ -10,6 +10,10 @@ Bu script:
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import json
 import os
 import sys
@@ -29,8 +33,10 @@ except ImportError:
 try:
     from dotenv import load_dotenv
     load_dotenv(ROOT / ".env")
-except ImportError:
-    pass
+except ImportError as exc:
+    logger.debug(
+        "[<modül>] ImportError — atlandı (beklenen/opsiyonel, iz bırakıldı): %s", exc
+    )
 
 # BOSS-1: ön denetim ile çalışma zamanı AYNI çözümleyiciyi kullanır. Önceden
 # preflight PINEAL_LLM_API_KEY'i ilk sırada okuyor, gateway ise o adı hiç

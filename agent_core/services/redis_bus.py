@@ -142,8 +142,9 @@ class RedisBus:
         try:
             if self._client and aioredis:
                 await self._client.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            # Kapanış temizliği: bağlantı zaten kopmuş olabilir — debug iziyle bırakılır.
+            logger.debug("[disconnect] redis istemcisi kapatılırken hata: %s", exc)
         self._connected = False
 
 
