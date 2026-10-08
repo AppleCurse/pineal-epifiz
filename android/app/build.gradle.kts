@@ -6,6 +6,9 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+val canonicalVersion = rootProject.file("../VERSION").readText().trim()
+require(canonicalVersion.isNotEmpty()) { "Repository VERSION file is empty; refusing to build an unidentified Android app." }
+
 android {
     namespace = "com.example.pineal"
     compileSdk = 35
@@ -15,7 +18,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 1
-        versionName = "3.0.0"
+        versionName = canonicalVersion
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

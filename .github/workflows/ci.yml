@@ -104,7 +104,9 @@ jobs:
       - name: Build frontend
         run: npm run build
       - name: Verify real Svelte build
-        run: grep -q "PINEAL-HERETIC" dist/assets/*.js
+        run: |
+          grep -q "PINEAL-HERETIC" dist/assets/*.js
+          grep -Fq "$(cat ../VERSION)" dist/assets/*.js
 
   smoke:
     runs-on: ubuntu-latest

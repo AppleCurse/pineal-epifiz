@@ -119,6 +119,7 @@ def _locales() -> dict[str, str]:
 #: (yerel ayar, yasaklı kalıp, gerekçe) — her biri ölçülmemiş bir iddia.
 FORBIDDEN_CLAIMS = [
     (r"9-AGENT", "Android'de 9 ajan yok: tek Gemini çağrısı var"),
+    (r"360°", "Android tam kapsamlı backend eşdeğerliği değil; tek-geçişli model çıkarımıdır"),
     (r"EXECUTION PIPELINE", "çok adımlı ajan hattı iddiası (tek geçişli çıkarım)"),
     (r"ZERO HALLUCINATION", "hiçbir LLM için verilemeyecek mutlak iddia"),
     (r"SIFIR HALÜSİNASYON", "hiçbir LLM için verilemeyecek mutlak iddia"),
@@ -246,3 +247,20 @@ def test_engine_declares_the_parity_gap_in_its_output():
         "analiz sonunda kullanıcıya 'tek LLM çıkarımı, bağımsız doğrulama ve "
         "mühür yok' bilgisi veren log/uyarı bulunamadı"
     )
+
+
+
+def test_android_is_explicitly_a_standalone_single_shot_client():
+    """Visible product labels must not imply full Python/backend feature parity."""
+    locales = _locales()
+    for locale, standalone, single_shot in (
+        ("tr", "BAĞIMSIZ ANDROID İSTEMCİSİ", "TEK GEÇİŞLİ GEMINI ÇIKARIMI"),
+        ("en", "STANDALONE ANDROID CLIENT", "SINGLE-SHOT GEMINI INFERENCE"),
+    ):
+        block = locales[locale]
+        assert standalone in block
+        assert single_shot in block
+
+    activity = (REPO_ROOT / "android/app/src/main/java/com/example/pineal/MainActivity.kt").read_text(encoding="utf-8")
+    assert 'to "🧠 360° Harita"' not in activity
+    assert "doğrulanmamış model profili" in activity.lower()

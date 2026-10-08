@@ -318,7 +318,8 @@ pub fn run() {
             }
 
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window.set_title("ATLAS PINEAL OBSERVATORY - HERETIC v5.0 [NATIVE GPU]");
+                let title = format!("ATLAS PINEAL OBSERVATORY - HERETIC v{}", env!("CARGO_PKG_VERSION"));
+                let _ = window.set_title(title);
                 let _ = window.center();
                 let _ = window.set_focus();
             }

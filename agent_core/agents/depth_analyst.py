@@ -3,6 +3,7 @@ from pydantic import BaseModel, ConfigDict
 import json
 
 from agent_core.services.upstream_findings import upstream_findings_block
+from agent_core.version import VERSION
 
 class DepthFinding(BaseModel):
     topic: str
@@ -117,7 +118,7 @@ class DepthAnalyst:
         )
         
         prompt = (
-            "Sen PINEAL 3.0 Baş Adli Psikoloji ve Gerçeklik Analistisin (Depth Analyst).\n"
+            f"Sen PINEAL-HERETIC v{VERSION} Baş Adli Psikoloji ve Gerçeklik Analistisin (Depth Analyst).\n"
             "GÖREVİN FORM DOLDURMAK VEYA YÜZEYSEL ETİKET BASMAK DEĞİLDİR.\n"
             "Aşağıdaki somut kanıtları masaya yatırıp ŞU SORULARI CEVAPLAYACAKSIN:\n\n"
             "1. GERÇEKLİK ENDEKSİ (Reality Index 0.0 - 1.0): Bu profilde sergilenen hayatın gerçekte yaşanma oranı nedir?\n"

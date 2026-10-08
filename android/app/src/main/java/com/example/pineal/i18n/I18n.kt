@@ -96,8 +96,8 @@ data class StringsDict(
 
 object AppStrings {
     val tr = StringsDict(
-        appTitle = "Pineal-Gland v3.0",
-        appSubtitle = "360° BÜTÜNCÜL İNSAN TANIMA VE REZONANS İSTASYONU",
+        appTitle = "Pineal-Gland",
+        appSubtitle = "BAĞIMSIZ ANDROID İSTEMCİSİ • TEK GEÇİŞLİ GEMINI ÇIKARIMI",
         footerText = "Pineal-Gland • TEK GEÇİŞLİ GEMINI ÇIKARIMI • MODEL BEYANI (DOĞRULANMADI) • CANLI TELEMETRİ",
         onlineStatus = "ÇEVRİMİÇİ",
         liveStatus = "CANLI",
@@ -141,7 +141,7 @@ object AppStrings {
         chatPlaceholder = "Aspasia'ya soru sorun, çıkarım isteyin...",
         sendBtn = "GÖNDER",
         explainStateBtn = "DURUMU ÖZETLE",
-        holisticTitle = "360° BÜTÜNCÜL İNSAN ÇÖZÜMLEMESİ",
+        holisticTitle = "MODELİN ÜRETTİĞİ PROFİL (DOĞRULANMADI)",
         fullMap = "TAM HARİTA",
         passionsTitle = "✨ TUTKULAR VE NEŞE",
         energizingLabel = "Enerji Veren:",
@@ -191,8 +191,8 @@ object AppStrings {
     )
 
     val en = StringsDict(
-        appTitle = "Pineal-Gland v3.0",
-        appSubtitle = "360° HOLISTIC HUMAN RECOGNITION & RESONANCE STATION",
+        appTitle = "Pineal-Gland",
+        appSubtitle = "STANDALONE ANDROID CLIENT • SINGLE-SHOT GEMINI INFERENCE",
         footerText = "Pineal-Gland • SINGLE-SHOT GEMINI INFERENCE • MODEL-CLAIMED (UNVERIFIED) • LIVE TELEMETRY",
         onlineStatus = "ONLINE",
         liveStatus = "LIVE",
@@ -234,7 +234,7 @@ object AppStrings {
         chatPlaceholder = "Ask Aspasia, request insights or explain telemetry...",
         sendBtn = "SEND",
         explainStateBtn = "EXPLAIN STATE",
-        holisticTitle = "360° HOLISTIC HUMAN SYNTHESIS",
+        holisticTitle = "MODEL-GENERATED PROFILE (UNVERIFIED)",
         fullMap = "FULL MAP",
         passionsTitle = "✨ PASSIONS & FLOW TRIGGERS",
         energizingLabel = "Energizing Topics:",

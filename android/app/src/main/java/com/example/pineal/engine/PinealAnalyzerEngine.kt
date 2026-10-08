@@ -1,5 +1,6 @@
 package com.example.pineal.engine
 
+import com.example.pineal.BuildConfig
 import com.example.pineal.data.model.*
 import com.example.pineal.engine.gemini.*
 import kotlinx.coroutines.delay
@@ -36,7 +37,7 @@ class PinealAnalyzerEngine {
     ): Flow<PipelineEvent> = flow {
         val cleanHandle = targetUrl.trim().removePrefix("https://instagram.com/").removePrefix("https://x.com/").removePrefix("@").split("/").firstOrNull { it.isNotBlank() } ?: "target_user"
 
-        emit(PipelineEvent.Log(LogEntry(timeFormat.format(Date()), "INFO", "SİSTEM AKTİF · PINEAL-GLAND v3.0 SENTEZ BAŞLADI (GEMINI EDGE AI)")))
+        emit(PipelineEvent.Log(LogEntry(timeFormat.format(Date()), "INFO", "SİSTEM AKTİF · PINEAL-GLAND v${BuildConfig.VERSION_NAME} SENTEZ BAŞLADI (GEMINI EDGE AI)")))
         emit(PipelineEvent.Log(LogEntry(timeFormat.format(Date()), "INFO", "Profil: @$cleanHandle | Mod: Gemini LLM Inference")))
 
         if (apiKey.isBlank()) {
@@ -57,7 +58,7 @@ class PinealAnalyzerEngine {
 
         try {
             val prompt = """
-                Sen uzman bir bilişsel profil analisti (Pineal Gland v3.0) sistemisin.
+                Sen uzman bir bilişsel profil analisti (Pineal Gland) sistemisin.
                 Aşağıda verilen bilgilere dayanarak verilen kişinin psikolojik, sosyal ve davranışsal profilini pozitif, vizyoner ve gelişim odaklı bir dille çıkarman gerekiyor.
                 Tüm çıkarımlarının bir 'LLM Tahmini' (Inference) olduğunu kabul ederek, mantıklı, tutarlı ve derinlikli bir JSON üretmelisin.
 

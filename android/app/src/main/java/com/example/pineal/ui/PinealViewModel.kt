@@ -9,6 +9,7 @@ import android.net.Uri
 import android.util.Log
 
 import androidx.lifecycle.viewModelScope
+import com.example.pineal.BuildConfig
 import com.example.pineal.data.local.AnalysisEntity
 import com.example.pineal.data.local.PinealRepository
 import com.example.pineal.data.model.*
@@ -80,7 +81,7 @@ private fun defaultAgents() = listOf(
 )
 
 private fun defaultLogs() = listOf(
-    LogEntry("00:00:01", "INFO", "Pineal-Gland v3.0 Bilişsel Sentez Merkezi Hazır (Room + Coroutines)"),
+    LogEntry("00:00:01", "INFO", "Pineal-Gland v${BuildConfig.VERSION_NAME} Bilişsel Sentez Merkezi Hazır (Room + Coroutines)"),
     LogEntry("00:00:02", "INFO", "Bilişsel Sentez Hattı ve Profil Analiz Paneli Aktif.")
 )
 

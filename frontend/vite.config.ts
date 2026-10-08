@@ -1,15 +1,24 @@
+import { readFileSync } from 'node:fs'
 import { defineConfig } from 'vite'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 import { fileURLToPath } from 'url'
 import path from 'path'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const canonicalVersion = readFileSync(path.resolve(__dirname, '../VERSION'), 'utf8').trim()
+if (!canonicalVersion) {
+  throw new Error('Repository VERSION file is empty; refusing to build an unidentified frontend.')
+}
+
 const host = process.env.TAURI_DEV_HOST
 
 // https://vite.dev/config/ + https://v2.tauri.app/reference/config/
 export default defineConfig({
   root: __dirname,
   plugins: [svelte()],
+  define: {
+    __PINEAL_VERSION__: JSON.stringify(canonicalVersion),
+  },
   clearScreen: false,
   envPrefix: ['VITE_', 'TAURI_'],
   server: {

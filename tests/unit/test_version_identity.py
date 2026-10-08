@@ -15,11 +15,10 @@ Kök neden: sürüm, ihtiyaç duyulan her yere elle KOPYALANMIŞTI. Kopya
 bayatlar — bunu engelleyecek hiçbir mekanizma yoktu.
 
 Çözüm iki katmanlı:
-  1. Çalışma zamanında sürüm gösteren yüzeyler (FastAPI adı, MCP
-     ``server_version``) değeri artık ``agent_core.version`` üzerinden
-     OKUR; kopyalamaz.
-  2. Okuyamayan yerler (npm / Cargo / Tauri manifestoları, frontend sabiti)
-     bu dosyadaki testlerle ``VERSION``'a EŞİT OLMAYA ZORLANIR.
+  1. Çalışma zamanında sürüm gösteren yüzeyler (FastAPI, MCP ve frontend)
+     değeri ``VERSION`` dosyasından OKUR; kopyalamaz.
+  2. Platform build'leri (Android/ Tauri) aynı dosyadan sürüm üretir; npm /
+     Cargo / Tauri manifestoları ise bu testlerle ``VERSION``'a EŞİT tutulur.
 
 Ek olarak iki "araç kırılması" da korunur:
   * npm lockfile'ları package.json ile senkron olmalı (yoksa ``npm ci`` kırılır)
@@ -212,18 +211,72 @@ def test_cargo_lock_is_in_sync_with_manifest():
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# 5) Frontend sabiti
+# 5) Frontend build-time sürümü
 # ─────────────────────────────────────────────────────────────────────────
 
 
-def test_frontend_version_constant_tracks_canonical_version():
-    """``main.ts`` içinde eskiden 'v5.0' yazılıydı — derlemeye gömülü bayat kimlik."""
+def test_frontend_version_is_injected_from_root_version():
+    """Vite'in derlediği sürüm kopyalanmamalı; doğrudan kök VERSION'dan gelmeli."""
     source = (REPO_ROOT / "frontend/src/lib/version.ts").read_text(encoding="utf-8")
-    match = re.search(r"export const APP_VERSION = '([^']+)'", source)
-    assert match, "frontend/src/lib/version.ts: APP_VERSION bulunamadı"
-    assert match.group(1) == CANONICAL_VERSION, (
-        f"frontend APP_VERSION sapmış: {match.group(1)!r} != {CANONICAL_VERSION!r}"
+    assert "export const APP_VERSION: string = __PINEAL_VERSION__" in source
+
+    vite_config = (REPO_ROOT / "frontend/vite.config.ts").read_text(encoding="utf-8")
+    assert "readFileSync(path.resolve(__dirname, '../VERSION')" in vite_config
+    assert "__PINEAL_VERSION__: JSON.stringify(canonicalVersion)" in vite_config
+
+
+def test_frontend_visible_branding_uses_the_injected_version():
+    """Başlık/footer sürümü çalışma zamanında değil, kanonik derleme değerinden gelsin."""
+    i18n = (REPO_ROOT / "frontend/src/i18n.ts").read_text(encoding="utf-8")
+    assert "import { APP_VERSION } from './lib/version'" in i18n
+    assert i18n.count("appTitle: `PINEAL-HERETIC v${APP_VERSION}`") == 2
+    assert i18n.count("footerText: `PINEAL-HERETIC v${APP_VERSION}") == 2
+
+    html = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8")
+    title = re.search(r"<title>(.*?)</title>", html)
+    assert title and title.group(1) == "PINEAL-HERETIC", (
+        "HTML başlangıç başlığı sürüm taşımadan marka adını göstermeli; "
+        "eski v2.0 etiketi burada kalmamalı"
     )
+
+
+def test_docker_images_include_the_canonical_version_file():
+    """Frontend build ve Python runtime aynı VERSION dosyasını görmeli."""
+    dockerfile = (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert "COPY VERSION /app/VERSION" in dockerfile, (
+        "Vite build stage VERSION dosyasını almıyor; UI sürümü çözümlenemez"
+    )
+    assert "COPY VERSION ./VERSION" in dockerfile, (
+        "runtime image VERSION dosyasını almıyor; FastAPI/MCP sürümü 'unknown' olur"
+    )
+
+
+def test_tauri_window_title_uses_package_version_without_gpu_claim():
+    conf = json.loads((REPO_ROOT / "rust_core/src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
+    assert conf["app"]["windows"][0]["title"] == "ATLAS PINEAL OBSERVATORY - HERETIC"
+
+    source = (REPO_ROOT / "rust_core/src-tauri/src/lib.rs").read_text(encoding="utf-8")
+    assert 'format!("ATLAS PINEAL OBSERVATORY - HERETIC v{}", env!("CARGO_PKG_VERSION"))' in source
+    assert "[NATIVE GPU]" not in source, "pencere başlığı GPU hızlandırmasını ölçmeden iddia etmemeli"
+
+
+def test_android_release_identity_comes_from_root_version():
+    gradle = (REPO_ROOT / "android/app/build.gradle.kts").read_text(encoding="utf-8")
+    assert 'rootProject.file("../VERSION").readText().trim()' in gradle
+    assert "versionName = canonicalVersion" in gradle
+
+    activity = (REPO_ROOT / "android/app/src/main/java/com/example/pineal/MainActivity.kt").read_text(encoding="utf-8")
+    engine = (REPO_ROOT / "android/app/src/main/java/com/example/pineal/engine/PinealAnalyzerEngine.kt").read_text(encoding="utf-8")
+    view_model = (REPO_ROOT / "android/app/src/main/java/com/example/pineal/ui/PinealViewModel.kt").read_text(encoding="utf-8")
+    assert '"${s.appTitle} v${BuildConfig.VERSION_NAME}"' in activity
+    assert "v${BuildConfig.VERSION_NAME}" in engine
+    assert "v${BuildConfig.VERSION_NAME}" in view_model
+
+
+def test_windows_launcher_reads_the_canonical_version():
+    launcher = (REPO_ROOT / "baslat.bat").read_text(encoding="utf-8")
+    assert "set /p PINEAL_VERSION=<VERSION" in launcher
+    assert "PINEAL-HERETIC v%PINEAL_VERSION%" in launcher
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -246,24 +299,40 @@ def test_release_manifest_exists_and_matches_version():
 
 _GUARDED_FILES = [
     "backend/api.py",
+    "frontend/index.html",
     "frontend/src/main.ts",
+    "frontend/src/i18n.ts",
     "frontend/src/lib/version.ts",
     "frontend/src/lib/tauriBridge.ts",
+    "frontend/vite.config.ts",
+    "agent_core/chat/dialogue_manager.py",
+    "agent_core/agents/depth_analyst.py",
     "rust_core/src-tauri/tauri.conf.json",
     "rust_core/src-tauri/Cargo.toml",
     "rust_core/Cargo.toml",
+    "android/app/build.gradle.kts",
+    "android/app/src/main/java/com/example/pineal/i18n/I18n.kt",
+    "android/app/src/main/java/com/example/pineal/engine/PinealAnalyzerEngine.kt",
+    "android/app/src/main/java/com/example/pineal/ui/PinealViewModel.kt",
+    "Dockerfile",
+    "baslat.bat",
     "package.json",
     "frontend/package.json",
 ]
 
-#: "v5.0"/"5.0.0" ve "rc.1" — denetimde bulunan bayat kimlikler.
-_STALE_LITERAL_RE = re.compile(r"\b5\.0\.0\b|\bv5\.0\b|\brc\.1\b")
-_VERSIONISH_LINE_RE = re.compile(r"(?i)version|signature|PINEAL-HERETIC v")
+#: Denetimde ve bu incelemede bulunan eski sürüm etiketleri.
+_STALE_LITERAL_RE = re.compile(
+    r"\b5\.0\.0\b|\bv5\.0\b|\bv2\.0\b|"
+    r"\bv3\.0\b(?!\.\d|-[0-9A-Za-z])|\brc\.1\b"
+)
+_VERSIONISH_LINE_RE = re.compile(
+    r"(?i)version|signature|PINEAL-HERETIC v|PINEAL-GLAND v|Pineal-Gland v|Pineal Gland v|PINEAL 3"
+)
 
 
 @pytest.mark.parametrize("relative_path", _GUARDED_FILES)
 def test_no_stale_hardcoded_version_literals(relative_path: str):
-    """Sürümle ilgili satırlarda bayat (5.0.0 / v5.0 / rc.1) dizge kalmasın."""
+    """Sürümle ilgili satırlarda bayat v2/v3/v5 veya rc.1 etiketleri kalmasın."""
     path = REPO_ROOT / relative_path
     offenders = []
     for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
