@@ -85,6 +85,17 @@ except ImportError:
     init_tracker = None
     AGENT_DEFINITIONS = []
 
+
+# [AUDIT 2026-10-08] İşaretçi (beacon) filosu canlılık hesabı + dinamik staleness
+# eşikleri `backend/agent_rack.py`'ye taşındı (api.py monolit tavanı, 6000 satır).
+# Buradan YENİDEN İHRAÇ edilir — mevcut kullanımlar değişmeden çalışır.
+from backend.agent_rack import (  # noqa: F401  # yeniden dışa aktarım
+    AGENT_HEARTBEAT_INTERVAL_S as _AGENT_HEARTBEAT_INTERVAL_S,
+    AGENT_STALE_MULTIPLIER as _AGENT_STALE_MULTIPLIER,
+    beacon_liveness as _beacon_liveness,
+    env_float as _env_float,
+)
+
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     try:
@@ -3093,7 +3104,12 @@ async def api_agents_status():
         agents = tracker.get_status_list()
         state_fn = getattr(getattr(tracker, "redis_bus", None), "connection_state", None)
         source = state_fn() if callable(state_fn) else "in_memory"
-        return {"agents": agents, "source": source, "count": len(agents)}
+        return {
+            "agents": agents, "source": source, "count": len(agents),
+            # Çok-süreçli işaretçi filosu: sinyal kaybı (deaf/unreachable)
+            # AÇIKça yüzeye çıkar — son sinyalin yaşı ve dinamik eşik.
+            "beacon": await _beacon_liveness(getattr(app.state, "redis_bus", None)),
+        }
     except Exception as e:
         logger.warning(f"Agent status okuma hatasi: {e}")
         return {"agents": [], "source": "error", "error": str(e)[:100], "count": 0}

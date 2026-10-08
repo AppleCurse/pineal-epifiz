@@ -320,8 +320,18 @@ def main() -> None:
     )
     parser.add_argument("--agent-id", default=AGENT_ID, help="Agent ID (mirror_truth vb.)")
     parser.add_argument("--redis-url", default=REDIS_URL, help="Redis URL")
+    # [AUDIT 2026-10-08] Varsayılan env'den: publication aralığı tek yerden
+    # (PINEAL_AGENT_HEARTBEAT_INTERVAL) ayarlanır — API tarafındaki staleness
+    # eşiği bu aynı değere bağlanır (sabit 30 yerine dinamik bağ).
+    try:
+        _default_interval = float(os.getenv("PINEAL_AGENT_HEARTBEAT_INTERVAL", "30"))
+    except (TypeError, ValueError):
+        _default_interval = 30.0
+    if _default_interval <= 0:
+        _default_interval = 30.0
     parser.add_argument(
-        "--heartbeat-interval", type=float, default=30.0, help="Canlılık yayın aralığı (saniye)"
+        "--heartbeat-interval", type=float, default=_default_interval,
+        help="Canlılık yayın aralığı (saniye; varsayılan PINEAL_AGENT_HEARTBEAT_INTERVAL veya 30)"
     )
     parser.add_argument("--backend-url", default=BACKEND_URL, help="Sağlık sondası için backend adresi")
     args = parser.parse_args()

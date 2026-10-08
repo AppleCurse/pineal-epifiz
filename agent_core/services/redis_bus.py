@@ -3,6 +3,7 @@ PINEAL-HERETIC v5.0 - Redis Pub/Sub Event Bus
 Agent Rack slotlarının Ready/Active/Wait durumunu anlık yayınlayan köprü.
 Fallback: Redis yoksa in-memory.
 """
+import asyncio
 import json
 import logging
 import os
@@ -24,6 +25,23 @@ except ImportError:
         aioredis = None  # type: ignore
 
 
+def _latest_ttl_seconds() -> int:
+    """``{channel}:latest`` anahtarının TTL'i — SABİT değil, worker yayın aralığına bağlı.
+
+    [AUDIT 2026-10-08] Eskiden sabit ``ex=3600`` idi. Şimdi worker'ın KENDİ yayın
+    aralığı (``PINEAL_AGENT_HEARTBEAT_INTERVAL``, varsayılan 30s) üzerinden:
+    en az 5 dk, en az 4 yayın aralığı — worker yavaşlasa bile son sinyal
+    ölmeden (düşmeden) hayatta kalır.
+    """
+    try:
+        interval = float(os.getenv("PINEAL_AGENT_HEARTBEAT_INTERVAL", "30"))
+    except (TypeError, ValueError):
+        interval = 30.0
+    if interval <= 0:
+        interval = 30.0
+    return max(300, int(4 * interval))
+
+
 class InMemoryBus:
     """Redis yoksa in-memory fallback"""
 
@@ -38,6 +56,9 @@ class InMemoryBus:
 
     async def set(self, key: str, value: Any):
         self._store[key] = value
+
+    async def get(self, key: str) -> Any:
+        return self._store.get(key)
 
 
 class RedisBus:
@@ -79,10 +100,12 @@ class RedisBus:
                 self._client = aioredis.from_url(self.redis_url, decode_responses=True)
                 await self._client.ping()
             else:
-                # Sync fallback - not ideal but works
+                # Sync fallback - not ideal but works.
+                # [AUDIT 2026-10-08] SYNC İSTEMCİ ÇAĞRILARI ARTIK BLOklamıyor:
+                # event loop `asyncio.to_thread` ile serbest bırakılır.
                 import redis as sync_redis
                 self._client = sync_redis.from_url(self.redis_url, decode_responses=True)
-                self._client.ping()
+                await asyncio.to_thread(self._client.ping)
             self._use_redis = True
             self._connected = True
             logger.info(f"Redis baglandi: {self.redis_url}")
@@ -100,7 +123,8 @@ class RedisBus:
                 if aioredis:
                     count = await self._client.publish(channel, payload)
                 else:
-                    count = self._client.publish(channel, payload)
+                    # [AUDIT 2026-10-08] sync istemci → to_thread (loop bloklanmaz).
+                    count = await asyncio.to_thread(self._client.publish, channel, payload)
                 # Also store latest
                 await self._store_latest(channel, message)
                 return count
@@ -116,14 +140,38 @@ class RedisBus:
         try:
             if self._use_redis and self._client:
                 data = json.dumps(message, ensure_ascii=False, default=str)
+                ttl = _latest_ttl_seconds()  # sabit 3600 değil — yayın aralığına bağlı
                 if aioredis:
-                    await self._client.set(key, data, ex=3600)
+                    await self._client.set(key, data, ex=ttl)
                 else:
-                    self._client.set(key, data, ex=3600)
+                    # [AUDIT 2026-10-08] sync istemci → to_thread (loop bloklanmaz).
+                    await asyncio.to_thread(self._client.set, key, data, ex=ttl)
             else:
                 await self._fallback.set(key, message)
         except Exception as e:
             logger.debug(f"Store latest hatasi {key}: {e}")
+
+    async def get_latest(self, channel: str) -> Optional[Dict[str, Any]]:
+        """Kanalın son yayınını oku (yoksa/okunamazsa None — sessiz değil, loglu)."""
+        key = f"{channel}:latest"
+        try:
+            if self._use_redis and self._client:
+                if aioredis:
+                    raw = await self._client.get(key)
+                else:
+                    raw = await asyncio.to_thread(self._client.get, key)
+                if raw is None:
+                    return None
+                return json.loads(raw) if isinstance(raw, (str, bytes)) else raw
+            # In-memory fallback iki anahtarla saklar: `{channel}:latest`
+            # (redis yolu) ve düz `channel` (in-memory publish). İkisi de son sinyal.
+            stored = await self._fallback.get(key)
+            if stored is None:
+                stored = await self._fallback.get(channel)
+            return stored
+        except Exception as exc:
+            logger.warning("get_latest okunamadı (%s): %s", key, exc)
+            return None
 
     async def publish_agent_status(self, agent_id: str, status: str, metadata: Optional[Dict] = None):
         msg = {
