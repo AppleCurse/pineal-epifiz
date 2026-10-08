@@ -31,6 +31,11 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict
 
+# [Tüzük Md.4 — yaprak kasa kapısı] API sınırındaki `_require_vault_open`'ın
+# arkasındaki ikinci savunma: bu servis KENDİ egress'inden (ilk site isteği)
+# önce kasayı denetler; kilitliyse dışarı çıkmaz.
+from agent_core.services.vault_gate import VaultLockedError, require_vault_open
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODULES_LIMIT = 100
@@ -173,13 +178,24 @@ async def scan_email(
     limit: Optional[int] = None,
     site_timeout: Optional[int] = None,
     modules: Optional[Sequence[Any]] = None,
+    *,
+    vault_unlocked: Optional[bool] = None,
 ) -> HoleheScanResult:
     """E-postayı holehe modüllerinde (limit) tarar.
 
     Dürüst sonuç: kapalıysa 'disabled', kütüphane yoksa 'library_missing',
-    zaman aşımında 'timeout', tüm modüller hatalıysa 'provider_errors'.
+    zaman aşımında 'timeout', tüm modüller hatalıysa 'provider_errors',
+    kasa kilitliyse 'vault_locked' (Tüzük Md.4 — yaprak kapı, fail-closed).
     `modules` yalnız test/çağıran Overrides içindir (None => gerçek keşif).
     """
+    # [Tüzük Md.4 — yaprak kasa kapısı] İlk site isteğinden ÖNCE denetlenir.
+    try:
+        require_vault_open("holehe_scanner.scan_email", unlocked=vault_unlocked)
+    except VaultLockedError:
+        # Bu modülün dürüstlük idiomu: egress yok = available=False + sebep.
+        return HoleheScanResult(requested_email=email, available=False,
+                                reason="vault_locked")
+
     if not is_enabled():
         return HoleheScanResult(requested_email=email, available=False,
                                 reason="disabled")

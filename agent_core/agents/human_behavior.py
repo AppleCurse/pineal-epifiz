@@ -13,12 +13,13 @@ from typing import Any, Dict, List, Optional
 
 import cv2
 import asyncio
-import httpx
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field
+from httpx import AsyncClient, HTTPError, Timeout
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from urllib.parse import urlparse
 
 from agent_core.services.upstream_findings import upstream_findings_block
+from agent_core.utils.security import build_secure_client
 
 
 class MicroSignal(BaseModel):
@@ -28,6 +29,48 @@ class MicroSignal(BaseModel):
     location: str  # image_bg / shoulder_region / text_subtext / temporal / linguistic
     evidence: str
     psychological_weight: float  # Aşil Tendonu ağırlığı; legacy integrations may use 0-100 scale
+
+
+class TargetProfile(BaseModel):
+    """Kazınmış hedef profili — yapısal kontrat (gevşek dict yerine)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    bio: str = ""
+    posts: List[Any] = Field(default_factory=list)
+    post_times: List[Any] = Field(default_factory=list)
+    images: List[Any] = Field(default_factory=list)
+
+    @field_validator("bio", mode="before")
+    @classmethod
+    def _bio_text(cls, value: Any) -> str:
+        return value if isinstance(value, str) else str(value)
+
+    @field_validator("posts", "post_times", "images", mode="before")
+    @classmethod
+    def _as_list(cls, value: Any) -> list:
+        if isinstance(value, list):
+            return value
+        return [value] if value else []
+
+
+class HumanBehaviorInput(BaseModel):
+    """``execute`` girdisi — kritik veri akışı için NET şema (E8 / E-GÖZ1-5).
+
+    Ham dict çağıranlar (executor) içeride doğrulanır; şema dışı alanlar
+    (örn. ``_upstream_findings``, ``user_authenticity_score``) `extra="allow"`
+    ile taşınır — veri kaybı yok, tip güvenliği var.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    target_profile: TargetProfile = Field(default_factory=TargetProfile)
+    sacred_rules: str = ""
+
+    @field_validator("sacred_rules", mode="before")
+    @classmethod
+    def _rules_text(cls, value: Any) -> str:
+        return value if isinstance(value, str) else str(value or "")
 
 
 class DigitalColdReading(BaseModel):
@@ -58,18 +101,21 @@ class HumanBehaviorAnalyzer:
     # Public entrypoint
     # ------------------------------------------------------------------ #
     async def execute(
-        self, input_data: Dict[str, Any], memory: Any, llm_gateway: Any
+        self, input_data: HumanBehaviorInput, memory: Any, llm_gateway: Any
     ) -> DigitalColdReading:
-        profile = input_data.get("target_profile") or {}
-        sacred_rules = input_data.get("sacred_rules", "")
+        # [E-GÖZ1-5] Sınır: ham dict → net şema; doğrulama burada fail-closed.
+        if isinstance(input_data, dict):
+            input_data = HumanBehaviorInput.model_validate(input_data)
+        profile = input_data.target_profile
+        sacred_rules = input_data.sacred_rules
     # [BOSS-9] Diğer ajanların doğrulanmamış bulguları prompt'a referans olarak girer
     # (tek kaynak: agent_core.services.upstream_findings); boşsa metin boş kalır.
-        upstream_block = upstream_findings_block(input_data)
+        upstream_block = upstream_findings_block(input_data.model_dump())
 
-        bio = self._as_text(profile.get("bio", ""))
-        posts = [self._as_text(p) for p in (profile.get("posts") or [])]
-        post_times = profile.get("post_times") or []
-        images = profile.get("images") or []
+        bio = self._as_text(profile.bio)
+        posts = [self._as_text(p) for p in (profile.posts or [])]
+        post_times = profile.post_times or []
+        images = profile.images or []
 
         # 1. Temporal forensics
         temporal_signals = self._temporal_forensics(post_times)
@@ -83,7 +129,7 @@ class HumanBehaviorAnalyzer:
 
         from agent_core.utils.security import UnsafeURLError, safe_get
 
-        async def _fetch_and_analyze_image(client: httpx.AsyncClient, image_url: str) -> List[MicroSignal]:
+        async def _fetch_and_analyze_image(client: AsyncClient, image_url: str) -> List[MicroSignal]:
             if not self._is_http_url(image_url):
                 return []
             response = None
@@ -130,10 +176,9 @@ class HumanBehaviorAnalyzer:
                     await response.aclose()
 
         try:
-            async with httpx.AsyncClient(
-                follow_redirects=False,
-                timeout=httpx.Timeout(10.0, connect=5.0),
-            ) as client:
+            # [E-GÖZ1-3] İstemci merkezi fabrikadan; SSRF kapısı (safe_get)
+            # içeride her URL'yi doğrular.
+            async with build_secure_client(timeout=Timeout(10.0, connect=5.0)) as client:
                 # Use a shared httpx.AsyncClient to enable connection pooling for concurrent requests
                 tasks = [_fetch_and_analyze_image(client, url) for url in images[: self.MAX_IMAGES]]
                 # [E7-muaf] İç coroutine (`_fetch_and_analyze_image`) her
@@ -141,7 +186,7 @@ class HumanBehaviorAnalyzer:
                 results = await asyncio.gather(*tasks)
                 for res in results:
                     visual_signals.extend(res)
-        except httpx.HTTPError as exc:
+        except HTTPError as exc:
             logging.warning("Unable to initialize visual analysis client: %s", exc)
 
         # 4. Combine and mine contradictions
@@ -508,10 +553,15 @@ class HumanBehaviorAnalyzer:
         )
 
     def _calculate_resonance_potential(
-        self, wound: Dict[str, Any], input_data: Dict[str, Any]
+        self, wound: Dict[str, Any], input_data: HumanBehaviorInput
     ) -> float:
+        payload = (
+            input_data
+            if isinstance(input_data, HumanBehaviorInput)
+            else HumanBehaviorInput.model_validate(input_data)
+        )
         authenticity = min(
-            max(float(input_data.get("user_authenticity_score", 0.5)), 0.0), 1.0
+            max(float(payload.model_dump().get("user_authenticity_score", 0.5)), 0.0), 1.0
         )
         defense_strength = float(wound.get("defense_strength", 0.5))
         openness = 1.0 - min(max(defense_strength, 0.0), 1.0)

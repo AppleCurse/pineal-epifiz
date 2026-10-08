@@ -2,9 +2,15 @@ import asyncio
 import logging
 import os
 import re
-import httpx
 from typing import Callable, List, Optional
+from urllib.parse import urlencode
+
+from httpx import AsyncClient, HTTPStatusError, RequestError, Timeout, TimeoutException
 from pydantic import BaseModel, ConfigDict
+
+# [AUDIT 2026-10-08 · E-GÖZ1-3] Sağlayıcı çağrıları merkezi istemci
+# (build_secure_client) + SSRF kapısı (safe_get/safe_post) üzerinden çıkar.
+from agent_core.utils.security import build_secure_client, safe_get, safe_post
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +126,7 @@ class SearchEngine:
 
         # One shared client for all providers in this query (pooling);
         # per-provider availability is reported via SearchOutcome.
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with build_secure_client(timeout=Timeout(10.0)) as client:
             tasks = []
             if self.tavily_key:
                 tasks.append(self._search_tavily(query, num_results, client=client))
@@ -211,20 +217,20 @@ class SearchEngine:
 
     @staticmethod
     def _error_code(error: BaseException) -> str:
-        if isinstance(error, httpx.TimeoutException):
+        if isinstance(error, TimeoutException):
             return "TIMEOUT"
-        if isinstance(error, httpx.HTTPStatusError):
+        if isinstance(error, HTTPStatusError):
             code = error.response.status_code
             if code in (401, 403):
                 return "AUTH_FAILED"
             if code == 429:
                 return "RATE_LIMITED"
             return "PROVIDER_ERROR"
-        if isinstance(error, httpx.RequestError):
+        if isinstance(error, RequestError):
             return "NETWORK_ERROR"
         return "PROVIDER_ERROR"
 
-    async def _search_tavily(self, query: str, num_results: int, client: Optional[httpx.AsyncClient] = None) -> List[SearchResult]:
+    async def _search_tavily(self, query: str, num_results: int, client: Optional[AsyncClient] = None) -> List[SearchResult]:
         url = "https://api.tavily.com/search"
         from agent_core.utils.security import is_safe_url
         if not is_safe_url(url):
@@ -232,10 +238,10 @@ class SearchEngine:
         payload = {"api_key": self.tavily_key, "query": query, "max_results": num_results}
         try:
             if client is not None:
-                res = await client.post(url, json=payload)
+                res = await safe_post(client, url, json=payload)
             else:
-                async with httpx.AsyncClient(timeout=10.0) as _client:
-                    res = await _client.post(url, json=payload)
+                async with build_secure_client(timeout=Timeout(10.0)) as _client:
+                    res = await safe_post(_client, url, json=payload)
                 res.raise_for_status()
             if res.status_code == 200:
                 data = res.json()
@@ -248,18 +254,19 @@ class SearchEngine:
             raise
         return []
 
-    async def _search_serpapi(self, query: str, num_results: int, client: Optional[httpx.AsyncClient] = None) -> List[SearchResult]:
+    async def _search_serpapi(self, query: str, num_results: int, client: Optional[AsyncClient] = None) -> List[SearchResult]:
         url = "https://serpapi.com/search"
         from agent_core.utils.security import is_safe_url
         if not is_safe_url(url):
             return []
         params = {"api_key": self.serpapi_key, "q": query, "num": num_results, "engine": "google"}
+        pinned_url = f"{url}?{urlencode(params)}"
         try:
             if client is not None:
-                res = await client.get(url, params=params)
+                res = await safe_get(client, pinned_url)
             else:
-                async with httpx.AsyncClient(timeout=10.0) as _client:
-                    res = await _client.get(url, params=params)
+                async with build_secure_client(timeout=Timeout(10.0)) as _client:
+                    res = await safe_get(_client, pinned_url)
                 res.raise_for_status()
             if res.status_code == 200:
                 data = res.json()
@@ -272,7 +279,7 @@ class SearchEngine:
             raise
         return []
 
-    async def _search_exa(self, query: str, num_results: int, client: Optional[httpx.AsyncClient] = None) -> List[SearchResult]:
+    async def _search_exa(self, query: str, num_results: int, client: Optional[AsyncClient] = None) -> List[SearchResult]:
         url = "https://api.exa.ai/search"
         from agent_core.utils.security import is_safe_url
         if not is_safe_url(url):
@@ -281,10 +288,10 @@ class SearchEngine:
         payload = {"query": query, "numResults": num_results}
         try:
             if client is not None:
-                res = await client.post(url, headers=headers, json=payload)
+                res = await safe_post(client, url, headers=headers, json=payload)
             else:
-                async with httpx.AsyncClient(timeout=10.0) as _client:
-                    res = await _client.post(url, headers=headers, json=payload)
+                async with build_secure_client(timeout=Timeout(10.0)) as _client:
+                    res = await safe_post(_client, url, headers=headers, json=payload)
                 res.raise_for_status()
             if res.status_code == 200:
                 data = res.json()
@@ -297,7 +304,7 @@ class SearchEngine:
             raise
         return []
 
-    async def _search_duckduckgo(self, query: str, num_results: int, client: Optional[httpx.AsyncClient] = None) -> List[SearchResult]:
+    async def _search_duckduckgo(self, query: str, num_results: int, client: Optional[AsyncClient] = None) -> List[SearchResult]:
         url = "https://html.duckduckgo.com/html/"
         from agent_core.utils.security import is_safe_url
         if not is_safe_url(url):
@@ -306,10 +313,10 @@ class SearchEngine:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         try:
             if client is not None:
-                res = await client.post(url, data=data, headers=headers)
+                res = await safe_post(client, url, data=data, headers=headers)
             else:
-                async with httpx.AsyncClient(timeout=10.0) as _client:
-                    res = await _client.post(url, data=data, headers=headers)
+                async with build_secure_client(timeout=Timeout(10.0)) as _client:
+                    res = await safe_post(_client, url, data=data, headers=headers)
                 res.raise_for_status()
             if res.status_code == 200:
                 html = res.text

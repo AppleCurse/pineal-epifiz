@@ -218,12 +218,17 @@ async def scrape_instagram(
     url: str,
     cookie: str = "",
     log: Optional[Callable[[str, str], None]] = None,
+    *,
+    vault_unlocked: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """Instagram profilini kazır ve target_profile güncellemesini döndürür.
 
     Kanıt yoksa (private/login duvarı/rate-limit) InsufficientEvidenceError
     yükseltir — asla boş veya sentetik profil ÜRETİLMEZ.
     `log(level, msg)` isteğe bağlı telemetri callback'idir (WS broadcast / CLI stderr).
+    `vault_unlocked`: API sınırının (``_check_vault_interlock``) oda-bazlı kasa
+    kararı — yaprak kasa kapısına (Tüzük Md.4) aktarılır. None = karar açıkça
+    verilmemiş, kapı kendi kaynaklarına (override/dosya kasası) bakar.
     """
     emit = log or (lambda level, msg: None)
     username = extract_username(url)
@@ -299,7 +304,10 @@ async def scrape_instagram(
                 applied, note = await apply_page_stealth(selection, page)
                 if not applied:
                     emit("WARNING", f"STEALTH apply başarısız: {note}")
-            ig_scraper = InstagramGhostScraper(vault_cookies={"sessionid": cookie} if cookie else None)
+            ig_scraper = InstagramGhostScraper(
+                vault_cookies={"sessionid": cookie} if cookie else None,
+                vault_unlocked=vault_unlocked,
+            )
             ig_data = await ig_scraper.scrape_async(username, playwright_page=page)
 
             # [AUDIT P1-7] Anti-halüsinasyon kapısı ÜRETİMDE devrede (bkz.
@@ -313,8 +321,10 @@ async def scrape_instagram(
                 _dated = sum(1 for p in _posts if p.taken_at is not None)
                 _coverage = ig_scraper.temporal_coverage(ig_data)
                 emit("INFO", f"SCRAPER TEMPORAL: {_dated}/{len(_posts)} post tarihli (kapsama {_coverage:.2f})")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "[scrape_instagram] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+                )
 
             # [024]/[025]/[026]: hizalı gerçek alanlar; sentetik post ÜRETİLMEZ.
             return ig_target_profile_update(ig_data)

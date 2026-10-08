@@ -25,9 +25,13 @@ import os
 import shutil
 from typing import Any
 
-import httpx
+from urllib.parse import urlparse
+
+from httpx import Timeout
 
 from agent_core.capabilities.adapters_osint import _flag, _module_available
+from agent_core.services import net_hygiene
+from agent_core.utils.security import build_secure_client
 from agent_core.capabilities.base import (
     Availability,
     BaseCapability,
@@ -409,8 +413,24 @@ class SearXNGCapability(BaseCapability):
         base = os.environ["SEARXNG_BASE_URL"].rstrip("/")
         limit = int(ctx.params.get("limit") or 10)
 
+        # [AUDIT 2026-10-08 · E-GÖZ1-3] SearXNG kendi kendine barındırılan bir
+        # servis — tipik olarak ÖZEL adreste koşar. Bu yüzden `safe_get`
+        # (yalnızca genel adreslere izin verir) BURAYA UYGUN DEĞİLDİR; kapı
+        # net_hygiene ile aynı ilkeyle kurulur: özel adres → operatör açıkça
+        # `PINEAL_SEARXNG_ALLOW_PRIVATE` ile izin vermedikçe RED.
+        host = (urlparse(base).hostname or "").lower()
+        if net_hygiene.is_private_host(host, env_name="PINEAL_SEARXNG_ALLOW_PRIVATE"):
+            return CapabilityResult(
+                capability_id=self.id,
+                available=False,
+                unavailable_reason=(
+                    "private_host_blocked:PINEAL_SEARXNG_ALLOW_PRIVATE"
+                ),
+            )
+
         try:
-            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            # Merkezi istemci fabrikası; yönlendirme kapalı (fail-closed).
+            async with build_secure_client(timeout=Timeout(self.timeout_seconds)) as client:
                 response = await client.get(
                     f"{base}/search",
                     params={"q": query, "format": "json", "safesearch": "0"},

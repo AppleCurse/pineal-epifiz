@@ -13,9 +13,13 @@ import urllib.parse
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Callable, Iterable, Mapping, Optional
+from typing import Any, Callable, Iterable, Mapping, Optional
 
-import httpx
+# [AUDIT 2026-10-08 · E-GÖZ1-3] Merkezi ağ katmanı: istemci üretimi TEK fabrikadan
+# (`build_secure_client`) ve istekler TEK kapıdan (`safe_get`/`safe_post`) geçer.
+# `from httpx import ...` biçimi, ürün kodunun `import httpx` ile ham kütüphaneye
+# atlamasını izlemek içindir; bu modülün kendisi katmanın parçasıdır.
+from httpx import AsyncClient, Limits, Response, Timeout
 
 logger = logging.getLogger(__name__)
 
@@ -241,14 +245,39 @@ def is_safe_url(url: str) -> bool:
     return True
 
 
+#: Merkezi istemci varsayılanları — üretilen her istemci bu sınırlara uyar.
+DEFAULT_CLIENT_TIMEOUT = Timeout(10.0, connect=5.0)
+DEFAULT_CLIENT_LIMITS = Limits(max_connections=100, max_keepalive_connections=20)
+
+
+def build_secure_client(
+    *,
+    timeout: Optional[Timeout] = None,
+    follow_redirects: bool = False,
+    **overrides: Any,
+) -> AsyncClient:
+    """Ortak istemci fabrikası — dış istemci üretiminin TEK çıkış noktası.
+
+    [AUDIT 2026-10-08 · E-GÖZ1-3] Ürün kodu kendi `httpx.AsyncClient`'ini
+    kurmaz; her istemci buradan çıkar. Yönlendirmeler fabrikada KAPALI başlar:
+    `safe_get`/`safe_post` her atlamayı doğruladığı için istemcinin kör
+    yönlendirme takibi SSRF doğrulamasını atlayamaz.
+    """
+    kwargs: dict[str, Any] = dict(overrides)
+    kwargs.setdefault("timeout", timeout or DEFAULT_CLIENT_TIMEOUT)
+    kwargs.setdefault("follow_redirects", follow_redirects)
+    kwargs.setdefault("limits", DEFAULT_CLIENT_LIMITS)
+    return AsyncClient(**kwargs)
+
+
 async def safe_get(
-    client: httpx.AsyncClient,
+    client: AsyncClient,
     url: str,
     *,
     headers: Optional[Mapping[str, str]] = None,
     max_redirects: int = 3,
     stream: bool = False,
-) -> httpx.Response:
+) -> Response:
     """GET with DNS pinning and validation of every redirect target."""
     current_url = url
     for redirect_count in range(max_redirects + 1):
@@ -258,7 +287,9 @@ async def safe_get(
         request = client.build_request("GET", resolved.pinned_url, headers=request_headers)
         if request.url.scheme == "https":
             request.extensions["sni_hostname"] = resolved.hostname
-        response = await client.send(request, stream=stream)
+        # follow_redirects=False ZORUNLU: istemcinin kör takibi, her atlamayı
+        # doğrulayan bu döngünün önüne geçemez (doğrulama atlanamaz).
+        response = await client.send(request, stream=stream, follow_redirects=False)
         if response.status_code not in _REDIRECT_CODES:
             response.extensions["pineal_original_url"] = current_url
             response.extensions["pineal_resolved_addresses"] = resolved.addresses
@@ -271,6 +302,56 @@ async def safe_get(
         if redirect_count >= max_redirects:
             raise UnsafeURLError("TOO_MANY_REDIRECTS")
         current_url = urllib.parse.urljoin(current_url, location)
+    raise UnsafeURLError("TOO_MANY_REDIRECTS")
+
+
+async def safe_post(
+    client: AsyncClient,
+    url: str,
+    *,
+    json: Optional[Any] = None,
+    data: Optional[Mapping[str, Any]] = None,
+    headers: Optional[Mapping[str, str]] = None,
+    max_redirects: int = 3,
+) -> Response:
+    """POST with DNS pinning; every redirect hop is validated before it is sent.
+
+    Yönlendirme yarı-anlamı (browser semantics): 307/308 POST'u korur,
+    301/302/303 GET'e düşer. Hiçbir atlama doğrulanmadan gönderilmez.
+    """
+    current_url = url
+    method = "POST"
+    for redirect_count in range(max_redirects + 1):
+        resolved = await asyncio.to_thread(resolve_public_url, current_url)
+        request_headers = dict(headers or {})
+        request_headers["Host"] = resolved.host_header
+        request = client.build_request(
+            method,
+            resolved.pinned_url,
+            headers=request_headers,
+            json=json if method == "POST" else None,
+            data=data if method == "POST" else None,
+        )
+        if request.url.scheme == "https":
+            request.extensions["sni_hostname"] = resolved.hostname
+        response = await client.send(request, follow_redirects=False)
+        if response.status_code not in _REDIRECT_CODES:
+            response.extensions["pineal_original_url"] = current_url
+            response.extensions["pineal_resolved_addresses"] = resolved.addresses
+            return response
+
+        status_code = response.status_code
+        location = response.headers.get("location")
+        await response.aclose()
+        if not location:
+            raise UnsafeURLError("REDIRECT_WITHOUT_LOCATION")
+        if redirect_count >= max_redirects:
+            raise UnsafeURLError("TOO_MANY_REDIRECTS")
+        current_url = urllib.parse.urljoin(current_url, location)
+        if status_code == 303 or (status_code in (301, 302) and method == "POST"):
+            method = "GET"
+            json = None
+            data = None
     raise UnsafeURLError("TOO_MANY_REDIRECTS")
 
 

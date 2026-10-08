@@ -15,6 +15,10 @@ kronolojik siralama t_0 -> t_N.
 """
 
 from __future__ import annotations
+
+import logging
+
+logger = logging.getLogger(__name__)
 import asyncio
 import json
 import logging
@@ -25,6 +29,10 @@ from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 
 from pydantic import BaseModel, Field, ConfigDict, field_validator
+
+# [Tüzük Md.4 — yaprak kasa kapısı] Tek kapı modülü; VaultLockedError burada
+# üretilir ve loglanıp yukarı yayılır (fail-closed).
+from agent_core.services.vault_gate import VaultLockedError, require_vault_open
 
 
 # --- Faz 1: post-detay zenginleştirme anahtarları (kontrollü, geri alınabilir) ---
@@ -116,8 +124,16 @@ class InstagramGhostScraper:
         "clips": "reel",
     }
 
-    def __init__(self, vault_cookies: Optional[Dict[str, str]] = None):
+    def __init__(
+        self,
+        vault_cookies: Optional[Dict[str, str]] = None,
+        *,
+        vault_unlocked: Optional[bool] = None,
+    ):
         self.vault_cookies = vault_cookies or {}
+        # [Tüzük Md.4 — yaprak kasa kapısı] API sınırı kararını taşıyan bayrak.
+        # None = karar açıkça verilmemiş → override/dosya kasasına bakılır.
+        self.vault_unlocked = vault_unlocked
         self.base_url = "https://www.instagram.com"
 
     async def _random_delay(self):
@@ -211,8 +227,10 @@ class InstagramGhostScraper:
                     text = ((edges[0] or {}).get("node") or {}).get("text")
                     if isinstance(text, str) and text.strip():
                         return text[:2200]
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "[_caption_of] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+                )
             cap = node.get("caption")
             if isinstance(cap, dict) and isinstance(cap.get("text"), str) and cap["text"].strip():
                 return cap["text"][:2200]
@@ -667,8 +685,10 @@ class InstagramGhostScraper:
             if not first:
                 try:
                     await self._post_detail_delay()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning(
+                        "[_enrich_posts_with_details] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+                    )
             first = False
             try:
                 await playwright_page.goto(
@@ -722,13 +742,33 @@ class InstagramGhostScraper:
             ),
         )
 
-    async def scrape_async(self, username: str, playwright_page=None) -> InstagramProfile:
+    async def scrape_async(
+        self,
+        username: str,
+        playwright_page=None,
+        *,
+        vault_unlocked: Optional[bool] = None,
+    ) -> InstagramProfile:
         """
         Ana metod - Playwright page dışarıdan verilir (X scraper ile aynı vault izolasyonu)
         Eğer page yoksa, senkron fallback için hata fırlatır - uydurma tarayıcı açmaz.
         """
         if playwright_page is None:
             raise InsufficientEvidenceError("Playwright page verilmedi - hayalet tarayıcı vault'tan gelmeli, kendi kendine açmam")
+
+        # [Tüzük Md.4 — yaprak kasa kapısı] İlk page.goto (dış egress) ÖNCESİNDE
+        # kasa denetlenir; kilitliyse VaultLockedError fırlar (fail-closed).
+        # Bu, API sınırındaki `_require_vault_open`'ın ARKASINDAKİ ikinci
+        # savunmadır — sınır atlanırsa (iç çağrı yolu, MCP, worker) burası durur.
+        try:
+            require_vault_open(
+                "instagram_ghost.scrape_async",
+                unlocked=self.vault_unlocked if vault_unlocked is None else vault_unlocked,
+            )
+        except VaultLockedError as exc:
+            # Yaprak kapı hatası yukarı yayılır — sessiz düşürme YOK.
+            logger.error("[%s] kasa kapısı kazımayı reddetti: %s", username, exc)
+            raise
 
         target_url = f"{self.base_url}/{username}/"
 

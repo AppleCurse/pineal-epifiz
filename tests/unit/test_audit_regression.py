@@ -142,14 +142,25 @@ def test_known_open_matches_the_measured_open_set_exactly(report):
 
 
 def test_gate_bites_when_known_open_is_emptied(report, monkeypatch):
-    """Isırmayan kapı dekorasyondur: liste boşaltılınca her açık bulgu regresyon."""
+    """Isırmayan kapı dekorasyondur: liste boşaltılınca her açık bulgu regresyon.
+
+    [GÜNCELLEME 2026-10-08] Eski sürüm gerçek açık bulgu sayısını (>=10) pine
+    bağlardı; bulgular onarıldıkça bu snapshot bayatlardı. Kapının ısırırlığı
+    artık SENTETİK açık bulguyla kanıtlanır — gerçek açık sayısı kaç olursa olsun.
+    """
+    monkeypatch.setattr(
+        ar,
+        "CHECKS",
+        {
+            **ar.CHECKS,
+            "E-GÖZ1-2": ar.Check(
+                "E-GÖZ1-2", "static", lambda: ar.CheckResult(ar.OPEN, ("sentetik açık bulgu",))
+            ),
+        },
+    )
     monkeypatch.setattr(ar, "KNOWN_OPEN", frozenset())
     rep = ar.build_report(ar.parse_findings(ar.AUDIT_REPORT.read_text(encoding="utf-8")))
-    open_findings = sorted(
-        fid for fid, e in rep["findings"].items() if e["status"] == ar.OPEN
-    )
-    assert rep["meta"]["regressions"] == open_findings
-    assert len(open_findings) >= 10, "beklenen açık bulgu sayısı düştü — kapı zayıfladı"
+    assert "E-GÖZ1-2" in rep["meta"]["regressions"]
     assert rep["meta"]["gate_passed"] is False
 
 
@@ -167,12 +178,16 @@ def test_gate_flags_a_single_new_regression(monkeypatch):
 
 
 def test_gate_flags_a_stale_baseline_entry(monkeypatch):
-    """Onarılan bulgu listede bırakılırsa 'bayat taban' olarak yakalanır."""
-    victim = "E-GÖZ1-1"  # bugün açık ve listede
-    assert victim in ar.KNOWN_OPEN
-    monkeypatch.setattr(
-        ar, "CHECKS", {**ar.CHECKS, victim: ar.Check(victim, "static", lambda: ar.CheckResult(ar.CLOSED, ("onarıldı",)))}
-    )
+    """Onarılan bulgu listede bırakılırsa 'bayat taban' olarak yakalanır.
+
+    [GÜNCELLEME 2026-10-08] Eski sürüm sabit `E-GÖZ1-1` victim'ini açık ve listede
+    sanıyordu; bulgu onarılınca test kendi kendine kırılırdı. Senaryo şimdi
+    KAPALI bir bulgu (E-GÖZ1-2) listeye konularak üretilir — taban çizgisi temiz
+    kalsa da bayat kayıt yakalanır.
+    """
+    victim = "E-GÖZ1-2"  # bugün kapalı
+    assert victim not in ar.KNOWN_OPEN  # gerçek taban çizgisi temiz
+    monkeypatch.setattr(ar, "KNOWN_OPEN", frozenset({victim}))
     rep = ar.build_report(ar.parse_findings(ar.AUDIT_REPORT.read_text(encoding="utf-8")))
     assert victim in rep["meta"]["stale_known_open"]
     assert rep["meta"]["gate_passed"] is False
@@ -409,20 +424,71 @@ def test_goz1_1_separates_defect_from_fix(fake_worker):
     assert result.status == ar.CLOSED, result.evidence
 
 
+#: [GÜNCELLEME 2026-10-08] E-GÖZ1-6, 2026-10-07 işaretçi (beacon) tasarımı
+#: öncesindeki eski sözleşmeye göre yazılmıştı (`tracker.set_wait` kapanışı).
+#: İşaretçi artık ajan durumuna ASLA yazmaz (test-locked); kapanışta KENDİ
+#: kanalına `alive=False` yayınlar. Bu fixture yeni sözleşmeyi taklit eder.
+BEACON_DEFECT = '''\
+import asyncio
+import logging
+
+logger = logging.getLogger("agent_worker")
+
+
+async def run_worker(agent_id: str):
+    bus = None
+    try:
+        await asyncio.sleep(0)
+    except asyncio.CancelledError:
+        logger.info(f"[{agent_id}] Worker durduruluyor")
+        try:
+            await bus.publish("pineal:agent:beacon", {"beacon": {"alive": False}})
+        except Exception:
+            pass
+        raise
+'''
+
+#: Onarılmış sürüm — kapanış yayınındaki sessiz `pass` log ile değiştirilir.
+BEACON_FIXED = re.sub(
+    r"^([ \t]*)except Exception:\n[ \t]*pass$",
+    r'\1except Exception:\n\1    logger.warning("beacon kapanış yayını başarısız", exc_info=True)',
+    BEACON_DEFECT,
+    flags=re.MULTILINE,
+)
+
+
+def test_beacon_fixture_itself_is_well_formed():
+    """İşaretçi fixture'ı da denetlenir: kusur gerçekten sessiz, onarım gerçekten loglu."""
+    assert "except asyncio.CancelledError:" in BEACON_DEFECT
+    assert '{"alive": False}' in BEACON_DEFECT
+    assert re.search(r"except Exception:\n[ \t]*pass", BEACON_DEFECT)
+    assert not re.search(r"except Exception:\n[ \t]*pass", BEACON_FIXED)
+    assert BEACON_FIXED.count("exc_info=True") == 1
+    assert "logger.warning" in BEACON_FIXED
+
+
 def test_goz1_6_separates_defect_from_fix(fake_worker):
-    fake_worker(WORKER_DEFECT)
+    fake_worker(BEACON_DEFECT)
     assert ar.check_goz1_6().status == ar.OPEN
 
-    fake_worker(WORKER_FIXED)
+    fake_worker(BEACON_FIXED)
     assert ar.check_goz1_6().status == ar.CLOSED
 
 
 def test_goz1_6_flags_a_worse_regression_than_the_audit_found(fake_worker):
-    """set_wait çağrısı hiç yoksa (daha beter) kontrol kör kalmaz."""
-    fake_worker(WORKER_DEFECT.replace("await tracker.set_wait(agent_id)", "return"))
+    """Kapanışta `alive=False` yayını hiç yoksa (daha beter) kontrol kör kalmaz."""
+    no_publish = BEACON_DEFECT.replace(
+        '''        try:
+            await bus.publish("pineal:agent:beacon", {"beacon": {"alive": False}})
+        except Exception:
+            pass
+''',
+        "",
+    )
+    fake_worker(no_publish)
     result = ar.check_goz1_6()
     assert result.status == ar.OPEN
-    assert "hiç bulunamadı" in " ".join(result.evidence)
+    assert "yayını yok" in " ".join(result.evidence)
 
 
 def test_goz3_2_detects_the_production_gate_when_added(fake_worker):

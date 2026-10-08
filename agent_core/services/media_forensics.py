@@ -33,9 +33,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import httpx
+from httpx import Timeout
 
 from agent_core.services import net_hygiene
+from agent_core.utils.security import UnsafeURLError, build_secure_client, safe_get
 
 __all__ = [
     "GATE",
@@ -207,9 +208,22 @@ async def fetch_media(source: str, *, timeout: float = 120.0) -> MediaFetch:
     if suffix not in MEDIA_EXTENSIONS:
         return MediaFetch(available=False, reason="unsupported_extension", source=value)
 
+    # [AUDIT 2026-10-08 · E-GÖZ1-3] İndirme merkezi istemci + SSRF kapısından
+    # geçer. Eskiden `follow_redirects=True` ile ham `client.stream` kullanılıyordu:
+    # ilk host kontrolünden SONRA bir yönlendirme ile özel ağa atlanabiliyordu
+    # (net_hygiene ilk doma bakıyor, redirect atlamasını görmüyordu).
+    # Şimdi: `safe_get` her atlamayı DNS-pinleme ile doğrular (stream modunda da).
+    operator_allows_private = net_hygiene.allow_private(PRIVATE_ALLOW_ENV)
     try:
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-            async with client.stream("GET", value) as response:
+        async with build_secure_client(timeout=Timeout(timeout)) as client:
+            if operator_allows_private:
+                # Operatör özel adreslere AÇIKÇA izin vermiş: pinleme devre dışı;
+                # yönlendirme yine kapalı, boyut sınırı yerinde.
+                request = client.build_request("GET", value)
+                response = await client.send(request, stream=True, follow_redirects=False)
+            else:
+                response = await safe_get(client, value, stream=True, max_redirects=3)
+            try:
                 if response.status_code != 200:
                     return MediaFetch(
                         available=False, reason=f"http_status:{response.status_code}", source=value
@@ -227,6 +241,10 @@ async def fetch_media(source: str, *, timeout: float = 120.0) -> MediaFetch:
                             return MediaFetch(available=False, reason="too_large", source=value)
                         digest.update(chunk)
                         handle.write(chunk)
+            finally:
+                await response.aclose()
+    except UnsafeURLError as exc:
+        return MediaFetch(available=False, reason=f"ssrf_blocked:{exc.reason}", source=value)
     except Exception as exc:
         return MediaFetch(available=False, reason=f"download_failed:{type(exc).__name__}", source=value)
 
@@ -468,7 +486,9 @@ async def transcribe(path: str, *, timeout: float = 600.0) -> Transcript:
     if engine == "local_endpoint":
         url, _ = _local_transcribe_endpoint()
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            # Yerel uç (127.0.0.1) — safe_post KULLANILMAZ (yerel adresler
+            # SSRF kapısı tarafından reddedilir); merkezi istemci yeterli.
+            async with build_secure_client(timeout=Timeout(timeout)) as client:
                 response = await client.post(url, json={"media_path": str(audio)})
             if response.status_code != 200:
                 return Transcript(

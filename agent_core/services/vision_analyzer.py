@@ -2,8 +2,11 @@ import logging
 import base64
 import hashlib
 import asyncio
-import httpx
 from typing import List, Optional, Dict, Any
+
+from httpx import AsyncClient, Timeout
+
+from agent_core.utils.security import build_secure_client
 from pydantic import BaseModel, ConfigDict
 from agent_core.services.llm_gateway import LLMGateway
 
@@ -58,7 +61,7 @@ class VisionAnalyzer:
         self.llm_gateway = llm_gateway or LLMGateway()
 
     async def _download_image_record(
-        self, image_url: str, client: Optional[httpx.AsyncClient] = None
+        self, image_url: str, client: Optional[AsyncClient] = None
     ) -> Dict[str, Any]:
         """[013]/[014] fix: doğrulamalı indirme + kayıt bazlı provenance.
 
@@ -87,7 +90,7 @@ class VisionAnalyzer:
             if client:
                 resp = await safe_get(client, image_url, headers=headers)
             else:
-                async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as new_client:
+                async with build_secure_client(timeout=Timeout(15.0)) as new_client:
                     resp = await safe_get(new_client, image_url, headers=headers)
 
             if resp.status_code != 200:
@@ -127,7 +130,7 @@ class VisionAnalyzer:
             return record
 
     async def _download_and_encode_image(
-        self, image_url: str, client: Optional[httpx.AsyncClient] = None
+        self, image_url: str, client: Optional[AsyncClient] = None
     ) -> Optional[str]:
         """Geriye uyumlu sarmalayıcı: doğrulamalı indirme -> base64 (veya None)."""
         record = await self._download_image_record(image_url, client=client)
@@ -180,7 +183,7 @@ class VisionAnalyzer:
             )
 
         # Parallel image download with shared client for connection pooling
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
+        async with build_secure_client(timeout=Timeout(15.0)) as client:
             tasks = [self._download_image_record(url, client=client) for url in valid_urls]
             # [E7-muaf] `_download_image_record` hata yerine KAYIT döner
             # (status/reason alanlarıyla); provenance listesi bu yüzden

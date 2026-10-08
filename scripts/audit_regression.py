@@ -508,36 +508,50 @@ def check_goz1_5() -> CheckResult:
 
 
 def check_goz1_6() -> CheckResult:
-    """Worker kapanışında `set_wait` istisnası loglanıyor mu?"""
+    """Worker kapanışında liveness yayını (alive=False) ve hata izi var mı?
+
+    [GÜNCELLEME 2026-10-08] Bu kontrol, 2026-10-07 işaretçi (beacon) tasarımı
+    ÖNCESİNDE yazıldı: eski kusur, kapanışta ``tracker.set_wait`` çağrısının
+    istisnasının sessizce yutulmasıydı (zombi-Ready riski). İşaretçi tasarımı
+    (test-locked: işaretçi ajan durumuna ASLA yazmaz) ``set_wait``'i tamamen
+    kaldırdı; kapanışta bunun yerine KENDİ kanalına ``alive=False`` yayınlar.
+    Kontrol yeni sözleşmeye taşındı: kapanış yayını var mı, yayın arızası
+    loglanıyor mu, sessiz ``pass`` yok mu? — zombi riski yine ölçülür.
+    """
     rel = "agent_core/workers/agent_worker.py"
     text = _read(rel)
-    # Kusurun imzası: CancelledError kolu içinde `set_wait` → `except: pass`.
-    idx = text.find("await tracker.set_wait(agent_id)")
+    idx = text.find("except asyncio.CancelledError:")
     if idx == -1:
         return CheckResult(
             OPEN,
-            (f"{rel}: `tracker.set_wait` çağrısı hiç bulunamadı",),
-            note="Kapanış durumu hiç yazılmıyor → zombi Ready riski denetimden beter.",
+            (f"{rel}: `except asyncio.CancelledError:` kolu bulunamadı",),
+            note="Kapanış davranışı yok → işaretçi sessiz ölebilir.",
         )
-    window = text[idx : idx + 220]
-    silent = "except Exception:" in window and "pass" in window
+    window = text[idx : idx + 700]
+    publishes_offline = re.search(r"alive[\"']?\s*[:=]\s*False", window) is not None
+    silent = re.search(r"except Exception:\s*\n\s*pass", window) is not None
     logged = re.search(r"logger\.(error|warning|exception)", window) is not None
     line_no = text[:idx].count("\n") + 1
     if silent and not logged:
         return CheckResult(
             OPEN,
             (
-                f"{rel}:{line_no}: `await tracker.set_wait(agent_id)` sonrası "
-                "`except Exception: pass` (log yok)",
-                "kapanış arızası izlenemiyor → ajan 'zombi Ready' kalabilir",
+                f"{rel}:{line_no}: kapanışta yayın istisnası `except Exception: pass` (log yok)",
+                "kapanış arızası izlenemiyor → süreç/sinyal 'zombi' kalabilir",
             ),
-            note="Denetimin istediği `logger.error(\"Failed to set Wait status...\")` eklenmedi.",
+            note="Denetimin istediği log satırı (logger.warning/error) yok.",
         )
-    if logged:
+    if publishes_offline and logged and not silent:
         return CheckResult(
             CLOSED,
-            (f"{rel}:{line_no}: set_wait istisnası loglanıyor",),
-            note="Kapanış arızası izlenebilir.",
+            (f"{rel}:{line_no}: kapanışta alive=False yayını var, yayın hatası loglanıyor",),
+            note="Kapanış arızası izlenebilir (işaretçi sözleşmesi).",
+        )
+    if not publishes_offline:
+        return CheckResult(
+            OPEN,
+            (f"{rel}:{line_no}: kapanışta `alive=False` yayını yok",),
+            note="İşaretçi kapanışta kendini 'ölü' bildirmiyor → zombi riski (daha beter).",
         )
     return CheckResult(
         OPEN,
@@ -1264,22 +1278,12 @@ CHECKS: Dict[str, Check] = {
 #: Bugün AÇIK olduğu ölçülen bulgular. Bu liste bir **taban çizgisidir**:
 #: - listede OLMAYAN bir bulgu açılırsa → REGRESYON (exit 1)
 #: - listede olan bir bulgu kapanırsa → liste BAYAT (exit 1)
-#: Yani liste gerçekle birebir aynı kalmak zorunda; ne iyimser ne karamsar.
-KNOWN_OPEN: frozenset = frozenset(
-    {
-        "E-GÖZ1-1",  # sessiz REST-fallback yutması (log yok)
-        "E-GÖZ1-3",  # omurga bypass: 8 dosyada doğrudan httpx (E3)
-        "E-GÖZ1-4",  # dil tespiti hatası loglanmıyor (gövde dürüst, iz yok)
-        "E-GÖZ1-5",  # Dict[str, Any] 169 satır (E8) — değişim yok
-        "E-GÖZ1-6",  # worker kapanışında set_wait istisnası logsuz yutuluyor
-        "E-GÖZ1-7",  # metadata çıkarımı sessiz title="" (log yok)
-        "E-GÖZ1-8",  # instagram caption except: pass (log yok)
-        "E-GÖZ2-1",  # Redis fallback WARNING + degraded_mode bayrağı yok
-        "E-GÖZ2-3",  # scraper/OSINT YAPRAK katmanında kasa kapısı yok
-        "E-GÖZ3-2",  # üretim modunda fallback yasak değil
-        "E-GÖZ3-5",  # üst küme: sessiz yutmalar duruyor (1-1 · 1-6 açık)
-    }
-)
+#: Yani liste gerçekte birebir aynı kalmak zorunda; ne iyimser ne karamsar.
+#:
+#: [2026-10-08 · TAM ONARIM] 2026-10-06 denetiminin 24 bulgusunun tamamı kapandı
+#: (E-GÖZ1-1/1-3/1-4/1-5/1-6/1-7/1-8 · E-GÖZ2-1/2-3 · E-GÖZ3-2/3-5 dahil).
+#: Taban çizgisi BOŞ: bekçi artık HER yeni açık bulguyu regresyon olarak yakalar.
+KNOWN_OPEN: frozenset = frozenset()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

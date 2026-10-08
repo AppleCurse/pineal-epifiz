@@ -226,7 +226,7 @@ def test_worker_publishes_offline_on_cancellation():
         try:
             await task
         except asyncio.CancelledError:
-            pass
+            pass  # beklenen son: task.cancel() sonrası iptal — kasıtlı, zararsız
 
     asyncio.run(scenario())
 

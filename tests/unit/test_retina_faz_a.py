@@ -438,8 +438,10 @@ async def test_searxng_is_called_over_http_only(monkeypatch):
 
     import agent_core.capabilities.adapters_sensors as sensors
 
-    monkeypatch.setattr(sensors.httpx, "AsyncClient", _Client)
+    monkeypatch.setattr(sensors, "build_secure_client", lambda **kw: _Client(**kw))
     monkeypatch.setenv("SEARXNG_BASE_URL", "http://127.0.0.1:8080")
+    # Özel adres (127.0.0.1): operatör açıkça izin vermiş sayılır (net_hygiene kapısı).
+    monkeypatch.setenv("PINEAL_SEARXNG_ALLOW_PRIVATE", "true")
     monkeypatch.setenv("ENABLE_SEARXNG", "true")
 
     result = await SearXNGCapability().run(CapabilityContext(subject="hedef kişi"))
@@ -467,8 +469,10 @@ async def test_searxng_unreachable_is_honest(monkeypatch):
         async def get(self, url, params=None):
             raise RuntimeError("connection refused")
 
-    monkeypatch.setattr(sensors.httpx, "AsyncClient", _Client)
+    monkeypatch.setattr(sensors, "build_secure_client", lambda **kw: _Client(**kw))
     monkeypatch.setenv("SEARXNG_BASE_URL", "http://127.0.0.1:8080")
+    # Özel adres (127.0.0.1): operatör açıkça izin vermiş sayılır (net_hygiene kapısı).
+    monkeypatch.setenv("PINEAL_SEARXNG_ALLOW_PRIVATE", "true")
     monkeypatch.setenv("ENABLE_SEARXNG", "true")
 
     result = await SearXNGCapability().run(CapabilityContext(subject="hedef"))

@@ -167,16 +167,37 @@ def _clear_provider_catalog_cache():
 
 
 @pytest.fixture(autouse=True)
+def _vault_gate_open_for_tests():
+    """Test süreci API sınırını taklit eder: yaprak kasa kapısı (vault_gate) açık.
+
+    Scraper/OSINT testleri kazıma/extraction MANTIĞINI sınar — gerçek dış egress
+    içermez. Bu fixture, API sınırının (``_check_vault_interlock``) açık kararını
+    süreç içinde taklit eder. Kapının KENDİSİ (kilitli → VaultLockedError /
+    ``vault_locked``) tests/unit/test_vault_gate.py ile ayrı kilitlenir; bu
+    fixture onu kör etmez — kapı yine çağrılır, sadece durum kaynağı "açık" olur.
+    """
+    from agent_core.services import vault_gate
+
+    vault_gate.mark_vault_unlocked(True)
+    yield
+    vault_gate.mark_vault_unlocked(None)
+
+
+@pytest.fixture(autouse=True)
 def _clear_agent_tiers_cache():
     """Clear lru_cache on _load_agent_tiers between tests to prevent test pollution."""
+    import logging
+
+    _log = logging.getLogger(__name__)
     try:
         from agent_core.services.llm_gateway import LLMGateway
         LLMGateway._load_agent_tiers.cache_clear()
-    except Exception:
-        pass
+    except Exception as exc:
+        # Best-effort temizlik: yutulmuyor, debug iziyle bırakılıyor.
+        _log.debug("agent tiers cache temizlenemedi (öncesi): %s", exc)
     yield
     try:
         from agent_core.services.llm_gateway import LLMGateway
         LLMGateway._load_agent_tiers.cache_clear()
-    except Exception:
-        pass
+    except Exception as exc:
+        _log.debug("agent tiers cache temizlenemedi (sonrası): %s", exc)
