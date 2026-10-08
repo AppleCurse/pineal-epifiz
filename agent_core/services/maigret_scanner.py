@@ -8,6 +8,10 @@ Sözleşme (projenin dürüstlük ilkeleriyle hizalı):
   çıkarsa iddia edilir (güvenilir yokluk); karışık/failed koşularda asla.
 - Kapı: ENABLE_MAIGRET=true olmadan tarayıcı ÇALIŞMAZ (default: devre dışı;
   pipeline davranışı değişmez). Limit/timeout env ile sınırlıdır.
+- [A8] Site listesi TAZELENEBİLİR: ``PINEAL_MAIGRET_DB`` doluysa tarama
+  tazelenmiş dosyadan koşar ve sonucu ``db_source`` + ``db_sites`` ile
+  raporlanır (eski liste mi yeni liste mi, gizlenmez). Tazelenmiş dosya
+  bozuksa paketlenmiş listeye SESSİZCE DÖNÜLMEZ: ``db_unavailable``.
 """
 from __future__ import annotations
 
@@ -33,6 +37,7 @@ _SILENT_LOGGER.addHandler(logging.NullHandler())
 _SILENT_LOGGER.setLevel(logging.CRITICAL)
 
 _db_singleton: Optional[object] = None
+_db_singleton_key: Optional[str] = None
 _db_lock = threading.Lock()
 
 
@@ -51,6 +56,11 @@ class MaigretScanResult(BaseModel):
     found_sites: List[MaigretSiteHit] = []
     scanned_count: int = 0
     error_count: int = 0
+    # [A8] Hangi listeyle tarandığı GİZLENMEZ: "bundled:<path>" ya da
+    # tazelenmiş dosya ("file:<path>") + o listedeki site sayısı. DB hiç
+    # çözülmediyse (kapalı/geçersiz kullanıcı adı) boş/0 kalır.
+    db_source: str = ""
+    db_sites: int = 0
     model_config = ConfigDict(extra="forbid")
 
 
@@ -74,36 +84,119 @@ def sanitize_username(username: str) -> Optional[str]:
     return cleaned
 
 
-def _load_site_dict(top: int) -> Dict[str, object]:
-    """Paket içi maigret DB'sinden (3302 site) rank'e göre top-N site seçer.
+def _bundled_db_path():
+    import pathlib
+
+    import maigret
+
+    return pathlib.Path(maigret.__file__).parent / "resources" / "data.json"
+
+
+def _db_env_path() -> str:
+    """[A8] Operatörün tazelediği DB (`PINEAL_MAIGRET_DB`); boşsa paketlenmiş DB."""
+    return (os.getenv("PINEAL_MAIGRET_DB") or "").strip()
+
+
+def _raw_db_from_file(path: str):
+    """Tazelenmiş DB dosyasını okur: düz sözlük VE 0.6.6+ ``{"sites": ...}`` biçimi.
+
+    Boş/bozuk dosya sessizce paketlenmiş DB'ye DÜŞMEZ — istisna fırlatır
+    (tarayıcı `db_unavailable` der; hangi listeyle tarandığı asla gizlenmez).
+    """
+    import json
+    import pathlib
+
+    from agent_core.services.maigret_db_refresh import _parse_db_payload
+
+    payload = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+    sites, _shape = _parse_db_payload(payload)
+    if not sites:
+        raise ValueError(f"tazelenmiş maigret db boş: {path}")
+    return _RawSiteDB(sites=sites, source=f"file:{path}")
+
+
+class _RawSiteDB:
+    """Dosyadan yüklenen site sözlüğü + deterministik rank (maigret'in dengi).
+
+    maigret'in ``ranked_sites_dict`` davranışının sade karşılığı: ``alexaRank``
+    olmayan siteler en alta, eşitlikte ada göre sıralanır; top-N kesilir.
+    """
+
+    def __init__(self, sites: Dict[str, object], source: str) -> None:
+        self.sites = sites
+        self.source = source
+
+    def ranked_sites_dict(self, top: int) -> Dict[str, object]:
+        def _rank(item):
+            _name, site = item
+            rank = getattr(site, "get", lambda *_: None)("alexaRank") if isinstance(site, dict) else None
+            return (0, rank) if isinstance(rank, (int, float)) else (1, 0)
+
+        ordered = sorted(self.sites.items(), key=lambda i: (_rank(i), i[0].lower()))
+        return dict(ordered[: max(1, int(top))])
+
+
+def _load_site_dict(top: int):
+    """DB yükleyicisi: ``PINEAL_MAIGRET_DB`` varsa o dosya, yoksa paketlenmiş DB.
 
     Yalnız yükleyici; singleton + kilit `_get_site_dict`'tedir (testler
     yükleyiciyi değiştirebilir, kilit anlamlı kalır).
     """
-    import pathlib
+    custom = _db_env_path()
+    if custom:
+        return _raw_db_from_file(custom)
 
-    import maigret
     from maigret.sites import MaigretDatabase
 
-    db_path = pathlib.Path(maigret.__file__).parent / "resources" / "data.json"
-    db = MaigretDatabase().load_from_file(str(db_path))
+    db = MaigretDatabase().load_from_file(str(_bundled_db_path()))
     if not db.sites_dict:
         raise RuntimeError("maigret db empty")
     return db
 
 
-def _get_site_dict(top: int) -> Dict[str, object]:
-    """[SAĞLAMLAŞTIRMA] Kilitli singleton: eşzamanlı taramalar 3302 sitelik
-    DB'yi aynı anda iki kez yükseltemez (FAZ 2 kusuru; regresyon testi var)."""
-    global _db_singleton
+def _reset_site_dict_cache() -> None:
+    """[A8] DB kaynağı (env) değişince önbellek geçersizdir — testler de kullanır."""
+    global _db_singleton, _db_singleton_key
     with _db_lock:
-        if _db_singleton is None:
+        _db_singleton = None
+        _db_singleton_key = None
+
+
+def _get_site_dict(top: int):
+    """[SAĞLAMLAŞTIRMA] Kilitli singleton: eşzamanlı taramalar DB'yi aynı anda
+    iki kez yükleyemez (FAZ 2 kusuru; regresyon testi var).
+
+    [A8] Önbellek KAYNAK ANAHTARLI: ``PINEAL_MAIGRET_DB`` değişirse bayat
+    DB ile taranmaz; kaynak raporda da aynı anahtarla görünür.
+    """
+    global _db_singleton, _db_singleton_key
+    key = _db_env_path() or "bundled"
+    with _db_lock:
+        if _db_singleton is None or _db_singleton_key != key:
             _db_singleton = _load_site_dict(top)
+            _db_singleton_key = key
         db = _db_singleton
     ranked = getattr(db, "ranked_sites_dict", None)
     if ranked is None:  # test/çağıran doğrudan dict sağladı — olduğu gibi kullan
-        return db  # type: ignore[return-value]
-    return ranked(top=top)  # type: ignore[misc]
+        return db
+    return ranked(top=top)
+
+
+def _db_meta() -> tuple:
+    """[A8] Hangi liste yüklü: (db_source, db_sites). DB hiç yüklenmediyse ("", 0)."""
+    with _db_lock:
+        db = _db_singleton
+    if db is None:
+        return "", 0
+    if isinstance(db, _RawSiteDB):
+        return db.source, len(db.sites)
+    sites_dict = getattr(db, "sites_dict", None)
+    if isinstance(sites_dict, dict):
+        try:
+            return f"bundled:{_bundled_db_path()}", len(sites_dict)
+        except Exception:  # maigret kurulu değilse etiket üretme
+            return "bundled", len(sites_dict)
+    return "", 0  # test mock'u — kaynak etiketi uydurulmaz
 
 
 async def _run_library_scan(
@@ -163,25 +256,31 @@ async def scan_username(
         return MaigretScanResult(requested_username=clean, available=False,
                                  reason="db_unavailable")
 
+    db_source, db_sites = _db_meta()
+
     try:
         results = await asyncio.wait_for(
             _run_library_scan(clean, site_dict, timeout), timeout=total_timeout
         )
     except asyncio.TimeoutError:
         return MaigretScanResult(requested_username=clean, available=False,
-                                 reason="timeout", scanned_count=len(site_dict))
+                                 reason="timeout", scanned_count=len(site_dict),
+                                 db_source=db_source, db_sites=db_sites)
     except ModuleNotFoundError as exc:
         reason = "library_missing" if exc.name and exc.name.split(".")[0] == "maigret" else "dependency_broken"
         return MaigretScanResult(requested_username=clean, available=False,
-                                 reason=reason, scanned_count=len(site_dict))
+                                 reason=reason, scanned_count=len(site_dict),
+                                 db_source=db_source, db_sites=db_sites)
     except ImportError as exc:
         logger.error("maigret dependency import failed: %s", type(exc).__name__)
         return MaigretScanResult(requested_username=clean, available=False,
-                                 reason="dependency_broken", scanned_count=len(site_dict))
+                                 reason="dependency_broken", scanned_count=len(site_dict),
+                                 db_source=db_source, db_sites=db_sites)
     except Exception as exc:
         logger.warning("maigret tarama hatası: %s: %s", type(exc).__name__, str(exc)[:80])
         return MaigretScanResult(requested_username=clean, available=False,
-                                 reason="scan_error", scanned_count=len(site_dict))
+                                 reason="scan_error", scanned_count=len(site_dict),
+                                 db_source=db_source, db_sites=db_sites)
 
     from maigret.result import MaigretCheckStatus
 
@@ -219,4 +318,6 @@ async def scan_username(
         found_sites=found,
         scanned_count=scanned,
         error_count=error_count,
+        db_source=db_source,
+        db_sites=db_sites,
     )

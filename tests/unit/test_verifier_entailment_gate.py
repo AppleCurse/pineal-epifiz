@@ -183,6 +183,10 @@ async def test_real_source_quote_and_support_yields_verified():
     assert claim.evidence_url == REAL_URL, "gerçek kaynak URL'si rapora yazılmalı"
     assert claim.evidence_quote, "kanıt alıntısı raporda durmalı"
     assert all(rule.startswith("kanit_kapisi_gecildi") for rule in claim.vote_audit.values())
+    assert claim.claim_id and claim.claim_id.startswith("clm_")
+    assert claim.claim_origin == "bio_extracted"
+    assert claim.claim_source_refs == ["target_profile.bio"]
+    assert claim.direct_refutation_confirmed is False
 
 
 # --------------------------------------------------------------------------- #

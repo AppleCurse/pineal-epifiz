@@ -1,5 +1,823 @@
 # Changelog
 
+## Unreleased — 2026-10-07 — Üretim denetimi (audit) düzeltmeleri
+
+Kullanıcı denetim raporunun (2026-10-07) maddelerinin tamamı uygulandı. Her
+madde, kusuru YENİDEN getirmeyi engelleyen testlerle kilitlendi; her düzeltme
+"kusurlu hâle geri alınınca ilgili testler düşüyor" diye doğrulandı.
+
+### 1 · Gövde tavanı middleware'i istisna yutuyordu (P0)
+- `BodySizeLimitMiddleware` içindeki `except Exception: pass` →
+  `except BodySizeLimitExceeded`. Artık yalnızca KENDİ sinyalini yakalar;
+  uygulama hataları Starlette'in hata katmanına ulaşır.
+- Ölçülen eski davranış: gerçek bir 500'lük hata istemciye boş gövde olarak
+  dönüyordu ve hiçbir yere loglanmıyordu (teşhis edilemez hata).
+- Test: `tests/unit/test_body_size_limit.py` (+5 test).
+
+### 2 · Sürüm kimliği tek kaynağa bağlandı
+- `VERSION` dosyası otorite; FastAPI başlığı ve MCP `server_version` artık
+  OKUYOR (kopyalamıyor). Eski başlık bayat `v3.0.0-rc.1` yazıyordu.
+- npm (kök + frontend), Cargo (`rust_core`, `src-tauri`) ve
+  `tauri.conf.json` sürümleri `VERSION` ile EŞİTLENDİ; kilit dosyaları
+  (`package-lock.json` ×2, `Cargo.lock`) senkron güncellendi — yoksa
+  `npm ci` ve `cargo test --locked` kırılırdı.
+- Yeni: `agent_core/version.py`, `frontend/src/lib/version.ts`.
+- Test: `tests/unit/test_version_identity.py` (25 test).
+
+### 3 · Ajan worker semantiği düzeltildi
+- 12 compose servisi `agent-*` → `beacon-*`: bunlar analiz YÜRÜTMEZ, yalnızca
+  canlılık işaretçisidir (liveness beacon).
+- Eski worker her 30 saniyede bir koşulsuz `Ready` basıyordu; bu, deponun
+  kendi [RÖNTGEN 2026-09-23] ilkesini (`set_all_ready`/`simulate_processing`
+  kaldırıldı) ihlal ediyor, gerçek `Active/Done/Error` durumlarını eziyordu.
+- Yeni işaretçi KENDİ kanalına (`pineal:agent:beacon`) yazar, ajan durum
+  kanalına ASLA yazmaz; analiz yürütmediğini mesajda açıkça etiketler.
+- Arayüz etiketi "12 AUTONOMOUS NODES" → "12 ANALYSIS ROLES"; README düzeltildi.
+- Test: `tests/unit/test_agent_worker.py` (14), `test_ui_honesty_contract.py` (+3).
+
+### 4 · Android eşdeğerlik (parity) — AÇIKÇA ETİKETLENDİ
+- Android hattı TEK Gemini çağrısıdır: bağımsız doğrulayıcı, jüri, entailment,
+  kanıt-URL denetimi ve SHA-256 mühür YOKTUR.
+- EN yerel ayarı hâlâ "9-AGENT EXECUTION PIPELINE" diyordu (TR düzeltilmiş,
+  EN bayat kalmıştı). TR+EN: tek-geçişli çıkarım olarak etiketlendi; ayrıca
+  "ZERO HALLUCINATION", "MULTIMODAL VISION AI", "Verified Reality" gibi
+  ölçülmemiş iddialar kaldırıldı.
+- Test: `tests/unit/test_android_parity_labels.py` (17 test; JVM gerektirmez).
+
+### 5 · `_execute_with_timeout` TypeError ile YENİDEN KOŞU
+- Eski kod: `except TypeError: return await agent.execute(input_data)` —
+  ajanın gövdesindeki gerçek bir hata, ajanı İKİNCİ KEZ koşturuyordu
+  (yan etki tekrarı: ücretli LLM çağrıları) ve hatayı MASKELİYORDU.
+- İmza artık `inspect.signature` ile ÇAĞIRMADAN okunur; ajan TAM BİR KEZ koşar.
+- Test: `tests/unit/test_execute_with_timeout.py` (11 test).
+
+### 6 · `NeuralTelemetryBoard` gizli DOM'dan çıkarıldı
+- `<div style="display: none;" aria-hidden="true">` içinde basılıyordu:
+  kullanıcı HİÇ görmüyordu (gözlemlenebilirlik sıfır).
+- Artık görünür panel + açma/kapama düğmesi; varsayılan AÇIK.
+- Test: `test_ui_honesty_contract.py` (+3).
+
+### 7 · Tauri sistem bilgisi dürüstleştirildi (P2)
+- `get_system_info`: sabit `"version": "5.0.0"` → `env!("CARGO_PKG_VERSION")`;
+  sabit `"gpu_acceleration": true` → ÖLÇÜLEN sonda. Bir Tauri süreci
+  WebView'nin GPU kararını BİLEMEZ; artık `gpu_node_detected` /
+  `webview_gpu_acceleration` / `claim` alanlarıyla açıkça ayrılıyor.
+
+### 8 · `task_executor` içe aktarım yan etkisi kaldırıldı (P2)
+- Modül sonundaki `executor = PinealExecutor()` kaldırıldı. `PinealExecutor()`
+  kurmak diskten yapılandırma okur, 13 ajan + LLM ağ geçidi kurar ve
+  `get_tracker()` ile GLOBAL durum tekilini yaratır — hepsi yalnızca
+  `import agent_core.task_executor` yazınca tetikleniyordu.
+- Test: `tests/unit/test_task_executor_import_purity.py` (5 test, alt süreçte).
+
+### 9 · `backend/api.py` tek-modül şişkinliği: ÖLÇÜM + TAVAN + ilk bölme (P2)
+- Ölçüm: 6.034 satır / 72 uç nokta. İlk ayrıştırma: gövde tavanı middleware'i
+  → `backend/middleware/body_size_limit.py` (api.py: 6.034 → 5.937).
+- Geriye dönük uyumluluk: `backend.api` isimleri yeniden ihraç eder.
+- Tavan (ratchet) + uç nokta envanteri + sıralı bölme planı:
+  `tests/unit/test_api_monolith_ratchet.py`,
+  `docs/reports/API_MONOLITH_SPLIT_PLAN.md`.
+
+### Doğrulama
+- Tam koşu: **2315 passed, 2 skipped, 0 failed**; kapsam %87,07 (eşik %80).
+  Denetim öncesi taban: 2225 passed → **+90 test**, yeşil.
+- `ruff check .` temiz; `generate_routing_shadows.py` + `export_skills.py
+  --check` + `verify_openrouter_catalog.py` geçti.
+- Frontend: `npm ci`, `npm run check` (svelte-check 0 hata), `npm run build`
+  ve CI'nin `grep PINEAL-HERETIC dist/assets/*.js` kontrolü geçti.
+- **CI — TÜM KAPILAR YEŞİL** (PR #117, Actions koşusu `37592447572`):
+  `backend` 3m23s · `frontend` 19s · `smoke` 58s · `rust-core` 49s ·
+  `android` 1m41s · CodeRabbit · Cloudflare Workers Builds (2).
+
+  Not: `cargo check`/`cargo test --locked` ve `gradle` işleri YEREL koşumda
+  doğrulanamadı (JDK/Gradle/Rust araç zinciri yok ve dağıtım adreslerine
+  çıkış kapalı: `static.rust-lang.org`, `crates.io`, `services.gradle.org`,
+  `repo1.maven.org`, `dl.google.com` → bağlantı yok). Bu yüzden
+  Kotlin/Rust için yapısal bütünlük testi eklendi
+  (`tests/unit/test_uncompiled_language_integrity.py`); **asıl doğrulama
+  CI'da yapıldı ve her ikisi de geçti** — Rust tarafında `Cargo.lock`
+  güncellemesi de (`cargo test --locked` koştuğu için zorunluydu) doğrulandı.
+## Unreleased — 2026-10-07 — FAZ E · E0: denetim regresyon bekçisi (24 bulgu makine denetiminde)
+
+- **E0 · DENETİM REGRESYON PAKETİ TAMAM** (FAZ E şemsiye kalemi).
+  `docs/reports/JULES_DENETIM_2026-10-06.md` 24 bulgu üretmiş ve her birine
+  insan gözü için bir `DOĞRULA` komutu yazmıştı; **hiçbiri makine tarafından
+  koşulmuyordu**. Yani bir bulgu onarıldıktan sonra aynı kusurun geri gelmesini
+  engelleyen hiçbir şey yoktu. `scripts/audit_regression.py` o raporu çalışan
+  bekçiye çevirir: rapor ayrıştırılır (hayalet kayıt iki yönde yasak), her bulgu
+  **statik / test-kapılı / doğrulanamaz** sınıflanır, `reports/audit_regression.json`
+  üretilir ve `KNOWN_OPEN` dışında açılan bulguda **exit 1**.
+- **Ölçülen taban:** 24 bulgu → **9 kapandı · 1 kapandı (tasarım) · 11 açık ·
+  3 doğrulanamaz**. Taban çizgisi ölçülen açık kümeyle **birebir**; onarılan bir
+  bulgu listede bırakılırsa da kırmızı yanar → iyileşme kayda geçmek zorunda.
+- **Bekçi kalıbı değil KUSURU arar.** Denetimin iki `DOĞRULA` komutu bugün
+  **bayat** ve birebir koşulsaydı yanlış hüküm verirdi: `grep 'minor_gate'
+  backend/api.py` yalnız bir ölçüm yorumu bulur (kapı `_require_minor_clearance`
+  adıyla yaşıyor → E2 yanlışlıkla "açık" ilan edilirdi); `|| "Veri mevcut değil"`
+  kalıbı yalnız kaldırılmış kusuru anlatan bir **yorumda** durur (onarım
+  `INSUFFICIENT_EVIDENCE` + `hasEvidence()` ile yapılmış → E6). Her ikisi de
+  raporda `audit_verify_stale` alanıyla belgelendi.
+- **Planın beklediği bayat iddia kesinleşti:** `/v1/models` sabit `[]`
+  **döndürmüyor** — envanter `executable_models` · `MODEL_PRICING` · `local_model`
+  kaynaklarından kuruluyor ve e2e testiyle kilitli (E-GÖZ2-2 kapandı).
+- **UYDURMA YASAĞI yapısal:** kanıtsız `closed` hükmü **kurulamaz** (RuntimeError),
+  `unverifiable` sınıfı `closed`/`open` **dönüştüremez**, test-kapılı kapanış
+  ancak test dosyası **gerçek işaretleri** içeriyorsa geçer (boş dosya yetmez).
+  Rust bulguları bilerek "doğrulanamaz" bırakıldı: `cargo` bu ortamda yok,
+  otorite CI'ın `rust-core` işi. Statik gözlem rapora *gözlem* olarak yazılır,
+  hükme çevrilmez.
+- **Bekçinin kendi kusurları yakalanıp kilitlendi** (dürüstlük kaydı): çok
+  satırlı kalıbı görmeyen satır-satır eşleşme (2 sahte açık) · `browser/open`
+  yol adının envanter listesiyle karışması · route gövdesinin sabit pencereyle
+  ölçülüp komşu fonksiyondaki kapıyı sızdırması (**sahte yeşil**) · anlık
+  `generated_at` damgasının CI'daki `git diff --exit-code` adımını her koşuda
+  kırmızıya boyaması · zayıf test-kilit işaretleri (`423` o dosyada yalnız
+  yorumdaydı) → hepsi düzeltildi ve her biri bir testle kilitlendi.
+- **Yedincisini ancak CI yakaladı:** damga `git log`/mtime'dan türetiliyordu; Actions
+  **sığ klon** yaptığı için commit tarihi koşu zamanına eşitleniyor ve checkout mtime'ı
+  her ortamda farklı yazılıyor → aynı içerik iki farklı damga üretip `git diff` kapısını
+  "bayat rapor" diye kırmızıya boyuyordu. Damga artık denetim raporunun **içerik mühürü**
+  (`sha256`) ve adım başarısızlık ayrıntısını **annotation** olarak yüzeye çıkarıyor
+  (loglar Azure blob'dan okunamıyor — repo'nun "sessiz-çökme-yok" kuralı).
+- **Sekizincisi de CI'dan geldi ve annotation sayesinde okundu:** kanıt dizeleri araç
+  zincirinin yolunu gömüyordu; GitHub imajı Rust'ı KURULU getirdiği için CI ile geliştirme
+  ortamı farklı JSON üretti. Araç VAR/YOK gözlemi hükmü değiştirmese de raporu makineye
+  bağlıyordu → gözlem kaldırıldı, sınıflandırma mimariye bağlandı. Kural artık testle
+  kilitli: commit'lenen raporda makine izi SIFIR (sahte `PATH` ile iki yönde ölçülür).
+- **Test:** +41 (`tests/unit/test_audit_regression.py`). Tam koşu: taban
+  **2223P/0F** → E0 ile **2264P/0F** (regresyon yok). `ruff check .` temiz.
+- **CI:** `backend` işine adım olarak eklendi; bekçiyi koşmakla yetinmez,
+  `git diff -- reports/audit_regression.json` ile commit'lenen ölçümün
+  bayatlamadığını da denetler (emsal: routing shadows adımı) ve kırmızıyı
+  **annotation** ile yüzeye çıkarır (log okunamadığında sessiz çökme olmasın).
+- **Ölçülmüş boşluk (bu PR'ın işi değil, kayda geçsin):** CHANGELOG'da FAZ E'nin
+  birleşmiş kalemleri (E2 · E5 · E6 · E7, PR #115) için **hiç kayıt yok**
+  (`grep -c 'FAZ E' CHANGELOG.md` → 0); FAZ E kabul kapısı 6 "CHANGELOG güncel"
+  şartı koşuyor. Bu dosyaya en son FAZ D · D3 yazılmış.
+
+## Unreleased — 2026-10-07 — FAZ D · D3: medya adli hattı (indir · kare · yazı · eşleştir)
+
+- **D3 · MEDYA ADLİ HATTI TAMAM.** Dört yetenek omurgada:
+  `sensor.media.fetch` (platform linkleri yt-dlp, doğrudan bağlantılar httpx;
+  sonuç sha256 ile mühürlenir), `analyzer.media.frames` (fps · kare · süre ·
+  çözünürlük · parlaklık ±std · sahne kesmeleri; fotoğrafta baskın renk +
+  Laplacian keskinliği), `extractor.media.transcript` (ses → metin; dil tespiti
+  kendi deterministik ölçümümüz) ve `analyzer.media.similarity` (pHash + Hamming
+  ile yerel indeks araması).
+- **Yorum yok, ölçüm var:** bu katman "videoda ne oluyor?" sorusunu yanıtlamaz;
+  ölçüleni yazar, kanıt satırını dosya yoluna/kaynağa bağlar.
+- **Yerellik:** transkript YALNIZ yerel motorla üretilir; uzak uç reddedilir ve
+  CLI'ye sessizce düşülmez. Video girdide ses kanalı için `ffmpeg` gerekir —
+  yoksa `dependency_missing:ffmpeg`, uydurma transkript yok.
+- **Dürüstlük:** yt-dlp yoksa platform indirmesi kapalı; indirme **özel/yerel
+  adreslere yapılmaz** (SSRF kapısı `net_hygiene`, istisna yalnız
+  `PINEAL_MEDIA_ALLOW_PRIVATE=1`); boyut tavanı 80 MB; motor boş çıktısı
+  `empty_transcript` — transkript iddia edilmez. pHash DC terimini dışarıda
+  bırakır (düz renkli iki fotoğraf "aynı" sayılmaz).
+- **Ortak kapı servisi:** SSRF kontrolü `services/net_hygiene.py`ye taşındı;
+  kurum taraması (D6) ve medya hattı (D3) aynı kuralı, ayrı istisna
+  anahtarlarıyla paylaşır — kopya yok.
+- **Yüzeyler:** `GET /api/media/status` · `POST /api/media/analyze` (kasa +
+  kapı + `media` hız kovası). Kurulum: `docs/MEDYA_ADLI.md`. MCP araçları ve
+  Skills paketi kendiliğinden büyüdü (26 yetenek).
+- **Test:** +30 (servis 18 · uç+yetenek 12). Tam koşu: **2047P/0F**.
+
+## Unreleased — 2026-10-07 — FAZ D · D5: rapor fabrikası (PDF · diyagram · video + mühür)
+
+- **D5 · RAPOR FABRİKASI TAMAM.** `services/report_factory.py` + üç RENDERER
+  yeteneği: `renderer.report.pdf` (reportlab), `renderer.report.diagram`
+  (Pillow ile deterministik PNG; tür = renk), `renderer.report.video`
+  (Pillow kareleri → ffmpeg). Markdown + `manifest.json` her koşulda üretilir.
+- **Rapor UYDURULMAZ:** paket yalnız kanonik kanıt zaman çizelgesinden beslenir
+  (`evidence_timeline`): sıra, epistemik tür ve "not independently verified"
+  notu aynen taşınır; `strategy` çizelgeye girmez, bozuk satırlar reddedilir ve
+  `rejected_item_count` olarak rapora yazılır.
+- **Hash'li mühür + kanıt bağlantısı:** her eserin `sha256`'sı, manifest'te
+  eser listesi ve `evidence_ids`; manifestin kendi gövdesi de hash'lenir
+  (`manifest_sha256`) — doğrulaması testlerde kilitli. Manifest açıkça yazar:
+  bu bir bütünlük mührüdür, kriptografik imza DEĞİLDİR.
+- **Eksik format dürüst:** reportlab/Pillow/ffmpeg yoksa ilgili format
+  `available=False` + makine-okunur sebep alır; yerine uydurma dosya konmaz,
+  markdown + manifest teslim edilir ve yetenek bunu kanıt satırıyla söyler.
+- **Yüzeyler:** `GET /api/report/status` · `POST /api/report/build`
+  (kasa + kapı + `report` hız kovası). `reportlab>=4.0` artık
+  `requirements.txt`te AÇIKÇA beyan (lock'ta zaten vardı). Kurulum:
+  `docs/RAPOR_FABRIKASI.md`. MCP araçları ve Skills paketi kendiliğinden
+  büyüdü (22 yetenek).
+- **Test:** +20 (servis 10 · yetenek+uç 10). Tam koşu: **2017P/0F**.
+
+## Unreleased — 2026-10-07 — FAZ D · D6: kurum hedefi (theHarvester + açık SEO + kişi künyesi)
+
+- **D6 · KURUM HEDEFİ TAMAM.** Üç yetenek omurgada:
+  `sensor.company.harvester` (theHarvester CLI: e-posta · alt alan adı · IP ·
+  URL · arama motoru kişi satırları), `sensor.company.seo` (yalnız kurumun
+  KENDİ yayınladığı dosyalar: robots.txt · sitemap.xml · ana sayfa
+  başlık/açıklama/dil/canonical · security.txt · sunucu/HSTS/CSP başlıkları)
+  ve `sensor.company.people` (yalnız kurumun kendi sayfalarındaki
+  **schema.org/Person** kayıtları + herkese açık `mailto:` adresleri).
+- **Uydurma metrik yok:** SEO "puanı" hesaplanmaz; ölçülen yazılır. Harici SEO
+  servisi çağrılmaz, LinkedIn kazınmaz. Kişi verisi yalnız kurumun kendi
+  yapılandırılmış kaynağından gelir ve her satır KAYNAK URL'siyle kanıt olur.
+- **Yokluk disiplini:** "yayınlanmamış" iddiası yalnız kesin 404'te
+  (`absence`); ağ hatası (timeout/refused) ne varlık ne yokluk üretir — yalnız
+  `notes.errors` içinde görünür. theHarvester boş dönerse sıfır hatayla
+  bittiği için yokluk kanıtı üretilir; araç/çıktı hatasında ÜRETİLMEZ.
+- **Araç yokluğu ikiye ayrılır:** `dependency_missing:theHarvester` (PATH'te
+  yok) ile `configured_command_not_found:PINEAL_HARVESTER_CMD` (yazılan komut
+  bulunamadı) karıştırılmaz. Kova tavanı 25; aşan `truncated` ile işaretlenir.
+- **SSRF hijyeni:** hedef özel/yerel ağa çözülürse tarama REDDEDİLİR; yalnız
+  `PINEAL_COMPANY_ALLOW_PRIVATE=1` ile geçer.
+- **Yüzeyler:** `GET /api/company/status` · `POST /api/company/scan`
+  (kasa + kapı + `company` hız kovası) · kokpitte **KURUM** pili. Yetenekler
+  omurgada olduğu için MCP araçları ve Skills paketi kendiliğinden büyüdü
+  (19 yetenek / 20 MCP aracı). Kurulum: `docs/KURUM_HEDEFI.md`.
+- **Test:** +41 (servis 18 · yetenek 13 · uç 10). Tam koşu: **1994P/0F**.
+
+## Unreleased — 2026-10-07 — FAZ D · D2: yerel jüri (karar makineden çıkmaz)
+
+- **D2 · YEREL JÜRİ TAMAM.** `agent_core/services/local_jury.py` +
+  `verifier.jury.local` yeteneği: aynı iddia ve kanıt **birden çok yerel
+  modelde** bağımsız oylanır; karar oybirliği ya da yeter sayılı çoğunlukla
+  verilir. Uzak uç `non_local_endpoint` ile REDDEDİLİR ve uzak adres
+  yapılandırılmışsa yerel uca BİLE gidilmez (sessiz düşüş yok, test kilitli).
+- **Koltuk = ayrı model.** Aynı model adı ikinci koltuk SAYILMAZ (tekrar
+  `duplicates_removed` olarak raporlanır); tek modelle alınan hüküm
+  `tek_koltuk` kuralıyla işaretlenir ve `consensus: false` olur — **tek
+  koltukla konsensüs ilan edilmez.** Kural her zaman makine-okunur yazılır:
+  `oy_birligi` · `cokluk` · `berabere` · `tek_koltuk` · `gecerli_oy_yok`.
+- **Oy sözlüğü tek kaynaktan** (`services/jury_consensus`): kapalı küme dışı
+  kelime OY SAYILMAZ (`sozluk_disi`); model JSON döndürmezse
+  `seat_unparseable`. Koltuk hatası, gecikme ve ham kelime yanıtta görünür —
+  tek bir koltuk sessizce yutulmaz.
+- **Konsensüs yoksa kanıt da yok:** berabere/tek koltuk/geçerli oy yok
+  durumlarında kanıt ÜRETİLMEZ (koltuk dökümü `notes` içinde kalır). Konsensüs
+  varsa kanıt `inference` türündedir (model yargısı gözlem değildir) ve güven
+  yalnız koltukların kendi beyanlarının ortalamasıdır.
+- **Yüzeyler:** `GET /api/jury/status` · `POST /api/jury/vote` (kasa + kapı +
+  `jury` hız kovası) · kokpitte **JÜRİ** pili (`3 YEREL KOLTUK` /
+  `1 KOLTUK · BAĞIMSIZ DEĞİL` / `KAPALI`). Yetenek omurgada olduğu için MCP
+  aracı (`verifier_jury_local`) ve Skills paketi kendiliğinden büyüdü.
+- **Env:** `ENABLE_LOCAL_JURY` (varsayılan KAPALI) · `PINEAL_JURY_LOCAL_URL`
+  (varsayılan `LOCAL_LLM_URL` → `http://127.0.0.1:11434/v1`) ·
+  `PINEAL_JURY_LOCAL_MODELS` (virgüllü; boşsa `LOCAL_LLM_MODEL`) ·
+  `PINEAL_JURY_SEATS` (3) · yeter sayı `PINEAL_JURY_QUORUM` (B1 ile ortak).
+  Kurulum: `docs/YEREL_JURI.md`.
+- **Test:** +43 (birim 33 · entegrasyon 10). Yol boyunca bir kusur yakalandı:
+  jüri yapılandırması enjekte edilebilir env sözlüğünden okunurken
+  `jury_consensus.quorum()` süreç ortamını okuyordu (iki env kaynağı sapması);
+  tek kaynağa (`os.environ`) indirildi. Tam koşu: **1953P/0F**.
+
+## Unreleased — 2026-10-07 — FAZ D · D1: yetenekler standart kapıdan dışarıda (MCP)
+
+- **D1 · MCP SUNUCUSU TAMAM.** ``agent_core/mcp/`` paketi: ``protocol.py`` (JSON-RPC
+  2.0 + sürüm anlaşması), ``tools.py`` (defter → araç), ``results.py`` (dürüst
+  sonuç zarfı), ``state_bridge.py`` (kasa + hız), ``status.py`` (``pineal_status``),
+  ``server.py`` (sevkiyat + stdio). Çalıştırma: ``python -m agent_core.mcp``.
+  **Tek kaynak:** araç listesi ``CapabilityRegistry``den her istekte türetilir;
+  bayat liste diye bir şey yoktur (deftere yetenek eklenince araç kendiliğinden
+  görünür, silinince kaybolur).
+- **Çift protokol (ölçüldü, 2026-10-07).** MCP'nin güncel sürümü **2026-07-28**
+  ve protokol artık **stateless** (``initialize`` kaldırıldı; sürüm her isteğin
+  ``_meta``'sında, keşif ``server/discover``). Eski istemciler el sıkışma
+  konuşur. Sunucu **ikisini birlikte** destekler: 2026-07-28 · 2025-11-25 ·
+  2025-06-18 · 2025-03-26 · 2024-11-05. Bilinmeyen sürüm sessizce en yenisi
+  sanılmaz: legacy el sıkışmada sunucu desteklediği en yeni sürümü döner,
+  stateless istekte ``-32022`` + desteklenen sürüm listesi döner.
+- **Ayrı dış yol YOK.** Her çağrı ``CapabilityRunner`` üzerinden koşar: çocuk
+  kilidi → politika kapıları (vault · budget · rate · ENABLE_*) → availability
+  → ``run()``. Reddedilen çağrı ``isError: true`` ve makine-okunur sebeple
+  döner (``denied_by`` / ``unavailable_reason`` / ``error``); ``ok`` yalnız
+  kanıt varsa ``true``'dur.
+- **Kasa tek kaynaktan ve fail-closed.** Sunucu kasa mandalını çalışan Pineal
+  API'sinden (``GET /api/vault/status``) okur — kararı kendi kopyasında yeniden
+  üretmez (kural [009]). Adres **yalnız yerel** olabilir; uzak adres reddedilir,
+  HTTP yönlendirmeleri TAKİP EDİLMEZ ve API'ye ulaşılamıyorsa kasa KİLİTLİ
+  sayılır (``vault_api_unreachable`` / ``vault_api_bad_shape`` gibi sebeplerle).
+- **Kokpit + dış istemci durumu.** ``GET /api/mcp/status`` (yetenek/araç sayısı
+  defterden, kasa mandalı ``/api/initiate`` ile aynı kapıdan, sürümler, hız
+  sınırı; uç hiçbir yeteneği koşturmaz) ve kokpitte **MCP pili**:
+  ``MCP: 16 ARAÇ · AÇIK`` / ``MCP: … · KİLİTLİ``.
+- **Skills ihracı:** ``scripts/export_skills.py`` aynı defterden
+  ``skills/<araç>/SKILL.md`` üretir; ``--check`` bayat paketi yakalar (exit 3).
+  CI bu adımı koşar: elle düzenlenmiş ya da defterde olmayan yetenek dosyası
+  sessizce geçemez.
+- **Dış istemci girdisi:** ``PINEAL_API_URL`` · ``PINEAL_MCP_CLIENT_ID`` ·
+  ``PINEAL_MCP_RATE_LIMIT`` (20) · ``PINEAL_MCP_RATE_WINDOW`` (60 sn) ·
+  ``PINEAL_MCP_MINOR_SUBJECTS`` (operatör beyanı: hedef 18 altıysa MCP yolunda
+  kilitlenir — vaka bağlamı taşınmadığı için ``MinorGate`` reddeder; beyan
+  "izin" değil "dur" demektir).
+- **stdout yalnız protokol taşır.** Günlükler stderr'e yazar; bozuk bir satır
+  kanalı düşürmez (``PARSE_ERROR`` döner, döngü devam eder), beklenmedik bir
+  istisna ``INTERNAL_ERROR`` olur ve kanal açık kalır. Windows kod sayfası
+  tuzağı için stdio UTF-8'e sabitlenir.
+- **Test:** +129 (birim 115 · entegrasyon 14). Entegrasyon testi sunucuyu
+  GERÇEK alt süreç olarak başlatıp stdio'dan konuşur; yalnız kasa cevabı taklit
+  edilir. Tam koşu: **1910P/0F**, ``ruff`` temiz, ``svelte-check`` 0 hata,
+  build başarılı.
+
+## Unreleased — 2026-10-05 — FAZ A/D · A8 + D4: site listesi tazeleniyor, dil ölçülüyor
+
+- **A8 · MAIGRET DB TAZELEME.** maigret paketlenmiş bir site anlık görüntüsüyle
+  gelir ve hiç güncellenmezdi. Yeni çekirdek `agent_core/services/
+  maigret_db_refresh.py`: WhatsMyName ve sherlock verisini maigret şemasına
+  birleştirir. Üç kural: (1) **uydurma yok** — kaynakta olmayan alan üretilmez
+  (`known_accounts` boşsa `usernameClaimed` icat edilmez); (2) **kürasyon
+  ezilmez** — maigret'in mevcut kaydı üzerine yazılmaz, yalnız eksik alan
+  dolar; (3) **desteklenmeyen kip atlanır ve sayılır** — sherlock'un
+  `response_url` kipi yanlış dönüştürülmez, `skipped` + sebep olarak raporlanır.
+  Her iki paketlenmiş DB biçimi desteklenir (düz ≤0.6.5, `{"sites":...}` ≥0.6.6).
+  CLI: `python -m agent_core.services.maigret_db_refresh --wmn X --sherlock Y`.
+- **A8 · TARAYICI TAZE LİSTEYİ GERÇEKTEN KULLANIYOR.** `PINEAL_MAIGRET_DB`
+  doluysa tarama o dosyadan koşar ve sonuç `db_source` + `db_sites` olarak
+  raporlanır (eski liste mi yeni liste mi, gizlenmez); bozuk dosyada sessizce
+  paketlenmiş listeye DÖNÜLMEZ (`db_unavailable`, fail-closed). Önbellek
+  kaynak anahtarlı: env değişince bayat DB ile taranmaz. Gerçek veri ölçümü
+  (maigret 0.6.6 tabanı + sherlock-project 0.16.2): 5897 → 5958 site
+  (+61 yeni · 106 dolduruldu · 284 değişmedi · 30 atlandı: 27 desteklenmeyen
+  kip + 3 boş URL). WhatsMyName verisi bu ortamda ağdan alınamadığı için
+  `missing_sources` içinde dürüstçe raporlanır.
+- **D4 · DİL TESPİTİ (deterministik).** `agent_core/services/language.py`:
+  yazı sistemi Unicode aralıklarından ölçülür, dil puanı durma sözcükleri +
+  karakter işaretlerinden hesaplanır. Model yok, ağ yok; aynı metin her zaman
+  aynı sonuç. Kapsam: tr · en · de · es · fr · ru · az. Sinyal yoksa etiket
+  UYDURULMAZ: `unknown` + makine-okunur sebep (`too_short` / `no_signal` /
+  `script_unsupported:<script>`). Güven dürüsttür: tr/az gibi yakın dillerde
+  marj küçülür, güven ~0.50'ye iner; üç sözcüklük metin 0.99 güven alamaz.
+- **D4 · ÇEVİRİ YERELDE (ses/dinleme ile aynı kural).** `agent_core/services/
+  translation.py` + `extractor.text.translate_local` yeteneği: uç YALNIZ
+  `127.0.0.1`/`localhost`/`[::1]` ya da yerel CLI (`PINEAL_TRANSLATE_CMD`,
+  varsayılan `trans`); UZAK uç `non_local_endpoint` ile reddedilir, motor
+  yoksa çeviri ÜRETİLMEZ. Kaynak dil önce ölçülür ve çıktıya yazılır; motor
+  girdiyi aynen geri verirse çeviri iddia edilmez (`engine_echoed_input`).
+- **D4 · KANITA DAMGA + KOKPİT PİLİ.** Web çıkarıcıları (trafilatura →
+  crawl4ai → scrapling) çıkardıkları metnin dilini kanıt kapsamına işler
+  (`language` + `language_confidence` + sebep). Kokpitte **DİL** pili bu
+  gerçek ölçümü gösterir; ölçüm yoksa `DİL: ÖLÇÜLMEDİ` (uydurma etiket yok).
+- **Yeni uçlar:** `GET /api/language/status` · `POST /api/language/detect` ·
+  `POST /api/language/translate` (kasa interlock'u + `language` hız kovası).
+- **Kasa invariant'ı istisnasız korundu:** iki yeni yetenek de (`extractor.
+  text.language`, `extractor.text.translate_local`) `vault` kapısını taşır;
+  mevcut "kasa kilitliyken hiçbir yetenek koşamaz" testi ikisini de kapsar.
+- **Env:** `PINEAL_MAIGRET_DB` · `ENABLE_LOCAL_TRANSLATE` ·
+  `PINEAL_TRANSLATE_URL` · `PINEAL_TRANSLATE_CMD` (hepsi varsayılan KAPALI/boş).
+- **Test:** +98 (birim 89 · entegrasyon 9). Tam koşu: **1781P/0F**, kapsama
+  **%85.77** (kapı %80). `ruff` temiz; `svelte-check` 0 hata; build başarılı.
+
+## Unreleased — 2026-10-05 — FAZ C · SES & NEFES (4): bulunanı söyle
+
+- **C4 · SESLİ RAPOR.** Sistem bulduğunu yazıyordu, söylemiyordu. `voice.report.
+  script` yeteneği (RENDERER, omurgada) görev sonucunu konuşulan Türkçe rapora
+  çevirir: hedef · durum · kanıt sayısı · koşan ajan · ortalama güven · geçmiş
+  taramaya göre değişim · kırmızı çizgi. **Uydurma cümle yok** — payload'da
+  olmayan alan için cümle KURULMAZ (değişim raporu temelsizse "yeni/kayıp"
+  söylenmez, güven sayısı yoksa güven söylenmez). Kırpılan metin `truncated`
+  olarak işaretlenir, sessizce kesilmez.
+- **Metin hazır, ses yoksa gizlenmez.** TTS motoru kapalıysa `available:false`
+  döner ama **metin yine de döner**: operatör neyin okunacağını görür.
+- **Kırmızı çizgi SUSTURULMAZ.** Raporda 18 altı işareti varsa sesli rapor
+  "KIRMIZI ÇİZGİ: on sekiz altı tespit edildi, görev durduruldu." der.
+- **Yeni uç:** `POST /api/speech/report` (`{report}` veya `{text}`) →
+  `{available, script, sections, url, ...}`; konuşma durumu WebSocket'ten akar.
+- **Arayüz:** kokpitte **RAPORU OKU** düğmesi — son görevin özetini yüksek
+  sesle okur (rapor yoksa düğme kapalı).
+- **Test:** +17 (birim 12 · entegrasyon 5). Tam koşu: **birim 1392P/0F**,
+  **entegrasyon 122P/0F** — gerileme yok. Frontend: `svelte-check` + `npm run
+  build` temiz.
+
+## Unreleased — 2026-10-05 — FAZ C · SES & NEFES (3): göz dinler ve susar
+
+- **C3 · DİNLEYEN GÖZ — YEREL STT.** `LocalSTTCapability` (`voice.stt.local`,
+  `EXTRACTOR`) omurgaya girdi: aynı localhost izin listesi, aynı kasa
+  interlock'u. İki yerel yol: `whisper` CLI (`PINEAL_STT_CMD/MODEL/LANG`) veya
+  yerel uç (`PINEAL_STT_URL` — yalnız `127.0.0.1`/`::1`/`localhost`, UZAK uç
+  reddedilir). Motor yoksa transkript **UYDURULMAZ**: `available:false` +
+  makine-okunur sebep. Kayıt 8 MiB sınırını aşarsa `audio_too_large`.
+- **MİKROFON.** Kayıt tarayıcıda tutulur; dışarı yalnız transkript için yerel
+  motorun duyacağı ses gider. Kokpitte **MİK** düğmesi: bas → `DİNLİYOR`,
+  bırak → duyulan metin log'a düşer ve Aspasia'ya gider (eller serbest).
+  Yeni uç: `POST /api/speech/listen` (çok parçalı `file`).
+- **ARAYA GİRME.** Aspasia konuşurken mikrofon açılırsa **SUSAR**: `POST
+  /api/speech/stop` artık gerçek kesme — `{"status":"interrupted"}` + WebSocket
+  çerçevesi `{"state":"interrupted"}`. Kesme izi kalıcı: `/api/speech/status`
+  `interrupted` + `interrupted_from` verir.
+- **İRİS KONUŞMA DURUMUNU TAŞIYOR.** `speechState` artık beş hâl bilir:
+  `idle · listening · speaking · interrupted · denied`. Dinlerken gözbebeği
+  büyür (+%22), konuşurken iris titrer; SES pili `DİNLİYOR` / `SUSTURULDU`
+  yazar.
+- **Bağımlılık:** `python-multipart` (dosya yükleme için) eklendi.
+- **Test:** +17 (birim 11 · entegrasyon 6). Tam koşu: **birim 1380P/0F**,
+  **entegrasyon 117P/0F** — gerileme yok. Frontend: `svelte-check` ve `npm run
+  build` temiz.
+
+## Unreleased — 2026-10-05 — FAZ B · BEYİN & HAFIZA (1): spektrum, gerçek örgü, değişim izleme
+
+- **B6 · GERÇEK SPEKTRAL ANALİZ (FFT).** `FrequencyReport.dominant_period_days`
+  declared ama HİÇ doldurulmayan bir kabuktu. Artık `agent_core/engines/
+  spectrum.py` ile ÖLÇÜLÜYOR: Hann pencereli `rfft` periodogramı, DC ve Nyquist
+  hariç, normalize güç spektrumu. Harmonik tuzağı çözüldü — haftalık dürtü
+  treninde 2.33/3.5 gün değil **7 gün** temel periyot raporlanır. Yetersiz kova
+  (<8) veya sabit seride periyot **uydurulmaz**: alan `None` + makine-okunur
+  sebep (`insufficient_samples` / `flat_signal`). Ölçüm doğrulandı: 7g→7.0g,
+  14g→14.0g, saf sinüs 4g→4.0g.
+- **B4 · ÖRGÜ ARTIK GERÇEK VERİ ÇİZİYOR.** `HolographicResonanceMesh.svelte`
+  içindeki `generateNodes()` (12+8 **rastgele** düğüm) KALDIRILDI. Yerine
+  `agent_core/services/graph_builder.py`: düğümler yalnız kanıttan doğar
+  (hedef · kaynak sunucu · çıkarıcı motor · gözlem günü), kenarlar yalnız
+  birlikte-geçme ilişkisidir. Yerleşim **deterministik** (`Math.random()` yok).
+  Yeni uç: `GET /api/tasks/{task_id}/graph`. Kanıt yoksa graf BOŞ — arayüz
+  uydurma düğüm çizmez, "KANIT YOK" yazar.
+- **B7 · DEĞİŞİM İZLEME.** `agent_core/services/change_tracker.py`: her biten
+  görev hedefin geçmişine parmak izi bırakır (`memory/changes/<hedef>.json`),
+  ikinci tarama "ne değişti?" sorusunu cevaplar: **+yeni · -kayıp · ~değişen ·
+  aynı**. Parmak izi kanıdın KENDİSİNDEN üretilir (`evidence_id` her görevde
+  yeniden üretildiği için kullanılmaz); önceki kayıt yoksa fark UYDURULMAZ
+  (`no_baseline`). Yeni uç: `GET /api/tasks/{task_id}/changes`.
+- **Bellek üst verisi artık SİLİNMİYOR.** `CanonicalMemory.merge_evidence`
+  metadata kabul ediyor; eskiden her birleştirmede hedef profili (ve kurtarma
+  kaydı) kayboluyordu. `PinealExecutor` artık `target_profile`'ı kanıtla
+  birlikte yazıyor — değişim izleme ve graf aynı hedefi kararlı anahtarla
+  buluyor.
+- **Test:** +35 (spektrum 12 · graf 12 · değişim 11). Tam koşu: **birim
+  1291P/0F**, **entegrasyon 88P/0F** — gerileme yok. Frontend: `npm run build`
+  + `svelte-check` **0 hata 0 uyarı**.
+
+## Unreleased — 2026-10-05 — FAZ B · BEYİN & HAFIZA (2): konsensüs denetçisi, eşik kalibrasyonu
+
+- **B1 · BAĞIMSIZ JÜRİ KONSENSÜS DENETÇİSİ.** Panel oylarını sayan kod,
+  sayımın doğruluğunu KENDİSİNE soruyordu. Artık ikinci ve bağımsız bir kafa
+  var: `agent_core/services/jury_consensus.py` oyları yeniden sayar, panelin
+  bildirdiği hükümle karşılaştırır ve uyuşmazlığı **gizlemez** (`VerifierReport.
+  consensus` + karar kuralında `konsensüs:uyuşmazlık=X/Y yeter_sayı=A/B(q)
+  bağlayıcı=evet|hayır`). Yeter sayı altındaki hüküm konsensüs SAYILMAZ; tek
+  koltuk "konsensüs" diye geçmez; berabere dürüstçe `BİLİNMİYOR`'a düşer.
+  `PINEAL_JURY_QUORUM` (varsayılan 1 = bugünkü davranış) ve
+  `PINEAL_JURY_BINDING` (varsayılan **kapalı** = salt denetim). Bağlayıcı kipte
+  denetçinin bulduğu hüküm GEÇERLİ olur ve tüm sayılar (doğrulanan/çürütilen/
+  kesin/bilinmeyen/skor/güven) yeniden hesaplanır. LLM yok, ağ yok.
+- **B5 · EŞİK ARTIK ÖLÇÜLÜYOR (kalibrasyon + geri test + güven aralığı).**
+  Sistemin en kritik eşiği **0.70** kodun içine sabitlenmişti ve hiç
+  ölçülmemişti. `agent_core/services/threshold_calibration.py`: her eşik kararı
+  skoruyla birlikte eklemeli bir ledger'a yazılır (`memory/calibration/`),
+  operatör daha sonra **etiket** koyar (karar mercii operatör), eşik o
+  etiketlerden kalibre edilir — Youden J ile seçilir, veri azken varsayılana
+  çekilir (shrinkage), **Wilson güven aralığı**, **46 adetlik geri test
+  ızgarası** ve **güvenilirlik diyagramı (ECE)** ile birlikte raporlanır.
+  **Kilit:** etiketli örnek `PINEAL_CALIB_MIN_SAMPLES` (varsayılan 30) altındaysa
+  eşik DEĞİŞMEZ ve kaynağı `varsayılan` olarak açıkça yazar — veri olmadan eşik
+  değiştirilemez. Elle sabitleme (`PINEAL_THRESHOLD_QUOTE`) her zaman kazanır.
+  Ledger'a **ham metin yazılmaz** (yalnız skor + kimlik).
+- **Alıntı kapısı ölçülen eşiğe bağlandı.** `quote_guard.quote_matches` artık
+  sabit 0.70 kullanmıyor: `resolved_threshold("quote")`'tan okur. Ayrıca korpus
+  da normalize ediliyor — eskiden büyük/küçük harf farkı yüzünden kaynakta
+  **birebir var** olan alıntı "yok" sayılıp eşiğin altında kalabiliyordu.
+  Yeni uçlar: `GET /api/calibration` · `POST /api/calibration/observations` ·
+  `POST /api/calibration/adjudicate`. Arayüzde gözün yanında **EŞİK** pili:
+  ölçüldüyse yeşil "ÖLÇÜLDÜ", ölçülmediyse gri "ÖLÇÜLMEDİ".
+- **Test:** +35 (konsensüs 15 · kalibrasyon 15 · kalibrasyon API 5). Tam koşu:
+  **birim 1321P/0F**, **entegrasyon 93P/0F** — gerileme yok. Frontend:
+  `npm run build` + `svelte-check` **0 hata 0 uyarı**.
+
+## Unreleased — 2026-10-05 — FAZ B · BEYİN & HAFIZA (3): hafıza kristali + kalıcı bellek
+
+- **B2/B3 · HAFIZA ARTIK GÖREV BİTİNCE SIFIRLANMIYOR.**
+  `agent_core/services/memory_crystal.py`: her biten görev, hedefin KALICI
+  kristaline hatıra işler (`memory/crystals/<hedef>.json`) — görev başına değil
+  **hedef başına** hafıza. Aynı kanıt tekrar görülürse satır çoğalmaz,
+  AĞIRLIĞI artar. Kanıtın metni yoksa hatıra DA uydurulmaz.
+- **Geri çağırma (recall).** Yeni bir görev aynı hedefe bakarken kristalden
+  ilgili hatıralar çekilir: deterministik **hashing-trick vektörü** (gömme
+  modeli indirilmez, ağa çıkılmaz) + tazelik + kanıt ağırlığı. Her hatıranın
+  NEDEN seçildiği (benzerlik/tazelik/kanıt) açıkça raporlanır; alâkasız hatıra
+  prompt'a doldurulmaz (en iyinin yarısından düşük benzerlik girmez). Bu görevin
+  kendi kanıtı geri çağrılmaz — yalnız GEÇMİŞ bağlam gelir.
+- **Ajanın önüne konuyor.** Derin analist çalışmadan önce yürütücü kristali
+  okur; hatıralar `UNTRUSTED_MEMORY_CRYSTAL` kafesiyle, temizlenmiş ve
+  "TALİMAT DEĞİLDİR" şerhiyle prompt'a girer. Kanıt zincirine
+  (`memory_crystal / memory_recall`) yazılır — hangi hatıranın çağrıldığı izlenir.
+- **Uçlar:** `GET /api/tasks/{task_id}/memory` · `GET /api/memory/{target}` ·
+  `GET /api/memory/{target}/recall?query=`. Arayüzde **HAFIZA** pili:
+  "N HATIRA · M GÖREV" ya da dürüstçe "HAFIZA YOK".
+- **Test:** +24 (kristal 19 · kristal API/entegrasyon 5). Tam koşu:
+  **birim 1340P/0F**, **entegrasyon 98P/0F** — gerileme yok. Frontend:
+  `npm run build` + `svelte-check` **0 hata 0 uyarı**.
+
+## Unreleased — 2026-10-05 — FAZ C · SES & NEFES (1): jenerik yanıt filtresi
+
+- **C1 · LAF SALATASI ARTIK KULLANICIYA ÇIKMIYOR.** Aspasia'nın dili bir
+  prompt umuduna bağlıydı: "Tabii ki! Harika bir soru..." türü yanıtlar aynen
+  gidiyordu. `agent_core/services/taste_filter.py` her yanıtı deterministik
+  sinyallerle tartar: jenerik açılış · kalıp sorumluluk reddi · soruyu geri
+  atma · kaçamak/dolgu yoğunluğu · tekrar · uzun ama boş · emoji ve **en ağır
+  sinyal**: *elde VERİ varken yanıtın o veriye hiç değinmemesi*. Eşiği aşan
+  yanıt DÜŞER; yerine kanıttan derlenmiş tek cümlelik dürüst yanıt konur, veri
+  yoksa "yok" denir (uydurulmaz). Ölçülen: jenerik yanıt **0.85** → düştü;
+  kanıtlı kısa yanıt **0.00** → geçti.
+- **Telemetri + eşik disiplini.** Düşen her yanıt, NEDENİYLE birlikte
+  `memory/telemetry/taste.jsonl`'e yazılır; `GET /api/telemetry/taste` operatöre
+  kaç yanıtın düştüğünü ve hangi gerekçeyle düştüğünü gösterir. Eşik,
+  kalibrasyon modülünün `taste` kapsamına bağlıdır (B5 ile aynı kural:
+  ölçülmeden değişmez, `PINEAL_THRESHOLD_TASTE` ile elle sabitlenebilir).
+  Aspasia'nın güven etiketi düşen yanıtta `filtered_generic` olur — olay gizlenmez.
+- **Test:** +19 (filtre 14 · Aspasia/API entegrasyonu 5). Tam koşu: **birim
+  1354P/0F**, **entegrasyon 103P/0F** — gerileme yok. Frontend: `npm run build`
+  + `svelte-check` **0 hata 0 uyarı**.
+
+## Unreleased — 2026-10-05 — FAZ C · SES & NEFES (2): Aspasia konuşuyor (yerel TTS)
+
+- **C2 · SİSTEMİN ARTIK SESİ VAR.** `agent_core/capabilities/adapters_voice.py`:
+  `voice.tts.local` yeteneği, Capability Spine'in **RENDERER** sınıfında —
+  yani ses de her yetenek gibi tek sözleşmeden geçer (registry → kasa kapısı →
+  availability → run → kanıt). Paralel çağrı yolu YOK.
+- **Ses MAKİNEDE KALIR.** Motor iki yerel yoldan biriyle bulunur: **piper**
+  (yerel CLI) ya da **yerel bir TTS ucu** (`PINEAL_TTS_URL`; VoxCPM / MOSS-TTS
+  / herhangi bir yerel sunucu). Uç yalnız `127.0.0.1` / `localhost` olabilir;
+  **uzak uç REDDEDİLİR** (`non_local_endpoint`) — metin ve ses dışarı çıkmaz.
+- **Uydurma ses yok.** Motor yoksa `available:false` + makine-okunur sebep
+  (`no_local_endpoint`, `dependency_missing:piper`, `endpoint_status:503`);
+  boş ses dosyası yazılmaz. Seslendirme bir OLAYdir: kanıt zincirine motor,
+  parmak izi (sha256), bayt ve süre olarak yazılır (WAV süresi başlıktan
+  ÖLÇÜLÜR, tahmin edilmez). Ölçülen: 1.5 sn'lik WAV → `duration_ms=1500`.
+- **Konuşma durumu UI'a akıyor.** `POST /api/speech/say` → `speaking`, ses
+  süresi bitince `idle`, motor yoksa `denied`; hepsi WebSocket `speech`
+  çerçevesiyle arayüze düşer. `POST /api/speech/stop` konuşmayı KESER (C3'ün
+  araya-girme zemini). Uçlar: `GET /api/speech/status` ·
+  `GET /api/speech/audio/{dosya}`. Arayüzde **SES** pili: KONUŞUYOR / SUSKUN /
+  MOTOR YOK (tıklanınca ses kapatılır).
+- **Kasa kuralı değişmedi.** Tüzük Md.4 gereği kasa kapısı seste de var:
+  kilitli kasada motor hazır olsa bile ses üretilmez; durum bilinmiyorsa
+  kilitli sayılır (fail-closed).
+- **Test:** +21 (yetenek/servis 15 · API/WS 8). Tam koşu: **birim 1369P/0F**,
+  **entegrasyon 111P/0F** — gerileme yok. Frontend: `npm run build` +
+  `svelte-check` **0 hata 0 uyarı**.
+
+## Unreleased — 2026-10-05 — FAZ A · RETİNA TAMAM: Agent-Reach + SearXNG + Scrapling
+
+- **A3 Agent-Reach (son kademe).** Temiz metin omurgası dört kademeye çıktı:
+  trafilatura → crawl4ai → scrapling → **agent-reach**. Sosyal/medya sayfasını
+  normal çıkarıcılar alamazsa harici CLI okur (kod gömülmez, API ücreti yok;
+  kapı `ENABLE_AGENT_REACH`).
+- **X'in ikinci okuma yolu.** twscrape yok/reddedilirse X büsbütün kaybolmuyor:
+  `scrape_x` agent-reach'e düşer ve profili **zaman damgası olmadan** kurar
+  (uydurma saat YOK). Hangi yolun okuduğu `sensor`/`sensor_note` alanında yazar.
+- **A4 SearXNG (ücretsiz arama).** `SearchEngine`, anahtar yokken DuckDuckGo'ya
+  ek olarak omurgadan `sensor.search.searxng`'i koşturur; bulgular
+  `provider: searxng` işaretli gelir. Ayrı servis (AGPL-3.0) — kod gömülmez,
+  yalnız HTTP (`SEARXNG_BASE_URL`). Kasa kapalıyken **dışarı istek çıkmaz**
+  (bunu kanıtlayan test: HTTP istemcisi "patlayan" istemciyle değiştirilir).
+- **Kasa gerçeği arama motoruna da taşındı.** `SearchEngine.set_policy`;
+  `/api/initiate` ve `/api/vault` interlock'tan okuyup yazıyor. Bu sınıf kasa
+  kararını **uydurmuyor**, dışarıdan alıyor.
+- **A7 Scrapling** kademesi ve kapısı omurgada hazır (`ENABLE_SCRAPLING`).
+- **Yeni dosya:** `requirements-retina.txt` — ÜÇÜNCÜ ve isteğe bağlı kurulum
+  adımı (trafilatura · scrapling · twscrape · instagrapi). Kurulmazsa ilgili
+  yetenek dürüst `dependency_missing` döner; sistemin geri kalanı aynı çalışır.
+  `.env.example` + `RUNBOOK.md` tüm Faz A kapılarıyla güncellendi.
+- **Test:** +7 (A3/A4/A7) → Faz A toplamı **37 test**. Birim koşusu bazla
+  aynı (58F), entegrasyon bazla aynı (16F) — gerileme yok.
+
+## Unreleased — 2026-10-05 — FAZ A · RETİNA: omurga ÜRETİM yoluna bağlandı
+
+- **X deliği KAPANDI.** X artık "yetki bekleyen" bir boşluk değil:
+  `platform_registry.scrape_x` → capability omurgası → `sensor.x.twscrape`.
+  Sensör kanıt üretemezse profil **uydurulmaz**: görev dürüstçe durur
+  (`scripts/run_task.py` → `halted_evidence` + exit 3), API'de ise açık kaynak
+  dosyası `platform: web_dossier` olarak işaretlenip devam eder. Eski
+  `awaiting_authorization` yolu ve `pending_alternative_authorization` akışı
+  kaldırıldı.
+- **Uydurma veri temizlendi.** X dalında arama snippet'i biyografi diye
+  sunulmuyordu artık sunulmuyor; sabit **`followers: 150`** de kalktı —
+  ölçülmeyen alan `None` (0 = ölçüm, None = ölçülmedi).
+- **Temiz metin omurgası üretimde.** Public-web araştırması artık tek crawl4ai
+  çağrısı değil: `extract_web_text` **trafilatura → crawl4ai → scrapling**
+  sırasıyla dener, ilk kanıt üreten kademeyi kullanır ve hangi kademenin
+  ürettiğini kayda yazar. Çekilemeyen sonuca alan EKLENMEZ (sözleşme korunur).
+- **maigret/holehe artık MÜHÜRLÜ KANIT.** `osint_investigator` taramaları
+  doğrudan servise değil omurgaya gider; çıktı `timeline_bridge` ile
+  `EvidenceTimeline`'a mühürlenir (`username_scan_evidence` /
+  `email_scan_evidence`). Böylece kasa, env kapıları ve **çocuk kilidi**
+  otonom görevlerde de uygulanır.
+- **Kasa gerçeği payload'a yazılıyor.** `/api/initiate` görev payload'ına
+  `{"policy": {"vault_locked": ...}}` enjekte eder; ajanlar kasa durumunu
+  tahmin etmez. Tek üretim yeri: `agent_core/capabilities/state.py`.
+- **Telemetri dürüstleşti.** `/api/telemetry` alanı `x_scraper` sabit `False`
+  değil; sensörün gerçek durumunu omurgadan okur (`_x_sensor_ready`).
+- **Yeni dosyalar:** `capabilities/adapters_web.py` · `adapters_sensors.py` ·
+  `timeline_bridge.py` · `state.py`. Kayıtlı yetenek: 10.
+- **Test:** `tests/unit/test_retina_faz_a.py` (20) +
+  `tests/unit/test_retina_faz_a_wiring.py` (10) → 30 yeni test geçiyor.
+  Tam birim koşusu: **58F/1177P/5S** — hata sayısı BAZLA AYNI (58), hiçbir
+  gerileme yok; entegrasyon koşusu da bazla birebir aynı (16F).
+
+## Unreleased — 2026-10-05 — TEKLİF: "bunlar eklenirse Pineal şu hale gelir"
+
+- **Yeni:** `docs/reports/TEKLIF_TAM_GUC_2026-10-05.md`. Ürün sahibinin üç
+  katmanlı tespiti (Retina & Sinir Uçları · Beyin Sapı/Hafıza/Jüri · Ses &
+  Yaşayan Epifiz) esas alındı; her depo için **"eklenen → olan"** ve
+  **ÖNCE/SONRA** tablosu yazıldı. Ahlaki değerlendirme içermez.
+- **Kod okumasıyla tespit edilen mevcut durum:** X sensörü yok
+  (`scraper.py:24`, `api.py:2238`) · crawl4ai yalnız tek yerde çağrılıyor
+  (`api.py:3433-3436`) · `HolographicResonanceMesh.svelte` **rastgele düğüm
+  üretiyor** (gerçek graf verisi yok) · Frequency motorunda FFT yok (sin/cos
+  modeli) · maigret/socid çıktısı kanıt zincirine (EvidenceTimeline) girmiyor.
+- **Teklifin üstüne eklenen 12 parça:** SearXNG (ücretsiz arama) · Scrapling
+  (kırılganlık) · yt-dlp+opencv+PaddleOCR (medya) · pHash+EXIF (catfish) ·
+  FFT/periodogram (gerçek spektral analiz) · DuckDB+scikit (zaman serisi +
+  kalibrasyon) · değişim izleme · dil tespiti/çeviri · phonenumbers +
+  theHarvester/open-seo (kişi + kurum) · MCP + Skills ihracı · yerel jüri ·
+  rapor fabrikası.
+- **Program:** Faz A Retina → Faz B Beyin & Hafıza → Faz C Ses & Nefes →
+  Faz D Birleşim & İhracat; her fazın kabul testiyle.
+
+## Unreleased — 2026-10-05 — AHLAKİ DÖKÜM: 325 depo → 99 fikir
+
+- **Yeni:** `docs/reports/AHLAKI_DOKUM_2026-10-05.md`. 325 depo, aynı fikri
+  satan tekrarlarıyla birlikte açıldı; **99 ayrı fikir**e indirildi. Her fikre
+  çıplak bir ahlaki hüküm yazıldı.
+- **Ahlak testi (3 soru):** (1) Kapıyı mı kırıyor, açık olanı mı okuyor?
+  (2) Kırılan şey bir insanın bedeni/kimliği/sesi mi? (3) Başkasının emeğini,
+  hesabını veya sırrını mı sömürüyor? Bir cevap bile kötüyse depo biter.
+- **Dağılım:** T1 temiz alet 232 depo (67 fikir) · T2 gri 45 depo (14 fikir) ·
+  T3 sınır ihlali 10 depo (6) · T4 saldırı/karanlık 16 depo (4) · T5 kimlik
+  hırsızlığı 8 depo (2) · T6 hile/asalaklık/yanıltma 14 depo (6).
+- **En kalabalık üç fikir:** kullanıcı adı taraması (24 depo), çok ajanlı
+  orkestrasyon (20), Agent Skills standardı (14) — yani 325 kaydın büyük
+  bölümü birbirinin tekrarı.
+- **Kırmızı çizgi ayrı tutuldu:** 18 yaş altı hiçbir sınıfla kıyaslanmaz;
+  hükmü Tüzük Madde 4/A ve `agent_core/safety/minor_gate.py` içinde.
+
+## Unreleased — 2026-10-05 — ÇOCUK KIRMIZI ÇİZGİSİ (sistemin TEK kırmızı çizgisi)
+
+- **Ürün sahibi kuralı, değiştirilemez:** 18 yaşından küçük her birey çocuktur.
+  Normal koşulda **hiçbir çocuk, hiçbir sebeple araştırılamaz.** Sistemin bildiği
+  tek yasak budur. Yetişkin için sistem hiçbir engel koymaz (bkz. K1 iptal).
+- **TEK İSTİSNA — kayıp / başına bir şey gelmiş olması (Allah korusun):** bu
+  durumda çocuğun KENDİSİ, SOSYAL MEDYASI ve ARKADAŞLARI araştırılabilir, ancak
+  dört şartın **tamamı** sağlanmışsa:
+  1. **Ailenin bilgisi var** · 2. **Sebep net yazılmış** (≥25 karakter, boş geçilemez)
+  · 3. **Doğrulanmış** (emin olunmadan başlanmaz) · 4. **Konsorsiyum onayı** (≥2 farklı onaylayıcı).
+  Bir şart eksikse sistem durur ve eksik şartın adını söyler:
+  `family_not_notified` / `reason_missing` / `not_verified` / `council_approval_missing` / `case_type_not_allowed`.
+- **Yeni:** `agent_core/safety/minor_gate.py` — `MinorGate` (karar), `MinorCaseContext`
+  (vaka), `MinorCaseLedger` (kayıt). Koşucu (`runner.py`) bu kilidi politika
+  kapılarından **önce**, küresel ve istisnasız uygular: kasa açık olsun olmasın,
+  env bayrağı açık olsun olmasın hiçbir yetenek atlayamaz. Kasa hâlâ üstündür
+  (onaylı vakada kasa kapalıysa yine koşmaz).
+- **Kayıt:** onaylanan ve reddedilen her deneme `memory/ledger/minor-cases.jsonl`
+  dosyasına yazılır. Hedefin **ham kimliği dosyaya girmez** (sha256 hash);
+  zaman damgası, gerekçe uzunluğu, onaylayıcılar, vaka tipi saklanır.
+  `memory/ledger/` `.gitignore`'a eklendi (kayıt depoya girmez).
+- **Kilit testleri (yeni):** `tests/unit/test_minor_gate_faz0.py` — 14 test:
+  her şartın tek tek engellediği, dört şart tamamken istisnanın çalıştığı,
+  kayıtlı **her** yeteneğin çocuk kilidini atlayamadığı, kasanın hâlâ üstün
+  olduğu, yetişkinde hiçbir engel olmadığı, kaydın ham kimlik yazmadığı.
+- **Tüzük:** yeni **Madde 4/A — Çocuk Kırmızı Çizgisi** (8 bent). Kısa forma
+  "TEK KIRMIZI ÇİZGİ: ÇOCUK" satırı eklendi. Karar belgesine **K4** eklendi;
+  §9'da Y2 satırı "yetişkin rızası yok → yerine çocuk kilidi" olarak güncellendi.
+- **Ölçüm:** `pytest tests/unit` — 58 failed / 1145 passed → 58 failed /
+  **1159** passed (+14). **Yeni düşüş yok.**
+
+## Unreleased — 2026-10-05 — DÜZELTME: hedef rızası/yaş kapısı KALDIRILDI
+
+- **Ürün sahibi kararı:** Pineal bir gözlem aracıdır; **rıza makamı hedef değil
+  OPERATÖRDÜR.** Önceki turda koyduğum "rıza kaydı olmayan hedefte analiz
+  başlamaz" ve "yaş kapısı" kuralları **kaldırıldı.** Sistem, operatörün kendi
+  koyduğu kural dışında engel çıkarmaz. Benim uygulamaya kısıtlama koyma
+  yetkim yoktu — hatalı bir karardı.
+- **Kod:** `consent` kapısı `PolicyKernel`'den ve üç kimlik yeteneğinden
+  (`sensor.identity.maigret`, `sensor.identity.holehe`, `extractor.identity.socid`)
+  çıkarıldı. Artık `consent` **bilinmeyen kapı** sayılır ve fail-closed
+  reddedilir — yani kimse arkadan geri getiremez. Kalan kapılar:
+  `vault` (operatörün kendi mandalı), `budget`, `rate`, `ENABLE_*`.
+- **Tüzük (Madde 4) yeniden yazıldı:** "Kasa ve rıza" → **"Kasa: yetki
+  operatördedir"**. Yeni hükümler: (1) kasa mandalı operatörün iradesidir;
+  (2) karar mercii operatör — hedef/sensör/derinlik/sıklık; (3) hedef rızası
+  veya yaş kapısı diye bir şey yoktur, eklenmesi tüzük ihlalidir; (4) koşular
+  engel değil **operatörün kendi kaydı** olarak tutulur; (5) silme her an
+  operatörün elindedir, otomatik saklama engeli yoktur. Kısa form (duvar yazısı)
+  güncellendi.
+- **Karar belgesi:** §10 K1 "İPTAL EDİLDİ" olarak işaretlendi; §9 boşluk
+  matrisinde Y2 satırı "kaldırıldı" olarak değiştirildi; Faz 1 başlığındaki
+  rıza şartı kaldırıldı; K1/K2/K3 kapıları `{"vault","rate","ENABLE_X_SENSOR"}`
+  oldu; §5.8 kısıtlı yetenekler maddesi "yalnız operatörün kendi kimliğiyle,
+  ek izin yok" olarak yeniden yazıldı; K3 karma kapısındaki "rıza" ifadesi
+  "operatör" ile değiştirildi.
+- **Test:** rıza testi kaldırıldı, yerine **"hedef rıza kapısı geri gelmesin"**
+  testi eklendi (`test_no_consent_gate_exists`, `test_person_data_capabilities_carry_vault_gate`).
+- **Ölçüm:** `pytest tests/unit` — 58 failed / 1145 passed. **Yeni düşüş yok.**
+
+## Unreleased — 2026-10-05 — TÜZÜK v2 + üç politika kararının kilitlenmesi
+
+- **Tüzük (yeni, yürürlükte):** `docs/PINEAL_TUZUK.md` — **ATLAS PINEAL TÜZÜĞÜ v2**,
+  10 madde. Nedeni (Madde 0): sistem kurulurken tek işi "bir insanı analiz et,
+  karşısındakiyle tartıya koy, uyuyorlar mı?" idi; sistem o işten büyüdü.
+  **Uyum / ilk temas / rezonans artık sistemin TANIMI değil, SAHALARINDAN BİRİDİR**
+  (Madde 9). Yeni tanım: *kamuya açık kaynaklar üzerinde çalışan adli gözlem ve
+  doğrulama istasyonu.* Eski 4 dokunulmaz ilke tüzüğün Madde 1–4'ü olarak korunur
+  (ilke değişmedi, bağlam büyüdü). Yasaklar (Madde 8) ve kısa form (duvar yazısı)
+  eklendi. `README.md` §1 ve `ARCHITECTURE.md` bileşen haritası tüzüğe bağlandı.
+- **Kilitlenen üç politika kararı** (karar belgesi §10):
+  - **K1 · Rıza/yaş kapısı ZORUNLU** → Faz 5'ten **Faz 1'e** çekildi. Rıza kaydı
+    olmayan hedefte hiçbir kişi-verisi yeteneği koşmaz; reşit olmayan şüphesinde
+    `halted_consent` + gerekçe. `A†` sınıfı yetenekler bu kapı açılmadan açılamaz.
+  - **K2 · Platform sensörleri operatörün KENDİ hesabıyla** (X/twscrape dâhil):
+    kapılar `{"vault","consent","rate","ENABLE_X_SENSOR"}`; kimlik bilgileri
+    log/telemetri/kanıt/rapora sızamaz; anonim-taklit, kiralık hesap havuzu ve
+    imza kırma yasak (Tüzük Md.5). Hesapsız ücretsiz yollar (SearXNG, public-web)
+    birincil kalır.
+  - **K3 · Yerel jüri öne alındı** (donanım mevcut): Faz 8, Faz 2'nin hemen ardına
+    **paralel hat** olarak alındı — yerel 3'lü jüri, maliyet 0, veri makineden
+    çıkmaz; yerel model yoksa dürüst `UNAVAILABLE` (buluta sessiz düşüş yok).
+- **Kod — tüzük yaptırımı:** kişi verisi işleyen tüm yetenekler artık
+  `vault` + `consent` kapılarını zorunlu taşır (`sensor.identity.maigret`,
+  `sensor.identity.holehe`, `extractor.identity.socid`). Bunu koruyan 3 yeni
+  test eklendi (tüzük ↔ kod bağı).
+- **Davranış düzeltmesi (önemli):** `PolicyKernel` kapıları artık **alfabetik
+  değil öncelik sırasına göre** değerlendirir:
+  bilinmeyen kapı → kasa → rıza → bütçe → hız → env bayrakları. Önceden
+  `ENABLE_*` bayrakları alfabetik olarak önce geliyor ve **kasa kilidi ihlali
+  "gate_disabled" olarak maskeleniyordu** (Tüzük Md.4.1 ihlali). Artık kasa
+  kilitliyken sebep her zaman `vault_locked` olur.
+- **Ölçüm:** `pytest tests/unit` — önce 58 failed / 1113 passed, sonra
+  58 failed / **1145** passed (+32). **Yeni düşüş yok.**
+
+## Unreleased — 2026-10-05 — FAZ 0: Capability Spine + 325 depo karar ağacı
+
+- **Karar belgesi (yeni):** `docs/reports/YILDIZ_DEPO_KARAR_AGACI_2026-10-05.md`.
+  325 yıldızlı depo, 8 kapılı karar ağacından (felsefe → zarar → kanıt mührü →
+  rıza/hukuk → lisans → ayak izi → benzersizlik → birleşme → bakım) geçirildi;
+  her biri `E / A / İ / T / R / MEVCUT` hükümlerinden birine bağlandı
+  (17 entegrasyon + 51 adaptör + 191 ilham + 16 erteleme + 43 red + 7 mevcut).
+  Şunlar açıkça REDDEDİLDİ ve §5'e gerekçeleri yazıldı: karanlık ağ tarayıcıları
+  (TorBot, darkfox, robin…), ihlal/şifre verisi (WhatBreach, pwnedOrNot, GHunt),
+  ses/yüz klonlama (RVC, GPT-SoVITS, facefusion, Deep-Live-Cam…), jailbreak ve
+  sızdırılmış prompt külliyatı (L1B3RT4S, CL4R1T4S, G0DM0D3, heretic…),
+  filtresiz üretim ve otomatik mesaj gönderimi (postiz-app).
+- **Kod (Faz 0 omurgası — yeni paket `agent_core/capabilities/`):**
+  - `base.py`: `CapabilityKind`, `Availability`, `CapabilityContext`,
+    `CapabilityResult`, `Capability` protokolü, `BaseCapability` ve
+    `make_evidence()` (kanıt mührü: boş içerik/kaynak adı kabul edilmez).
+  - `policy.py`: `PolicyKernel` — `vault / consent / budget / rate / ENABLE_*`
+    kapıları. **Bilinmeyen kapı = ret** (fail-closed); `rate` durumu bilinmiyorsa
+    ret. Çekirdek hiçbir ortam değişkenini kendisi okumaz (durum `PolicyState`
+    ile verilir).
+  - `registry.py`: `CapabilityRegistry` — yetenek envanterinin TEK kaynağı.
+    Kimlik sözdizimi, tür ve sözleşme kayıt anında doğrulanır; aynı kimlik ikinci
+    kez kaydedilemez. `status()` UI/telemetri için makine-okunur sebep döner.
+  - `runner.py`: `CapabilityRunner` — tek geçit: çöz → politika → kullanılabilirlik
+    → koşu (+timeout). Bilinmeyen yetenek/kapı reddi/hatası **istisna değil,
+    0 kanıt + makine-okunur sebep** üretir; hiçbir adımda kanıt uydurulmaz.
+  - `adapters_osint.py`: mevcut `maigret` / `holehe` / `socid` tarayıcılarını
+    sözleşmeye bağlayan ilk üç adaptör (kanıt üretimi + `payload` geçişi).
+- **Kilit:** `tests/unit/test_capability_spine_faz0.py` (29 test): registry tek
+  kaynak ve tekrar-reddi, bilinmeyen kapıda fail-closed, kasa kilidi, timeout ve
+  istisnada 0 kanıt, sözleşme ihlali reddi, kanıt şeması (`ev_` kimliği),
+  adaptör ↔ eski tarayıcı **eşdeğerlik** testleri (Faz 0.2 taşıması bitene kadar
+  çift-kaynak sapmasını önler).
+- **Ölçüm:** `pytest tests/unit` — değişiklikten ÖNCE 58 failed / 1113 passed,
+  SONRA 58 failed / 1142 passed (+29). **Yeni düşüş yok.** (58 failure, sandbox
+  ortamında eksik opsiyonel bağımlılıklardan — playwright/maigret/vision —
+  kaynaklanan önceden var olan toplama/koşu hatalarıdır; bu değişiklikle ilgisiz.)
+- **Kapsam dışı (bilinçli):** Faz 0.2 — `backend/api.py` ve `osint_investigator`
+  içindeki eski doğrudan çağrıların bu adaptörlere taşınması. Taşıma yapılana
+  kadar eşdeğerlik testleri iki yolun aynı dürüst sonucu verdiğini kanıtlar.
+
+## Unreleased — 2026-09-26 — A-KAPANIŞ: Verifier → DepthReport izlenebilirliği
+
+- **Ölçülen kusur (A1 CONTROL/TREATMENT diff):** DepthAnalyst, prompt'taki hakem
+  `evidence_quote`'unu birebir alıntılayıp çelişki üretiyordu; `quote_guard`
+  korpusu yalnız profil/görsel/timing/public_web metinlerinden oluştuğu için bu
+  KANITLI çelişki "uydurma alıntı" sayılıp imha ediliyordu
+  (`dropped_fake_quote=1`, `contradictions=[]`). Geriye yalnız `reality_rationale`
+  kalıyor; onda da hangi `claim_id`'nin kararı değiştirdiği izlenemiyordu.
+- **Düzeltme 1 — `agent_core/services/quote_guard.py`:** yalnız KESİN statülü
+  (DOĞRULANDI/YALAN/ÇELİŞKİLİ) `bio_extracted` hakem alıntıları korpusa girer.
+  Güvenlik gerekçesi: AutonomousVerifier kanıt alanlarını SADECE kanıt
+  kapısından geçen oydan doldurur (url ∈ arama sonuçları + alıntı kaynakta
+  birebir + destek oranı); BİLİNMİYOR/sözlük-dışı statü, kimliksiz kayıt,
+  `canonical_observation_checks` ve çağıran-enjekte `verifications`
+  (executor görev başında siler) çıpa OLAMAZ. `verifications` yoksa korpus
+  BİREBİR eski hâli.
+- **Düzeltme 2 — `DepthFinding.source_claim_id / verification_status /
+  verification_link_basis` + `DepthReport.verification_trace`:** bağ
+  deterministik kurulur — (a) LLM'in yazdığı `source_claim_id` hakemin ürettiği
+  bir kimlik değilse bağ düşer (`rejected_claim_ids`), (b) kimlik yoksa ayakta
+  kalan alıntı bir hakem alıntısıyla eşleşiyorsa `quote_match` ile bağlanır,
+  (c) `verification_status`'u YALNIZ kod yazar (LLM statüsü bağ yoksa silinir,
+  varsa hakem kaydıyla ezilir). Rapor düzeyi iz: `claims_available`,
+  `quote_anchors`, `linked_findings[]`, `claim_ids_used[]`,
+  `rationale_claim_ids[]`, `rationale_anchored_to_verification`.
+  Executor log satırı: `HAKEM İZİ: n bulgu … kimliğe bağlı`.
+- **Kilit:** `tests/unit/test_depth_verification_trace.py` (A1 CONTROL vs
+  TREATMENT alan-diff'i kalıcı test) + `tests/integration/
+  test_depth_verification_trace_executor.py` (executor içinde WRITE→READ→USE→
+  ALTER→FINAL; negatif kol: enjekte `verifications` çıpa olamaz).
+  Tam paket: 1410 passed / 25 failed — 25'i değişiklik öncesiyle birebir aynı
+  (opsiyonel OSINT bağımlılıkları maigret/holehe/socid/invisible_playwright +
+  uvicorn bayrağı; bu değişiklikle ilgisiz).
+- **Kapsam dışı (bilinçli):** B6 legacy kolunda (`PINEAL_ENABLE_CANONICAL_
+  MESSAGE_CONTEXT` kapalı) PatternInterrupt `target_analysis`'i ham okur;
+  bu deneyin kontrol koludur, varsayılanı değiştirmek ayrı karar.
+
 ## Unreleased — 2026-09-18 — C8: decision_config.yaml ÖLÜ ANAHTAR TEMİZLİĞİ
 
 - **[C8] `config/decision_config.yaml` içinden 4 ölü anahtar kaldırıldı:**

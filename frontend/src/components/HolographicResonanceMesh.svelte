@@ -1,10 +1,32 @@
 <script lang="ts">
+  /**
+   * HOLOGRAPHIC RESONANCE MESH — [FAZ B · B4] ARTIK GERÇEK VERİ ÇİZER.
+   *
+   * Eski durum: `generateNodes()` 12 dış + 8 iç düğümü `Math.random()` ile
+   * üretiyordu; örgü tamamen SÜSTÜ, kanıtla ilgisi yoktu.
+   *
+   * Yeni durum: düğüm ve kenarlar `graph` prop'undan gelir ve yalnızca
+   * KANITTAN üretilir (`agent_core/services/graph_builder.py`):
+   *   - hedef (merkez) · kaynak sunucu (dış halka) · motor (orta) · gün (iç)
+   *   - kenar = aynı kanıt kaydında birlikte geçme (co-occurrence)
+   * Graf yoksa/boşsa rastgele düğüm ÜRETİLMEZ: ortam halkaları ve çekirdek
+   * kalır, boşluk dürüstçe boş çizilir.
+   */
   import { onMount, onDestroy } from 'svelte';
   import { isProcessing } from '../store';
 
   export let size: number = 520;
   export let active: boolean = false;
   export let intensity: number = 0.85;
+  /** Kanıttan üretilmiş gerçek graf (yoksa null → uydurma düğüm yok). */
+  export let graph: {
+    available: boolean;
+    nodes: Array<{ id: string; label: string; kind: string; weight: number; evidence_count: number }>;
+    edges: Array<{ source: string; target: string; weight: number }>;
+    node_count?: number;
+    edge_count?: number;
+    machine_note?: string;
+  } | null = null;
 
   let canvasEl: HTMLCanvasElement | null = null;
   let ctx: CanvasRenderingContext2D | null = null;
@@ -12,41 +34,95 @@
   let alive = false;
   let startTime = 0;
 
-  interface Node {
+  interface Placed {
+    id: string;
+    label: string;
+    kind: string;
+    weight: number;
+    angle: number;
+    radius: number;
+    dot: number;
     x: number;
     y: number;
-    baseAngle: number;
-    radius: number;
-    pulseOffset: number;
   }
 
-  let nodes: Node[] = [];
-  let innerNodes: Node[] = [];
+  interface Link {
+    a: Placed;
+    b: Placed;
+    weight: number;
+  }
 
-  function generateNodes() {
-    nodes = [];
-    innerNodes = [];
-    const outerCount = 12;
-    const innerCount = 8;
-    for (let i = 0; i < outerCount; i++) {
-      nodes.push({
-        x: 0,
-        y: 0,
-        baseAngle: (i / outerCount) * Math.PI * 2,
-        radius: 0.42,
-        pulseOffset: Math.random() * Math.PI * 2,
-      });
+  let placed: Placed[] = [];
+  let links: Link[] = [];
+
+  // Halka yerleşimi: tür -> yarıçap oranı (hedef merkezde).
+  const RADIUS_BY_KIND: Record<string, number> = {
+    target: 0.0,
+    engine: 0.22,
+    day: 0.3,
+    host: 0.42,
+  };
+  const KIND_ORDER: Record<string, number> = { target: 0, engine: 1, day: 2, host: 3 };
+  const COLOR_BY_KIND: Record<string, string> = {
+    target: '255, 255, 255',
+    host: '56, 239, 125',
+    engine: '212, 175, 55',
+    day: '120, 200, 255',
+  };
+
+  function kindRank(kind: string): number {
+    return KIND_ORDER[kind] ?? 2;
+  }
+
+  /**
+   * Graf -> deterministik yerleşim. `Math.random()` YOKTUR: aynı kanıt her
+   * zaman aynı örgüyü çizer (denetlenebilirlik).
+   */
+  function layout(g: typeof graph): void {
+    placed = [];
+    links = [];
+    if (!g || !g.available || !Array.isArray(g.nodes) || g.nodes.length === 0) {
+      return; // uydurma düğüm YOK
     }
-    for (let i = 0; i < innerCount; i++) {
-      innerNodes.push({
+
+    const order = [...g.nodes].sort(
+      (a, b) => kindRank(a.kind) - kindRank(b.kind) || a.id.localeCompare(b.id)
+    );
+    const totals = new Map<string, number>();
+    const seen = new Map<string, number>();
+    for (const n of order) totals.set(n.kind, (totals.get(n.kind) ?? 0) + 1);
+
+    const byId = new Map<string, Placed>();
+    for (const n of order) {
+      const i = seen.get(n.kind) ?? 0;
+      seen.set(n.kind, i + 1);
+      const total = totals.get(n.kind) ?? 1;
+      const kind = n.kind || 'host';
+      const angle = (i / total) * Math.PI * 2 + kindRank(kind) * 0.35;
+      const weight = Math.max(1, Number(n.weight) || 1);
+      const p: Placed = {
+        id: n.id,
+        label: n.label,
+        kind,
+        weight,
+        angle,
+        radius: RADIUS_BY_KIND[kind] ?? 0.34,
+        dot: 1.8 + Math.min(3.2, Math.log2(1 + weight) * 0.9),
         x: 0,
         y: 0,
-        baseAngle: (i / innerCount) * Math.PI * 2 + 0.2,
-        radius: 0.24,
-        pulseOffset: Math.random() * Math.PI * 2,
-      });
+      };
+      placed.push(p);
+      byId.set(n.id, p);
+    }
+
+    for (const e of g.edges ?? []) {
+      const a = byId.get(e.source);
+      const b = byId.get(e.target);
+      if (a && b) links.push({ a, b, weight: Math.max(1, Number(e.weight) || 1) });
     }
   }
+
+  $: layout(graph);
 
   function resizeCanvas() {
     if (!canvasEl) return;
@@ -72,7 +148,6 @@
     const center = size / 2;
     const processing = isProc;
     const procSpeed = processing ? 1.8 : 0.6;
-    const procPulse = processing ? 0.25 : 0.08;
 
     c.clearRect(0, 0, size, size);
 
@@ -86,11 +161,11 @@
     c.arc(center, center, size * 0.5, 0, Math.PI * 2);
     c.fill();
 
-    // Outer resonance ring
     c.save();
     c.translate(center, center);
-    c.rotate(elapsed * 0.15 * procSpeed);
 
+    // --- ORTAM HALKALARI (dekoratif kasa; veri DEĞİLDİR) ---
+    c.rotate(elapsed * 0.15 * procSpeed);
     c.strokeStyle = `rgba(56, 239, 125, ${0.35 * intensity})`;
     c.lineWidth = 1.2;
     c.setLineDash([8, 12]);
@@ -100,7 +175,6 @@
     c.stroke();
     c.setLineDash([]);
 
-    // Inner ring
     c.strokeStyle = `rgba(56, 239, 125, ${0.22 * intensity})`;
     c.lineWidth = 0.8;
     c.setLineDash([4, 8]);
@@ -109,100 +183,53 @@
     c.arc(0, 0, size * 0.24, 0, Math.PI * 2);
     c.stroke();
     c.setLineDash([]);
+    c.rotate(-elapsed * 0.15 * procSpeed);
 
-    // Outer nodes + connections (wireframe)
-    const outerRadius = size * 0.42;
-    const innerRadius = size * 0.24;
-
-    // Update node positions with breathing
-    nodes.forEach((node) => {
-      const breath = Math.sin(elapsed * 0.5 + node.pulseOffset) * (size * 0.01 * procPulse);
-      const angle = node.baseAngle + elapsed * 0.08 * procSpeed;
-      const r = outerRadius + breath;
-      node.x = Math.cos(angle) * r;
-      node.y = Math.sin(angle) * r;
-    });
-
-    innerNodes.forEach((node) => {
-      const breath = Math.sin(elapsed * 0.7 + node.pulseOffset) * (size * 0.008 * procPulse);
-      const angle = node.baseAngle - elapsed * 0.12 * procSpeed;
-      const r = innerRadius + breath;
-      node.x = Math.cos(angle) * r;
-      node.y = Math.sin(angle) * r;
-    });
-
-    // Draw wireframe - outer to inner + outer to outer
-    c.strokeStyle = `rgba(56, 239, 125, ${0.18 * intensity})`;
-    c.lineWidth = 0.6;
-
-    // Outer ring connections (triangulated)
-    for (let i = 0; i < nodes.length; i++) {
-      const a = nodes[i];
-      const b = nodes[(i + 1) % nodes.length];
-      const cc = nodes[(i + 2) % nodes.length];
-      // a-b
-      c.beginPath();
-      c.moveTo(a.x, a.y);
-      c.lineTo(b.x, b.y);
-      c.stroke();
-      // a to inner nearest
-      const innerIdx = i % innerNodes.length;
-      const inner = innerNodes[innerIdx];
-      c.beginPath();
-      c.moveTo(a.x, a.y);
-      c.lineTo(inner.x, inner.y);
-      c.stroke();
-      // a-c skip one (web)
-      if (i % 2 === 0) {
-        c.beginPath();
-        c.moveTo(a.x, a.y);
-        c.lineTo(cc.x, cc.y);
-        c.stroke();
-      }
+    // --- GERÇEK GRAF (kanıt varsa) ---
+    // Yörünge dönüşü yalnızca veri düğümleri için; pozisyonlar deterministik.
+    for (const node of placed) {
+      const orbit = node.kind === 'target' ? 0 : elapsed * 0.04 * procSpeed;
+      const r = node.radius * size * (1 + Math.sin(elapsed * 0.6 + node.angle) * 0.006);
+      node.x = Math.cos(node.angle + orbit) * r;
+      node.y = Math.sin(node.angle + orbit) * r;
     }
 
-    // Inner connections
-    for (let i = 0; i < innerNodes.length; i++) {
-      const a = innerNodes[i];
-      const b = innerNodes[(i + 1) % innerNodes.length];
+    // Kenarlar: ağırlık -> parlaklık (kanıt tekrarı)
+    for (const link of links) {
+      const alpha = Math.min(0.5, 0.08 + Math.log2(1 + link.weight) * 0.06);
+      c.strokeStyle = `rgba(56, 239, 125, ${alpha * intensity})`;
+      c.lineWidth = 0.5 + Math.min(1.2, link.weight * 0.15);
       c.beginPath();
-      c.moveTo(a.x, a.y);
-      c.lineTo(b.x, b.y);
+      c.moveTo(link.a.x, link.a.y);
+      c.lineTo(link.b.x, link.b.y);
       c.stroke();
-      // inner to center
-      c.beginPath();
-      c.moveTo(a.x, a.y);
-      c.lineTo(0, 0);
-      c.globalAlpha = 0.08 * intensity;
-      c.stroke();
-      c.globalAlpha = 1;
     }
 
-    // Nodes - outer
-    nodes.forEach((node) => {
-      const pulse = Math.sin(elapsed * 2.2 + node.pulseOffset) * 0.5 + 0.5;
-      c.fillStyle = `rgba(56, 239, 125, ${0.6 + pulse * 0.4})`;
-      c.shadowColor = '#38ef7d';
-      c.shadowBlur = 8 + pulse * 6;
+    // Düğümler: tür -> renk, ağırlık -> çap
+    for (const node of placed) {
+      const color = COLOR_BY_KIND[node.kind] ?? '56, 239, 125';
+      const pulse = Math.sin(elapsed * 2.0 + node.angle * 3) * 0.5 + 0.5;
+      c.fillStyle = `rgba(${color}, ${0.45 + pulse * 0.45})`;
+      c.shadowColor = `rgb(${color})`;
+      c.shadowBlur = 5 + pulse * 5;
       c.beginPath();
-      c.arc(node.x, node.y, 2.5 + pulse * 1.5, 0, Math.PI * 2);
+      c.arc(node.x, node.y, node.dot + pulse * 0.8, 0, Math.PI * 2);
       c.fill();
       c.shadowBlur = 0;
-    });
+    }
 
-    // Nodes - inner
-    innerNodes.forEach((node) => {
-      const pulse = Math.sin(elapsed * 1.8 + node.pulseOffset) * 0.5 + 0.5;
-      c.fillStyle = `rgba(212, 175, 55, ${0.5 + pulse * 0.3})`;
-      c.shadowColor = '#d4af37';
-      c.shadowBlur = 6 + pulse * 4;
-      c.beginPath();
-      c.arc(node.x, node.y, 2 + pulse, 0, Math.PI * 2);
-      c.fill();
-      c.shadowBlur = 0;
-    });
+    // Etiketler: yalnız hedef ve en ağır üç düğüm (kalabalık olmasın)
+    const labelled = [...placed].sort((a, b) => b.weight - a.weight).slice(0, 4);
+    c.font = '8px "JetBrains Mono", monospace';
+    c.textAlign = 'center';
+    for (const node of labelled) {
+      if (node.kind === 'target') continue;
+      c.fillStyle = `rgba(180, 255, 210, ${0.5 * intensity})`;
+      const text = node.label.length > 14 ? `${node.label.slice(0, 13)}…` : node.label;
+      c.fillText(text, node.x, node.y - node.dot - 4);
+    }
 
-    // Center core
+    // Merkez çekirdek
     const corePulse = Math.sin(elapsed * 1.2) * 0.5 + 0.5;
     c.fillStyle = `rgba(56, 239, 125, ${0.15 + corePulse * 0.15})`;
     c.beginPath();
@@ -220,15 +247,11 @@
       c.beginPath();
       c.moveTo(0, 0);
       const scanAngle = elapsed * 2.5;
-      c.lineTo(Math.cos(scanAngle) * outerRadius, Math.sin(scanAngle) * outerRadius);
+      c.lineTo(Math.cos(scanAngle) * size * 0.42, Math.sin(scanAngle) * size * 0.42);
       c.stroke();
     }
 
     c.restore();
-  }
-
-  function getProcessing(): boolean {
-    return Boolean(isProc);
   }
 
   function loop(t: number) {
@@ -242,7 +265,6 @@
     const context = canvasEl.getContext('2d', { alpha: true });
     if (!context) return;
     ctx = context;
-    generateNodes();
     resizeCanvas();
     startTime = performance.now();
     alive = true;
@@ -258,11 +280,17 @@
   $: if (canvasEl && size) {
     resizeCanvas();
   }
+
+  $: graphEmpty = !!graph && (!graph.available || (graph.nodes?.length ?? 0) === 0);
 </script>
 
 <div class="holographic-mesh-container" style="--size:{size}px;">
   <canvas bind:this={canvasEl} class="holographic-canvas gpu-accelerated" width={size} height={size}></canvas>
   <div class="mesh-vignette"></div>
+  {#if graphEmpty}
+    <!-- Uydurma düğüm YOK: kanıt yoksa boşluk dürüstçe boş çizilir. -->
+    <div class="mesh-empty" title="Kanıt yok — graf boş">KANIT YOK</div>
+  {/if}
 </div>
 
 <style>
@@ -270,31 +298,39 @@
     position: relative;
     width: var(--size);
     height: var(--size);
+    pointer-events: none;
     display: flex;
     align-items: center;
     justify-content: center;
-    pointer-events: none;
-    transform: translateZ(0);
-    will-change: transform;
   }
 
   .holographic-canvas {
-    position: absolute;
-    inset: 0;
-    width: 100% !important;
-    height: 100% !important;
     display: block;
-    transform: translateZ(0);
     will-change: transform;
-    backface-visibility: hidden;
-    filter: contrast(1.1) brightness(1.05);
+    transform: translateZ(0);
   }
 
   .mesh-vignette {
     position: absolute;
     inset: 0;
-    border-radius: 50%;
-    background: radial-gradient(circle, transparent 60%, rgba(0, 0, 0, 0.4) 100%);
     pointer-events: none;
+    background: radial-gradient(
+      circle at center,
+      transparent 55%,
+      rgba(0, 0, 0, 0.35) 100%
+    );
+    mix-blend-mode: multiply;
+  }
+
+  .mesh-empty {
+    position: absolute;
+    bottom: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 7px;
+    letter-spacing: 0.12em;
+    color: rgba(180, 255, 210, 0.35);
+    white-space: nowrap;
   }
 </style>

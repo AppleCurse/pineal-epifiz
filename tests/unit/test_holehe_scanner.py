@@ -28,6 +28,10 @@ def _hermetic(monkeypatch):
     monkeypatch.delenv("OSINT_INDUSTRIES_KEY", raising=False)
     monkeypatch.setattr(LLMGateway, "query", AsyncMock(side_effect=RuntimeError("no llm")))
     monkeypatch.setattr(LLMGateway, "query_json", AsyncMock(side_effect=RuntimeError("no llm")))
+    # [FAZ A] Ajan taramayı doğrudan değil CAPABILITY OMURGASINDAN çağırır;
+    # kütüphane yokluğu denetimi testte aşılır, davranış servis mock'uyla sınanır.
+    from agent_core.capabilities import adapters_osint
+    monkeypatch.setattr(adapters_osint, "_module_available", lambda _name: True)
 
 
 def _fn_named(name, behavior, payload=None):
@@ -232,6 +236,9 @@ class TestForensicClassification:
 
 
 class TestAgentMerge:
+    #: Kasa gerçeği payload'dan gelir (üretimde api.py enjekte eder).
+    POLICY = {"policy": {"vault_locked": False}}
+
     def _profile(self, **kw):
         from agent_core.agents.osint_investigator import OsintProfile
         base = dict(connected_emails=["victim@example.com"])
@@ -242,10 +249,11 @@ class TestAgentMerge:
     async def test_gate_off_provenance_only(self, monkeypatch):
         monkeypatch.delenv("ENABLE_HOLEHE", raising=False)
         profile = await OsintInvestigatorAgent()._apply_email_scan(
-            self._profile(), "victim@example.com")
+            self._profile(), "victim@example.com", self.POLICY)
         assert profile.associated_platforms == []
         assert profile.data_confidence is True
-        assert profile.email_scan["reason"] == "disabled"
+        # Omurga reddi: kapı kapalı -> makine-okunur sebep, site UYDURULMAZ.
+        assert "gate_disabled" in profile.email_scan["reason"]
 
     @pytest.mark.asyncio
     async def test_found_sites_merge_and_confidence_monotone(self, monkeypatch):
@@ -257,10 +265,14 @@ class TestAgentMerge:
         with patch("agent_core.services.holehe_scanner.scan_email",
                    AsyncMock(return_value=scan)):
             merged = await OsintInvestigatorAgent()._apply_email_scan(
-                profile, "victim@example.com")
+                profile, "victim@example.com", self.POLICY)
         assert sorted(merged.associated_platforms) == ["Amazon", "GitHub"]
         assert merged.confidence == 0.5  # 1/10 kapsama mevcut 0.5'in altında -> ezilmez
         assert merged.email_scan["found_sites"][0]["site"] == "Amazon"
+        # [FAZ A] Aynı bulgu artık MÜHÜRLÜ KANIT: zaman çizelgesine girdi.
+        assert merged.email_scan_sealed == 1
+        entries = merged.email_scan_evidence["entries"]
+        assert entries and entries[0]["source_engine"] == "holehe"
 
     @pytest.mark.asyncio
     async def test_confident_absence_marks_no_match(self, monkeypatch):
@@ -269,7 +281,7 @@ class TestAgentMerge:
         with patch("agent_core.services.holehe_scanner.scan_email",
                    AsyncMock(return_value=scan)):
             merged = await OsintInvestigatorAgent()._apply_email_scan(
-                self._profile(), "victim@example.com")
+                self._profile(), "victim@example.com", self.POLICY)
         assert merged.data_confidence is True
         assert merged.confidence == 0.0
         assert merged.fallback_reason == "email_scan_no_match"
@@ -281,14 +293,19 @@ class TestAgentMerge:
         with patch("agent_core.services.holehe_scanner.scan_email",
                    AsyncMock(return_value=scan)):
             merged = await OsintInvestigatorAgent()._apply_email_scan(
-                self._profile(), "victim@example.com")
+                self._profile(), "victim@example.com", self.POLICY)
         assert merged.associated_platforms == []
         assert merged.fallback_reason is None
         assert merged.email_scan["reason"] == "provider_errors"
 
 
 class TestEndpoint:
-    def test_endpoint_disabled_by_default(self, monkeypatch):
+    def test_endpoint_disabled_by_default(self, monkeypatch, vault_open):
+        """[E5 sözleşme değişikliği] Motor kapalıyken 200 DEĞİL 400.
+
+        Gerekçe `test_maigret_scanner.py`'deki eş testle aynı; ayrıntılı
+        sözleşme `tests/unit/test_experimental_engine_contract.py`'de.
+        """
         from fastapi.testclient import TestClient
         from backend.api import app
 
@@ -296,10 +313,14 @@ class TestEndpoint:
         with TestClient(app) as client:
             r = client.post("/api/experimental/holehe/scan",
                             json={"email": "a@b.com"})
-        assert r.status_code == 200
-        assert r.json()["reason"] == "disabled"
+        assert r.status_code == 400
+        body = r.json()
+        assert body["error"]["code"] == "MOTOR_UNAVAILABLE"
+        assert body["error"]["reason"] == "disabled"
+        assert body["available"] is False
+        assert body["reason"] == "disabled"
 
-    def test_endpoint_gate_on_uses_scanner(self, monkeypatch):
+    def test_endpoint_gate_on_uses_scanner(self, monkeypatch, vault_open):
         from fastapi.testclient import TestClient
         from backend.api import app
 

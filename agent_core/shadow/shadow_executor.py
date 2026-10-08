@@ -101,6 +101,19 @@ class ShadowExecutor:
                 fallback_reason="strategy_unobserved",
             )
 
+        routed_pattern = task_input.get("_pattern_interrupt") or {}
+        gate_blocked_ids = routed_pattern.get("claim_gate_blocked_ids")
+        if isinstance(gate_blocked_ids, list) and gate_blocked_ids:
+            return ShadowResult(
+                message="",
+                dark_profile=dark.model_dump(),
+                strategy=strategy.get("vector", "unavailable"),
+                nlp_sequence=[],
+                confidence=0.0,
+                data_confidence=False,
+                fallback_reason="claim_gate_blocked_same_claim",
+            )
+
         # 2. Mirror (LLM gerektirir — fallback ile korumalı)
         # [054] fix: task_input içinde önceden üretilmiş user_mirror varsa onu kullan;
         # aynı görev için gereksiz ikinci kez Mirror LLM çağırma.

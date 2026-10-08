@@ -189,15 +189,56 @@ def _engine(*urls):
 
 
 class TestResearchWiring:
+    """[FAZ A] Zenginleştirme artık TEK crawl4ai çağrısı değil, üç kademeli
+    temiz-metin omurgası: trafilatura → crawl4ai → scrapling
+    (`capabilities.extract_web_text`). Sözleşme AYNEN korunur: çekilemeyen
+    sonuca `crawl` alanı EKLENMEZ (dürüst boş), uydurma metin YOK.
+
+    Kasa kapalıyken hiçbir kademe koşmaz: bu yüzden testler kendi odasının
+    kasanı açar (`client_id`), interlock gerçeği tahmin edilmez.
+    """
+
+    @staticmethod
+    def _open_vault(client_id="crawl-test") -> str:
+        from backend.api import get_room
+
+        get_room(client_id)["vault"]["ig_sessionid"] = "test-session"
+        return client_id
+
+    @pytest.fixture(autouse=True)
+    def _hermetic_guard(self, monkeypatch):
+        """SSRF guard'ı DNS'e bakar; hermetik testte ağ YOK sayılır.
+
+        Guard'ın kendisi ayrı testlerin konusudur; burada amaç omurganın kademe
+        seçimi ve dürüst alan sözleşmesidir.
+        """
+        from agent_core.capabilities import adapters_web
+
+        monkeypatch.setattr(adapters_web, "is_safe_url", lambda url: True)
+
+    @pytest.mark.asyncio
+    async def test_vault_locked_blocks_all_extractors(self, monkeypatch):
+        """Kasa kapalı: omurga hiçbir kademeyi koşturmaz, alan eklenmez."""
+        monkeypatch.setenv("ENABLE_CRAWL4AI", "true")
+        monkeypatch.setattr(crawl_enricher, "fetch_readable",
+                            lambda *a, **k: pytest.fail("kasa kapalıyken çağrılmamalı"))
+        research = await _run_public_web_research(
+            "https://x.com/alper",
+            _engine("https://blog.example.com/alper"),
+            client_id="locked-room")
+        assert research["status"] == "ok"
+        assert all("crawl" not in m for m in research["results"])
+
     @pytest.mark.asyncio
     async def test_gate_off_keeps_results_unchanged(self, monkeypatch):
         monkeypatch.delenv("ENABLE_CRAWL4AI", raising=False)
         research = await _run_public_web_research(
             "https://x.com/alper",
-            _engine("https://blog.example.com/alper", "https://blog.example.com/alper2"))
+            _engine("https://blog.example.com/alper", "https://blog.example.com/alper2"),
+            client_id=self._open_vault())
         assert research["status"] == "ok"
         assert all("crawl" not in m for m in research["results"])
-        assert "okunabilir metin" not in research["note"]
+        assert "temiz metin" not in research["note"]
 
     @pytest.mark.asyncio
     async def test_gate_on_attaches_only_available_crawls(self, monkeypatch):
@@ -214,14 +255,17 @@ class TestResearchWiring:
             "https://x.com/alper",
             _engine("https://blog.example.com/alper",
                     "https://blog.example.com/secret-error-alper",
-                    "https://blog.example.com/alper-üçüncü"))
+                    "https://blog.example.com/alper-üçüncü"),
+            client_id=self._open_vault())
         items = research["results"]
         assert len(items) == 3
-        assert items[0]["crawl"]["provider"] == "crawl4ai"
-        assert items[0]["crawl"]["markdown"] == "içerik"
+        # HANGİ kademenin ürettiği kayıtta yazar (görünürlük).
+        assert items[0]["crawl"]["provider"] == "extractor.web.crawl4ai"
+        assert items[0]["crawl"]["text"] == "içerik"
+        assert items[0]["crawl"]["evidence_ids"]
         assert "crawl" not in items[1]  # kalkışıldı, hata verdi → alan EKLENMEZ
         assert "crawl" not in items[2]  # default limit (2) aşıldı → kalkışılmadı
-        assert "1 sonuca crawl4ai ile okunabilir metin çekildi" in research["note"]
+        assert "1 sonuca temiz metin çekildi" in research["note"]
 
     @pytest.mark.asyncio
     async def test_research_limit_env(self, monkeypatch):
@@ -263,7 +307,12 @@ class TestQuoteGuardCorpus:
 
 
 class TestEndpoint:
-    def test_endpoint_disabled_by_default(self, monkeypatch):
+    def test_endpoint_disabled_by_default(self, monkeypatch, vault_open):
+        """[E5 sözleşme değişikliği] Motor kapalıyken 200 DEĞİL 400.
+
+        Gerekçe `test_maigret_scanner.py`'deki eş testle aynı; ayrıntılı
+        sözleşme `tests/unit/test_experimental_engine_contract.py`'de.
+        """
         from fastapi.testclient import TestClient
         from backend.api import app
 
@@ -271,11 +320,15 @@ class TestEndpoint:
         with TestClient(app) as client:
             r = client.post("/api/experimental/crawl/fetch",
                             json={"url": "https://example.com/a"})
-        assert r.status_code == 200
-        assert r.json()["reason"] == "disabled"
-        assert r.json()["provider"] == "crawl4ai"
+        assert r.status_code == 400
+        body = r.json()
+        assert body["error"]["code"] == "MOTOR_UNAVAILABLE"
+        assert body["error"]["reason"] == "disabled"
+        # Dürüst sözleşme korunur: sağlayıcı ve sebep hâlâ gövdede.
+        assert body["reason"] == "disabled"
+        assert body["provider"] == "crawl4ai"
 
-    def test_endpoint_ssrf_blocked(self, monkeypatch):
+    def test_endpoint_ssrf_blocked(self, monkeypatch, vault_open):
         from fastapi.testclient import TestClient
         from backend.api import app
 

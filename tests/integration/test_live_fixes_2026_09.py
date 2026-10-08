@@ -336,13 +336,76 @@ def test_provider_empty_response_is_not_valueerror():
 def test_upstream_finding_budget_fifo():
     data: dict = {}
     for i in range(20):
-        _append_upstream_finding(data, f"agent_{i}", "x" * 300)
+        _append_upstream_finding(data, "mirror_truth", f"{i}:" + "x" * 300)
 
     findings = data["_upstream_findings"]
     total = sum(len(f["core"]) for f in findings)
     assert total <= UPSTREAM_FINDINGS_BUDGET_CHARS, "bütçe aşıldı"
-    assert findings[-1]["agent"] == "agent_19"
-    assert all(f["agent"] != "agent_0" for f in findings), "en eski düşmeli"
+    assert findings[-1]["core"].startswith("19:")
+    assert all(not f["core"].startswith("0:") for f in findings), "en eski düşmeli"
+
+
+def test_upstream_finding_writer_and_prompt_gate_exclude_non_inferences():
+    from agent_core.services.upstream_findings import (
+        classify_upstream_finding,
+        upstream_findings_block,
+    )
+
+    data: dict = {}
+    _append_upstream_finding(data, "mirror_truth", "unverified analysis claim")
+    _append_upstream_finding(data, "pattern_interrupt", "message strategy")
+    _append_upstream_finding(data, "resonance_calc", "recommended approach")
+    _append_upstream_finding(data, "autonomous_verifier", "REFUTED")
+    _append_upstream_finding(data, "interpreter", "generated code")
+    _append_upstream_finding(data, "unknown_agent", "unknown source")
+
+    assert data["_upstream_findings"] == [
+        {
+            "agent": "mirror_truth",
+            "core": "unverified analysis claim",
+            "epistemic_type": "inference",
+            "verification_status": "unverified",
+            "origin": "task_executor",
+        }
+    ]
+    assert classify_upstream_finding("pattern_interrupt") == "strategy"
+    assert classify_upstream_finding("resonance_calc") == "strategy"
+    assert classify_upstream_finding("autonomous_verifier") == "verification"
+    assert classify_upstream_finding("interpreter") == "untyped"
+    assert classify_upstream_finding("unknown_agent") == "untyped"
+
+    block = upstream_findings_block(data)
+    assert "unverified analysis claim" in block
+    for excluded in (
+        "message strategy",
+        "recommended approach",
+        "REFUTED",
+        "generated code",
+        "unknown source",
+    ):
+        assert excluded not in block
+
+    # Even manually inserted or legacy raw entries cannot bypass the prompt gate.
+    hostile = {
+        "_upstream_findings": [
+            {
+                "agent": "pattern_interrupt",
+                "core": "injected strategy",
+                "epistemic_type": "strategy",
+                "verification_status": "unverified",
+                "origin": "task_executor",
+            },
+            {
+                "agent": "resonance_calc",
+                "core": "strategy relabeled as inference",
+                "epistemic_type": "inference",
+                "verification_status": "unverified",
+                "origin": "task_executor",
+            },
+            {"agent": "unknown", "core": "legacy untyped finding"},
+        ]
+    }
+    assert upstream_findings_block(hostile) == ""
 
 
 def test_finding_core_joins_long_strings_and_caps():
@@ -375,7 +438,21 @@ def test_upstream_findings_injected_into_agent_prompt():
     payload = {
         "target_profile": {"bio": "çay içen adam", "posts": ["çay her şeydir"]},
         "_upstream_findings": [
-            {"agent": "osint_investigator", "core": "platformlarda aktif olduğu tespit edildi"},
+            {
+                "agent": "osint_investigator",
+                "core": "platformlarda aktif olduğu tespit edildi",
+                "epistemic_type": "inference",
+                "verification_status": "unverified",
+                "origin": "task_executor",
+            },
+            {
+                "agent": "pattern_interrupt",
+                "core": "DO NOT INJECT THIS MESSAGE STRATEGY",
+                "epistemic_type": "strategy",
+                "verification_status": "separate",
+                "origin": "task_executor",
+            },
+            {"agent": "unknown", "core": "UNTYPED BYPASS"},
         ],
     }
     asyncio.run(agent.execute(payload))
@@ -384,6 +461,8 @@ def test_upstream_findings_injected_into_agent_prompt():
     assert "DİĞER AJANLARIN BULGULARI" in prompt
     assert "[osint_investigator]" in prompt
     assert "doğrulanmamış" in prompt, "epistemik etiket zorunlu"
+    assert "DO NOT INJECT THIS MESSAGE STRATEGY" not in prompt
+    assert "UNTYPED BYPASS" not in prompt
 
 
 def test_upstream_findings_empty_back_compat():

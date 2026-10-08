@@ -2,7 +2,8 @@
   import { onMount, onDestroy } from 'svelte';
   import { get } from 'svelte/store';
   import {
-    apiToken, currentApiToken, apiFetch, clientId, wsUrl, logs, taskStatus,
+    apiToken, currentApiToken, apiFetch, clientId, wsUrl, logs, taskStatus, API_BASE,
+    speechState, lastSpeech, voiceEnabled,
     isProcessing, powerEngaged, recordEngaged, agentStatuses, vaultLocked,
     activeViewMode, agentStatusSource
   } from './store';
@@ -39,6 +40,11 @@
   let telemetryPoll: ReturnType<typeof setInterval> | null = null;
   let telemetryData: any = null;
   let telemetryPoll: any = null;
+  // [AUDIT 2026-10-07 · Madde 6] Telemetri panosu GÖRÜNÜR olsun.
+  // Eskiden bileşen `display: none` içinde basılıyordu: DOM'da vardı
+  // ama kullanıcı HİÇ göremiyordu (gözlemlenebilirlik fiilen sıfır).
+  // Varsayılan AÇIK; isteyen kullanıcı bilinçli olarak kapatabilir.
+  let telemetryVisible = true;
   let tauriUnlisteners: (() => void)[] = [];
 
   async function fetchTelemetry() {
@@ -138,7 +144,28 @@
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.type === "log") {
+        if (data.type === "speech") {
+          // [FAZ C · C2] Konuşma durumu TEK kaynaktan (backend) gelir:
+          // arayüz kendi kendine "konuşuyorum" uydurmaz.
+          lastSpeech.set(data);
+          if (data.state === "speaking") {
+            speechState.set("speaking");
+            if (get(voiceEnabled) && data.url) {
+              try {
+                const audio = new Audio(`${API_BASE}${data.url}`);
+                audio.onended = () => speechState.set("idle");
+                audio.onerror = () => speechState.set("idle");
+                void audio.play().catch(() => speechState.set("idle"));
+              } catch (_e) {
+                speechState.set("idle");
+              }
+            }
+          } else if (data.state === "denied") {
+            speechState.set("denied");
+          } else {
+            speechState.set("idle");
+          }
+        } else if (data.type === "log") {
           if (!recording()) return;
           logs.update(l => [...l, data].slice(-80));
         } else if (data.type === "agent_status_update") {
@@ -401,10 +428,30 @@
     <AtlasPinealCockpit />
   {/if}
 
-  <!-- Adli Telemetri & Sözleşme Köprüsü -->
-  <div style="display: none;" aria-hidden="true">
-    <NeuralTelemetryBoard telemetry={telemetryData} />
-  </div>
+  <!--
+    Adli Telemetri & Sözleşme Köprüsü — ARTIK GERÇEKTEN GÖRÜNÜR.
+    [AUDIT 2026-10-07 · Madde 6] Bu katman eskiden
+    `<div style="display: none;" aria-hidden="true">` içindeydi: bileşen
+    DOM'a basılıyor ama KULLANICI HİÇ GÖREMİYORDU; yani telemetri
+    gözlemlenebilirliği fiilen yoktu ve "TELEMETRY OFFLINE" uyarısı bile
+    hiçbir zaman ekrana ulaşmıyordu. Pano artık görünür bir panel;
+    kapamak kullanıcının BİLİNÇLİ seçimiyle olur (aşağıdaki düğme).
+  -->
+  <button
+    class="telemetry-toggle"
+    on:click={() => (telemetryVisible = !telemetryVisible)}
+    aria-expanded={telemetryVisible}
+    aria-controls="neural-telemetry-panel"
+    title="Nöral telemetri panosunu göster / gizle"
+  >
+    {telemetryVisible ? '▼ TELEMETRİYİ GİZLE' : '▲ TELEMETRİYİ GÖSTER'}
+  </button>
+
+  {#if telemetryVisible}
+    <div class="telemetry-panel" id="neural-telemetry-panel">
+      <NeuralTelemetryBoard telemetry={telemetryData} />
+    </div>
+  {/if}
 </main>
 
 <style>
@@ -416,5 +463,40 @@
     justify-content: center;
     background: #000;
     overflow: hidden;
+  }
+
+  /* [AUDIT 2026-10-07 · Madde 6] Telemetri panosu ve açma/kapama düğmesi. */
+  .telemetry-panel {
+    position: fixed;
+    left: 18px;
+    bottom: 62px;
+    width: min(460px, 34vw);
+    z-index: 60;
+  }
+
+  /* Pano kendi içinde 450px yükseklikte; küçük ekranlarda taşmasın. */
+  .telemetry-panel :global(.telemetry-board) {
+    height: min(450px, calc(100vh - 130px));
+  }
+
+  .telemetry-toggle {
+    position: fixed;
+    left: 18px;
+    bottom: 18px;
+    z-index: 61;
+    padding: 6px 12px;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: #d4af37;
+    background: rgba(3, 5, 10, 0.88);
+    border: 1px solid rgba(212, 175, 55, 0.35);
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  .telemetry-toggle:hover {
+    border-color: rgba(212, 175, 55, 0.75);
   }
 </style>

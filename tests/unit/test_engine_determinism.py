@@ -103,11 +103,19 @@ async def build_bundle() -> dict:
 
 
 def _run_in_subprocess(seed: str) -> str:
-    env = dict(os.environ, PYTHONHASHSEED=seed)
+    # [2026-10-07] Windows'ta çocuk sürecin stdout kodlaması yerel kod sayfasına
+    # düşüyordu (Türkçe makinede cp1254). frequency_engine makine notuna `μ`/`σ`
+    # yazdığı (bkz. frequency_engine.py:163) ve bu iki karakter cp1254'te
+    # BULUNMADIĞI için `print(...)` UnicodeEncodeError ile çöküyordu: üç
+    # determinizm testi ÜRÜN kusuru değil, kodlama farkı yüzünden kırmızıya
+    # düşüyordu. Kirli çözüm stdout'u ASCII'ye indirmek olurdu (kanıt metni
+    # kaybolur); doğrusu iki ucu da UTF-8'e sabitlemek.
+    env = dict(os.environ, PYTHONHASHSEED=seed, PYTHONIOENCODING="utf-8")
     proc = subprocess.run(
         [sys.executable, "-c", RUNNER, str(Path(__file__).resolve())],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=env,
         cwd=str(REPO_ROOT),
         timeout=300,

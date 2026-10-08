@@ -35,6 +35,16 @@ htmlcov/
 # Junk / Memory artifacts
 check_runs.py
 memory/*.json
+memory/ledger/
+# [FAZ B] Çalışma anı yerel depolar: değişim geçmişi + eşik kalibrasyon ledger'ı.
+# Bunlar ÖLÇÜM VERİSİDİR, depoya girmez (makinede kalır, kalibrasyon oradan okur).
+memory/changes/
+memory/calibration/
+memory/crystals/
+memory/telemetry/
+memory/speech/
+# [FAZ C · C3] STT gecici kayit alani (transkriptten sonra silinir)
+memory/speech/.stt/
 cov_out.txt
 
 
@@ -49,3 +59,6 @@ backups/
 
 # scripts/test_disaster_recovery.sh geçici compose override dosyası
 .dr_override.*
+
+# [AUDIT 2026-10-07] Denetim doğrulama ortamı (yerel; üretime girmez)
+.venv-audit/

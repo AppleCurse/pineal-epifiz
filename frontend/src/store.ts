@@ -94,6 +94,28 @@ export const agentStatuses = writable<Record<string, { status: string; updatedAt
 // UI bu etiketi basar; "REDIS PUB/SUB" yazısı artık varsayılan SÜS değil.
 export const agentStatusSource = writable<'redis_bus' | 'in_memory' | 'fallback' | 'error' | 'unreachable' | 'none'>('none');
 export const vaultLocked = writable<boolean>(true);
+// [FAZ C · C2/C3] KONUŞMA DURUMU: tek kaynak backend'dir (WS "speech" çerçevesi).
+// 'idle' -> suskun · 'speaking' -> konuşuyor · 'denied' -> motor yok/reddedildi.
+export const speechState = writable<
+  'idle' | 'speaking' | 'listening' | 'interrupted' | 'denied'
+>('idle');
+export const lastSpeech = writable<any>(null);
+// Sesli yanıt ana şalteri (kullanıcı kapatabilir; varsayılan açık).
+function _initialVoice(): boolean {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const stored = localStorage.getItem('pineal_voice_enabled');
+      if (stored !== null) return stored === '1';
+    }
+  } catch (_e) {}
+  return true;
+}
+export const voiceEnabled = writable<boolean>(_initialVoice());
+if (typeof localStorage !== 'undefined') {
+  voiceEnabled.subscribe((v) => {
+    try { localStorage.setItem('pineal_voice_enabled', v ? '1' : '0'); } catch (_e) {}
+  });
+}
 export const activeViewMode = writable<'warroom' | 'cockpit'>(
   (typeof localStorage !== 'undefined' && (localStorage.getItem('pineal_view_mode') as 'warroom' | 'cockpit')) || 'warroom'
 );

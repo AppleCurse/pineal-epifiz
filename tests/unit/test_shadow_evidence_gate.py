@@ -44,6 +44,32 @@ async def test_shadow_with_lexical_input_only_produces_no_strategy():
     assert result.fallback_reason == "dark_triad_markers_unobserved"
 
 
+async def test_shadow_does_not_regenerate_a_claim_gate_blocked_routed_message(monkeypatch):
+    from unittest.mock import AsyncMock
+    from agent_core.psychology.dark_triad import DarkTriadProfile
+
+    executor = ShadowExecutor()
+    monkeypatch.setattr(
+        executor.dark_triad, "analyze",
+        lambda profile_data: DarkTriadProfile(narcissism=0.8),
+    )
+    executor.mirror.execute = AsyncMock()
+    executor.pattern.execute = AsyncMock()
+    result = await executor.execute({
+        "target_profile": {"bio": "A real target profile"},
+        "_pattern_interrupt": {
+            "message": "",
+            "claim_gate_blocked_ids": ["clm_0123456789abcdefabcd"],
+        },
+    })
+
+    assert result.message == ""
+    assert result.data_confidence is False
+    assert result.fallback_reason == "claim_gate_blocked_same_claim"
+    executor.pattern.execute.assert_not_awaited()
+    executor.mirror.execute.assert_not_awaited()
+
+
 async def test_shadow_with_observed_traits_still_synthesizes(monkeypatch):
     """GÖREV 2.1 sonrasi yetenek kilidi: gozlem verilirse sentez uretir."""
     from agent_core.psychology.dark_triad import DarkTriadProfile

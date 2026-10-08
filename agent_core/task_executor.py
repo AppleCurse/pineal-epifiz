@@ -1,3 +1,5 @@
+import inspect
+import os
 import tempfile
 from contextlib import contextmanager
 from types import SimpleNamespace
@@ -19,6 +21,7 @@ from agent_core.agents.passion_mapper import PassionMapperAgent
 from agent_core.agents.pattern_interrupt import PatternInterrupt
 from agent_core.agents.resonance_calculator import ResonanceCalculator
 from agent_core.agents.resonance_synthesizer import ResonanceSynthesizerAgent
+from agent_core.domain.evidence_models import EvidenceTimeline
 from agent_core.domain.memory_models import (
     AgentRun,
     AuthenticBridge,
@@ -31,13 +34,18 @@ from agent_core.domain.memory_models import (
 from agent_core.domain.pipeline_status import PipelineStatus
 from agent_core.config_loader import DecisionConfig
 from agent_core.services.canonical_memory import MemoryCorruptedError, MemoryState
+from agent_core.services.claim_decision_gate import (
+    build_claim_decision_gate,
+    filter_message_for_claim_gate,
+)
 from agent_core.services.cognitive_router import CognitiveRouter, RoutePlan
 from agent_core.services.decision_engine import DecisionEngine
 from agent_core.services.hindsight_memory import build_memory_from_env
 from agent_core.services.llm_gateway import LLMGateway
 from agent_core.services.memory_injector import MemoryInjector
 from agent_core.services.search_engine import SearchEngine
-from agent_core.services.uncertainty_engine import UncertaintyEngine
+from agent_core.services.uncertainty_engine import UncertaintyEngine, UncertaintyReport
+from agent_core.services.upstream_findings import classify_upstream_finding
 from agent_core.services.vision_analyzer import VisionAnalyzer
 from agent_core.shadow.shadow_executor import ShadowExecutor
 
@@ -59,20 +67,43 @@ class TaskStatus(TaskSnapshot):
 # enjekte edilecek toplam metin ≤ bu kadar karakter. Bütçe aşılırsa
 # EN ESKİ bulgu atılır (FIFO) — deterministik ve tahmin edilebilir.
 UPSTREAM_FINDINGS_BUDGET_CHARS = 2000
+CANONICAL_MESSAGE_CONTEXT_ENV = "PINEAL_ENABLE_CANONICAL_MESSAGE_CONTEXT"
+
+
+def _canonical_message_context_enabled() -> bool:
+    return os.getenv(CANONICAL_MESSAGE_CONTEXT_ENV, "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def _append_upstream_finding(input_data: dict, agent: str, core: str) -> None:
-    """[FIX #3] Bulgu çekirdeğini sınırlı upstream listesine ekler.
+    """Append only a bounded, explicitly classified inference core.
 
-    Liste input_data içinde yaşar (kalıcı şemaya dokunulmaz — geriye
-    uyum). Bütçe aşımında en eski giriş düşer.
+    Strategy, Verifier A, and unknown/untyped agent outputs remain in their
+    own result records and are never copied into the shared prompt channel.
     """
+    epistemic_type = classify_upstream_finding(agent)
+    if epistemic_type != "inference":
+        return
+
     findings = input_data.setdefault("_upstream_findings", [])
-    findings.append({"agent": agent, "core": core})
-    total = sum(len(str(f.get("core", ""))) for f in findings)
+    findings.append(
+        {
+            "agent": agent,
+            "core": core,
+            "epistemic_type": epistemic_type,
+            "verification_status": "unverified",
+            "origin": "task_executor",
+        }
+    )
+    total = sum(len(str(f.get("core", ""))) for f in findings if isinstance(f, dict))
     while len(findings) > 1 and total > UPSTREAM_FINDINGS_BUDGET_CHARS:
         dropped = findings.pop(0)
-        total -= len(str(dropped.get("core", "")))
+        if isinstance(dropped, dict):
+            total -= len(str(dropped.get("core", "")))
 
 
 class PinealExecutor:
@@ -314,6 +345,62 @@ class PinealExecutor:
             raise AgentTimeoutError(f"{label} {limit:g}s sınırını aştı") from exc
 
     @staticmethod
+    def _agent_takes_full_signature(agent: Any) -> bool:
+        """``agent.execute`` ``(input_data, memory, gateway)`` imzasını kabul ediyor mu?
+
+        [AUDIT 2026-10-07 · Madde 5] ESKİ YÖNTEM (kusur)::
+
+            try:
+                return await agent.execute(input_data, memory, gateway)
+            except TypeError:
+                return await agent.execute(input_data)
+
+        Bu bir "imza pazarlığı" gibi görünüyordu, ama ``TypeError``
+        YALNIZCA "yanlış argüman sayısı" demek değildir: ajanın GÖVDESİNDEKİ
+        gerçek bir hatadan da gelir (``None + 1``, beklenmeyen tipte LLM
+        yanıtının açılması, hatalı sözlük erişimi...). O durumda eski kod
+        ajanı **İKİNCİ KEZ** koşturuyordu:
+
+          * Yan etkiler TEKRAR tetiklenirdi — ücretli LLM çağrıları, ağ
+            istekleri, kanıt/kayıt yazımları bir kez daha yapılırdı.
+          * Asıl hata MASKELENİRDİ: kullanıcı "execute() missing 2 required
+            positional arguments" gibi aldatıcı bir mesajla, gerçek
+            hatanın izini süremeden baş başa kalırdı.
+          * Maskeleme, 1 argümanlı ajanlarda ikinci çağrının da patlaması
+            anlamına geldiğinden görev yine başarısız oluyor, ama iki katı
+            maliyetle ve yanlış teşhisle.
+
+        Yeni yöntem: imza, ajanı ÇALIŞTIRMADAN ``inspect.signature`` ile
+        okunur. Ajan TAM BİR KEZ koşar; gövdeden gelen TypeError olduğu
+        gibi yükselir.
+
+        Returns:
+            ``True`` -> tam imzayla (3 konumsal argüman) çağır.
+            ``False`` -> yalnızca ``input_data`` ile çağır.
+        """
+        try:
+            parameters = inspect.signature(agent.execute).parameters
+        except (TypeError, ValueError):
+            # İmza okunamıyor (C uzantısı, egzotik çağrılabilir, Mock
+            # davranışı): baskın sözleşme olan tam imzayı dene.
+            return True
+
+        kinds = [parameter.kind for parameter in parameters.values()]
+        if inspect.Parameter.VAR_POSITIONAL in kinds:
+            return True  # *args var: her iki çağrı biçimini de yer.
+
+        positional = sum(
+            1
+            for kind in kinds
+            if kind
+            in (
+                inspect.Parameter.POSITIONAL_ONLY,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            )
+        )
+        return positional >= 3
+
+    @staticmethod
     async def _execute_with_timeout(agent: Any, input_data: Dict[str, Any], memory: Any,
                                     gateway: Any, limit: float):
         """[BOSS-8] Ajanı ajan-başı duvar saati sınırıyla koşar.
@@ -321,16 +408,18 @@ class PinealExecutor:
         `limit <= 0` ise sınır yoktur (eski davranış). Süre aşımı DİĞER
         hatalardan ayrı raporlanır: hangi ajanın bütçeyi yediği görünür olur
         ve görev, tüm emeği çöpe atan bir "baştan koş" turuna girmez.
+
+        [AUDIT 2026-10-07 · Madde 5] İmza, ÇAĞIRMADAN (inspect ile) okunur.
+        Ayrıntı: :meth:`_agent_takes_full_signature`.
         """
-        import asyncio as _asyncio
-
         async def _call():
-            try:
+            # TEK koşu. TypeError burada yakalanMAZ: ajanın gövdesinden
+            # gelen gerçek bir hata olduğu gibi yükselir, ajan ikinci kez
+            # koşturulmaz (yan etki tekrarı + hata maskeleme kusuru).
+            if PinealExecutor._agent_takes_full_signature(agent):
                 return await agent.execute(input_data, memory, gateway)
-            except TypeError:
-                return await agent.execute(input_data)
+            return await agent.execute(input_data)
 
-        del _asyncio  # tek uygulama yeri _bounded
         return await PinealExecutor._bounded(
             _call(), limit, f"{getattr(agent, 'AGENT_NAME', type(agent).__name__)} ajanı"
         )
@@ -452,6 +541,62 @@ class PinealExecutor:
             "has_target_analysis": "target_analysis" in input_data,
         }
 
+    def _recall_memory_crystal(self, task_id: str, input_data: dict, status: Any) -> str:
+        """[FAZ B · B2/B3] Aynı hedefin GEÇMİŞİNİ kristalden çeker.
+
+        Bu görevin kendi kanıtı HARİÇTIR (zaten elinde); yalnız önceki
+        taramalardan kalan hatıralar getirilir. Hatıralar UNTRUSTED'dır:
+        `recall_block` onları kafesler ve temizler — geçmiş bağlam TALİMAT
+        değildir. Kristal yoksa boş metin döner (uydurma hatıra yok).
+        """
+        try:
+            from agent_core.services import memory_crystal
+            from agent_core.services.change_tracker import target_key
+
+            profile = input_data.get("target_profile") or {}
+            if not isinstance(profile, dict):
+                profile = {}
+            evidence = input_data.get("forensic_evidence") or []
+            target = target_key(profile, evidence if isinstance(evidence, list) else [])
+            if not target:
+                return ""
+            query = " ".join(
+                str(profile.get(field) or "") for field in ("username", "name", "bio")
+            ).strip() or target
+            block = memory_crystal.recall_block(
+                target,
+                query,
+                base=getattr(self.memory, "storage_path", None),
+                exclude_task_id=str(task_id or ""),
+            )
+            result = memory_crystal.recall(
+                target,
+                query,
+                base=getattr(self.memory, "storage_path", None),
+                exclude_task_id=str(task_id or ""),
+            )
+            status.evidence_chain.append(
+                {
+                    "agent": "memory_crystal",
+                    "evidence_type": "memory_recall",
+                    "result": {
+                        "schema_version": memory_crystal.SCHEMA_VERSION,
+                        "target": target,
+                        "available": result.available,
+                        "reason": result.reason,
+                        "recalled": len(result.hits),
+                        "selected_fragment_ids": [hit.fragment_id for hit in result.hits],
+                        "machine_note": result.machine_note,
+                    },
+                }
+            )
+            if result.available:
+                self._log("INFO", f"[{task_id}] HAFIZA KRİSTALİ: {len(result.hits)} hatıra geri çağrıldı")
+            return block
+        except Exception as exc:  # hafıza asıl akışı asla bozmasın
+            self._log("WARNING", f"[{task_id}] HAFIZA KRİSTALİ devre dışı: {type(exc).__name__}")
+            return ""
+
     async def _download_images(self, urls: List[str]) -> List[str]:
         import httpx
         import asyncio
@@ -478,6 +623,8 @@ class PinealExecutor:
 
         # Use a shared httpx.AsyncClient to enable connection pooling
         async with httpx.AsyncClient(follow_redirects=False, timeout=15.0) as client:
+            # [E7-muaf] `fetch_image` her istisnayı yakalar, loglar ve None
+            # döner; kalan görsel yine indirilir (`paths` filtresi).
             results = await asyncio.gather(*(fetch_image(client, u) for u in urls[:2]))
         
         paths = [p for p in results if p is not None]
@@ -525,6 +672,138 @@ class PinealExecutor:
             # görünmüyordu). Aynı kayıtlar run.output_summary["_aux_llm_calls"]'ta da var.
             record["aux_llm_calls"] = [call.copy() for call in aux_llm_calls]
         return record
+
+    @staticmethod
+    def _apply_claim_decision_gate(
+        result: BaseModel,
+        gate: dict | None,
+    ) -> tuple[BaseModel, list[str]]:
+        """Deterministically suppress output containing a fully linked blocked claim."""
+        updates: dict[str, Any] = {}
+        blocked_ids: list[str] = []
+        for field in ("message", "suggested_opening_message"):
+            value = getattr(result, field, None)
+            if not isinstance(value, str) or not value:
+                continue
+            filtered, ids = filter_message_for_claim_gate(value, gate)
+            if ids:
+                updates[field] = filtered
+                blocked_ids.extend(ids)
+
+        blocked_ids = sorted(set(blocked_ids))
+        if not blocked_ids:
+            return result, []
+        if hasattr(result, "data_confidence"):
+            updates["data_confidence"] = False
+        if hasattr(result, "fallback_reason"):
+            updates["fallback_reason"] = "claim_gate_blocked_same_claim"
+        if hasattr(result, "evidence_ids_used"):
+            updates["evidence_ids_used"] = []
+        return result.model_copy(update=updates), blocked_ids
+
+    @staticmethod
+    def _append_tier2_canonical_output(status: TaskStatus, agent_name: str, result: BaseModel) -> None:
+        """Record only allowlisted, explicitly classified Tier-2 fields."""
+        from agent_core.services.tier2_evidence_adapter import canonicalize_tier2_output
+
+        items = canonicalize_tier2_output(agent_name, result)
+        if not items:
+            return
+        status.evidence_chain.append(
+            {
+                "agent": "tier2_evidence_adapter",
+                "source_agent": agent_name,
+                "evidence_type": "tier2_canonical_output",
+                "result": {
+                    "schema_version": "tier2-evidence-adapter-v1",
+                    "build_status": "ready",
+                    "item_count": len(items),
+                    "items": [item.model_dump(mode="json") for item in items],
+                },
+            }
+        )
+
+    @staticmethod
+    def _refresh_internal_verification_checks(
+        status: TaskStatus,
+        input_data: Dict[str, Any],
+    ) -> None:
+        """Append Tier-2 observation integrity checks without widening prompts/timeline."""
+        report = input_data.get("verifications")
+        if not isinstance(report, dict):
+            return
+
+        tier2_items = []
+        for record in status.evidence_chain:
+            if (
+                not isinstance(record, dict)
+                or record.get("agent") != "tier2_evidence_adapter"
+                or record.get("source_agent") != "human_behavior"
+                or record.get("evidence_type") != "tier2_canonical_output"
+            ):
+                continue
+            result = record.get("result")
+            items = result.get("items") if isinstance(result, dict) else None
+            if isinstance(items, list):
+                tier2_items.extend(
+                    item for item in items
+                    if isinstance(item, dict) and item.get("epistemic_type") == "observation"
+                )
+        if not tier2_items:
+            return
+
+        check_input = dict(input_data)
+        check_input["forensic_evidence"] = []
+        check_input["canonical_observation_evidence"] = tier2_items
+        checks, rejected = AutonomousVerifier._check_canonical_observations(check_input)
+        serialized = [item.model_dump(mode="json") for item in checks]
+
+        existing = report.get("canonical_observation_checks")
+        existing = existing if isinstance(existing, list) else []
+        seen_ids = {
+            item.get("claim_id") for item in existing if isinstance(item, dict)
+        }
+        merged = list(existing)
+        for item in serialized:
+            if item["claim_id"] not in seen_ids:
+                merged.append(item)
+                seen_ids.add(item["claim_id"])
+        report["canonical_observation_checks"] = merged
+        report["rejected_canonical_observation_count"] = (
+            int(report.get("rejected_canonical_observation_count") or 0) + rejected
+        )
+
+        for record in status.evidence_chain:
+            if (
+                isinstance(record, dict)
+                and record.get("agent") == "autonomous_verifier"
+                and record.get("evidence_type") == "agent_output"
+                and isinstance(record.get("result"), dict)
+            ):
+                record["result"]["canonical_observation_checks"] = merged
+                record["result"]["rejected_canonical_observation_count"] = report[
+                    "rejected_canonical_observation_count"
+                ]
+
+        verifier_run = status.agent_runs.get("autonomous_verifier")
+        if verifier_run is not None:
+            provenance = verifier_run.output_summary.get("_provenance")
+            verifier_run.output_summary = dict(report)
+            if provenance is not None:
+                verifier_run.output_summary["_provenance"] = provenance
+
+    async def _merge_task_memory(self, task_id: str, status: Any) -> None:
+        """[FAZ B · B7] Kanıtı HEDEF PROFİLİYLE birlikte kalıcı belleğe yazar.
+
+        Değişim izleme (change_tracker) ve ilişki grafı görevin HEDEFİNİ
+        bilmek zorundadır; eskiden bellek yalnız kanıt zincirini saklıyordu ve
+        hedef sonradan okunamıyordu (aynı hedef iki farklı anahtarla
+        kaydedilebiliyordu). Yazma asla görevi düşürmez.
+        """
+        profile = getattr(self, "_current_target_profile", None) or {}
+        await self.memory.merge_evidence(
+            task_id, status.evidence_chain, metadata={"target_profile": profile}
+        )
 
     async def execute_task(self, input_data: Dict[str, Any], task_id: str) -> TaskStatus:
         """Public entry: impl'i saran güvenli yaşam döngüsü.
@@ -579,6 +858,9 @@ class PinealExecutor:
         from agent_core.schemas.telemetry import (
             TaskStartedEvent, StepCompletedEvent, ErrorHaltEvent, TaskCompletedEvent, Severity
         )
+        # [FAZ B · B7] Hedef profili bellek yazımlarında taşınır (değişim
+        # izleme + ilişki grafı için kararlı hedef anahtarı).
+        self._current_target_profile = input_data.get("target_profile") or {}
         status = TaskStatus(task_id=task_id, status="processing", created_at=datetime.now(timezone.utc))
         _task_wall_start = datetime.now(timezone.utc)
 
@@ -600,6 +882,18 @@ class PinealExecutor:
                     profile_file,
                 )
 
+        # Cross-agent findings are task-local executor output. Do not trust a
+        # caller-supplied raw list as a typed source or prompt context.
+        input_data["_upstream_findings"] = []
+        input_data.pop("message_evidence_context", None)
+        # Verification outputs and their downstream gate are executor-owned;
+        # never accept a caller-injected claim verdict as a message veto.
+        input_data.pop("verifications", None)
+        input_data.pop("claim_gate", None)
+        input_data["forensic_evidence"] = []
+        input_data["forensic_evidence_status"] = "unavailable"
+        input_data["evidence_timeline"] = EvidenceTimeline().model_dump(mode="json")
+        input_data["evidence_timeline_status"] = "unavailable"
         input_data["sacred_rules"] = self.injector.fetch_active_rules()
         # The shared diagnostic call log is intentionally not cleared here.
         # Concurrent tasks bind records through per-agent context-local scopes.
@@ -771,6 +1065,8 @@ class PinealExecutor:
                 self._log("WARNING", f"[{task_id}] Doygunluk ölçümü atlandı: {str(e)[:80]}")
 
         # --- PINEAL DETERMINISTIC 7-PILLAR ---
+        # Internal evidence carriers were reset at task start; the canonical
+        # list and neutral timeline are rebuilt from this typed pillar bundle.
         pillar_start = datetime.now(timezone.utc)
         self._log("INFO", f"[{task_id}] 7-PILLAR analizi başlatılıyor...")
         self._rack_update("pineal_7pillar", "active")
@@ -790,6 +1086,137 @@ class PinealExecutor:
             ):
                 setattr(status, field, pillar_fields.get(field))
             input_data["pillar_bundle"] = pillar_fields.get("pillar_bundle")
+            # B1/B2: preserve typed pillar outputs. B3 builds a neutral,
+            # sourced timeline; neither representation is injected into prompts.
+            adapter_record = None
+            timeline_record = None
+            try:
+                from agent_core.services.pillar_evidence_adapter import adapt_pillar_bundle
+
+                canonical_items = adapt_pillar_bundle(
+                    input_data["pillar_bundle"],
+                    target_profile=input_data.get("target_profile"),
+                )
+                input_data["forensic_evidence"] = [
+                    item.model_dump(mode="json") for item in canonical_items
+                ]
+                input_data["forensic_evidence_status"] = "ready" if canonical_items else "empty"
+                adapter_record = {
+                    "agent": "pillar_evidence_adapter",
+                    "evidence_type": "canonical_evidence",
+                    "result": {
+                        "schema_version": "evidence-item-v1",
+                        "build_status": input_data["forensic_evidence_status"],
+                        "item_count": len(canonical_items),
+                        "items": input_data["forensic_evidence"],
+                    },
+                }
+                try:
+                    from agent_core.services.evidence_timeline import build_evidence_timeline
+
+                    timeline = build_evidence_timeline(canonical_items)
+                    timeline_entries = (
+                        timeline.entries if timeline.rejected_item_count == 0 else []
+                    )
+                    timeline_payload = timeline.model_dump(mode="json")
+                    if timeline.rejected_item_count:
+                        timeline_payload["entries"] = []
+                    input_data["evidence_timeline"] = timeline_payload
+                    timeline_status = (
+                        "failed"
+                        if timeline.rejected_item_count
+                        else "ready"
+                        if timeline_entries
+                        else "empty"
+                    )
+                    input_data["evidence_timeline_status"] = timeline_status
+                    timeline_record = {
+                        "agent": "evidence_timeline",
+                        "evidence_type": "neutral_timeline",
+                        "result": {
+                            "schema_version": timeline.schema_version,
+                            "source_status_note": timeline.source_status_note,
+                            "build_status": timeline_status,
+                            "entry_count": len(timeline_entries),
+                            "excluded_strategy_count": timeline.excluded_strategy_count,
+                            "rejected_item_count": timeline.rejected_item_count,
+                            "entries": [
+                                {
+                                    "evidence_id": entry.evidence_id,
+                                    "timeline_at": (
+                                        entry.timeline_at.isoformat()
+                                        if entry.timeline_at is not None
+                                        else None
+                                    ),
+                                    "temporal_basis": entry.temporal_basis,
+                                    "epistemic_type": entry.epistemic_type,
+                                    "epistemic_note": entry.epistemic_note,
+                                    "source_engine": entry.source_engine,
+                                    "source_status": (
+                                        entry.source_status.value
+                                        if entry.source_status is not None
+                                        else None
+                                    ),
+                                    "content": entry.content,
+                                    "provenance_refs": entry.provenance_refs,
+                                    "scope": entry.scope,
+                                }
+                                for entry in timeline_entries
+                            ],
+                        },
+                    }
+                except Exception as timeline_error:
+                    input_data["evidence_timeline"] = EvidenceTimeline().model_dump(mode="json")
+                    input_data["evidence_timeline_status"] = "failed"
+                    timeline_record = {
+                        "agent": "evidence_timeline",
+                        "evidence_type": "execution_failure",
+                        "result": {
+                            "schema_version": "evidence-timeline-v1",
+                            "build_status": "failed",
+                            "error_code": "EVIDENCE_TIMELINE_FAILED",
+                            "error_type": type(timeline_error).__name__,
+                            "error_message": "Canonical evidence could not be ordered into a timeline.",
+                        },
+                    }
+                    self._log(
+                        "ERROR",
+                        f"[{task_id}] Evidence timeline failed: {type(timeline_error).__name__}",
+                    )
+            except Exception as adapter_error:
+                # Keep the successful engine run distinct from an adapter
+                # contract failure. No malformed/partial evidence is handed on.
+                input_data["forensic_evidence"] = []
+                input_data["forensic_evidence_status"] = "failed"
+                input_data["evidence_timeline"] = EvidenceTimeline().model_dump(mode="json")
+                input_data["evidence_timeline_status"] = "unavailable"
+                timeline_record = {
+                    "agent": "evidence_timeline",
+                    "evidence_type": "not_built",
+                    "result": {
+                        "schema_version": "evidence-timeline-v1",
+                        "build_status": "unavailable",
+                        "reason_code": "CANONICAL_EVIDENCE_UNAVAILABLE",
+                    },
+                }
+                adapter_record = {
+                    "agent": "pillar_evidence_adapter",
+                    "evidence_type": "execution_failure",
+                    "result": {
+                        "schema_version": "evidence-item-v1",
+                        "build_status": "failed",
+                        "error_code": "EVIDENCE_ADAPTER_FAILED",
+                        "error_type": type(adapter_error).__name__,
+                        "error_message": "Pillar bundle did not match the canonical evidence contract.",
+                    },
+                }
+                # Do not echo a validation exception: it may contain rejected
+                # input values from the target profile.
+                self._log(
+                    "ERROR",
+                    f"[{task_id}] 7-PILLAR evidence adapter failed: "
+                    f"{type(adapter_error).__name__}",
+                )
             pillar_end = datetime.now(timezone.utc)
             elapsed_ms = int((pillar_end - pillar_start).total_seconds() * 1000)
             # [BOSS-5] Özet 7 anahtar mühürde yeterli değildir: motorların ham
@@ -821,6 +1248,12 @@ class PinealExecutor:
                 },
                 "timestamp": pillar_end.isoformat(),
             })
+            if adapter_record is not None:
+                adapter_record["timestamp"] = pillar_end.isoformat()
+                status.evidence_chain.append(adapter_record)
+            if timeline_record is not None:
+                timeline_record["timestamp"] = pillar_end.isoformat()
+                status.evidence_chain.append(timeline_record)
             status.agent_runs["pineal_7pillar"] = AgentRun(
                 task_id=task_id, agent_name="pineal_7pillar", status="completed",
                 started_at=pillar_start, completed_at=pillar_end,
@@ -858,6 +1291,17 @@ class PinealExecutor:
                 "result": {"error_code": error_code, "error_message": str(e)[:250]},
                 "timestamp": error_time.isoformat(),
             })
+            if input_data.get("evidence_timeline_status") == "unavailable":
+                status.evidence_chain.append({
+                    "agent": "evidence_timeline",
+                    "evidence_type": "not_built",
+                    "result": {
+                        "schema_version": "evidence-timeline-v1",
+                        "build_status": "unavailable",
+                        "reason_code": "PILLAR_BUNDLE_UNAVAILABLE",
+                    },
+                    "timestamp": error_time.isoformat(),
+                })
             pillar_cfg = self.config.get_agent_config("pineal_7pillar")
             if not pillar_cfg.graceful_degradation:
                 status.status = PipelineStatus.HALTED_CRITICAL
@@ -870,7 +1314,7 @@ class PinealExecutor:
                     error_message=str(e)[:200],
                     severity=Severity.Critical,
                 ))
-                await self.memory.merge_evidence(task_id, status.evidence_chain)
+                await self._merge_task_memory(task_id, status)
                 self._snapshot(status)
                 return status
             self._snapshot(status)
@@ -957,7 +1401,7 @@ class PinealExecutor:
                             severity=Severity.Critical
                         ))
                         self._log("ERROR", f"[{task_id}] PIPELINE FAILED; critical agent failed.")
-                        await self.memory.merge_evidence(task_id, status.evidence_chain)
+                        await self._merge_task_memory(task_id, status)
                         return status
                     else:
                         self._log("WARNING", f"[{task_id}] Non-critical agent {agent_name} failed. Continuing pipeline (graceful degradation).")
@@ -965,6 +1409,25 @@ class PinealExecutor:
                         continue
 
                 check = self.uncertainty.evaluate(result, agent_name)
+                if agent_name == "autonomous_verifier" and (
+                    getattr(result, "data_confidence", True) is False
+                    or (
+                        isinstance(getattr(check, "confidence", None), (int, float))
+                        and check.confidence < agent_cfg.min_llm_confidence
+                    )
+                ):
+                    # The verifier report is a structured record, not a final
+                    # pipeline decision. Preserve UNVERIFIED/internal checks
+                    # for downstream consumers instead of dropping them at the
+                    # generic confidence threshold.
+                    check = UncertaintyReport(
+                        is_suspicious=False,
+                        confidence=0.0,
+                        reason="Structured verifier report retained without a decision-grade verdict.",
+                        data_score=float(getattr(check, "data_score", 0.0) or 0.0),
+                        breakdown=getattr(check, "breakdown", {}) or {},
+                        no_decision=True,
+                    )
                 # GÖREV TAMAMLANDI ≠ KARAR ÜRETİLDİ: ajan kendi çıktısını
                 # "karar değil" (data_confidence=False) diye işaretlediyse koşu
                 # LOW_CONFIDENCE ile halted YAZILMAZ; çıktı kaydedilir ama
@@ -1024,6 +1487,7 @@ class PinealExecutor:
                 # toplanır, koşu raporuna output_summary YAZILDIKTAN SONRA eklenir
                 # — aksi hâlde run.output_summary ataması izi ezer.
                 aux_call_records: list[dict[str, Any]] = []
+                claim_gate_record = None
                 if agent_name == "mirror_truth":
                     input_data["user_mirror"] = result.model_dump()
                     with self._capture_llm_calls(task_id, "authentic_vector:user") as vector_scope:
@@ -1043,7 +1507,15 @@ class PinealExecutor:
                 elif agent_name == "cognitive_profiler":
                     input_data["cognitive"] = result.model_dump()
                 elif agent_name == "autonomous_verifier":
-                    input_data["verifications"] = result.model_dump()
+                    input_data["verifications"] = result.model_dump(mode="json")
+                    gate = build_claim_decision_gate(result)
+                    input_data["claim_gate"] = gate.model_dump(mode="json")
+                    claim_gate_record = {
+                        "agent": "claim_decision_gate",
+                        "evidence_type": "decision_gate",
+                        "result": gate.model_dump(mode="json"),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
 
                 status.evidence_chain.append(self._evidence_record(
                     agent_name,
@@ -1053,6 +1525,9 @@ class PinealExecutor:
                     llm_calls=agent_llm_calls,
                     aux_llm_calls=aux_call_records,
                 ))
+                if claim_gate_record is not None:
+                    status.evidence_chain.append(claim_gate_record)
+                self._append_tier2_canonical_output(status, agent_name, result)
                 if research_note is not None:
                     status.evidence_chain.append(self._evidence_record(
                         "deep_research",
@@ -1101,7 +1576,7 @@ class PinealExecutor:
                     status.status = "halted_frequency"
                     status.halted_reason = "Resonans kaniti esigin altinda: " + str(round(result.compatibility_score, 2)) + " < 0.70; sentez reddedildi"
                     status.completed_at = datetime.now(timezone.utc)
-                    await self.memory.merge_evidence(task_id, status.evidence_chain)
+                    await self._merge_task_memory(task_id, status)
                     self._snapshot(status)
                     return status
 
@@ -1130,6 +1605,52 @@ class PinealExecutor:
                 ))
                 agent_cfg = self.config.get_agent_config(agent_name)
 
+                if agent_name == "pattern_interrupt" and _canonical_message_context_enabled():
+                    from agent_core.domain.message_context_models import MessageEvidenceContext
+                    from agent_core.services.message_decision_context import (
+                        build_message_evidence_context,
+                    )
+
+                    adapter_error = None
+                    try:
+                        message_context = build_message_evidence_context(
+                            input_data.get("evidence_timeline")
+                        )
+                    except Exception as exc:
+                        adapter_error = type(exc).__name__
+                        message_context = MessageEvidenceContext(
+                            context_id="ctx_00000000000000000000",
+                            build_status="failed",
+                            excluded_counts={"adapter_error": 1},
+                        )
+                        self._log(
+                            "ERROR",
+                            f"[{task_id}] Message decision-context adapter failed: {adapter_error}",
+                        )
+
+                    input_data["message_evidence_context"] = message_context.model_dump(
+                        mode="json"
+                    )
+                    status.evidence_chain.append(
+                        {
+                            "agent": "message_decision_context_adapter",
+                            "evidence_type": "decision_context",
+                            "result": {
+                                "schema_version": message_context.schema_version,
+                                "build_status": (
+                                    "failed" if adapter_error else message_context.build_status
+                                ),
+                                "context_id": message_context.context_id,
+                                "policy": message_context.policy,
+                                "selected_evidence_ids": [
+                                    item.evidence_id for item in message_context.items
+                                ],
+                                "excluded_counts": message_context.excluded_counts,
+                                **({"error_code": adapter_error} if adapter_error else {}),
+                            },
+                        }
+                    )
+
                 agent_llm_calls: list[dict[str, Any]] = []
                 try:
                     agent = self.agents[agent_name]
@@ -1142,6 +1663,8 @@ class PinealExecutor:
                         finally:
                             agent_llm_calls = list(agent_scope.records)
                             run.call_ids = list(agent_scope.call_ids)
+                            if agent_name == "pattern_interrupt":
+                                input_data.pop("message_evidence_context", None)
                     if not isinstance(result, BaseModel):
                         raise TypeError(agent_name + " gecersiz cikti: " + str(type(result)))
                 except InsufficientEvidenceError:
@@ -1168,13 +1691,27 @@ class PinealExecutor:
                             error_message=str(e)[:200],
                             severity=Severity.Critical,
                         ))
-                        await self.memory.merge_evidence(task_id, status.evidence_chain)
+                        await self._merge_task_memory(task_id, status)
                         return status
                     self._log("WARNING", f"[{task_id}] Non-critical deferred agent {agent_name} failed. Continuing pipeline.")
                     self._snapshot(status)
                     continue
 
+                claim_gate_blocked_ids: list[str] = []
+                if agent_name in {"pattern_interrupt", "resonance_synthesizer"}:
+                    result, claim_gate_blocked_ids = self._apply_claim_decision_gate(
+                        result, input_data.get("claim_gate")
+                    )
                 check = self.uncertainty.evaluate(result, agent_name)
+                if claim_gate_blocked_ids:
+                    check = UncertaintyReport(
+                        is_suspicious=False,
+                        confidence=0.0,
+                        reason="Generated message suppressed by the deterministic same-claim gate.",
+                        data_score=float(getattr(check, "data_score", 0.0) or 0.0),
+                        breakdown=getattr(check, "breakdown", {}) or {},
+                        no_decision=True,
+                    )
                 # `is True` ŞART: MagicMock tabanlı testlerde getattr truthy bir
                 # mock döndürür ve fail-closed kapısını yanlışlıkla atlatırdı.
                 no_decision = getattr(check, "no_decision", False) is True
@@ -1221,13 +1758,21 @@ class PinealExecutor:
                         self._snapshot(status)
                         continue
 
-                status.evidence_chain.append(self._evidence_record(
+                output_record = self._evidence_record(
                     agent_name,
                     result,
                     evidence_type="agent_output",
                     uncertainty=check,
                     llm_calls=agent_llm_calls,
-                ))
+                )
+                if claim_gate_blocked_ids:
+                    output_record["claim_gate"] = {
+                        "decision_state": "BLOCKED_SAME_CLAIM",
+                        "claim_ids": claim_gate_blocked_ids,
+                        "policy": "exact_claim_only",
+                    }
+                status.evidence_chain.append(output_record)
+                self._append_tier2_canonical_output(status, agent_name, result)
                 if research_note is not None:
                     status.evidence_chain.append(self._evidence_record(
                         "deep_research",
@@ -1256,6 +1801,13 @@ class PinealExecutor:
                     # GeneratedMessage). İkinci çağrı artık bu kaydı tüketir.
                     input_data["_pattern_interrupt"] = {
                         "message": str(getattr(result, "message", "") or ""),
+                        "evidence_ids_used": list(
+                            getattr(result, "evidence_ids_used", []) or []
+                        ),
+                        "claim_gate_blocked_ids": claim_gate_blocked_ids,
+                        "decision_context_id": getattr(
+                            result, "decision_context_id", None
+                        ),
                         "agent": "pattern_interrupt",
                         "source": "route",
                     }
@@ -1266,6 +1818,12 @@ class PinealExecutor:
                     step_name="execute",
                     output_hash=self._hash_evidence_result(result),
                 ))
+
+            # The verifier runs before some Tier-2 agents by route policy.
+            # Once all primary outputs exist, append internal-only checks for
+            # any separately stored human_behavior observations. These are
+            # not copied into forensic_evidence or the B6 message timeline.
+            self._refresh_internal_verification_checks(status, input_data)
 
             # --- 360° HOLISTIC PROFILE OLUŞTURMA ---
             passions_obj = None
@@ -1302,6 +1860,9 @@ class PinealExecutor:
             self._rack_update("depth_analyst", "active")
             try:
                 depth_agent = self.agents.get("depth_analyst") or DepthAnalyst(self.llm_gateway)
+                # [FAZ B · B2/B3] Geçmiş hafıza: kristalden çağrılan hatıralar
+                # prompt'a kafesli girer (boşsa hiçbir şey eklenmez).
+                input_data["memory_crystal"] = self._recall_memory_crystal(task_id, input_data, status)
                 with self._capture_llm_calls(task_id, "depth_analyst") as depth_scope:
                     depth_rep = await self._bounded(
                         depth_agent.analyze(input_data, status.evidence_chain),
@@ -1329,6 +1890,15 @@ class PinealExecutor:
                 checked = q_stats.get("checked", kept + q_stats.get("dropped_fake_quote", 0))
                 self._log("INFO", f"[{task_id}] DERİNLİK TURU: gerçeklik endeksi %{int(depth_rep.reality_index * 100)}")
                 self._log("INFO", f"[{task_id}] KALKAN: {kept}/{checked} bulgu kanıtla ayakta")
+                # [A-KAPANIŞ] Hakem → DepthReport izi: hangi claim_id hangi bulguyu etkiledi.
+                trace = getattr(depth_rep, "verification_trace", None) or {}
+                if trace.get("claims_available"):
+                    self._log(
+                        "INFO",
+                        f"[{task_id}] HAKEM İZİ: {len(trace.get('linked_findings') or [])} bulgu "
+                        f"{trace.get('claims_available')} iddiadan {len(trace.get('claim_ids_used') or [])} kimliğe bağlı; "
+                        f"reddedilen kimlik={trace.get('rejected_claim_ids', 0)}",
+                    )
                 self._rack_update("depth_analyst", "ready")
             except Exception as e:
                 self._rack_update("depth_analyst", "wait")
@@ -1368,12 +1938,31 @@ class PinealExecutor:
                         self.config.get_agent_config("shadow_executor").timeout_seconds,
                         "shadow_executor",
                     )
+                shadow_result, shadow_gate_blocked_ids = self._apply_claim_decision_gate(
+                    shadow_result, input_data.get("claim_gate")
+                )
+                if (
+                    not shadow_gate_blocked_ids
+                    and getattr(shadow_result, "fallback_reason", None) == "claim_gate_blocked_same_claim"
+                ):
+                    routed_pattern = input_data.get("_pattern_interrupt") or {}
+                    ids = routed_pattern.get("claim_gate_blocked_ids")
+                    if isinstance(ids, list):
+                        shadow_gate_blocked_ids = [str(item) for item in ids]
                 status.shadow_profile = shadow_result.model_dump()
+                if shadow_gate_blocked_ids:
+                    status.shadow_profile["claim_gate"] = {
+                        "decision_state": "BLOCKED_SAME_CLAIM",
+                        "claim_ids": shadow_gate_blocked_ids,
+                        "policy": "exact_claim_only",
+                    }
                 status.shadow_profile["_provenance"] = self._provenance_for(
                     "shadow_executor", shadow_result, shadow_scope.records
                 )
                 _shadow_summary = shadow_result.model_dump() if hasattr(shadow_result, "model_dump") else {}
                 _shadow_summary["_provenance"] = status.shadow_profile["_provenance"]
+                if shadow_gate_blocked_ids:
+                    _shadow_summary["claim_gate"] = status.shadow_profile["claim_gate"]
                 status.agent_runs["shadow_executor"] = AgentRun(
                     task_id=task_id, agent_name="shadow_executor", status="completed",
                     started_at=datetime.now(timezone.utc), completed_at=datetime.now(timezone.utc),
@@ -1416,7 +2005,7 @@ class PinealExecutor:
                 self._log("INFO", f"[{task_id}] TAMAMLANDI. Kanıt adımı: {len(status.evidence_chain)}")
                 
             status.completed_at = datetime.now(timezone.utc)
-            await self.memory.merge_evidence(task_id, status.evidence_chain)
+            await self._merge_task_memory(task_id, status)
             self._snapshot(status)
             
             # P0-FIX: Gercek SHA-256 kanit hash'i ve gercek sure (ms)
@@ -1434,7 +2023,7 @@ class PinealExecutor:
             self._log("ERROR", "[" + task_id + "] KANIT KILIDI: " + str(e))
             status.status = "halted_evidence"
             status.completed_at = datetime.now(timezone.utc)
-            await self.memory.merge_evidence(task_id, status.evidence_chain)
+            await self._merge_task_memory(task_id, status)
             self._snapshot(status)
         return status
 
@@ -1521,5 +2110,18 @@ class PinealExecutor:
             self._log("WARNING", f"Vektör hesaplanamadı; veri kullanılamaz olarak işaretlendi: {e}")
             return None
 
-executor = PinealExecutor()
+# [AUDIT 2026-10-07 · P2] Burada `executor = PinealExecutor()` duruyordu.
+# Kaldırıldı. Gerekçe — `PinealExecutor.__init__` AĞIR ve YAN ETKİLİDİR:
+#   * `build_memory_from_env()` / `DecisionConfig.load()` -> ortam + DİSK okur
+#     (bozuk/eksik yapılandırmada içe aktarım PATLAR),
+#   * `LLMGateway()` / `SearchEngine()` / `VisionAnalyzer()` ve 13 ajanı kurar
+#     (içe aktarımda onlarca nesne, gereksiz bellek),
+#   * `agent_status_tracker.get_tracker()` çağırır -> modül içe aktarımı
+#     yan etkisiyle GLOBAL durum tekilini (singleton) oluşturur.
+# Yani `from agent_core.task_executor import AgentTimeoutError` yazmak bile
+# tüm bu işleri tetikliyordu. İhtiyacı olan YERİNDE kursun:
+#   * FastAPI/API katmanı istemci başına `get_executor(client_id)` ile kurar,
+#   * betikler (`main.py`, `scripts/run_task.py`) kendi örneğini kurar.
+# Tek tüketici `scripts/archive/e2e_test.py` idi; o da artık kendi örneğini
+# kuruyor. Sözleşmeyi `tests/unit/test_task_executor_import_purity.py` kilitler.
 

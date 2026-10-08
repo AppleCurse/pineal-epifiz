@@ -27,6 +27,11 @@ def _hermetic(monkeypatch):
     monkeypatch.delenv("OSINT_INDUSTRIES_KEY", raising=False)
     monkeypatch.setattr(LLMGateway, "query", AsyncMock(side_effect=RuntimeError("no llm")))
     monkeypatch.setattr(LLMGateway, "query_json", AsyncMock(side_effect=RuntimeError("no llm")))
+    # [FAZ A] Ajan artık tarayıcıyı doğrudan değil CAPABILITY OMURGASINDAN
+    # çağırıyor. Kütüphane yokluğu denetimi (`_module_available`) testte
+    # aşılır; asıl davranış servis mock'uyla sınanır.
+    from agent_core.capabilities import adapters_osint
+    monkeypatch.setattr(adapters_osint, "_module_available", lambda _name: True)
 
 
 def _res(username="soxoj", available=True, found=None, scanned=10, errors=0, reason=None):
@@ -217,8 +222,12 @@ class TestHonestDegradation:
 
 class TestAgentMerge:
     async def _fallback_profile(self):
+        """`policy` alanı kasa gerçeğini taşır (üretimde api.py enjekte eder)."""
         agent = OsintInvestigatorAgent()
-        return await agent.execute({"target_profile": {"username": "@soxoj", "bio": "x"}})
+        return await agent.execute({
+            "target_profile": {"username": "@soxoj", "bio": "x"},
+            "policy": {"vault_locked": False},
+        })
 
     @pytest.mark.asyncio
     async def test_gate_off_keeps_profile_unchanged(self, monkeypatch):
@@ -227,7 +236,8 @@ class TestAgentMerge:
         assert profile.data_confidence is False
         assert profile.fallback_reason == "provider_credentials_unavailable"
         assert profile.associated_platforms == []
-        assert profile.username_scan["reason"] == "disabled"
+        # Omurga reddi: kapı kapalı -> makine-okunur sebep, site UYDURULMAZ.
+        assert "gate_disabled" in profile.username_scan["reason"]
 
     @pytest.mark.asyncio
     async def test_found_sites_merge_into_platforms(self, monkeypatch):
@@ -240,6 +250,10 @@ class TestAgentMerge:
         assert profile.data_confidence is True
         assert profile.confidence == 0.1  # 1/10 gözlenen kapsama
         assert profile.username_scan["found_sites"][0]["site"] == "GitHub"
+        # [FAZ A] Aynı bulgu artık MÜHÜRLÜ KANIT: zaman çizelgesine girdi.
+        assert profile.username_scan_sealed == 1
+        entries = profile.username_scan_evidence["entries"]
+        assert entries and entries[0]["source_engine"] == "maigret"
 
     @pytest.mark.asyncio
     async def test_unavailable_scan_keeps_profile_and_embeds_provenance(self, monkeypatch):
@@ -263,12 +277,24 @@ class TestAgentMerge:
 
 
 class TestEndpoint:
-    def test_endpoint_disabled_by_default(self, monkeypatch):
+    def test_endpoint_disabled_by_default(self, monkeypatch, vault_open):
+        """[E5 sözleşme değişikliği] Motor kapalıyken 200 DEĞİL 400.
+
+        Eskiden 200 + `available:false` dönüyordu: gövde dürüsttü ama HTTP
+        seviyesi "istek işlendi" diyordu. Motorun kendisi YOKKEN doğan bu
+        görüntü Md.1 kapsamındadır; ayrıntılı sözleşme:
+        `tests/unit/test_experimental_engine_contract.py`.
+        """
         from fastapi.testclient import TestClient
         from backend.api import app
 
         monkeypatch.delenv("ENABLE_MAIGRET", raising=False)
         with TestClient(app) as client:
             r = client.post("/api/experimental/maigret/scan", json={"username": "soxoj"})
-        assert r.status_code == 200
-        assert r.json()["reason"] == "disabled"
+        assert r.status_code == 400
+        body = r.json()
+        assert body["error"]["code"] == "MOTOR_UNAVAILABLE"
+        assert body["error"]["reason"] == "disabled"
+        # Dürüst sözleşme KAYBOLMADI: gövde hâlâ makine-okunur sebebi taşır.
+        assert body["available"] is False
+        assert body["reason"] == "disabled"

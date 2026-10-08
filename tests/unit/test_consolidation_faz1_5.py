@@ -22,7 +22,9 @@ from agent_core.services.maigret_scanner import scan_username
 class TestDefaultPostureSurface:
     """Kapılar default kapalı: tüm deneysel uçlar dürüst `disabled` der."""
 
-    def test_all_experimental_endpoints_disabled_by_default(self, monkeypatch):
+    def test_all_experimental_endpoints_disabled_by_default(self, monkeypatch, vault_open):
+        # Ön koşul: kasa AÇIK. Ölçülen şey ENABLE_* kapılarının dürüst
+        # `disabled` cevabı; kasa mandalı tests/unit/test_vault_egress_lock.py'de.
         for gate in ("ENABLE_MAIGRET", "ENABLE_HOLEHE", "ENABLE_CRAWL4AI"):
             monkeypatch.delenv(gate, raising=False)
         from backend.api import app

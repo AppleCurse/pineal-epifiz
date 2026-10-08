@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI, HTTPException, Path, Request, WebSocket
+from fastapi.responses import FileResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.staticfiles import StaticFiles
@@ -16,6 +17,8 @@ import asyncio
 import io
 import json
 import logging
+import importlib
+import shutil
 import os
 import hashlib
 import time
@@ -58,6 +61,7 @@ from agent_core.utils.security import (
     validate_identifier,
 )
 from agent_core.task_executor import PinealExecutor, InsufficientEvidenceError
+from agent_core.version import VERSION
 # [FIX #8] Scraper'ın KENDİNE ÖZLÜ InsufficientEvidenceError'ı (başka bir
 # Exception hiyerarşisi) da yakalanmalı; ayrı sınıflar olduğundan
 # isinstance ile ayrım yapılır, str(type) kontrolü ile değil.
@@ -173,7 +177,11 @@ async def lifespan(application: FastAPI):
     except Exception:
         pass
 
-app = FastAPI(title="PINEAL-HERETIC v3.0.0-rc.1 API", lifespan=lifespan)
+# [AUDIT 2026-10-07 · Madde 2] Başlık sürümü BURAYA YAZILMIŞTI ("v3.0.0-rc.1")
+# ve VERSION dosyası 3.0.0-rc.2'ye çıktığında bayat kaldı: API, müşterilerine
+# kendini yanlış sürüm olarak tanıttı. Sürüm artık kopyalanmıyor; VERSION
+# dosyasından OKUNUYOR. Böylece "sürüm kimliği" sorusunun tek bir cevabı var.
+app = FastAPI(title=f"PINEAL-HERETIC v{VERSION} API", lifespan=lifespan)
 app.state.llm_backend_mode = "legacy"
 app.state.openai_router = None
 app.state.startup_health = {
@@ -209,103 +217,15 @@ _default_origins = [
 _allowed = os.getenv("PINEAL_ALLOWED_ORIGINS", "")
 ALLOWED_ORIGINS = [o.strip() for o in _allowed.split(",") if o.strip() and o.strip() != "*"] or _default_origins
 
-class BodySizeLimitExceeded(Exception):
-    pass
-
-
-class BodySizeLimitMiddleware:
-    """[P0-BOOT-FIX] İstek gövdesi tavanı middleware'i.
-
-    uvicorn 0.52.4'te --limit-max-request-size bayrağı bulunmadığından
-    tavan uygulama katmanında enforced edilir.
-    Varsayılan: 1048576 bayt (1 MiB), PINEAL_MAX_BODY_BYTES ile geçersiz kılınabilir.
-    """
-
-    def __init__(self, app, max_bytes: Optional[int] = None):
-        self.app = app
-        if max_bytes is not None:
-            self.max_bytes = max_bytes
-        else:
-            try:
-                self.max_bytes = int(os.getenv("PINEAL_MAX_BODY_BYTES", "1048576"))
-            except ValueError:
-                self.max_bytes = 1048576
-
-    def _get_max_bytes(self) -> int:
-        try:
-            return int(os.getenv("PINEAL_MAX_BODY_BYTES", str(self.max_bytes)))
-        except ValueError:
-            return self.max_bytes
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] != "http":
-            await self.app(scope, receive, send)
-            return
-
-        max_bytes = self._get_max_bytes()
-
-        # 1. Content-Length başlığı kontrolü (erken ret)
-        for name, value in scope.get("headers", []):
-            if name.lower() == b"content-length":
-                try:
-                    content_length = int(value.decode("latin-1"))
-                    if content_length > max_bytes:
-                        await self._send_413(send, max_bytes)
-                        return
-                except (ValueError, UnicodeDecodeError):
-                    pass
-                break
-
-        # 2. Akış / Parçalı (chunked) gövde kontrolü
-        total_received = 0
-        body_size_exceeded = False
-
-        async def limited_receive():
-            nonlocal total_received, body_size_exceeded
-            message = await receive()
-            if message["type"] == "http.request":
-                chunk = message.get("body", b"")
-                total_received += len(chunk)
-                if total_received > max_bytes:
-                    body_size_exceeded = True
-                    raise BodySizeLimitExceeded()
-            return message
-
-        async def tracked_send(message):
-            if body_size_exceeded:
-                return
-            await send(message)
-
-        try:
-            await self.app(scope, limited_receive, tracked_send)
-        except Exception:
-            pass
-
-        if body_size_exceeded:
-            await self._send_413(send, max_bytes)
-
-    async def _send_413(self, send, max_bytes: int):
-        body = json.dumps({
-            "code": "BODY_TOO_LARGE",
-            "error": {
-                "code": "BODY_TOO_LARGE",
-                "message": f"Request body exceeds maximum allowed size of {max_bytes} bytes",
-                "max_bytes": max_bytes,
-            },
-            "max_bytes": max_bytes,
-        }).encode("utf-8")
-        await send({
-            "type": "http.response.start",
-            "status": 413,
-            "headers": [
-                (b"content-type", b"application/json"),
-                (b"content-length", str(len(body)).encode("latin-1")),
-            ],
-        })
-        await send({
-            "type": "http.response.body",
-            "body": body,
-        })
+# [AUDIT 2026-10-07 · P2] Gövde tavanı middleware'i kendi modülüne taşındı
+# (backend/middleware/body_size_limit.py). Buradan YENİDEN İHRAÇ edilir;
+# mevcut `from backend.api import BodySizeLimitMiddleware` içe
+# aktarımları bozulmaz. Bu, api.py tek-modül şişkinliğini azaltma
+# planının ilk (düşük riskli) adımıdır.
+from backend.middleware.body_size_limit import (
+    BodySizeLimitExceeded as BodySizeLimitExceeded,
+    BodySizeLimitMiddleware as BodySizeLimitMiddleware,
+)
 
 
 app.add_middleware(
@@ -491,6 +411,24 @@ RATE_LIMITS = {
     "aspasia": (20, 60),
     "experimental": (10, 60),
     "openai": (60, 60),
+    # [FAZ C · C2] Seslendirme: yerel motor da olsa sınırsız istek kabul
+    # edilmez (disk + CPU). Ölçülen ihtiyaç: tur başına birkaç cümle.
+    "speech": (30, 60),
+    # [FAZ D · D3] Medya hattı: indirme + kare kare çözümleme ağır; sınırsız
+    # bırakılmaz (disk + CPU + ağ).
+    "media": (6, 60),
+    # [FAZ D · D5] Rapor fabrikası: PDF/diyagram/video üretimi diski ve CPU'yu
+    # kullanır; sınırsız bırakılmaz.
+    "report": (10, 60),
+    # [FAZ D · D6] Kurum hedefi: theHarvester koşusu ağır (arama motoru
+    # zinciri); SEO/kişi modu birkaç HTTP isteği. Sınırsız bırakılmaz.
+    "company": (8, 60),
+    # [FAZ D · D2] Yerel jüri: her oylama KADAR yerel model çağrısı yapar
+    # (koltuk sayısı × istek). Sınırsız bırakmak yerel GPU'yu kilitler.
+    "jury": (6, 60),
+    # [FAZ D · D4] Dil tespiti/çeviri: tespit saf hesaptır ama çeviri yerel
+    # motor çalıştırır; ikisi de sınırsız istek kabul etmez.
+    "language": (60, 60),
 }  # (request count, window seconds)
 class _RateBucket:
     """Kayan pencere olayları + BU kovaya ait pencere süresi.
@@ -619,6 +557,13 @@ def rate_limit(key: str, bucket: str) -> bool:
     return True
 
 app.state.rooms = {}  # client_id -> {"executor": PinealExecutor, "vault": {}, "websockets": set()}
+# [ÇOCUK KİLİDİ — API girişi] Operatörün çocuk BEYANI burada yaşar: oda
+# YAŞAM DÖNGÜSÜNDEN BAĞIMSIZDIR. Bilinçli: kilit "küresel ve istisnasız"dır;
+# odaya bağlansaydı boşta kalan oda tahliye edilince (30 dk) beyan sessizce
+# kaybolur ve kilit KENDİLİĞİNDEN açılırdı. Buradan yalnız operatör siler
+# (`POST /api/minor/clear`), zaman aşımı değil. Yön bilinçli olarak DAR
+# taraftır: unutulan beyan bloklamaya devam eder, sessizce geçirmez.
+app.state.minor_cases = {}  # client_id -> MinorCaseContext (yalnız beyan edilmişse)
 
 # W5: tarayici yetenegi probu (300sn cache). Telemetri artik import basarisi
 # degil, GERCEK capability raporlar (x_scraper / instagram_scraper / browser_installed).
@@ -956,6 +901,8 @@ _MAX_CLIENT_ID_LENGTH = _bounded_env_int("PINEAL_MAX_CLIENT_ID_LENGTH", 64, 8, 4
 _MAX_TASK_ID_LENGTH = _bounded_env_int("PINEAL_MAX_TASK_ID_LENGTH", 128, 8, 4_096)
 _MAX_TERMINATE_REASON_LENGTH = 500
 _ROOM_TTL_SECONDS = float(os.getenv("PINEAL_ROOM_TTL_SECONDS", "1800"))
+#: Çocuk beyanı deposunun üst sınırı (sınırsız büyüme yok; aşımda dürüst 503).
+_MINOR_CASE_MAX_ENTRIES = _bounded_env_int("PINEAL_MINOR_CASE_MAX_ENTRIES", 512, 1, 100_000)
 _rooms_last_seen: Dict[str, float] = {}
 
 
@@ -1067,6 +1014,13 @@ def get_room(client_id: str) -> dict:
             emit_event_callback=lambda evt: sync_event(client_id, evt),
             snapshot_callback=lambda s: sync_snapshot(client_id, s)
         )
+        # [KASA MANDALI] Arama motoru kasa gerçeğini CANLI okur (anlık görüntü
+        # bayatlamaz): kasa kilitlendiği anda Tavily/SerpAPI/Exa/DuckDuckGo
+        # dâhil HİÇBİR dış arama isteği oluşturulmaz. Kararın tek sahibi
+        # `_check_vault_interlock`'tur; motor kasa durumunu kendisi uydurmaz.
+        executor.search_engine.set_vault_state(
+            lambda: _check_vault_interlock(client_id)
+        )
         # Otomatik Kasa (.pineal_vault.json / .env) yüklemesi
         vault = _load_vault()
 
@@ -1165,6 +1119,9 @@ def get_room(client_id: str) -> dict:
         executor.llm_gateway.use_local = use_local
 
         app.state.rooms[client_id] = {
+            # [KASA MANDALI] Oda kendi kimliğini taşır: tarayıcı oturumu ve
+            # arama motoru mandalı bu kimlikle interlock'a bağlanır.
+            "client_id": client_id,
             "executor": executor,
             "vault": vault,
             "websockets": set(),
@@ -1213,11 +1170,20 @@ def get_vault(client_id: str) -> dict:
 
 
 def _room_browser(room: dict) -> BrowserSession:
-    """Oda başına tek canlı tarayıcı (lazy)."""
+    """Oda başına tek canlı tarayıcı (lazy).
+
+    [KASA MANDALI] Oturuma CANLI kasa mandalı bağlanır: operatör kasayı
+    kilitlediği anda AÇIK tarayıcı da bir daha dışarı çıkamaz (yalnızca
+    `close()` çalışır — o dış hareket değil, kanalı kapatma eylemidir).
+    """
     sess = room.get("browser")
+    client_id = room.get("client_id", "default")
+    guard = lambda: _check_vault_interlock(client_id)  # noqa: E731 — kapanış, kısa ömürlü
     if sess is None:
-        sess = BrowserSession()
+        sess = BrowserSession(vault_guard=guard)
         room["browser"] = sess
+    else:
+        sess.set_vault_guard(guard)
     return sess
 
 
@@ -1624,6 +1590,8 @@ async def _room_sender(room: dict):
                 await _send_result(room, payload)
             elif kind == "result_error":
                 await _send_result_error(room, payload)
+            elif kind == "speech":
+                await _send_speech(room, payload)
         except asyncio.CancelledError:
             raise
         except Exception as e:  # gonderici task asla olmemeli
@@ -2016,6 +1984,15 @@ async def _send_log(room: dict, payload: tuple):
     if len(room["logs"]) > 50: room["logs"].pop(0)
     await _send_ws(room, _ws_json({"type": "log", "ts": ts, "level": level, "msg": msg}))
 
+async def _send_speech(room: dict, payload: dict):
+    """[FAZ C · C2/C3] Konuşma durumu UI'a akar: speaking / idle / denied."""
+    await _send_ws(room, _ws_json({"type": "speech", **payload}))
+
+
+def broadcast_speech(client_id: str, payload: dict):
+    _enqueue(client_id, ("speech", payload))
+
+
 def broadcast_log(client_id: str, level: str, msg: str):
     _enqueue(client_id, ("log", (level, redact_text(msg))))
 
@@ -2165,6 +2142,7 @@ class InitiatePayload(BaseModel):
 from agent_core.services.platform_registry import (
     effective_scraper_type as _effective_scraper_type,
     scrape_instagram,
+    scrape_x,
     build_user_context,
 )
 # Geriye uyumluluk re-export'u: Dalga 1 sözleşme testleri bu adı backend.api'den
@@ -2172,6 +2150,32 @@ from agent_core.services.platform_registry import (
 from agent_core.services.platform_registry import (  # noqa: F401
     ig_target_profile_update as _ig_target_profile_update,
 )
+
+
+def _x_sensor_ready() -> bool:
+    """X sensörü gerçekten kullanılabilir mi? (tek kaynak: capability spine).
+
+    Eskiden `/api/telemetry` alanı sabit `False` idi — sensör eklense bile
+    UI "yok" demeye devam ederdi. Şimdi kasa + env kapısı + kütüphane
+    durumunu registry'den okur; sebep makine-okunur olarak loglanır.
+    """
+    try:
+        from agent_core.capabilities import bootstrap
+        from agent_core.capabilities.state import policy_state
+
+        registry = bootstrap()
+        cap = registry.get("sensor.x.twscrape")
+        availability = cap.availability()
+        if not availability.available:
+            logger.debug("x sensörü kapalı: %s", availability.reason)
+            return False
+        from agent_core.capabilities.policy import PolicyKernel
+
+        state = policy_state(vault_locked=False, rate_ok=True)
+        return PolicyKernel().evaluate(cap.gates, state).allowed
+    except Exception as exc:  # telemetri asla API'yı düşürmez
+        logger.debug("x sensör durumu okunamadı: %s", type(exc).__name__)
+        return False
 
 
 def _new_task_id() -> str:
@@ -2222,21 +2226,8 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                     cookie = random.choice(cookie_list)
                     broadcast_log(client_id, "INFO", "DAEMON: Rotasyondan rastgele cookie seçildi.")
                 
-        enable_twitter = os.getenv("ENABLE_TWITTER", "false").lower() == "true" or os.getenv("ENABLE_X", "false").lower() == "true"
         enable_cross = os.getenv("ENABLE_CROSS_PLATFORM", "false").lower() == "true"
         effective_type = _effective_scraper_type(req.url, req.scraper_type)
-        if effective_type == "x" and not enable_twitter:
-            # Never run Pineal on an empty X profile. Preserve the request and
-            # ask the user to authorize a distinct, auditable alternative.
-            room = get_room(client_id)
-            room["pending_alternative_authorization"] = {
-                "url": req.url,
-                "requested_at": datetime.now().isoformat(),
-                "alternatives": ["public_web_search"],
-            }
-            broadcast_log(client_id, "WARNING", "X (TWITTER) KAZIMASI DESTEKLENMİYOR: alternatif public-web araştırması için yetki bekleniyor; analiz başlatılmadı.")
-            broadcast_result_error(client_id, "awaiting_authorization", "X desteklenmiyor. Aspasia alternatif public-web araştırması için onay bekliyor.")
-            return
         if req.url and effective_type == "unsupported_web":
             if not enable_cross:
                 # [023] fix: tanınmayan platformda URL segmentini Instagram adı gibi
@@ -2253,10 +2244,46 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                 return
             effective_type = "cross"
         task_id = task_id or _new_task_id()
-        if req.url and effective_type in ("x", "cross"):
-            broadcast_log(client_id, "INFO", f"UPLINK: Hedefe sızılıyor -> {req.url} [{effective_type.upper()}]")
+
+        # [FAZ A · Retina] X DELİĞİ KAPANDI. Eskiden X'in sensörü yoktu: istek
+        # "yetki bekliyor" diye geri çevriliyor, yetki verildiğinde ise arama
+        # snippet'leri profil diye giydiriliyordu (uydurma takipçi sayısı
+        # dâhil). Artık X de Instagram gibi OMURGADAN kazınır:
+        #   platform_registry.scrape_x → capability spine → sensor.x.twscrape
+        # Sensör kanıt üretemezse sahte profil ÜRETİLMEZ; açık kaynak dosyası
+        # olduğu gibi işaretlenerek devam edilir (aşağıdaki web dosyası yolu).
+        x_sensor_reason = ""
+        x_profile: dict = {}
+        if req.url and effective_type == "x":
+            from agent_core.services.platform_registry import extract_x_username
+            clean_u = extract_x_username(req.url) or ""
+            broadcast_log(client_id, "INFO", f"UPLINK: Hedefe sızılıyor -> {req.url} [X · twscrape]")
+            try:
+                x_profile = await scrape_x(
+                    req.url,
+                    log=lambda lvl, msg: broadcast_log(client_id, lvl, msg),
+                    vault_locked=not _check_vault_interlock(client_id),
+                    rate_ok=True,
+                )
+                broadcast_log(
+                    client_id, "INFO",
+                    f"TELEMETRİ: X akışı ele geçirildi — {len(x_profile['post_times'])} gerçek zaman damgalı gönderi.",
+                )
+            except (InsufficientEvidenceError, ScraperInsufficientEvidenceError) as exc:
+                x_sensor_reason = str(exc)[:200]
+                broadcast_log(
+                    client_id, "WARNING",
+                    f"X SENSÖRÜ KANIT ÜRETEMEDİ ({x_sensor_reason}); "
+                    "profil uydurulmadı, açık kaynak dosyası ile devam ediliyor.",
+                )
+
+        if req.url and (effective_type == "cross" or (effective_type == "x" and not x_profile)):
             from agent_core.services.platform_registry import extract_x_username
             clean_u = extract_x_username(req.url) or (req.url.split('/')[-1] if '/' in req.url else req.url).lstrip('@').strip()
+            if effective_type == "x":
+                broadcast_log(client_id, "INFO", f"UPLINK: Hedefe sızılıyor -> {req.url} [X · açık kaynak dosyası]")
+            else:
+                broadcast_log(client_id, "INFO", f"UPLINK: Hedefe sızılıyor -> {req.url} [{effective_type.upper()}]")
             broadcast_log(client_id, "INFO", f"AÇIK KAYNAK VE OSINT: {clean_u} için veriler taranıyor...")
             try:
                 # Çok kanallı paralel OSINT araması (Instagram, LinkedIn, Web)
@@ -2321,24 +2348,31 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                         if u not in found_profiles:
                             found_profiles.append(u)
 
-                bio = snippets[0] if snippets else f"Public OSINT dossier for {clean_u}"
                 if found_profiles:
                     broadcast_log(client_id, "INFO", f"HEDEF PROFİLLERİ TESPİT EDİLDİ: {', '.join(found_profiles[:3])}")
-                
+
                 display_user = f"@{clean_u.replace(' ', '_').lower()}" if " " in clean_u else f"@{clean_u}"
+                # [FAZ A] Dürüst dosya: arama snippet'i BİYOGRAPHİ diye
+                # sunulmaz, takipçi sayısı UYDURULMAZ (eski kod profil
+                # bulunduğunda sabit 150 yazıyordu). Ölçülmeyen alan None.
                 payload["target_profile"].update({
                     "username": display_user,
                     "name": clean_u,
-                    "bio": bio,
-                    "posts": snippets[1:] if len(snippets) > 1 else (snippets or [f"Public activity record for {clean_u}."]),
+                    "bio": "",
+                    "posts": snippets or [],
                     "post_times": [],
                     "posts_meta": [],
-                    "post_types": ["text" for _ in snippets] if snippets else ["text"],
+                    "post_types": ["text" for _ in snippets] if snippets else [],
                     "images": [],
-                    "followers": 150 if found_profiles else 0,
+                    "followers": None,
                     "following": None,
-                    "is_private": False,
+                    "is_private": None,
                     "detected_urls": found_profiles,
+                    "platform": "web_dossier",
+                    "sensor_note": (
+                        f"X sensörü kanıt üretemedi: {x_sensor_reason}" if x_sensor_reason
+                        else "Açık kaynak dosyası: platform sensörüyle kazınmadı."
+                    ),
                 })
                 broadcast_log(client_id, "INFO", f"TELEMETRİ: {len(snippets)} açık kaynak verisi ve {len(found_profiles)} profil hedefe bağlandı.")
             except Exception as se:
@@ -2346,16 +2380,20 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                 payload["target_profile"].update({
                     "username": f"@{clean_u}",
                     "name": clean_u,
-                    "bio": f"Target dossier for {clean_u}",
-                    "posts": [f"Public search for {clean_u}"],
+                    "bio": "",
+                    "posts": [],
                     "post_times": [],
                     "posts_meta": [],
-                    "post_types": ["text"],
+                    "post_types": [],
                     "images": [],
-                    "followers": 0,
+                    "followers": None,
                     "following": None,
-                    "is_private": False,
+                    "is_private": None,
+                    "platform": "web_dossier",
+                    "sensor_note": f"Açık kaynak araması başarısız: {type(se).__name__}",
                 })
+        if x_profile:
+            payload["target_profile"].update(x_profile)
         if req.url and effective_type == "instagram":
             broadcast_log(client_id, "INFO", f"UPLINK: Hedefe sızılıyor -> {req.url} [INSTAGRAM]")
             # [FIX #8] Eski kod: (1) tek deneme + hata yutuluyordu ve
@@ -2402,6 +2440,35 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                     task_id,
                 )
                 return
+        # [FAZ A · Retina] Kasa gerçeği görev payload'ına yazılır: ajanlar
+        # capability omurgasını çağırırken durumu TAHMİN ETMEZ, operatörün
+        # mandalının tek sahibi olan interlock'tan okur (kasa kapalıysa hiçbir
+        # dış yetenek koşamaz). İkinci bir "env'den kasa okuma" katmanı yok.
+        # [ÇOCUK KİLİDİ] Beyan görev payload'ına da taşınır: omurga (koşucu)
+        # kilidi İKİNCİ kez uygular. Kapı zaten zorunlu tuttu; bu satır kuşak
+        # kuşak savunmadır — beyan kaybolsa bile kilit gevşemez, çünkü
+        # `coerce_minor_case` yarım/bozuk beyanı REDDEDER (fail-closed).
+        payload["policy"] = {
+            "vault_locked": not _check_vault_interlock(client_id),
+            "minor_case": _minor_case_for(client_id),
+        }
+        # Arama motoru da aynı gerçeği görür. [KASA MANDALI] Eskiden burada
+        # "ücretsiz DuckDuckGo yolu bugünkü davranışını korur" yazıyordu — yani
+        # kasa kilitli olsa bile DuckDuckGo'ya istek ÇIKIYORDU. Bu delik
+        # kapatıldı: motor artık `search()` içinde, HTTP istemcisi
+        # OLUŞTURULMADAN önce mandala bakar ve kasa kilitliyse Tavily/SerpAPI/
+        # Exa/DuckDuckGo/SearXNG ayrımı yapmadan hepsini reddeder
+        # (status=VAULT_LOCKED, available=False). Canlı mandal oda kurulurken
+        # bağlandığı için bu anlık görüntü yalnız `rate_ok` gibi ek alanları taşır.
+        try:
+            executor.search_engine.set_policy(payload["policy"])
+        except Exception:
+            # Sessiz yutma YOK: politika aktarılamadıysa arama motoru dar
+            # tarafa (kilitli) düşer ve bunu operatörün görmesi gerekir.
+            logger.error(
+                "ARAMA MOTORU POLİTİKASI AKTARILAMADI — dar taraf: kasa KİLİTLİ "
+                "(dış arama reddedilecek)", exc_info=True,
+            )
         max_attempts = _bounded_env_int("PINEAL_TASK_MAX_ATTEMPTS", 3, 1, 3)
         task_timeout = _bounded_env_int("PINEAL_TASK_TIMEOUT_SECONDS", 300, 1, 1800)
         for attempt in range(1, max_attempts + 1):
@@ -2552,8 +2619,96 @@ def broadcast_result(client_id, res):
         **_pillar_payload_fields(res),
         "telemetry": getattr(res, "telemetry", None)
     }
+    # [FAZ B · B7] DEĞİŞİM İZLEME: her biten görev, aynı hedefin GEÇMİŞİNE bir
+    # parmak izi bırakır. Sonraki görev "ne değişti?" sorusunu cevaplayabilir.
+    # Yazma asla yayını bozmaz (try/except) ve önceki kayıt yoksa fark
+    # UYDURULMAZ (rapor `available:false` + sebep `no_baseline` kalır).
+    try:
+        payload["changes"] = _record_change_snapshot(room, res)
+    except Exception as exc:  # değişim izleme asıl sonucu asla bozmasın
+        logger.debug("change tracking skipped: %s", type(exc).__name__)
+    # [FAZ B · B2/B3] HAFIZA KRİSTALİ: görev bitince kanıt, hedefin KALICI
+    # hafızasına işlenir. Sonraki görev aynı hedefe bakarken "geçmişte ne
+    # bulmuştuk?" sorusunu cevaplayabilir (recall).
+    try:
+        payload["memory"] = _crystallize_task(room, res)
+    except Exception as exc:  # kristal asıl sonucu asla bozmasın
+        logger.debug("memory crystal skipped: %s", type(exc).__name__)
+
     room["latest_result"] = payload
     _enqueue(client_id, ("result", payload))
+
+
+def _record_change_snapshot(room: dict, res: Any) -> dict:
+    """Görevin kanıtını hedef geçmişine yazar + öncekiyle farkını döner."""
+    from agent_core.services.change_tracker import (
+        build_snapshot,
+        diff_snapshots,
+        latest_before,
+        record_snapshot,
+    )
+
+    executor = room.get("executor")
+    storage = getattr(getattr(executor, "memory", None), "storage_path", "./memory/")
+    chain = list(getattr(res, "evidence_chain", []) or [])
+    profile = getattr(res, "target_profile", None) or {}
+
+    snapshot = build_snapshot(chain, profile, task_id=str(getattr(res, "task_id", "") or ""))
+    if not snapshot.target:
+        return {"available": False, "reason": "no_target", "machine_note": "DEĞİŞİM: hedef anahtarı yok."}
+
+    previous = latest_before(storage, snapshot.target, snapshot.task_id)
+    report = diff_snapshots(previous, snapshot)
+    record_snapshot(storage, snapshot)
+    return report.model_dump()
+
+def _crystallize_task(room: dict, res: Any) -> dict:
+    """Görevin kanıtını hedefin kristaline işler + özetini döner."""
+    from agent_core.services import memory_crystal
+    from agent_core.services.change_tracker import target_key
+
+    executor = room.get("executor")
+    storage = getattr(getattr(executor, "memory", None), "storage_path", "./memory/")
+    task_id = str(getattr(res, "task_id", "") or "")
+    profile = getattr(res, "target_profile", None) or {}
+
+    memory_payload: Any = {}
+    try:
+        memory_payload = executor.memory.get_task_memory(task_id) or {}
+    except Exception:  # bellek okunamazsa kanıt zinciriyle devam edilir
+        memory_payload = {}
+
+    evidence = memory_payload.get("evidence")
+    if not evidence:
+        evidence = list(getattr(res, "evidence_chain", []) or [])
+    if not isinstance(profile, dict):
+        profile = {}
+
+    target = target_key(profile, evidence if isinstance(evidence, list) else [])
+    if not target:
+        return {
+            "available": False,
+            "reason": "no_target",
+            "machine_note": "KRİSTAL: hedef anahtarı yok — hatıra işlenmedi.",
+        }
+
+    query = " ".join(
+        str(profile.get(field) or "")
+        for field in ("username", "name", "bio")
+    ).strip()
+    crystal = memory_crystal.crystallize(target, task_id, evidence, base=storage)
+    payload = memory_crystal.summarize(target, base=storage)
+    # Bu görev kendi hatıralarını geri çağırmaz (yalnız GEÇMİŞ bağlam).
+    payload["recall_preview"] = [
+        hit.model_dump()
+        for hit in memory_crystal.recall(
+            target, query or target, base=storage, exclude_task_id=task_id
+        ).hits
+    ]
+    payload["crystallized_task"] = task_id
+    payload["machine_note"] = crystal.machine_note or payload.get("machine_note", "")
+    return payload
+
 
 async def _send_result(room: dict, data: dict):
     result_telemetry = dict(data.get("telemetry") or {})
@@ -2569,18 +2724,17 @@ async def api_initiate(req: InitiatePayload, request: Request):
             {"error": {"code": "RATE_LIMITED", "message": "Çok fazla görev başlatma isteği; bir dakika içinde tekrar deneyin."}},
             status_code=429,
         )
-    # VAULT INTERLOCK: anahtar çevrilmeden dış dünyaya OSINT/Scraper isteği yok
+    # [ÇOCUK KİLİDİ — API GİRİŞİ] Kasa kapısından ÖNCE ve url koşulundan
+    # BAĞIMSIZ: beyan varsa oda kilitlidir; boş url'li görev dâhil hiçbir
+    # istek gövdesi çalışmaz (çocuk kilidi istisnasızdır).
+    if (blocked := _require_minor_clearance(req.client_id, subject=req.url)) is not None:
+        return blocked
+    # VAULT INTERLOCK: anahtar çevrilmeden dünyaya OSINT/Scraper isteği yok.
+    # [KASA MANDALI] Artık elle yazılmış ikinci bir kopya değil, tüm
+    # dış-çıkış uçlarının paylaştığı TEK kapı (`_require_vault_open`).
     if req.url and req.url.strip():
-        if not _check_vault_interlock(req.client_id):
-            return JSONResponse(
-                {
-                    "error": {
-                        "code": "VAULT_LOCKED",
-                        "message": "VAULT KİLİTLİ: Operatör anahtarı çevirmeden dış dünyaya hiçbir OSINT/Scraper isteği çıkamaz. Önce /api/vault ile anahtar girin veya Tauri kasasını açın."
-                    }
-                },
-                status_code=423,
-            )
+        if (locked := _require_vault_open(req.client_id)) is not None:
+            return locked
     room = get_room(req.client_id)
     if _active_tasks_full(room):
         return JSONResponse(
@@ -2726,6 +2880,16 @@ async def api_vault(req: VaultPayload):
                 serpapi=real_search.get("serpapi"),
                 exa=real_search.get("exa"),
             )
+        # Kasa durumu değişti: omurga politikası da yenilenir (tek kaynak).
+        try:
+            executor.search_engine.set_policy(
+                {"vault_locked": not _check_vault_interlock(req.client_id)}
+            )
+        except Exception:
+            logger.error(
+                "ARAMA MOTORU POLİTİKASI AKTARILAMADI (/api/vault) — dar taraf: "
+                "kasa KİLİTLİ", exc_info=True,
+            )
             vault["search_keys"] = True
             broadcast_log(req.client_id, "INFO", "KASA: Arama Motoru anahtarları mühürlendi.")
         
@@ -2868,7 +3032,9 @@ async def api_telemetry(client_id: str = "default"):
             _is_real_key(getattr(search_keys, attr, None))
             for attr in ("tavily_key", "serpapi_key", "exa_key")
         ),
-        "x_scraper": False,
+        # [FAZ A] Artık SABİT False değil: X sensörü gerçekten var mı, kapıları
+        # açık mı? Cevap capability spine'ın TEK kaynağından gelir.
+        "x_scraper": _x_sensor_ready(),
         "instagram_scraper": capability["instagram"],
         "instagram_session": _is_real_key(vault.get("ig_sessionid")),
         "browser_installed": capability["browser"],
@@ -3074,7 +3240,389 @@ def _check_vault_interlock(client_id: str) -> bool:
         # Dosya kasası: VARLIK değil, GERÇEK anahtar malzemesi aranır.
         return _vault_bears_key_material(_load_vault())
     except Exception:
+        # Fail-closed (dar taraf: KİLİTLİ) — ama arıza YUTULMAZ: mandalın
+        # neden okunamadığı logda görünür, yoksa "kasa kilitli" ile "kasa
+        # kontrolü çöktü" ayırt edilemez.
+        logger.error(
+            "KASA MANDALI DEĞERLENDİRİLEMEDİ — dar taraf: KİLİTLİ (client_id=%s)",
+            client_id, exc_info=True,
+        )
         return False
+
+
+# ─── KASA MANDALI (Tüzük Md.4) — dış dünyaya açılan HER kapının tek kilidi ───
+#
+# Kural: kasa kilitliyse sistemde TEK BİR dış ağ veya tarayıcı hareketi
+# olamaz. Eskiden bu kural yalnızca `/api/initiate` içinde, elle yazılmış bir
+# `if` bloğu olarak yaşıyordu; tarayıcı uçları (`/api/browser/*`), deneysel
+# OSINT uçları (maigret/holehe/crawl4ai/socid) ve scraper yetkilendirmesi
+# kasanın kilidine HİÇ BAKMIYORDU. Yani "VAULT KİLİTLİ - dış dünya erişimi
+# yok" mesajı ekranda dururken arkada tarayıcı açılabiliyor, profil
+# taranabiliyor ve public-web araması çıkıyordu. Bu bir kilitti değil,
+# dekorasyondu.
+#
+# Şimdi: tek yardımcı (`_require_vault_open`), tek envanter
+# (`VAULT_EGRESS_ROUTES`) ve route tablosuna karşı koşan bir makine denetimi
+# (tests/unit/test_vault_egress_lock.py). Yeni bir dış-çıkış ucu eklenip
+# buraya yazılmamak mümkün değil — test kırmızı yanar.
+
+VAULT_LOCKED_MESSAGE = (
+    "VAULT KİLİTLİ: Operatör anahtarı çevrilmeden dış dünyaya hiçbir istek "
+    "(OSINT, tarama, web kazıma, public-web araması, tarayıcı) çıkamaz. "
+    "Önce /api/vault ile anahtar girin veya Tauri kasasını açın."
+)
+
+#: Kasa kilitliyken SERT reddedilen (HTTP 423 Locked) dış-çıkış uçları.
+VAULT_EGRESS_ROUTES: frozenset = frozenset({
+    "/api/initiate",
+    "/api/browser/open",
+    "/api/browser/shot",
+    "/api/browser/state",
+    "/api/browser/click",
+    "/api/browser/type",
+    "/api/browser/press",
+    "/api/browser/back",
+    "/api/browser/save",
+    "/api/experimental/maigret/scan",
+    "/api/experimental/holehe/scan",
+    "/api/experimental/crawl/fetch",
+    "/api/experimental/socid/extract",
+    # Keyfi kod icrası = keyfi ağ erişimi (üstelik LLM anahtarı da verilir).
+    # ENABLE_INTERPRETER kapalıyken zaten 403; kasa kilitliyken 423.
+    "/api/experimental/interpreter/execute",
+    "/api/scraper/authorize-alternative",
+})
+
+#: Bilinçli muafiyetler — denetimde GÖRÜNÜR olsun diye isim isim yazıldı.
+#: Muafiyet gerekçesi olmayan bir uç buraya EKLENEMEZ (test reddeder).
+VAULT_EGRESS_EXEMPT_ROUTES: frozenset = frozenset({
+    # Dış hareket DEĞİL: açık kanalı KAPATIR. Reddedilirse arkada canlı
+    # Chromium süreci sızar (zombi) — yani muafiyet kilidi güçlendirir.
+    "/api/browser/close",
+    # Salt-okunur envanter raporu: tarayıcı başlatmaz, binary indirme
+    # TETİKLEMEZ (kendi docstring'i de bunu beyan eder).
+    "/api/experimental/stealth",
+    # Yerel hesaplama / LLM yönlendirme; dış OSINT veya tarayıcı yok.
+    "/api/experimental/shadow/analyze",
+    "/api/experimental/shadow/generate",
+    "/api/experimental/chat/respond",
+})
+
+
+def _vault_locked_response(client_id: str) -> JSONResponse:
+    """Kasa kilitli cevabının TEK biçimi (423 Locked + makine-okunur kod)."""
+    return JSONResponse(
+        {
+            "error": {"code": "VAULT_LOCKED", "message": VAULT_LOCKED_MESSAGE},
+            "vault_locked": True,
+            "client_id": client_id,
+        },
+        status_code=423,
+    )
+
+
+def _require_vault_open(client_id: str) -> Optional[JSONResponse]:
+    """DIŞ-ÇIKIŞ KAPISI. Kasa açıksa ``None``, kilitliyse 423 cevabı döner.
+
+    Her dış-ağ/tarayıcı ucu gövdesinin İLK işi olarak bunu çağırmak
+    zorundadır::
+
+        if (locked := _require_vault_open(req.client_id)) is not None:
+            return locked
+
+    Kararın tek sahibi `_check_vault_interlock`'tur (dosya VARLIĞI değil,
+    GERÇEK anahtar malzemesi kilidi açar). Arıza olursa dar taraf: KİLİTLİ.
+    """
+    try:
+        unlocked = _check_vault_interlock(client_id)
+    except Exception:
+        # Sessiz yutma YOK (fail-closed + izlenebilir): mandal okunamadıysa
+        # bu bir arızadır, loglanır ve istek reddedilir.
+        logger.error(
+            "KASA MANDALI OKUNAMADI — dar taraf: KİLİTLİ (client_id=%s)",
+            client_id, exc_info=True,
+        )
+        return _vault_locked_response(client_id)
+    if unlocked:
+        return None
+    logger.warning(
+        "KASA MANDALI: dış-çıkış isteği reddedildi (client_id=%s, kasa kilitli)",
+        client_id,
+    )
+    return _vault_locked_response(client_id)
+
+
+# ─── ÇOCUK KİLİDİ — API GİRİŞİ (Tüzük Md.2 · değiştirilemez ürün kuralı) ───
+# ÖLÇÜM (2026-10-07): `grep -c 'MinorGate\|minor_gate' backend/api.py` → 0.
+# Kilit yalnız capability koşucusunda yaşıyordu ve oraya da ancak
+# `PolicyState.minor_case` DOLDURULURSA ulaşıyordu; API sınırı hiç
+# doldurmuyordu. Yani operatör bir hedefi çocuk olarak beyan etse bile istek
+# kapıda DURDURULMUYOR, iş derine iniyordu. Kilidin varlığı, ikinci bir yol
+# açık kaldığı sürece güvence değildir — kapı bu yüzden BURADA.
+#
+# SIRA: çocuk kilidi kasa kapısından ÖNCE gelir (koşucudaki sıra: çocuk →
+# politika; `runner.py` "politika kapılarından ÖNCE"). Tersi durumda denetim
+# izinde "VAULT_LOCKED" görünür ve çocuk ihlali maskelenir.
+#
+# YAŞ UYDURULMAZ: istekte yaş sinyali yoktur, bu katman yaş tahmin etmez.
+# Operatör beyan eder; beyan "izin" DEĞİL "dur" demektir — dört şart tamam
+# değilse istek gövdesi HİÇ ÇALIŞMADAN 451 döner ve karar deftere yazılır.
+MINOR_BLOCKED_MESSAGE = (
+    "ÇOCUK KİLİDİ: 18 yaş altı bir hedef için araştırma açılamaz. "
+    "Tek istisna kayıp/yaralanma vakasıdır ve dört şartın TAMAMI gerekir: "
+    "ailenin bilgisi + net sebep + doğrulama + konsorsiyum onayı (en az 2). "
+    "Beyan 'dur' demektir; eksik beyan kilidi açmaz."
+)
+
+
+class MinorCasePayload(BaseModel):
+    """Operatörün çocuk vakası beyanı (oda bazlı; şartlar `MinorGate`'te).
+
+    `subject_is_minor` varsayılanı ``True``'dur: bu uca gelen gövde ZATEN bir
+    çocuk beyanıdır, "emin değilim" diye gönderilmez. Beyan edip dört şartı
+    doldurmamak kilidi açmaz — yalnız `POST /api/minor/clear` kaldırır.
+    """
+
+    client_id: str = Field(default="default", max_length=_MAX_CLIENT_ID_LENGTH)
+    subject_is_minor: bool = True
+    case_type: str = Field(default="", max_length=64)
+    family_notified: bool = False
+    reason: str = Field(default="", max_length=4_000)
+    verified: bool = False
+    council_approvals: List[str] = Field(default_factory=list, max_length=32)
+    case_id: str = Field(default="", max_length=128)
+
+
+class ClientRefPayload(BaseModel):
+    """Yalnız oda kimliği taşıyan gövde (beyan kaldırma vb.)."""
+
+    client_id: str = Field(default="default", max_length=_MAX_CLIENT_ID_LENGTH)
+
+
+def _minor_case_for(client_id: str):
+    """Odaya ait çocuk BEYANI — yoksa ``None``. Oda OLUŞTURMAZ (salt okunur).
+
+    Okuma yolu bilinçli olarak yan etkisizdir: durum sorguları oda açıp
+    bellek tüketmemelidir. Beyan oda sözlüğünde DEĞİL, süreç geneli
+    `app.state.minor_cases` içinde tutulur — oda tahliyesi (30 dk boşta)
+    beyanı düşürseydi kilit sessizce açılırdı.
+    """
+    from agent_core.safety import coerce_minor_case
+
+    return coerce_minor_case(app.state.minor_cases.get(client_id))
+
+
+def _minor_ledger_record(case, decision, *, client_id: str, subject: str = "") -> None:
+    """Kararı denetim defterine yazar — SESSİZ YUTMA YOK.
+
+    Defter yazılamazsa kilit GEVŞEMEZ (karar zaten verilmiş ve uygulanmıştır)
+    ama arıza operatörün göreceği biçimde loglanır.
+    """
+    from agent_core.safety import MinorCaseLedger
+
+    try:
+        MinorCaseLedger().record(
+            case, decision, capability_id="api.door", subject=subject,
+        )
+    except Exception:
+        logger.error(
+            "ÇOCUK KİLİDİ DEFTERİ YAZILAMADI (karar uygulandı, kayıt eksik) "
+            "client_id=%s reason=%s",
+            client_id, getattr(decision, "reason_code", "?"), exc_info=True,
+        )
+
+
+def _minor_blocked_response(client_id: str, decision) -> JSONResponse:
+    """Çocuk kilidi reddi (451: hukuki/etik gerekçeyle reddedildi)."""
+    return JSONResponse(
+        {
+            "error": {
+                "code": "MINOR_BLOCKED",
+                "message": MINOR_BLOCKED_MESSAGE,
+                "reason_code": getattr(decision, "reason_code", ""),
+                "detail": getattr(decision, "detail", ""),
+            },
+            "minor_case": {
+                "subject_is_minor": True,
+                "reason_code": getattr(decision, "reason_code", ""),
+            },
+            "client_id": client_id,
+        },
+        status_code=451,
+    )
+
+
+def _evaluate_declared_case(
+    client_id: str, case, *, subject: str = ""
+) -> Optional[JSONResponse]:
+    """Tek beyanı değerlendirir: ``None`` = geçti, 451 = durdu (defter yazılır)."""
+    from agent_core.safety import MinorDecision, MinorGate
+
+    try:
+        decision = MinorGate().evaluate(case)
+    except Exception:
+        # Sessiz yutma YOK (fail-closed): kilit değerlendirilemiyorsa DAR
+        # taraf seçilir — istek reddedilir, çünkü "belki geçer" demek
+        # kilidin varlığını anlamsız kılardı.
+        logger.error(
+            "ÇOCUK KİLİDİ DEĞERLENDİRİLEMEDİ — dar taraf: RED (client_id=%s)",
+            client_id, exc_info=True,
+        )
+        return _minor_blocked_response(
+            client_id,
+            MinorDecision.deny("gate_error", "Kilit değerlendirilemedi; dar taraf: ret."),
+        )
+    _minor_ledger_record(case, decision, client_id=client_id, subject=subject)
+    if decision.allowed:
+        return None
+    logger.warning(
+        "ÇOCUK KİLİDİ: istek KAPIDA reddedildi (client_id=%s, reason=%s)",
+        client_id, decision.reason_code,
+    )
+    return _minor_blocked_response(client_id, decision)
+
+
+def _require_minor_clearance(
+    client_id: Optional[str], *, subject: str = ""
+) -> Optional[JSONResponse]:
+    """ÇOCUK KİLİDİ KAPISI. Beyan yoksa ``None``; şartlar eksikse 451 döner.
+
+    Her dış-ağ/tarayıcı ucu gövdesinin İLK işi olarak bunu çağırmak zorundadır
+    (kasa kapısından ÖNCE)::
+
+        if (blocked := _require_minor_clearance(req.client_id)) is not None:
+            return blocked
+
+    Beyan YOKLUĞU "yetişkin" demek değildir: bu katman yaş uydurmaz, karar
+    mercii operatördür (ürün kuralı: yetişkin için sistem engel koymaz).
+    Beyan VARSA şartlar `MinorGate` ile değerlendirilir ve karar istisnasız
+    uygulanır; onaylı vakada istek normal akışına devam eder.
+
+    ``client_id=None`` → uç, gövdesinde oda ADI taşımıyor ama hedef materyali
+    işliyor (profil/ileti/görev). "Odayı söyleyemedim" bir KAÇIŞ YOLU DEĞİLDİR:
+    bu modda beyan edilmiş odalardan dört şartı sağlamayan BİRİ varsa istek
+    reddedilir. Fail-closed yön bilinçli: oda adı taşımayan ucun beyanı
+    atlamasına izin vermek, kilidi isteğe bağlı kılardı.
+    """
+    if client_id is None:
+        for other_id in list(app.state.minor_cases):
+            case = _minor_case_for(other_id)
+            if case is None:
+                continue
+            blocked = _evaluate_declared_case(other_id, case, subject=subject)
+            if blocked is not None:
+                return blocked
+        return None
+    case = _minor_case_for(client_id)
+    if case is None:
+        return None
+    return _evaluate_declared_case(client_id, case, subject=subject)
+
+
+@app.post("/api/minor/case")
+async def api_minor_case_register(req: MinorCasePayload):
+    """Operatörün çocuk beyanını kaydeder (oda bazlı — TEK kaynak).
+
+    Kayıt, beyanı "onay" değil "dur" olarak kurar: dört şart tamam değilse
+    yanıt `allowed:false` döner ve o odanın TÜM dış-çıkış kapıları 451 verir.
+    Şartlar tamamlanınca yanıt `allowed:true` olur ve akış normalleşir.
+    """
+    if not req.client_id or len(req.client_id) > _MAX_CLIENT_ID_LENGTH:
+        return JSONResponse(
+            {"error": {"code": "INVALID_CLIENT_ID", "message": "Geçersiz client_id"}},
+            status_code=400,
+        )
+    try:
+        validate_identifier(req.client_id, field="client_id")
+    except ValueError:
+        return JSONResponse(
+            {"error": {"code": "INVALID_CLIENT_ID", "message": "Geçersiz client_id"}},
+            status_code=400,
+        )
+    if (
+        req.client_id not in app.state.minor_cases
+        and len(app.state.minor_cases) >= _MINOR_CASE_MAX_ENTRIES
+    ):
+        return JSONResponse(
+            {
+                "error": {
+                    "code": "MINOR_CASE_CAPACITY",
+                    "message": (
+                        "Çocuk beyanı deposu dolu; önce kapanmış beyanları "
+                        "temizleyin (POST /api/minor/clear)."
+                    ),
+                }
+            },
+            status_code=503,
+        )
+    from agent_core.safety import MinorCaseContext, MinorGate
+
+    case = MinorCaseContext(
+        subject_is_minor=bool(req.subject_is_minor),
+        case_type=req.case_type,
+        family_notified=bool(req.family_notified),
+        reason=req.reason,
+        verified=bool(req.verified),
+        council_approvals=tuple(req.council_approvals),
+        case_id=req.case_id,
+    )
+    app.state.minor_cases[req.client_id] = case
+    decision = MinorGate().evaluate(case)
+    _minor_ledger_record(case, decision, client_id=req.client_id)
+    return {
+        "client_id": req.client_id,
+        "declared": True,
+        "subject_is_minor": case.subject_is_minor,
+        "allowed": decision.allowed,
+        "reason_code": decision.reason_code,
+        "detail": decision.detail,
+        "case_id": case.case_id,
+    }
+
+
+@app.post("/api/minor/clear")
+async def api_minor_case_clear(req: ClientRefPayload):
+    """Çocuk beyanını KALDIRIR (vaka kapandı) — kilidi zaman aşımı açmaz."""
+    had = app.state.minor_cases.pop(req.client_id, None) is not None
+    if had:
+        logger.info("ÇOCUK KİLİDİ: beyan operatör tarafından kaldırıldı (client_id=%s)", req.client_id)
+    return {"client_id": req.client_id, "cleared": had}
+
+
+@app.get("/api/minor/state")
+async def api_minor_case_state(client_id: str = "default"):
+    """Dürüst durum: beyan var mı, geçiyor mu, geçmiyorsa NEDEN."""
+    if not client_id or len(client_id) > _MAX_CLIENT_ID_LENGTH:
+        return JSONResponse(
+            {"error": {"code": "INVALID_CLIENT_ID", "message": "Geçersiz client_id"}},
+            status_code=400,
+        )
+    case = _minor_case_for(client_id)
+    if case is None:
+        return {
+            "client_id": client_id,
+            "declared": False,
+            "cleared": True,
+            "reason_code": "not_declared",
+            "detail": (
+                "Bu oda için çocuk beyanı yok. Bu katman yaş UYDURMAZ; "
+                "hedefin çocuk olduğu biliniyorsa operatör beyan etmelidir."
+            ),
+        }
+    from agent_core.safety import MinorGate
+
+    decision = MinorGate().evaluate(case)
+    return {
+        "client_id": client_id,
+        "declared": True,
+        "cleared": decision.allowed,
+        "subject_is_minor": True,
+        "case_type": case.case_type,
+        "case_id": case.case_id,
+        "allowed": decision.allowed,
+        "reason_code": decision.reason_code,
+        "detail": decision.detail,
+    }
 
 
 @app.get("/api/dialogue/sessions")
@@ -3097,12 +3645,95 @@ async def api_dialogue_sessions():
 
 class SocidExtractPayload(BaseModel):
     url: str
+    # [KASA MANDALI] Kasa ODA bazlıdır; uç artık hangi odanın mandalına
+    # bakacağını bilir. Gönderilmezse varsayılan oda (dar taraf: kilitli).
+    client_id: str = Field(default="default", max_length=_MAX_CLIENT_ID_LENGTH)
 
 
 class MaigretScanPayload(BaseModel):
     username: str
     limit: Optional[int] = None
     timeout: Optional[int] = None
+    # [KASA MANDALI] Kasa ODA bazlıdır; uç artık hangi odanın mandalına
+    # bakacağını bilir. Gönderilmezse varsayılan oda (dar taraf: kilitli).
+    client_id: str = Field(default="default", max_length=_MAX_CLIENT_ID_LENGTH)
+
+
+# ─── [E5 · Md.1] MOTOR YOKSA "ÇALIŞIYOR" GÖRÜNTÜSÜ DE YOK ────────────────────
+# ÖLÇÜM (2026-10-07, kasa açık + motorlar kapalı): maigret/holehe/crawl uçları
+# **200** dönüyordu (`available:false`, `reason:"disabled"`). Gövde dürüsttü ama
+# HTTP seviyesi "istek işlendi" diyordu; arayüz/istemci akışı boş bir süreci
+# başarılmış bir iş gibi okuyabiliyordu. Bu, motorun kendisi YOKKEN doğan bir
+# görüntüdür ve Md.1 (uydurma yasağı) kapsamındadır.
+#
+# SINIR BİLİNÇLİ: 400 yalnız MOTOR/KAPI yokluğunda verilir. Motor ÇALIŞIP da
+# dürüstçe "sonuç yok/hata" döndüğünde sözleşme AYNEN korunur (200 +
+# `available:false` + makine-okunur sebep): `timeout`, `scan_error`,
+# `network_error`, `no_record`, `provider_errors` bir başarısızlık değil,
+# dürüst bir sonuçtur. Bu ayrım olmadan "her şeyi 400 yapan kapı" yazmış olurduk.
+ENGINE_UNAVAILABLE_REASONS: frozenset = frozenset({
+    "disabled",          # ENABLE_* kapısı kapalı (operatör açmadı)
+    "library_missing",   # motor kütüphanesi kurulu değil
+    "dependency_broken", # bağımlılık yüklendi ama kırık/eksik
+    "db_unavailable",    # motorun veritabanı (ör. maigret DB) yüklenemedi
+})
+
+
+def _module_unavailable_response(
+    client_id: Optional[str], module: str, *, detail: str = ""
+) -> JSONResponse:
+    """Modül/ajan bu süreçte YÜKLÜ DEĞİL → 503 ``MODULE_UNAVAILABLE``.
+
+    E5'in kardeşi: motor kapısı kapalıyken 400 `MOTOR_UNAVAILABLE` döner;
+    burada ise sunucu tarafı YETENEK yok (modül/ajan hiç yüklenmemiş). Ortak
+    kural aynı — "çalışmayan şey 200 dönmez". İstek istemci hatası olmadığı
+    için 400 değil **503** seçildi; ayrıntılı gerekçe:
+    `tests/unit/test_experimental_engine_contract.py`.
+
+    Gövde makine-okunur: `error.code` + `error.module` + `available:false`.
+    """
+    body: Dict[str, Any] = {
+        "error": {
+            "code": "MODULE_UNAVAILABLE",
+            "message": f"{module} bu süreçte yüklü değil; istek İŞLENMEDİ.",
+            "module": module,
+            "detail": detail,
+        },
+        "module": module,
+        "available": False,
+    }
+    if client_id:
+        body["client_id"] = client_id
+    return JSONResponse(body, status_code=503)
+
+
+def _engine_unavailable_response(result) -> Optional[JSONResponse]:
+    """Motor/kapı YOKSA 400 ``MOTOR_UNAVAILABLE``; aksi hâlde ``None``.
+
+    Gövde, dürüst sözleşmeyi KAYBETMEZ: sonucun tüm alanları (`available:false`,
+    `reason`, ...) korunur ve üzerine makine-okunur bir `error` bloğu eklenir.
+    Çağrı biçimi (kasa/kilit kapılarıyla aynı):
+
+        result = await motor(...)
+        if (unavailable := _engine_unavailable_response(result)) is not None:
+            return unavailable
+    """
+    if getattr(result, "available", True) is not False:
+        return None
+    reason = getattr(result, "reason", None)
+    if reason not in ENGINE_UNAVAILABLE_REASONS:
+        return None
+    body = result.model_dump()
+    body["error"] = {
+        "code": "MOTOR_UNAVAILABLE",
+        "message": (
+            f"Deneysel motor kullanılamıyor (sebep: {reason}): istek "
+            "ÇALIŞTIRILMADI. Sonuç yok — boş sonuç da yok. İlgili ENABLE_* "
+            "bayrağını ve motor bağımlılıklarını kontrol edin."
+        ),
+        "reason": reason,
+    }
+    return JSONResponse(body, status_code=400)
 
 
 @app.post("/api/experimental/maigret/scan")
@@ -3112,10 +3743,19 @@ async def maigret_scan(payload: MaigretScanPayload):
     Kapı: ENABLE_MAIGRET=true (varsayılan kapalı). Dürüst sonuç: kayıt
     çıkmazsa `available:false` + makine-okunur sebep; site/hesap uydurulmaz.
     """
+    # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız; politika kapılarından öncedir).
+    if (blocked := _require_minor_clearance(payload.client_id, subject=payload.username)) is not None:
+        return blocked
+    # [KASA MANDALI] Bu uç 3300+ dış siteye istek atar: kasa kilitliyse motor
+    # HİÇ ÇAĞRILMAZ, kapıda 423 Locked döner (Tüzük Md.4).
+    if (locked := _require_vault_open(payload.client_id)) is not None:
+        return locked
     from agent_core.services.maigret_scanner import scan_username
     result = await scan_username(
         payload.username, limit=payload.limit, site_timeout=payload.timeout
     )
+    if (unavailable := _engine_unavailable_response(result)) is not None:
+        return unavailable
     return result.model_dump()
 
 
@@ -3123,6 +3763,9 @@ class HoleheScanPayload(BaseModel):
     email: str
     limit: Optional[int] = None
     timeout: Optional[int] = None
+    # [KASA MANDALI] Kasa ODA bazlıdır; uç artık hangi odanın mandalına
+    # bakacağını bilir. Gönderilmezse varsayılan oda (dar taraf: kilitli).
+    client_id: str = Field(default="default", max_length=_MAX_CLIENT_ID_LENGTH)
 
 
 @app.post("/api/experimental/holehe/scan")
@@ -3134,15 +3777,26 @@ async def holehe_scan(payload: HoleheScanPayload):
     holehe'nin istisnaları rateLimit olarak maskelemesi hata sayılır —
     kapalı ağda asla "kayıtlı değil" iddia edilmez.
     """
+    # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız; politika kapılarından öncedir).
+    if (blocked := _require_minor_clearance(payload.client_id, subject=payload.email)) is not None:
+        return blocked
+    # [KASA MANDALI] Dış site taraması: kasa kilitliyse kapıda 423 Locked.
+    if (locked := _require_vault_open(payload.client_id)) is not None:
+        return locked
     from agent_core.services.holehe_scanner import scan_email
     result = await scan_email(
         payload.email, limit=payload.limit, site_timeout=payload.timeout
     )
+    if (unavailable := _engine_unavailable_response(result)) is not None:
+        return unavailable
     return result.model_dump()
 
 
 class CrawlFetchPayload(BaseModel):
     url: str
+    # [KASA MANDALI] Kasa ODA bazlıdır; uç artık hangi odanın mandalına
+    # bakacağını bilir. Gönderilmezse varsayılan oda (dar taraf: kilitli).
+    client_id: str = Field(default="default", max_length=_MAX_CLIENT_ID_LENGTH)
 
 
 @app.post("/api/experimental/crawl/fetch")
@@ -3153,8 +3807,17 @@ async def crawl_fetch(payload: CrawlFetchPayload):
     binary'si gerektirmez). Dürüst sonuç: içerik çekilemezse `available:false`
     + makine-okunur sebep; ASLA uydurma içerik döner. SSRF guard'lı.
     """
+    # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız; politika kapılarından öncedir).
+    if (blocked := _require_minor_clearance(payload.client_id, subject=payload.url)) is not None:
+        return blocked
+    # [KASA MANDALI] Public-web sayfası ÇEKİLİR (dış ağ): kasa kilitliyse 423.
+    if (locked := _require_vault_open(payload.client_id)) is not None:
+        return locked
     from agent_core.services.crawl_enricher import fetch_readable
-    return (await fetch_readable(payload.url)).model_dump()
+    result = await fetch_readable(payload.url)
+    if (unavailable := _engine_unavailable_response(result)) is not None:
+        return unavailable
+    return result.model_dump()
 
 
 @app.get("/api/experimental/stealth")
@@ -3176,16 +3839,30 @@ async def socid_extract(payload: SocidExtractPayload):
     Dürüst sonuç sözleşmesi: kayıt çıkmazsa `available:false` + makine-okunur
     sebep döner; alan uydurulmaz. SSRF guard'lı (private/loopback engelli).
     """
+    # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız; politika kapılarından öncedir).
+    if (blocked := _require_minor_clearance(payload.client_id, subject=payload.url)) is not None:
+        return blocked
+    # [KASA MANDALI] Profil URL'si DIŞARIDAN çekilir: kasa kilitliyse 423.
+    if (locked := _require_vault_open(payload.client_id)) is not None:
+        return locked
     from agent_core.services.socid_enricher import extract_profile
     record = await extract_profile(payload.url)
+    if (unavailable := _engine_unavailable_response(record)) is not None:
+        return unavailable
     return record.model_dump()
 
 
 @app.post("/api/experimental/shadow/analyze")
 async def shadow_analyze(profile: dict):
     """Dark Triad analizi"""
+    # [ÇOCUK KİLİDİ] Bu uç bir HEDEF PROFİLİ işler ama gövdesinde oda adı
+    # taşımaz: any-mod (beyan edilmiş çözülmemiş vaka varsa ret).
+    if (blocked := _require_minor_clearance(None)) is not None:
+        return blocked
     if shadow_executor is None:
-        return {"error": "Shadow Protocol yüklü değil"}
+        # [E5] "Modül yüklü değil" 200 dönmez: çalışmayan bir çağrı başarılı
+        # görünmesin (Md.1).
+        return _module_unavailable_response(None, "shadow_protocol")
     from agent_core.psychology.dark_triad import DarkTriadAnalyzer
     analyzer = DarkTriadAnalyzer()
     result = analyzer.analyze(profile)
@@ -3194,8 +3871,14 @@ async def shadow_analyze(profile: dict):
 @app.post("/api/experimental/shadow/generate")
 async def shadow_generate(task: dict):
     """Shadow mesaj üretimi"""
+    # [ÇOCUK KİLİDİ] Görev gövdesi oda adı taşıyorsa O oda, yoksa any-mod.
+    declared_room = task.get("client_id") if isinstance(task, dict) else None
+    if (blocked := _require_minor_clearance(
+        declared_room if isinstance(declared_room, str) and declared_room else None
+    )) is not None:
+        return blocked
     if shadow_executor is None:
-        return {"error": "Shadow Protocol yüklü değil"}
+        return _module_unavailable_response(declared_room, "shadow_protocol")
     result = await shadow_executor.execute(task)
     return result.model_dump()
 
@@ -3210,9 +3893,13 @@ class ChatPayload(BaseModel):
 @app.post("/api/experimental/chat/respond")
 async def chat_respond(payload: ChatPayload):
     """Hedefin mesajına otonom karşı hamle üretir"""
+    # [ÇOCUK KİLİDİ] Hedefe DÖNÜK mesaj üretimi; oda adı yok → any-mod.
+    if (blocked := _require_minor_clearance(None)) is not None:
+        return blocked
     if dialogue_manager is None:
-        return {"error": "Gölge Sohbet modülü yüklü değil"}
-    
+        # [E5] Çalışmayan çağrı 200 dönmez (Md.1).
+        return _module_unavailable_response(payload.task_id, "dialogue_manager")
+
     try:
         if payload.task_id not in dialogue_manager.sessions:
             dialogue_manager.start_session(payload.task_id, payload.target_profile, payload.user_profile)
@@ -3220,8 +3907,26 @@ async def chat_respond(payload: ChatPayload):
         res = await dialogue_manager.generate_response(payload.task_id, payload.target_message)
         return res.model_dump()
     except Exception as e:
+        # [E5] Üretim BAŞARISIZ olursa yanıt da başarısız olmalı: eskiden
+        # `200 + {"error": {...}}` dönüyordu — yani başarısız bir çağrı HTTP
+        # seviyesinde "tamamlandı" görünüyordu. Kod (DIALOGUE_FAILED) korunur;
+        # yalnız durum düzeltilir. 502: hata YUKARI AKIŞTAN (LLM/oturum) gelir.
         logger.error("Dialogue generation failed: %s", type(e).__name__)
-        return {"error": {"code": "DIALOGUE_FAILED", "message": type(e).__name__}}
+        return JSONResponse(
+            {
+                "error": {
+                    "code": "DIALOGUE_FAILED",
+                    "message": (
+                        f"Karşı hamle üretilemedi ({type(e).__name__}); istek "
+                        "TAMAMLANMADI."
+                    ),
+                    "detail": type(e).__name__,
+                },
+                "available": False,
+                "task_id": payload.task_id,
+            },
+            status_code=502,
+        )
 
 class AspasiaChatPayload(BaseModel):
     client_id: str
@@ -3362,7 +4067,9 @@ def _extract_handle_from_url(url: str) -> str:
     return url.split("?")[0].rstrip("/").split("/")[-1].replace("@", "").lower()
 
 
-async def _run_public_web_research(url: str, search_engine: Any) -> Dict[str, Any]:
+async def _run_public_web_research(
+    url: str, search_engine: Any, client_id: str = "default"
+) -> Dict[str, Any]:
     """Yetki verilmiş alternatif: kanıt kaynaklı public-web araması.
 
     Sözleşme (sahte veri YASAK):
@@ -3424,23 +4131,54 @@ async def _run_public_web_research(url: str, search_engine: Any) -> Dict[str, An
     except Exception as exc:  # zenginleştirme asıl sonucu asla bozmasın
         logger.warning("socid enrichment skipped: %s: %s", type(exc).__name__, str(exc)[:80])
         socid_note = ""
-    # [FAZ 4] Crawl4AI okunabilir-metin zenginleştirmesi. Kapı:
-    # ENABLE_CRAWL4AI (varsayılan kapalı → davranış birebir aynı). Yalnız
-    # available=True sonuçlar `crawl` alanına girer; hatalar alan EKLEMEZ
-    # (dürüst boş) ve asıl araştırma sonucunu asla bozmaz.
+    # [FAZ A · Retina] TEMİZ METİN OMURGASI. Eskiden tek bir crawl4ai çağrısı
+    # vardı ve yalnız ENABLE_CRAWL4AI açıkken çalışıyordu. Artık üç kademeli
+    # omurga devrede: trafilatura → crawl4ai → scrapling. İlk KANIT ÜRETEN
+    # kademe sonucu verir; hiçbiri üretemezse alan uydurma metinle DOLDURULMAZ
+    # (sebep + deneme izi yazılır). Tek arayüz: capabilities.extract_web_text.
     crawl_note = ""
     try:
-        if crawl_enricher.is_enabled() and matched:
+        from agent_core.capabilities import bootstrap as _caps_bootstrap
+        from agent_core.capabilities.adapters_web import extract_web_text
+        from agent_core.capabilities.state import policy_state
+
+        _caps_bootstrap()
+        web_state = policy_state(vault_locked=not _check_vault_interlock(client_id))
+        if matched:
             crawled = 0
             for m in matched[:crawl_enricher.research_limit()]:
-                res = await crawl_enricher.fetch_readable(m["source_url"])
-                if res.available:
-                    m["crawl"] = res.model_dump()
+                result = await extract_web_text(m["source_url"], state=web_state)
+                if result.ok:
+                    # payload kademeye göre değişir (pydantic kayıt veya dict);
+                    # ikisi de desteklenir, erişim güvenli.
+                    payload_raw = result.payload
+                    title = (
+                        payload_raw.get("title", "") if isinstance(payload_raw, dict)
+                        else getattr(payload_raw, "title", "") or ""
+                    )
+                    m["crawl"] = {
+                        "available": True,
+                        # HANGİ kademenin ürettiği kayıtta yazar (görünürlük).
+                        "provider": result.capability_id,
+                        "requested_url": m["source_url"],
+                        "title": title,
+                        "text": result.items[0].content if result.items else "",
+                        "evidence_ids": [i.evidence_id for i in result.items],
+                        "attempts": result.notes.get("attempts", []),
+                    }
                     crawled += 1
+                else:
+                    # Dürüst boş (sözleşme korunur): çekilemeyen sonuca `crawl`
+                    # alanı EKLENMEZ; sebep yalnız logda (uydurma metin yok).
+                    logger.info(
+                        "web extraction failed for %s: %s (attempts=%s)",
+                        m["source_url"], result.unavailable_reason,
+                        result.notes.get("attempts", []),
+                    )
             if crawled:
-                crawl_note = f" {crawled} sonuca crawl4ai ile okunabilir metin çekildi."
+                crawl_note = f" {crawled} sonuca temiz metin çekildi (omurga: trafilatura → crawl4ai → scrapling)."
     except Exception as exc:  # zenginleştirme asıl sonucu asla bozmasın
-        logger.warning("crawl4ai enrichment skipped: %s: %s", type(exc).__name__, str(exc)[:80])
+        logger.warning("web extraction skipped: %s: %s", type(exc).__name__, str(exc)[:80])
 
     if matched:
         status = "ok"
@@ -3493,8 +4231,19 @@ def _browser_error_response(e: Exception):
     from agent_core.services.browser_session import (
         BrowserNotOpenError,
         BrowserUnavailableError,
+        VaultLockedError,
     )
 
+    # [KASA MANDALI] Tarayıcı katmanı kasayı kilitli görürse 423 Locked.
+    # API kapısındaki denetim atlanmış olsa bile burası ikinci sürgüdür.
+    if isinstance(e, VaultLockedError):
+        return JSONResponse(
+            {
+                "error": {"code": "VAULT_LOCKED", "message": str(e)[:200]},
+                "vault_locked": True,
+            },
+            status_code=423,
+        )
     if isinstance(e, BrowserUnavailableError):
         return JSONResponse(
             {"error": {"code": "BROWSER_UNAVAILABLE", "message": str(e)[:200]}},
@@ -3517,6 +4266,12 @@ def _browser_error_response(e: Exception):
 
 @app.post("/api/browser/open")
 async def api_browser_open(req: BrowserOpenPayload):
+    # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız).
+    if (blocked := _require_minor_clearance(req.client_id, subject=req.url)) is not None:
+        return blocked
+    # [KASA MANDALI] Kasa kilitliyse tarayıcı AÇILAMAZ (dış dünyaya kanal).
+    if (locked := _require_vault_open(req.client_id)) is not None:
+        return locked
     room = get_room(req.client_id)
     try:
         result = await _room_browser(room).open(req.url)
@@ -3528,6 +4283,12 @@ async def api_browser_open(req: BrowserOpenPayload):
 
 @app.get("/api/browser/shot")
 async def api_browser_shot(client_id: str):
+    # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız).
+    if (blocked := _require_minor_clearance(client_id)) is not None:
+        return blocked
+    # [KASA MANDALI] Ekran görüntüsü hedef siteden veri çeker -> dış hareket.
+    if (locked := _require_vault_open(client_id)) is not None:
+        return locked
     room = get_room(client_id)
     try:
         png = await _room_browser(room).shot()
@@ -3538,6 +4299,13 @@ async def api_browser_shot(client_id: str):
 
 @app.get("/api/browser/state")
 async def api_browser_state(client_id: str):
+    # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız).
+    if (blocked := _require_minor_clearance(client_id)) is not None:
+        return blocked
+    # [KASA MANDALI] Durum okuması da kapıdan geçer: kilitliyken "tarayıcı
+    # hazır" görüntüsü vermek kilidin etrafından dolaşmaktır.
+    if (locked := _require_vault_open(client_id)) is not None:
+        return locked
     room = get_room(client_id)
     st = await _room_browser(room).state()
     st["saved_session"] = "ig_sessionid" in room.get("vault", {})
@@ -3546,6 +4314,11 @@ async def api_browser_state(client_id: str):
 
 @app.post("/api/browser/click")
 async def api_browser_click(req: BrowserClickPayload):
+    # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız).
+    if (blocked := _require_minor_clearance(req.client_id)) is not None:
+        return blocked
+    if (locked := _require_vault_open(req.client_id)) is not None:
+        return locked
     room = get_room(req.client_id)
     try:
         return await _room_browser(room).click(req.x, req.y)
@@ -3555,6 +4328,11 @@ async def api_browser_click(req: BrowserClickPayload):
 
 @app.post("/api/browser/type")
 async def api_browser_type(req: BrowserTypePayload):
+    # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız).
+    if (blocked := _require_minor_clearance(req.client_id)) is not None:
+        return blocked
+    if (locked := _require_vault_open(req.client_id)) is not None:
+        return locked
     room = get_room(req.client_id)
     try:
         # NOT: metin yalnızca tarayıcıya yazılır; loga/hafızaya alınmaz.
@@ -3565,6 +4343,11 @@ async def api_browser_type(req: BrowserTypePayload):
 
 @app.post("/api/browser/press")
 async def api_browser_press(req: BrowserPressPayload):
+    # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız).
+    if (blocked := _require_minor_clearance(req.client_id)) is not None:
+        return blocked
+    if (locked := _require_vault_open(req.client_id)) is not None:
+        return locked
     room = get_room(req.client_id)
     try:
         return await _room_browser(room).press(req.key)
@@ -3574,6 +4357,11 @@ async def api_browser_press(req: BrowserPressPayload):
 
 @app.post("/api/browser/back")
 async def api_browser_back(req: BrowserClientPayload):
+    # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız).
+    if (blocked := _require_minor_clearance(req.client_id)) is not None:
+        return blocked
+    if (locked := _require_vault_open(req.client_id)) is not None:
+        return locked
     room = get_room(req.client_id)
     try:
         return await _room_browser(room).back()
@@ -3583,6 +4371,11 @@ async def api_browser_back(req: BrowserClientPayload):
 
 @app.post("/api/browser/save")
 async def api_browser_save(req: BrowserClientPayload):
+    # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız).
+    if (blocked := _require_minor_clearance(req.client_id)) is not None:
+        return blocked
+    if (locked := _require_vault_open(req.client_id)) is not None:
+        return locked
     room = get_room(req.client_id)
     try:
         sessionid = await _room_browser(room).session_cookie()
@@ -3601,12 +4394,24 @@ async def api_browser_save(req: BrowserClientPayload):
 
 @app.post("/api/browser/close")
 async def api_browser_close(req: BrowserClientPayload):
+    # [KASA MANDALI — BİLİNÇLİ MUAFİYET] `close` dışarıya ÇIKMAZ; açık
+    # Chromium kanalını KAPATIR. Kasa kilitliyken reddedilirse arkada canlı
+    # tarayıcı süreci sızar (zombi) — yani muafiyet kilidi zayıflatmaz,
+    # güçlendirir. Bkz. VAULT_EGRESS_EXEMPT_ROUTES.
     room = get_room(req.client_id)
     return await _room_browser(room).close()
 
 
 @app.post("/api/scraper/authorize-alternative")
 async def authorize_scraper_alternative(req: AlternativeAuthorizationPayload):
+    # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız).
+    if (blocked := _require_minor_clearance(req.client_id)) is not None:
+        return blocked
+    # [KASA MANDALI] `public_web_search` yetkilendirmesi dış arama tetikler;
+    # kasa kilitliyse yetki VERİLEMEZ (yetki kaydı bile kilidin arkasından
+    # dolanmak olurdu).
+    if (locked := _require_vault_open(req.client_id)) is not None:
+        return locked
     room = get_room(req.client_id)
     pending = room.get("pending_alternative_authorization")
     if not pending:
@@ -3624,7 +4429,9 @@ async def authorize_scraper_alternative(req: AlternativeAuthorizationPayload):
 
     if req.alternative == "public_web_search":
         executor = get_executor(req.client_id)
-        research = await _run_public_web_research(pending["url"], executor.search_engine)
+        research = await _run_public_web_research(
+            pending["url"], executor.search_engine, client_id=req.client_id
+        )
         room["web_research"] = research
         room.pop("pending_alternative_authorization", None)
         broadcast_log(
@@ -3695,15 +4502,29 @@ class InterpreterPayload(BaseModel):
 @app.post("/api/experimental/interpreter/execute")
 async def interpreter_execute(req: InterpreterPayload):
     """Open Interpreter ile otonom kod icra eder"""
+    # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız).
+    if (blocked := _require_minor_clearance(req.client_id)) is not None:
+        return blocked
+    # [KASA MANDALI] Keyfi kod icrası dış ağa sınırsız çıkış demektir; kasa
+    # kilitliyse HİÇ BAŞLAMAZ (env kapısından bile önce: kasa istisnasızdır,
+    # bkz. PolicyKernel._GATE_ORDER — kasa, ENABLE_* bayraklarından öncedir).
+    if (locked := _require_vault_open(req.client_id)) is not None:
+        return locked
     if os.getenv("ENABLE_INTERPRETER", "false").lower() != "true":
         raise HTTPException(status_code=403, detail="Interpreter endpoint is disabled by default for security.")
         
     room = get_room(req.client_id)
     executor = room.get("executor")
-    interpreter_agent = executor.agents.get("interpreter")
-    
+    # [E5] Oda kurulmamışsa `executor` None olabilir; eskiden burada
+    # AttributeError → 500 sızıyordu. Artık dürüst 503.
+    interpreter_agent = executor.agents.get("interpreter") if executor else None
+
     if not interpreter_agent:
-        return {"error": "Interpreter Agent aktif değil"}
+        # [E5] Ajan aktif değilse çağrı 200 dönmez: kod icra edilmedi.
+        return _module_unavailable_response(
+            req.client_id, "interpreter_agent",
+            detail="ENABLE_INTERPRETER açık ama ajan bu odada kayıtlı değil.",
+        )
         
     broadcast_log(req.client_id, "INFO", f"INTERPRETER: Görev icra ediliyor -> {req.prompt[:60]}...")
     res = await interpreter_agent.execute_task(
@@ -3827,6 +4648,1231 @@ def _terminate_mission(client_id: str, task_id: str, action: str, reason: str):
         "task_id": task_id,
         "outcome": decision.outcome,
     }
+
+
+@app.get("/api/tasks/{task_id}/changes")
+async def api_task_changes(
+    task_id: str = Path(min_length=1, max_length=_MAX_TASK_ID_LENGTH),
+    client_id: str = "default",
+):
+    """[FAZ B · B7] Bu görev, aynı hedefin ÖNCEKİ taramasına göre ne değişti?
+
+    Önceki kayıt yoksa `available:false` + `no_baseline` döner; fark
+    UYDURULMAZ. Görev bitiminde parmak izi otomatik yazılır (broadcast_result).
+    """
+    try:
+        validate_identifier(task_id, field="task_id")
+    except ValueError:
+        return JSONResponse(
+            {"error": {"code": "INVALID_TASK_ID", "message": "Invalid task identifier"}},
+            status_code=400,
+        )
+
+    room = get_room(client_id)
+    latest = room.get("latest_result") or {}
+    if latest.get("task_id") == task_id and isinstance(latest.get("changes"), dict):
+        return latest["changes"]
+
+    executor = room.get("executor")
+    if executor is None:
+        return JSONResponse(
+            {"error": {"code": "NO_EXECUTOR", "message": "Oda hazır değil"}},
+            status_code=503,
+        )
+    from agent_core.services.change_tracker import build_snapshot, diff_snapshots, latest_before
+
+    try:
+        memory = executor.memory.get_task_memory(task_id)
+    except Exception as exc:
+        return JSONResponse(
+            {
+                "error": {
+                    "code": "MEMORY_UNAVAILABLE",
+                    "message": f"Görev belleği okunamadı: {type(exc).__name__}",
+                }
+            },
+            status_code=409,
+        )
+    snapshot = build_snapshot(
+        (memory or {}).get("evidence") or [],
+        (memory or {}).get("target_profile") or {},
+        task_id=task_id,
+    )
+    previous = latest_before(
+        getattr(executor.memory, "storage_path", "./memory/"), snapshot.target, task_id
+    )
+    return diff_snapshots(previous, snapshot).model_dump()
+
+
+@app.get("/api/tasks/{task_id}/graph")
+async def api_task_graph(
+    task_id: str = Path(min_length=1, max_length=_MAX_TASK_ID_LENGTH),
+    client_id: str = "default",
+):
+    """[FAZ B · B4] Görevin kanıtından GERÇEK ilişki grafı.
+
+    `HolographicResonanceMesh` artık rastgele düğüm üretmiyor: bu uçtan
+    beslenir. Kanıt yoksa graf BOŞ döner (`available:false` + sebep) — arayüz
+    boş graf için uydurma düğüm ÇİZMEZ.
+    """
+    try:
+        validate_identifier(task_id, field="task_id")
+    except ValueError:
+        return JSONResponse(
+            {"error": {"code": "INVALID_TASK_ID", "message": "Invalid task identifier"}},
+            status_code=400,
+        )
+
+    room = get_room(client_id)
+    executor = room.get("executor")
+    if executor is None:
+        return JSONResponse(
+            {"error": {"code": "NO_EXECUTOR", "message": "Oda hazır değil"}},
+            status_code=503,
+        )
+
+    try:
+        memory = executor.memory.get_task_memory(task_id)
+    except Exception as exc:  # bozuk bellek gizlenmez
+        logger.warning("graph: bellek okunamadı: %s", type(exc).__name__)
+        return JSONResponse(
+            {
+                "error": {
+                    "code": "MEMORY_UNAVAILABLE",
+                    "message": f"Görev belleği okunamadı: {type(exc).__name__}",
+                }
+            },
+            status_code=409,
+        )
+
+    from agent_core.services.graph_builder import graph_from_task_memory
+
+    graph = graph_from_task_memory(memory, (memory or {}).get("target_profile"))
+    return graph.model_dump()
+
+
+class CalibrationObservationPayload(BaseModel):
+    """[FAZ B · B5] Elle ölçüm girişi: skor + (varsa) operatör etiketi."""
+
+    score: float = Field(ge=0.0, le=1.0)
+    scope: str = Field(default="quote", max_length=32)
+    truth: Optional[bool] = None
+    task_id: str = Field(default="", max_length=128)
+    claim_id: str = Field(default="", max_length=128)
+    note: str = Field(default="", max_length=200)
+
+
+class CalibrationAdjudicationPayload(BaseModel):
+    """[FAZ B · B5] Bir ölçüme operatörün etiket koyması (karar mercii operatör)."""
+
+    observation_id: str = Field(min_length=1, max_length=64)
+    truth: bool
+
+
+@app.get("/api/memory/{target}")
+async def api_memory_crystal(target: str = Path(min_length=1, max_length=128)):
+    """[FAZ B · B2/B3] Hedefin KALICI hafıza kristali: kaç hatıra, hangi görevler.
+
+    Görev bitince hafıza sıfırlanmıyor: kristal hedef başına yaşar. Yoksa
+    `available:false` döner — geçmiş UYDURULMAZ.
+    """
+    from agent_core.services import memory_crystal
+
+    return memory_crystal.summarize(target)
+
+
+@app.get("/api/memory/{target}/recall")
+async def api_memory_recall(
+    target: str = Path(min_length=1, max_length=128),
+    query: str = "",
+    k: int = 8,
+    exclude_task_id: str = "",
+):
+    """[FAZ B · B2/B3] Kristalden ilgili hatıraları ÇEKER (deterministik vektör).
+
+    Sorgu verilmezse hedefin kendi adıyla aranır. Sonuçta her hatıranın NEDEN
+    seçildiği (benzerlik/tazelik/kanıt) açıkça yazar — gizli skor yok.
+    """
+    from agent_core.services import memory_crystal
+
+    result = memory_crystal.recall(
+        target,
+        query or target,
+        k=max(1, min(50, k)),
+        exclude_task_id=exclude_task_id,
+    )
+    return result.model_dump()
+
+
+@app.get("/api/telemetry/taste")
+async def api_telemetry_taste(limit: int = 20):
+    """[FAZ C · C1] Jenerik yanıt telemetrisi: kaç yanıt DÜŞTÜ, neden düştü.
+
+    Aspasia'nın dili artık bir prompt umudu değil, ölçülen bir katman:
+    jenerik bulunan yanıt kullanıcıya çıkmaz ve buraya yazılır. Eşik aynı
+    kalibrasyon disiplinine bağlıdır (`taste` kapsamı) — ölçülmeden değişmez.
+    """
+    from agent_core.services import taste_filter
+
+    return taste_filter.telemetry_summary(limit=max(1, min(100, limit)))
+
+
+@app.get("/api/calibration")
+async def api_calibration(scope: str = ""):
+    """[FAZ B · B5] Eşik kalibrasyonunun GERÇEK durumu.
+
+    Sabit 0.70 eşiğinin yerini alan ÖLÇÜLEN eşik burada görünür: kaynağı
+    (`varsayılan` / `kalibre` / `elle_sabitleme`), güven aralığı, geri test
+    tablosu ve güvenilirlik diyagramı. Veri yetersizse eşik DEĞİŞMEMİŞTİR ve
+    bu açıkça yazar — "ölçülmüş gibi" yapılmaz.
+    """
+    from agent_core.services import threshold_calibration as calib
+
+    scopes = [scope] if scope else [calib.SCOPE_QUOTE, calib.SCOPE_CONFIDENCE]
+    return {
+        "scopes": {name: calib.summary(scope=name) for name in scopes},
+        "ledger": {
+            "dir": calib.storage_dir(),
+            "rows": len(calib.load()),
+            "labeled": sum(1 for row in calib.load() if row.truth is not None),
+        },
+        "min_samples": calib.min_samples(),
+    }
+
+
+@app.post("/api/calibration/observations")
+async def api_calibration_record(req: CalibrationObservationPayload):
+    """[FAZ B · B5] Ledger'a ölçüm yaz (ham metin DEĞİL: yalnız skor + kimlik)."""
+    from agent_core.services import threshold_calibration as calib
+
+    obs = calib.record(
+        req.score,
+        scope=req.scope,
+        matched=req.score >= calib.resolved_threshold(req.scope).value,
+        task_id=req.task_id,
+        claim_id=req.claim_id,
+        truth=req.truth,
+        note=req.note,
+    )
+    if obs is None:
+        return JSONResponse(
+            {
+                "status": "not_recorded",
+                "reason": "gözlem_kapali",
+                "hint": "PINEAL_CALIB_OBSERVE=true",
+            },
+            status_code=409,
+        )
+    return {"status": "recorded", "observation": obs.model_dump()}
+
+
+@app.post("/api/calibration/adjudicate")
+async def api_calibration_adjudicate(req: CalibrationAdjudicationPayload):
+    """[FAZ B · B5] Operatör bir ölçümü ETİKETLER: eşiği değiştiren veri budur."""
+    from agent_core.services import threshold_calibration as calib
+
+    if not calib.adjudicate(req.observation_id, req.truth):
+        return JSONResponse(
+            {"error": {"code": "OBSERVATION_NOT_FOUND", "message": "Kayıt bulunamadı"}},
+            status_code=404,
+        )
+    return {
+        "status": "adjudicated",
+        "observation_id": req.observation_id,
+        "truth": req.truth,
+        "threshold": calib.summary(scope=calib.SCOPE_QUOTE),
+    }
+
+
+@app.get("/api/tasks/{task_id}/memory")
+async def api_task_memory(
+    task_id: str = Path(min_length=1, max_length=_MAX_TASK_ID_LENGTH),
+    client_id: str = "default",
+):
+    """[FAZ B · B2/B3] Görevin hedefinin KALICI hafıza kristali.
+
+    `HolographicResonanceMesh` grafi (B4) ve değişim raporu (B7) ile aynı
+    desende: kanıt yoksa hafıza UYDURULMAZ (`available:false` + sebep).
+    Hatıralar önceki taramalardan gelir; bu görevin kendi kanıtı hariçtir.
+    """
+    try:
+        validate_identifier(task_id, field="task_id")
+    except ValueError:
+        return JSONResponse(
+            {"error": {"code": "INVALID_TASK_ID", "message": "Invalid task identifier"}},
+            status_code=400,
+        )
+
+    room = get_room(client_id)
+    executor = room.get("executor")
+    if executor is None:
+        return JSONResponse(
+            {"error": {"code": "NO_EXECUTOR", "message": "Oda hazır değil"}},
+            status_code=503,
+        )
+
+    try:
+        memory = executor.memory.get_task_memory(task_id)
+    except Exception as exc:  # bozuk bellek gizlenmez
+        logger.warning("memory crystal: bellek okunamadı: %s", type(exc).__name__)
+        return JSONResponse(
+            {
+                "error": {
+                    "code": "MEMORY_UNAVAILABLE",
+                    "message": f"Görev belleği okunamadı: {type(exc).__name__}",
+                }
+            },
+            status_code=409,
+        )
+
+    from agent_core.services import memory_crystal
+    from agent_core.services.change_tracker import target_key
+
+    storage = getattr(executor.memory, "storage_path", None)
+    payload = memory or {}
+    evidence = payload.get("evidence") or []
+    profile = payload.get("target_profile") or {}
+    if not isinstance(profile, dict):
+        profile = {}
+
+    target = target_key(profile, evidence if isinstance(evidence, list) else [])
+    if not target:
+        return {
+            "available": False,
+            "reason": "no_target",
+            "machine_note": "KRİSTAL: hedef anahtarı yok — hatıra uydurulmadı.",
+        }
+
+    query = " ".join(str(profile.get(field) or "") for field in ("username", "name", "bio")).strip()
+    summary = memory_crystal.summarize(target, base=storage)
+    result = memory_crystal.recall(
+        target, query or target, k=5, base=storage, exclude_task_id=str(task_id or "")
+    )
+    summary["recalled"] = [hit.model_dump() for hit in result.hits]
+    summary["recall_note"] = result.machine_note
+    return summary
+
+
+#: [FAZ C · C3] Mikrofon kaydı için üst sınır: 8 MiB (yetenekteki sınırla aynı).
+MAX_LISTEN_AUDIO_BYTES = 8 * 1024 * 1024
+
+
+class SpeechListenResponse(BaseModel):
+    """[FAZ C · C3] Mikrofonun duyduğu: metin YEREL motordan gelir, uydurulmaz."""
+
+    available: bool = False
+    reason: str | None = None
+    state: str = "idle"
+    transcript: str = ""
+    engine: str | None = None
+    chars: int = 0
+    machine_note: str = ""
+
+
+class SpeechSayPayload(BaseModel):
+    """[FAZ C · C2] Seslendirme isteği."""
+
+    text: str = Field(min_length=1, max_length=2000)
+    voice: str = Field(default="", max_length=64)
+    client_id: str = Field(default="default", max_length=128)
+
+
+@app.get("/api/speech/status")
+async def api_speech_status():
+    """[FAZ C · C2] Sesin GERÇEK durumu: motor var mı, hangi kapı, konuşuyor mu."""
+    from agent_core.services import speech
+
+    return speech.status()
+
+
+class SpeechReportPayload(BaseModel):
+    """[FAZ C · C4] Sesli rapor: görev sonucu (veya doğrudan metin) okunur."""
+
+    client_id: str = "default"
+    report: dict | None = None
+    text: str = ""
+
+
+@app.post("/api/speech/report")
+async def api_speech_report(req: SpeechReportPayload):
+    """[FAZ C · C4] Bulunanı SÖYLER: görev sonucu sesli rapora çevrilir.
+
+    Metin payload'daki GERÇEK alanlardan kurulur — olmayan alan için cümle
+    UYDURULMAZ. Motor yoksa ses üretilmez; metin yine de döner (gizlenmez).
+    """
+    from agent_core.services import speech
+
+    if not rate_limit(f"report:{req.client_id}", "speech"):
+        return JSONResponse(
+            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla rapor okuma isteği"}},
+            status_code=429,
+        )
+
+    result = await speech.read_report(
+        req.report,
+        text=req.text,
+        vault_locked=not _check_vault_interlock(req.client_id),
+    )
+    payload = result.model_dump()
+    if result.available:
+        broadcast_speech(req.client_id, {"state": "speaking", **payload})
+        duration = max(0.0, float(result.duration_ms or 0) / 1000.0)
+        asyncio.create_task(_speech_finished(req.client_id, duration))
+        broadcast_log(req.client_id, "INFO", f"SES: {result.machine_note}")
+    else:
+        broadcast_speech(req.client_id, {"state": "denied", **payload})
+        broadcast_log(req.client_id, "WARNING", f"SES: RAPOR OKUNAMADI: {result.reason}")
+    return payload
+
+
+@app.post("/api/speech/listen", response_model=SpeechListenResponse)
+async def api_speech_listen(
+    request: Request,
+    client_id: str = "default",
+    language: str = "",
+):
+    """[FAZ C · C3] Göz dinler: mikrofon kaydı YEREL motorda metne çevrilir.
+
+    Ses dosyası makineden dışarı çıkmaz (yalnız 127.0.0.1/::1/localhost).
+    Motor yoksa uydurma transkript DÖNMEZ: `available:false` + sebep.
+    Konuşma sürerken çağrılırsa önce SUSTURUR (araya girme).
+    """
+    from agent_core.services import speech
+
+    if not rate_limit(f"listen:{client_id}", "speech"):
+        return JSONResponse(
+            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla dinleme isteği"}},
+            status_code=429,
+        )
+
+    try:
+        form = await request.form()
+    except Exception:  # python-multipart kurulu değilse net hata (uydurma yanıt yok)
+        return JSONResponse(
+            {
+                "error": {
+                    "code": "MULTIPART_UNAVAILABLE",
+                    "message": "Dosya yükleme için python-multipart gerekli",
+                }
+            },
+            status_code=500,
+        )
+    upload = form.get("file")
+    if upload is None:
+        return JSONResponse(
+            {"error": {"code": "NO_AUDIO", "message": "Ses dosyası yok"}},
+            status_code=400,
+        )
+    audio = await upload.read()
+    if not audio:
+        return JSONResponse(
+            {"error": {"code": "EMPTY_AUDIO", "message": "Ses dosyası boş"}},
+            status_code=400,
+        )
+    if len(audio) > MAX_LISTEN_AUDIO_BYTES:
+        return JSONResponse(
+            {"error": {"code": "AUDIO_TOO_LARGE", "message": "Ses dosyası çok büyük"}},
+            status_code=413,
+        )
+
+    suffix = os.path.splitext(getattr(upload, "filename", "") or "")[1][:8] or ".webm"
+    # ARAYA GİRME: konuşurken dinlemeye geçiyorsa önce susar.
+    if speech.status()["state"] == "speaking":
+        speech.interrupt()
+    speech.start_listening()
+    broadcast_speech(client_id, {"state": "listening"})
+    result = await speech.listen(
+        audio,
+        suffix=suffix,
+        language=language or None,
+        vault_locked=not _check_vault_interlock(client_id),
+    )
+    payload = result.model_dump()
+    if result.available:
+        broadcast_speech(client_id, {"state": "idle", "transcript": result.transcript})
+        broadcast_log(client_id, "INFO", f"SES: duyuldu ({result.chars} karakter)")
+    else:
+        broadcast_speech(client_id, {"state": "denied", "reason": result.reason})
+        broadcast_log(client_id, "WARNING", f"SES DUYULAMADI: {result.reason}")
+    return payload
+
+
+@app.post("/api/speech/say")
+async def api_speech_say(req: SpeechSayPayload):
+    """[FAZ C · C2] Aspasia konuşur — ses YERELDE üretilir, makineden çıkmaz.
+
+    Motor yoksa uydurma ses DÖNMEZ: `available:false` + makine-okunur sebep.
+    Konuşma durumu (`speaking` → `idle`) WebSocket'ten UI'a akar.
+    """
+    from agent_core.services import speech
+
+    if not rate_limit(f"speech:{req.client_id}", "speech"):
+        return JSONResponse(
+            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla seslendirme isteği"}},
+            status_code=429,
+        )
+
+    # Kasa interlock'u GERÇEK durumdan okunur (uydurma "açık" yok): kilitliyken
+    # yetenek zaten koşamaz (Tüzük Md.4).
+    result = await speech.speak(
+        req.text,
+        voice=req.voice or None,
+        vault_locked=not _check_vault_interlock(req.client_id),
+    )
+    payload = result.model_dump()
+    if result.available:
+        broadcast_speech(req.client_id, {"state": "speaking", **payload})
+        duration = max(0.0, float(result.duration_ms or 0) / 1000.0)
+        asyncio.create_task(_speech_finished(req.client_id, duration))
+        broadcast_log(req.client_id, "INFO", f"SES: {result.machine_note}")
+    else:
+        broadcast_speech(req.client_id, {"state": "denied", **payload})
+        broadcast_log(req.client_id, "WARNING", f"SES ÜRETİLEMEDİ: {result.reason}")
+    return payload
+
+
+async def _speech_finished(client_id: str, seconds: float) -> None:
+    """Ses süresi bitince durum `idle`'a döner (tahmin değil: WAV süresi)."""
+    try:
+        await asyncio.sleep(min(60.0, seconds + 0.35))
+    except asyncio.CancelledError:
+        return
+    from agent_core.services import speech
+
+    speech.set_state("idle")
+    broadcast_speech(client_id, {"state": "idle"})
+
+
+@app.get("/api/speech/audio/{name}")
+async def api_speech_audio(name: str = Path(min_length=1, max_length=128)):
+    """[FAZ C · C2] Üretilen ses dosyası (yalnız yerel dosya; yol kaçışı kapalı)."""
+    from agent_core.services import speech
+    from agent_core.capabilities.adapters_voice import speech_dir
+
+    try:
+        path = safe_child_path(speech_dir(), name)
+    except ValueError:
+        return JSONResponse(
+            {"error": {"code": "INVALID_AUDIO_NAME", "message": "Geçersiz ses dosyası"}},
+            status_code=400,
+        )
+    if not os.path.exists(path):
+        return JSONResponse(
+            {"error": {"code": "NOT_FOUND", "message": "Ses dosyası yok"}},
+            status_code=404,
+        )
+    _ = speech  # servis yolu tek kaynaktır; dosya adı yeteneğin verdiği addır
+    return FileResponse(path, media_type="audio/wav", filename=name)
+
+
+@app.post("/api/speech/stop")
+async def api_speech_stop(client_id: str = "default"):
+    """[FAZ C · C3] Araya girme: konuşma KESİLİR ve durum UI'a düşer."""
+    from agent_core.services import speech
+
+    # [FAZ C · C3] ARAYA GİRME: konuşurken mikrofon açılırsa Aspasia SUSAR.
+    was_speaking = speech.status()["state"] == "speaking"
+    speech.interrupt() if was_speaking else speech.stop()
+    broadcast_speech(
+        client_id,
+        {"state": "interrupted" if was_speaking else "idle", "interrupted": was_speaking},
+    )
+    return {
+        "status": "interrupted" if was_speaking else "stopped",
+        "state": speech.status()["state"],
+    }
+
+
+# ---------------------------------------------------------------------------
+# [FAZ D · D4] DİL: tespit deterministik (model/ağ yok), çeviri YEREL.
+# Uydurma yok: sinyal yoksa etiket dönmez, motor yoksa çeviri dönmez.
+# ---------------------------------------------------------------------------
+
+
+class JuryVotePayload(BaseModel):
+    """[FAZ D · D2] Yerel jüri oylaması: iddia + kanıt metni."""
+
+    claim: str = Field(min_length=1, max_length=20000)
+    evidence: str = Field(min_length=1, max_length=40000)
+    client_id: str = Field(default="default", max_length=128)
+
+
+@app.get("/api/jury/status")
+async def api_jury_status():
+    """[FAZ D · D2] Jürinin GERÇEK durumu: uç yerel mi, kaç BAĞIMSIZ koltuk,
+    hangi kapı, yeter sayı. Model tanımlı değilse 'hazır' denmez."""
+    from agent_core.services import local_jury
+
+    return local_jury.status()
+
+
+@app.post("/api/jury/vote")
+async def api_jury_vote(req: JuryVotePayload):
+    """[FAZ D · D2] Aynı kanıt yerel jüriye sorulur: kural açıkça döner.
+
+    Konsensüs yoksa sonuç 'karar üretilmedi' olur (``consensus: false`` +
+    ``rule``); koltuk dökümü gizlenmez. Uzak uç yoktur: veri makineden çıkmaz.
+    """
+    from agent_core.capabilities.base import CapabilityContext
+    from agent_core.capabilities.policy import PolicyState
+    from agent_core.capabilities.registry import bootstrap
+    from agent_core.capabilities.runner import CapabilityRunner
+    from agent_core.services import local_jury
+
+    if not rate_limit(f"jury:{req.client_id}", "jury"):
+        return JSONResponse(
+            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla jüri isteği"}},
+            status_code=429,
+        )
+
+    runner = CapabilityRunner(registry=bootstrap())
+    state = PolicyState(
+        enabled_flags={local_jury.GATE: _flag_env(local_jury.GATE)},
+        vault_locked=not _check_vault_interlock(req.client_id),
+        rate_ok=True,
+    )
+    result = await runner.run(
+        "verifier.jury.local",
+        CapabilityContext(subject=req.claim, params={"evidence": req.evidence}),
+        state=state,
+    )
+    notes = dict(result.notes or {})
+    payload = {
+        "available": bool(result.available),
+        "denied_by": result.denied_by,
+        "reason": result.unavailable_reason,
+        "verdict": notes.get("verdict", ""),
+        "rule": notes.get("rule", ""),
+        "consensus": bool(notes.get("consensus", False)),
+        "seats_run": notes.get("seats_run", 0),
+        "counted": notes.get("counted", 0),
+        "quorum_required": notes.get("quorum_required", 1),
+        "tally": notes.get("tally", {}),
+        "dissent": notes.get("dissent", []),
+        "seat_errors": notes.get("seat_errors", {}),
+        "seats": notes.get("seats", []),
+        "endpoint": notes.get("endpoint", ""),
+        "machine_note": notes.get("machine_note", ""),
+        "evidence_ids": [item.evidence_id for item in result.items],
+    }
+    if result.denied_by:
+        broadcast_log(req.client_id, "WARNING", f"JÜRİ: oylama engellendi — kapı:{result.denied_by}")
+    elif payload["consensus"]:
+        broadcast_log(
+            req.client_id,
+            "INFO",
+            f"JÜRİ: {payload['verdict']} ({payload['rule']}, {payload['counted']} koltuk)",
+        )
+    else:
+        broadcast_log(
+            req.client_id,
+            "INFO",
+            f"JÜRİ: konsensüs yok — {payload['rule'] or payload['reason']} (karar iddia edilmedi)",
+        )
+    return payload
+
+
+class MediaAnalyzePayload(BaseModel):
+    """[FAZ D · D3] Medya adli hattı: kaynak (URL/yol) + modlar."""
+
+    source: str = Field(min_length=1, max_length=2048)
+    client_id: str = Field(default="default", max_length=128)
+    modes: list[str] = Field(default_factory=lambda: ["fetch", "frames"])
+    sample_every: int = Field(default=5, ge=1, le=120)
+    top_k: int = Field(default=3, ge=1, le=20)
+
+
+#: Mod başına yanıtta taşınan kanıt satırı tavanı.
+MAX_MEDIA_EVIDENCE = 25
+
+_MEDIA_MODES = {
+    "fetch": "sensor.media.fetch",
+    "frames": "analyzer.media.frames",
+    "transcript": "extractor.media.transcript",
+    "similarity": "analyzer.media.similarity",
+}
+
+
+@app.get("/api/media/status")
+async def api_media_status():
+    """[FAZ D · D3] Medya hattının GERÇEK durumu: hangi araç var, hangi mod hazır.
+
+    ffmpeg/yt-dlp/whisper yoksa "hazır" denmez; sebep makine-okunur.
+    """
+    from agent_core.capabilities import bootstrap
+    from agent_core.services import media_forensics
+
+    registry = bootstrap()
+    rows = []
+    for mode, cap_id in _MEDIA_MODES.items():
+        cap = registry.get(cap_id)
+        availability = cap.availability()
+        rows.append(
+            {
+                "mode": mode,
+                "capability_id": cap_id,
+                "available": availability.available,
+                "reason": availability.reason,
+                "gates": sorted(cap.gates),
+            }
+        )
+    return {
+        "gate": media_forensics.GATE,
+        "media_dir": str(media_forensics.media_dir()),
+        "tools": {
+            "yt-dlp": bool(shutil.which("yt-dlp")),
+            "ffmpeg": bool(shutil.which("ffmpeg")),
+            "opencv": bool(importlib.util.find_spec("cv2")),
+            "transcribe_engine": media_forensics.resolve_engine()[0] or "",
+        },
+        "transcribe_engine_reason": media_forensics.resolve_engine()[1],
+        "modes": rows,
+        "any_available": any(row["available"] for row in rows),
+    }
+
+
+@app.post("/api/media/analyze")
+async def api_media_analyze(req: MediaAnalyzePayload):
+    """[FAZ D · D3] Medyayı omurgadan işler: indir · kare kare ölç · yazıya dök · eşleştir.
+
+    Her mod aynı mandaldan geçer (kasa + kapı). Ölçülmeyen şey iddia edilmez;
+    araç yoksa sebep makine-okunurdur.
+    """
+    from agent_core.capabilities.base import CapabilityContext
+    from agent_core.capabilities.policy import PolicyState
+    from agent_core.capabilities.registry import bootstrap
+    from agent_core.capabilities.runner import CapabilityRunner
+    from agent_core.services import media_forensics
+
+    if not rate_limit(f"media:{req.client_id}", "media"):
+        return JSONResponse(
+            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla medya isteği"}},
+            status_code=429,
+        )
+
+    wanted = [str(m).strip().lower() for m in (req.modes or [])]
+    unknown = [m for m in wanted if m not in _MEDIA_MODES]
+    if unknown:
+        return JSONResponse(
+            {"error": {"code": "UNKNOWN_MODE", "message": f"Bilinmeyen mod: {', '.join(unknown)}"}},
+            status_code=400,
+        )
+    if not wanted:
+        wanted = ["fetch", "frames"]
+
+    runner = CapabilityRunner(registry=bootstrap())
+    state = PolicyState(
+        enabled_flags={media_forensics.GATE: _flag_env(media_forensics.GATE)},
+        vault_locked=not _check_vault_interlock(req.client_id),
+        rate_ok=True,
+    )
+
+    results: dict[str, Any] = {}
+    for mode in wanted:
+        cap_id = _MEDIA_MODES[mode]
+        result = await runner.run(
+            cap_id,
+            CapabilityContext(
+                subject=req.source,
+                params={
+                    "source": req.source,
+                    "sample_every": req.sample_every,
+                    "top_k": req.top_k,
+                },
+            ),
+            state=state,
+        )
+        results[mode] = {
+            "capability_id": cap_id,
+            "available": bool(result.available),
+            "denied_by": result.denied_by,
+            "reason": result.unavailable_reason,
+            "evidence": [
+                {
+                    "evidence_id": item.evidence_id,
+                    "epistemic_type": item.epistemic_type,
+                    "source_engine": item.source_engine,
+                    "content": item.content[:400],
+                    "provenance_refs": list(item.provenance_refs)[:5],
+                }
+                for item in result.items[:MAX_MEDIA_EVIDENCE]
+            ],
+            "notes": dict(result.notes or {}),
+        }
+        if result.denied_by:
+            broadcast_log(req.client_id, "WARNING", f"MEDYA: {mode} engellendi — kapı:{result.denied_by}")
+        elif not result.available:
+            broadcast_log(req.client_id, "WARNING", f"MEDYA: {mode} hazır değil — {result.unavailable_reason}")
+        else:
+            broadcast_log(req.client_id, "INFO", f"MEDYA: {mode} tamam — {len(result.items)} kanıt")
+
+    return {
+        "source": req.source,
+        "gate": media_forensics.GATE,
+        "modes": results,
+        "evidence_total": sum(len(r["evidence"]) for r in results.values()),
+    }
+
+
+class ReportBuildPayload(BaseModel):
+    """[FAZ D · D5] Rapor paketi: kanıt satırları + istenen formatlar."""
+
+    title: str = Field(min_length=1, max_length=200)
+    client_id: str = Field(default="default", max_length=128)
+    subject: str = Field(default="", max_length=200)
+    evidence: list[dict] = Field(default_factory=list, max_length=200)
+    formats: list[str] = Field(default_factory=lambda: ["markdown", "pdf", "diagram"])
+
+
+@app.get("/api/report/status")
+async def api_report_status():
+    """[FAZ D · D5] Rapor fabrikası: hangi format GERÇEKTEN üretilebilir?
+
+    reportlab/Pillow/ffmpeg yoksa "hazır" denmez; sebep makine-okunurdur.
+    """
+    from agent_core.services import report_factory
+
+    formats = report_factory.availability()
+    return {
+        "gate": report_factory.GATE,
+        "report_dir": str(report_factory.report_dir()),
+        "formats": [
+            {"format": name, "available": ok, "reason": reason}
+            for name, (ok, reason) in sorted(formats.items())
+        ],
+        "any_available": any(ok for ok, _r in formats.values()),
+        "manifest_schema": report_factory.MANIFEST_SCHEMA,
+        "seal": "sha256 (bütünlük mührü; kriptografik imza değil)",
+    }
+
+
+@app.post("/api/report/build")
+async def api_report_build(req: ReportBuildPayload):
+    """[FAZ D · D5] Kanıt satırlarından rapor paketi üretir (hash'li, bağlantılı).
+
+    Rapor UYDURULMAZ: girdi kanonik kanıt satırlarıdır; reddedilen satırlar
+    sayılır ve raporda görünür. Format üretilemezse paket yine teslim edilir
+    (markdown + manifest), eksik format dürüst sebeple işaretlenir.
+    """
+    from agent_core.capabilities.base import CapabilityContext
+    from agent_core.capabilities.policy import PolicyState
+    from agent_core.capabilities.registry import bootstrap
+    from agent_core.capabilities.runner import CapabilityRunner
+    from agent_core.services import report_factory
+
+    if not rate_limit(f"report:{req.client_id}", "report"):
+        return JSONResponse(
+            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla rapor isteği"}},
+            status_code=429,
+        )
+
+    formats = [str(f).strip().lower() for f in (req.formats or [])]
+    unknown = [f for f in formats if f not in ("markdown", "pdf", "diagram", "video")]
+    if unknown:
+        return JSONResponse(
+            {"error": {"code": "UNKNOWN_FORMAT", "message": f"Bilinmeyen format: {', '.join(unknown)}"}},
+            status_code=400,
+        )
+
+    wanted = [f for f in formats if f != "markdown"]  # markdown zaten her pakette
+    cap_by_format = {
+        "pdf": "renderer.report.pdf",
+        "diagram": "renderer.report.diagram",
+        "video": "renderer.report.video",
+    }
+    runner = CapabilityRunner(registry=bootstrap())
+    state = PolicyState(
+        enabled_flags={report_factory.GATE: _flag_env(report_factory.GATE)},
+        vault_locked=not _check_vault_interlock(req.client_id),
+        rate_ok=True,
+    )
+
+    results: dict[str, Any] = {}
+    for fmt in wanted:
+        result = await runner.run(
+            cap_by_format[fmt],
+            CapabilityContext(
+                subject=req.title,
+                params={"title": req.title, "subject": req.subject, "evidence": req.evidence},
+            ),
+            state=state,
+        )
+        results[fmt] = {
+            "capability_id": cap_by_format[fmt],
+            "available": bool(result.available),
+            "denied_by": result.denied_by,
+            "reason": result.unavailable_reason,
+            "artifacts": result.notes.get("artifacts", []),
+            "manifest_path": result.notes.get("manifest_path", ""),
+            "manifest_sha256": result.notes.get("manifest_sha256", ""),
+            "evidence_ids": result.notes.get("evidence_ids", []),
+            "rejected_item_count": result.notes.get("rejected_item_count", 0),
+            "excluded_strategy_count": result.notes.get("excluded_strategy_count", 0),
+            "evidence": [
+                {
+                    "evidence_id": item.evidence_id,
+                    "content": item.content[:300],
+                    "provenance_refs": list(item.provenance_refs)[:5],
+                }
+                for item in result.items[:10]
+            ],
+        }
+        if result.denied_by:
+            broadcast_log(req.client_id, "WARNING", f"RAPOR: {fmt} engellendi — kapı:{result.denied_by}")
+        elif not result.available:
+            broadcast_log(req.client_id, "WARNING", f"RAPOR: {fmt} üretilemedi — {result.unavailable_reason}")
+        else:
+            broadcast_log(req.client_id, "INFO", f"RAPOR: {fmt} üretildi ({req.title[:40]})")
+
+    return {
+        "title": req.title,
+        "subject": req.subject,
+        "gate": report_factory.GATE,
+        "formats": results or {"note": "yalnız markdown + manifest istendi"},
+    }
+
+
+class CompanyScanPayload(BaseModel):
+    """[FAZ D · D6] Kurum hedefi taraması: alan adı + mod seçimi."""
+
+    domain: str = Field(min_length=1, max_length=253)
+    client_id: str = Field(default="default", max_length=128)
+    modes: list[str] = Field(default_factory=lambda: ["harvester", "seo", "people"])
+    limit: int = Field(default=200, ge=1, le=1000)
+
+
+_COMPANY_MODES = {
+    "harvester": "sensor.company.harvester",
+    "seo": "sensor.company.seo",
+    "people": "sensor.company.people",
+}
+
+
+@app.get("/api/company/status")
+async def api_company_status():
+    """[FAZ D · D6] Kurum hedefi yeteneklerinin GERÇEK durumu (defterden).
+
+    Kapı kapalıysa ya da theHarvester yoksa "hazır" denmez; sebep makine-okunur.
+    """
+    from agent_core.capabilities import bootstrap
+
+    registry = bootstrap()
+    rows = []
+    for mode, cap_id in _COMPANY_MODES.items():
+        cap = registry.get(cap_id)
+        availability = cap.availability()
+        rows.append(
+            {
+                "mode": mode,
+                "capability_id": cap_id,
+                "available": availability.available,
+                "reason": availability.reason,
+                "gates": sorted(cap.gates),
+            }
+        )
+    return {
+        "gate": "ENABLE_COMPANY_TARGETING",
+        "domain_hint": "yalnız alan adı (örn. ornek.com); özel/yerel adresler reddedilir",
+        "modes": rows,
+        "any_available": any(row["available"] for row in rows),
+    }
+
+
+@app.post("/api/company/scan")
+async def api_company_scan(req: CompanyScanPayload):
+    """[FAZ D · D6] Kurum hedefini omurgadan tarar (theHarvester · SEO · kişi).
+
+    Her mod aynı mandaldan geçer: kasa + `ENABLE_COMPANY_TARGETING` + hız.
+    Mod reddedilirse sebep gizlenmez; kanıt üretilmediyse `evidence` boş kalır.
+    """
+    from agent_core.capabilities.base import CapabilityContext
+    from agent_core.capabilities.policy import PolicyState
+    from agent_core.capabilities.registry import bootstrap
+    from agent_core.capabilities.runner import CapabilityRunner
+    from agent_core.services import company_recon
+
+    if not rate_limit(f"company:{req.client_id}", "company"):
+        return JSONResponse(
+            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla kurum taraması"}},
+            status_code=429,
+        )
+
+    domain = company_recon.normalize_domain(req.domain)
+    if not domain:
+        return JSONResponse(
+            {
+                "error": {
+                    "code": "INVALID_DOMAIN",
+                    "message": "Geçerli bir alan adı verin (örn. ornek.com).",
+                }
+            },
+            status_code=400,
+        )
+
+    wanted = [str(m).strip().lower() for m in (req.modes or [])]
+    unknown = [m for m in wanted if m not in _COMPANY_MODES]
+    if unknown:
+        return JSONResponse(
+            {"error": {"code": "UNKNOWN_MODE", "message": f"Bilinmeyen mod: {', '.join(unknown)}"}},
+            status_code=400,
+        )
+    if not wanted:
+        wanted = list(_COMPANY_MODES)
+
+    runner = CapabilityRunner(registry=bootstrap())
+    state = PolicyState(
+        enabled_flags={company_recon.GATE: _flag_env(company_recon.GATE)},
+        vault_locked=not _check_vault_interlock(req.client_id),
+        rate_ok=True,
+    )
+
+    results: dict[str, Any] = {}
+    for mode in wanted:
+        cap_id = _COMPANY_MODES[mode]
+        params: dict[str, Any] = {"domain": domain}
+        if mode == "harvester":
+            params["limit"] = req.limit
+        result = await runner.run(
+            cap_id,
+            CapabilityContext(subject=domain, params=params),
+            state=state,
+        )
+        results[mode] = {
+            "capability_id": cap_id,
+            "available": bool(result.available),
+            "denied_by": result.denied_by,
+            "reason": result.unavailable_reason,
+            "counts": {
+                "evidence": len(result.items),
+            },
+            "evidence": [
+                {
+                    "evidence_id": item.evidence_id,
+                    "epistemic_type": item.epistemic_type,
+                    "source_engine": item.source_engine,
+                    "content": item.content[:400],
+                    "provenance_refs": list(item.provenance_refs)[:5],
+                }
+                for item in result.items[:25]
+            ],
+            "notes": dict(result.notes or {}),
+        }
+        if result.denied_by:
+            broadcast_log(
+                req.client_id, "WARNING",
+                f"KURUM: {mode} engellendi — kapı:{result.denied_by}",
+            )
+        elif not result.available:
+            broadcast_log(
+                req.client_id, "WARNING",
+                f"KURUM: {mode} hazır değil — {result.unavailable_reason}",
+            )
+        else:
+            broadcast_log(
+                req.client_id, "INFO",
+                f"KURUM: {mode} tamam — {len(result.items)} kanıt ({domain})",
+            )
+
+    return {
+        "domain": domain,
+        "gate": company_recon.GATE,
+        "modes": results,
+        "evidence_total": sum(r["counts"]["evidence"] for r in results.values()),
+    }
+
+
+@app.get("/api/mcp/status")
+async def api_mcp_status(client_id: str = "default"):
+    """[FAZ D · D1] MCP ihracının GERÇEK durumu: kaç yetenek araç olarak açık,
+    hangi sürümler konuşuluyor, kasa mandalı ne durumda.
+
+    Yetenek sayısı ``CapabilityRegistry``den okunur (ikinci envanter yok);
+    kasa durumu ``_check_vault_interlock`` ile ``/api/initiate`` ile AYNI
+    kapıdan gelir. Bu uç hiçbir yeteneği KOŞTURMAZ; yalnızca rapor eder.
+    """
+    from agent_core.mcp import protocol as _mcp_protocol
+    from agent_core.mcp.tools import build_tools
+
+    try:
+        from agent_core.capabilities import bootstrap as _caps_bootstrap
+
+        registry = _caps_bootstrap()
+        capabilities = len(registry.ids())
+        tools = len(build_tools(registry)) + 1  # + pineal_status (sunucunun kendi aracı)
+    except Exception as exc:  # envanter okunamazsa uydurma sayı dönmez
+        logger.warning("MCP durumu okunamadı: %s", type(exc).__name__)
+        return JSONResponse(
+            {"available": False, "reason": f"registry_error:{type(exc).__name__}"},
+            status_code=503,
+        )
+
+    unlocked = _check_vault_interlock(client_id)
+    try:
+        from agent_core.mcp.state_bridge import limiter_from_env
+
+        limiter = limiter_from_env()
+        rate_limit = {"limit": limiter.limit, "window_seconds": limiter.window}
+    except Exception:  # pragma: no cover - savunma
+        rate_limit = {}
+    from agent_core.mcp.server import server_version
+
+    return {
+        "available": True,
+        "transport": "stdio",
+        "command": "python -m agent_core.mcp",
+        "capabilities": capabilities,
+        "tools": tools,
+        "server_version": server_version(),
+        "protocol_current": _mcp_protocol.PROTOCOL_VERSION,
+        "protocol_supported": list(_mcp_protocol.SUPPORTED_PROTOCOL_VERSIONS),
+        "vault_locked": not unlocked,
+        "rate_limit": rate_limit,
+        "skills_dir": "skills",
+        "gate": "vault",
+        "message": (
+            "MCP açık — her yetenek araç olarak yayınlanıyor; çağrılar aynı "
+            "kapılardan geçer."
+            if unlocked
+            else "MCP araçları KİLİTLİ — kasa kapalıyken hiçbir yetenek koşmaz."
+        ),
+    }
+
+
+class LanguageDetectPayload(BaseModel):
+    """[FAZ D · D4] Dil tespiti isteği."""
+
+    text: str = Field(min_length=1, max_length=20000)
+    client_id: str = Field(default="default", max_length=128)
+
+
+class LanguageTranslatePayload(BaseModel):
+    """[FAZ D · D4] Yerel çeviri isteği (metin makineden çıkmaz)."""
+
+    text: str = Field(min_length=1, max_length=2000)
+    target: str = Field(default="en", min_length=2, max_length=8)
+    client_id: str = Field(default="default", max_length=128)
+
+
+@app.get("/api/language/status")
+async def api_language_status():
+    """[FAZ D · D4] Dil hattının GERÇEK durumu: tespit her zaman yereldir;
+    çeviri motoru var mı, kapı açık mı, kanıta işlenen SON ölçüm ne?"""
+    from agent_core.services import language, translation
+
+    return {
+        "detect": {"available": True, "method": "deterministic_local"},
+        "translate": translation.status(),
+        "last": language.last_finding(),
+    }
+
+
+@app.post("/api/language/detect")
+async def api_language_detect(req: LanguageDetectPayload):
+    """[FAZ D · D4] Metnin dilini ölçer: omurga üzerinden (kasa kapısı dâhil).
+
+    Sinyal yoksa `language=unknown` + sebep döner; etiket UYDURULMAZ.
+    Kasa kilitliyken tespit de koşamaz (Tüzük Md.4, istisna yok).
+    """
+    from agent_core.capabilities.base import CapabilityContext
+    from agent_core.capabilities.policy import PolicyState
+    from agent_core.capabilities.registry import bootstrap
+    from agent_core.capabilities.runner import CapabilityRunner
+
+    if not rate_limit(f"language:{req.client_id}", "language"):
+        return JSONResponse(
+            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla dil isteği"}},
+            status_code=429,
+        )
+
+    runner = CapabilityRunner(registry=bootstrap())
+    state = PolicyState(
+        enabled_flags={}, vault_locked=not _check_vault_interlock(req.client_id), rate_ok=True
+    )
+    result = await runner.run(
+        "extractor.text.language", CapabilityContext(subject=req.text), state=state
+    )
+    finding = result.payload
+    payload = {
+        "available": bool(result.available),
+        "denied_by": result.denied_by,
+        "reason": result.unavailable_reason,
+        "language": getattr(finding, "language", "") if result.available else "",
+        "confidence": getattr(finding, "confidence", 0.0) if result.available else 0.0,
+        "script": getattr(finding, "script", "") if result.available else "",
+        "detect_reason": getattr(finding, "reason", None) if result.available else None,
+        "chars": getattr(finding, "chars", 0) if result.available else 0,
+    }
+    if result.denied_by:
+        broadcast_log(req.client_id, "WARNING", f"DİL: tespit engellendi — kasa:{result.denied_by}")
+    elif payload["language"] == "unknown":
+        broadcast_log(req.client_id, "INFO", f"DİL: ölçülemedi — {payload['detect_reason']}")
+    else:
+        broadcast_log(
+            req.client_id,
+            "INFO",
+            f"DİL: {payload['language']} · güven {payload['confidence']:.2f}",
+        )
+    return payload
+
+
+@app.post("/api/language/translate")
+async def api_language_translate(req: LanguageTranslatePayload):
+    """[FAZ D · D4] Metni YEREL motorda çevirir: ses/dinleme ile aynı kural.
+
+    Uzak uç REDDEDİLİR (`non_local_endpoint`); motor yoksa çeviri ÜRETİLMEZ
+    (`available:false` + sebep). Kaynak metin hedef dilmiş gibi DÖNMEZ.
+    """
+    from agent_core.capabilities.base import CapabilityContext
+    from agent_core.capabilities.policy import PolicyState
+    from agent_core.capabilities.registry import bootstrap
+    from agent_core.capabilities.runner import CapabilityRunner
+    from agent_core.services.translation import GATE, MAX_TEXT_CHARS, status as _translation_status
+
+    if not rate_limit(f"language:{req.client_id}", "language"):
+        return JSONResponse(
+            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla çeviri isteği"}},
+            status_code=429,
+        )
+
+    runner = CapabilityRunner(registry=bootstrap())
+    state = PolicyState(
+        enabled_flags={GATE: _flag_env(GATE)},
+        vault_locked=not _check_vault_interlock(req.client_id),
+        rate_ok=True,
+    )
+    result = await runner.run(
+        "extractor.text.translate_local",
+        CapabilityContext(subject=req.text[:MAX_TEXT_CHARS], params={"target": req.target}),
+        state=state,
+    )
+    translated = ""
+    if result.items:
+        translated = result.items[0].content
+    payload = {
+        "available": bool(result.available and result.items),
+        "denied_by": result.denied_by,
+        "reason": result.unavailable_reason,
+        "text": translated,
+        "source_language": result.notes.get("source_language", ""),
+        "source_confidence": result.notes.get("source_confidence", 0.0),
+        "target_language": req.target,
+        "engine": result.notes.get("engine", ""),
+    }
+    if payload["available"]:
+        broadcast_log(
+            req.client_id,
+            "INFO",
+            f"DİL: çeviri tamam — {payload['source_language']} → {req.target} ({payload['engine']})",
+        )
+    else:
+        why = result.denied_by or result.unavailable_reason or _translation_status().get("reason")
+        broadcast_log(req.client_id, "WARNING", f"DİL: ÇEVİRİ ÜRETİLEMEDİ — {why}")
+    return payload
+
+
+def _flag_env(name: str) -> bool:
+    """[FAZ D · D4] Env kapısı okuma (speech'teki `_flag` ile aynı dar taraf)."""
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 @app.post("/api/tasks/{task_id}/cancel")

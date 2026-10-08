@@ -129,12 +129,20 @@ async def test_authenticity_auditor_prompt_carries_upstream_findings():
     payload = {
         "target_profile": {"bio": "Minimalist", "posts": ["kapalı mekan"]},
         "visual_evidence": {"detected_objects": ["laptop"], "environment_and_places": ["stüdyo"]},
-        "_upstream_findings": [{"agent": "mirror_truth", "core": "yüzeysel persona ile çelişki"}],
+        "_upstream_findings": [
+            {
+                "agent": "mirror_truth",
+                "core": "yüzeysel persona ile çelişki",
+                "epistemic_type": "inference",
+                "verification_status": "unverified",
+                "origin": "task_executor",
+            }
+        ],
     }
     await agent.execute(payload)
 
     assert "DİĞER AJANLARIN BULGULARI" in captured["prompt"]
-    assert "[mirror_truth] yüzeysel persona ile çelişki" in captured["prompt"]
+    assert "[mirror_truth] [inference, doğrulanmamış] yüzeysel persona ile çelişki" in captured["prompt"]
 
 
 @pytest.mark.asyncio

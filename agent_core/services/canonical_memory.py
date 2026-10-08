@@ -157,8 +157,15 @@ class CanonicalMemory:
         if inspection["state"] == MemoryState.CORRUPTED.value:
             raise MemoryCorruptedError(task_id, inspection["reason"] or "UNKNOWN", profile_file)
 
-    async def merge_evidence(self, task_id: str, evidence_chain: List[Dict]):
-        """Merge evidence atomically, refusing to overwrite corrupted memory."""
+    async def merge_evidence(
+        self, task_id: str, evidence_chain: List[Dict], metadata: Optional[Dict] = None
+    ):
+        """Merge evidence atomically, refusing to overwrite corrupted memory.
+
+        [FAZ B · B7] `metadata` (örn. `target_profile`) korunur: eskiden her
+        birleştirmede belge yalnız kanıttan yeniden kuruluyor, daha önce
+        yazılmış üst veri (hedef profili, kurtarma kaydı) SİLİNİYORDU.
+        """
         profile_file = self._profile_file(task_id)
 
         async with self._task_lock(task_id):
@@ -166,7 +173,14 @@ class CanonicalMemory:
             self._raise_if_corrupted(task_id, profile_file, inspection)
             existing = inspection["data"] or {}
             merged = self._resolve_conflicts(existing.get("evidence", []), evidence_chain)
-            payload = self._serialize(task_id, merged)
+            carried = {
+                key: value
+                for key, value in (existing or {}).items()
+                if key not in {"task_id", "last_updated", "evidence", "confidence"}
+            }
+            if metadata:
+                carried.update(metadata)
+            payload = self._serialize(task_id, merged, **carried)
             await asyncio.to_thread(self._atomic_write, profile_file, payload)
 
     async def quarantine_and_reset(self, task_id: str) -> dict:

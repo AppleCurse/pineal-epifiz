@@ -63,19 +63,11 @@ async def main() -> None:
         build_user_context,
         effective_scraper_type,
         scrape_instagram,
+        scrape_x,
     )
 
     platform = effective_scraper_type(url, req.get("scraper_type"))
     _log("INFO", f"platform kararı: {platform} (url={url or '<yok>'})")
-
-    if url and platform == "x":
-        # X bilinçli unsupported ([016]/B4): sahte profil ÜRETİLMEZ, yetki beklenir.
-        _emit({
-            "status": "awaiting_authorization",
-            "platform": "x",
-            "note": "X (Twitter) kazıması desteklenmiyor; alternatif public-web "
-                    "araştırması için yetki gerekir.",
-        }, 2)
     if url and platform == "unsupported_web":
         _emit({
             "status": "unsupported_platform",
@@ -86,9 +78,25 @@ async def main() -> None:
     payload = {
         **build_user_context(rituals, playlist, envies),
         "target_profile": {"bio": "", "posts": [], "post_times": [], "images": []},
+        # [FAZ A] Operatör CLI'si kasa bilmez; omurga durumunu açıkça taşır
+        # (ajanlar kasa gerçeğini tahmin etmez, payload'dan okur).
+        "policy": {"vault_locked": False},
     }
 
-    if url:
+    if url and platform == "x":
+        # [FAZ A · Retina] X artık "yetki bekleyen" bir delik değil: gerçek
+        # sensör omurgadan koşar (sensor.x.twscrape). Kanıt üretemezse sahte
+        # profil ÜRETİLMEZ; görev dürüstçe durur (exit 3).
+        try:
+            payload["target_profile"].update(await scrape_x(url, log=_log))
+        except Exception as e:
+            if "InsufficientEvidenceError" in type(e).__name__:
+                _emit({"status": "halted_evidence", "platform": "x",
+                       "reason": str(e)[:300]}, 3)
+            _log("ERROR", f"X kazıma hatası: {type(e).__name__}: {e}")
+            _emit({"status": "scrape_failed", "platform": "x",
+                   "error": f"{type(e).__name__}: {e}"[:300]}, 3)
+    elif url:
         try:
             payload["target_profile"].update(await scrape_instagram(url, cookie, log=_log))
         except Exception as e:
@@ -101,6 +109,11 @@ async def main() -> None:
 
     task_id = f"rust_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}"
     executor = PinealExecutor(log_callback=_log)
+    # Operatör CLI'si kasa bilmez; omurga politikası payload ile aynıdır.
+    try:
+        executor.search_engine.set_policy(payload.get("policy") or {})
+    except Exception:
+        pass
     try:
         status = await executor.execute_task(payload, task_id)
     except Exception as e:
