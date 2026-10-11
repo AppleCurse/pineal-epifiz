@@ -21,30 +21,17 @@ import pytest
 dotenv.load_dotenv = lambda *args, **kwargs: False
 
 
-# --- [PROD AUDIT 2026-10-11 · P2] İTHALAT-ANI (import-time) DİSK YAN ETKİSİ ---
+# --- İTHALAT-ANI (import-time) DİSK YAN ETKİSİ -------------------------------
 #
-# ÖLÇÜLDÜ: `PINEAL_CACHE_PATH` ayarlı DEĞİLKEN tek başına
+# `backend.api` içe aktarılırken ResponseCache varsayılan yolu
+# (`cache/responses.db`, WAL modu) diske yazılır (os.makedirs +
+# sqlite3.connect). Bu yan etki autouse fixture'lar KOŞMADAN ÖNCE
+# gerçekleştiği için yalnız fixture içinde ortam değişkeni ayarlamak yetmez.
 #
-#     python -c "import backend.api"
-#
-# depo kökünde `cache/responses.db` (+ `-wal` + `-shm`) YARATIYOR. Yani API
-# modülünün İÇE AKTARILMASI diske yazan bir yan etki taşıyor (ResponseCache
-# __init__ -> _init_db -> _connect: os.makedirs + sqlite3.connect, WAL modu).
-#
-# Bunun iki somut sonucu var:
-#   1. TEST İZOLASYONU: yan etki İTHALAT anında, yani autouse fixture'lar
-#      KOŞMADAN ÖNCE gerçekleşir. Fixture içinde `monkeypatch.setenv(...)`
-#      yapmak bu yüzden YETERSİZDİ — pytest her koşusunda depo köküne
-#      responses.db yazılıyordu (kanıtlandı).
-#   2. DAĞITIM: süreç CWD'si yazılamazsa (read-only filesystem — sıkılaştırılmış
-#      konteynerlerde yaygın) ya da CWD beklenen dizin değilse, modül içe
-#      aktarma sırasında istenmeyen konuma dosya açılır. Üretimde CWD'nin
-#      bilinçli olması ve volume'a bağlanması gerekir (bkz. GO_LIVE.md).
-#
-# ÇÖZÜM: izolasyon CONFTEST MODÜL SEVİYESİNDE kurulur. conftest.py, test
-# modüllerinden ÖNCE içe aktarıldığı için bu değerler ithalat-anı yan etkisini
-# de kapsar. Oturum boyunca tek bir geçici kök kullanılır; tekil testler kendi
-# `tmp_path` değerleriyle bunu fixture içinde EZEBİLİR (niyetleri bozulmaz).
+# Bu yüzden izolasyon CONFTEST MODÜL SEVİYESİNDE kurulur: conftest.py test
+# modüllerinden ÖNCE içe aktarılır, dolayısıyla aşağıdaki değerler ithalat-anı
+# yan etkisini de kapsar. Oturum boyunca tek geçici kök kullanılır; tekil
+# testler kendi `tmp_path` değerleriyle bunu fixture içinde EZEBİLİR.
 _SESSION_ROOT = tempfile.mkdtemp(prefix="pineal-test-isolation-")
 os.environ.setdefault("PINEAL_CACHE_PATH", os.path.join(_SESSION_ROOT, "cache", "responses.db"))
 os.environ.setdefault("PINEAL_MEMORY_PATH", os.path.join(_SESSION_ROOT, "memory"))
@@ -57,48 +44,28 @@ os.environ.setdefault(
 @pytest.fixture(autouse=True)
 def _isolate_response_cache(tmp_path, monkeypatch):
     monkeypatch.setenv("PINEAL_CACHE_PATH", str(tmp_path / "test_responses.db"))
-    # [PROD AUDIT 2026-10-11 · P2] KANIT DEPOSU DA İZOLE EDİLİR.
-    #
-    # Ölçülen kusur: bu fixture LLM yanıt önbelleğini (PINEAL_CACHE_PATH)
-    # tmp_path'e taşıyordu ama KALICI KANIT DEPOSUNU (PINEAL_MEMORY_PATH,
-    # varsayılan "./memory/") TAŞIMIYORDU. Sonuç: `pytest` depo kökündeki
-    # memory/ dizinine GERÇEK görev kayıtları yazıyordu. Kanıt (2026-10-11):
-    # test koşusu sonrası memory/ altında
-    #   test_task.json, test_holistic_001.json, p2_release_gate.json
-    # oluştu ve ardından ayağa kaldırılan backend bunları
-    #   GET /api/tasks  ->  200 {"tasks":[{"task_id":"test_task"}, ...]}
-    # diye CANLI VERİ olarak servis etti. Yani SAHTE/test kanıtı, gerçek adli
-    # kayıt yüzeyine karışıyordu (ve memory/ volume'u yeniden kullanılırsa
-    # production'a da taşınır). memory/*.json .gitignore'da olduğu için bu
-    # kirlilik git'te GÖRÜNMÜYOR — sessizdir.
+    # KALICI KANIT DEPOSU DA İZOLE EDİLİR: tek başına PINEAL_CACHE_PATH yetmez,
+    # PINEAL_MEMORY_PATH (varsayılan "./memory/") de tmp_path'e taşınır — aksi
+    # halde test koşusu depo kökündeki memory/ dizinine görev kayıtları yazar
+    # ve bunlar backend tarafından canlı kayıt gibi servis edilebilir.
     #
     # PINEAL_MEMORY_DB ayrıca sabitlenir: hindsight_memory.py onu
-    # PINEAL_MEMORY_PATH'ten TÜRETİR ama çağıran açıkça override etmişse
-    # eski değer kalmasın diye ikisi birlikte tmp_path'e bağlanır.
+    # PINEAL_MEMORY_PATH'ten TÜRETİR; çağıran açıkça override etmişse eski
+    # değer kalmasın diye ikisi birlikte tmp_path'e bağlanır.
     # Dizin adı bilerek "memory" DEĞİL: tests/unit/test_security_hardening.py
     # kendi `tmp_path / "memory"` dizinini `mkdir()` (exist_ok=False) ile
-    # kuruyor; aynı ad kullanıldığında FileExistsError ile patlıyordu
-    # (ölçüldü, 2026-10-11). "pineal_memory" çakışmayı kaldırır.
+    # kuruyor; aynı ad FileExistsError ile çakışır. "pineal_memory" ayırır.
     _memory_root = tmp_path / "pineal_memory"
     _memory_root.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("PINEAL_MEMORY_PATH", str(_memory_root))
     monkeypatch.setenv("PINEAL_MEMORY_DB", str(_memory_root / "hindsight.db"))
 
-    # [PROD AUDIT 2026-10-11 · P2] PINEAL_MEMORY_PATH YETERLİ DEĞİL.
-    #
-    # Ölçüldü: bazı kalıcı yazıcılar varsayılan yollarını PINEAL_MEMORY_PATH'ten
-    # TÜRETMİYOR, doğrudan CWD'ye göre BAĞIL kuruyor. Somut kanıt: conftest
-    # memory'yi izole ettikten SONRA bile test koşusu depo köküne
-    #   memory/ledger/minor-cases.jsonl
-    # yazdı. Bu dosya ÇOCUK KİLİDİ DENETİM DEFTERİDİR (tüzük Madde 4/A-7:
-    # onaylanan ve reddedilen tüm çocuk vakaları buraya işlenir, hedef kimliği
-    # hash'lenir). Testlerin uydurduğu kayıtların gerçek denetim defterine
-    # karışması bir BÜTÜNLÜK kusurudur: defteri inceleyen biri hiç yaşanmamış
-    # vakalar görür.
-    #
-    # Bu yüzden bağıl varsayılanı olan HER kalıcı yol tek tek tmp_path'e bağlanır.
+    # PINEAL_MEMORY_PATH YETERLİ DEĞİL: bazı kalıcı yazıcılar varsayılan
+    # yollarını ondan TÜRETMEZ, doğrudan CWD'ye göre BAĞIL kurar (ör.
+    # memory/ledger/minor-cases.jsonl — çocuk kilidi denetim defteri). Bu
+    # yüzden bağıl varsayılanı olan HER kalıcı yol tek tek tmp_path'e bağlanır.
     # Testler kendi değerlerini monkeypatch ile sonradan kurarsa ÖNCELİK
-    # ONLARINDIR (autouse fixture önce koşar) — yani hiçbir testin niyeti bozulmaz.
+    # ONLARINDIR (autouse fixture önce koşar) — hiçbir testin niyeti bozulmaz.
     monkeypatch.setenv(
         "PINEAL_MINOR_LEDGER_PATH", str(_memory_root / "ledger" / "minor-cases.jsonl")
     )

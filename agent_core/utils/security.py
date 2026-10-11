@@ -138,14 +138,9 @@ def token_matches(candidate: Optional[str], expected: Optional[str] = None) -> b
 
     ``expected`` verilmediyse (HTTP/WS auth hattı) kök token (``PINEAL_TOKEN``)
     VEYA tanımlı herhangi bir operatör token'ı (``PINEAL_OPERATOR_TOKENS``)
-    kabul edilir.
-
-    [PROD AUDIT 2026-10-11 · P0] Bu genişletme OLMADAN çok-operatörlü kimlik
-    çalışmıyordu: ``resolve_principal`` operatör token'ını doğru kimliğe
-    çözüyordu ama auth kapısı yalnız ``PINEAL_TOKEN``'ı kabul ettiği için
-    operatörler 401 alıyordu (PoC ile ölçüldü: alice 401). Yani oda sahipliği
-    mühürü hiç devreye giremiyordu. ``PINEAL_OPERATOR_TOKENS`` tanımsızken
-    (testler, tek-token dağıtım) sonuç eskisiyle aynıdır.
+    kabul edilir; böylece ``resolve_principal``'ın çözebildiği her kimlik auth
+    kapısından da geçer. ``PINEAL_OPERATOR_TOKENS`` tanımsızken (tek-token
+    dağıtım, testler) sonuç eskisiyle aynıdır.
     """
     if expected is None:
         if not candidate:
@@ -156,24 +151,12 @@ def token_matches(candidate: Optional[str], expected: Optional[str] = None) -> b
     return secrets.compare_digest(candidate.encode("utf-8"), expected.encode("utf-8"))
 
 
-# --- [PROD AUDIT 2026-10-11 · P0] Operatör kimliği (principal) --------------
-# NEDEN: Tek bir PINEAL_TOKEN tüm dağıtımın TEK kimliğiydi. Oda (room) anahtarı
-# olan client_id ise istemcinin serbestçe seçtiği bir dizeydi ve SUNUCUDA HİÇBİR
-# SAHİPLİK BAĞI YOKTU. Ölçülen sonuç (canlı PoC, 2026-10-11): aynı token'ı
-# bilen ikinci bir operatör client_id'yi değiştirerek başka bir operatörün
-#   * görev listesini ve telemetrisini OKUYABİLİYOR,
-#   * /ws/{client_id} üzerinden CANLI telemetriyi DİNLEYEBİLİYOR,
-#   * DELETE /api/tasks/{id} ile kanıt dosyasını DİSKTEN SİLEBİLİYOR
-#     (yanıt: memory_file_deleted=true),
-#   * POST /api/vault ile kurbanın LLM anahtarını/oturum çerezini
-#     DEĞİŞTİREBİLİYORDU.
-# Bu bir IDOR'dur (Insecure Direct Object Reference). Kapatmak için token'a
-# GERÇEK bir kimlik bağlanır: her operatör kendi token'ını alır, token ->
-# principal çözülür ve oda o principal'a mühürlenir.
-#
-# GERİYE DÖNÜK UYUM: PINEAL_TOKEN aynen çalışmaya devam eder (principal="root").
-# PINEAL_OPERATOR_TOKENS tanımlı DEĞİLSE davranış bugünküyle birebir aynıdır;
-# yalnızca ek operatör token'ları tanımlandığında sahiplik ayrışır.
+# --- Operatör kimliği (principal) -------------------------------------------
+# Token -> principal eşlemesi. Oda sahipliği mührü (backend/security/principal.py)
+# bu kimliği kullanır: PINEAL_TOKEN "root" kimliğidir, PINEAL_OPERATOR_TOKENS
+# ile tanımlanan her ek token kendi kimliğine çözülür ve odalar token başına
+# ayrışır. PINEAL_OPERATOR_TOKENS tanımsızken davranış tek-token dağıtımıyla
+# birebir aynıdır.
 _OPERATOR_TOKEN_ENV = "PINEAL_OPERATOR_TOKENS"
 _ROOT_PRINCIPAL = "root"
 

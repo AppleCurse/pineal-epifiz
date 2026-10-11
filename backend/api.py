@@ -328,9 +328,9 @@ async def auth_middleware(request: Request, call_next):
         # client_id'yi anahtar olarak kullanıyordu; client_id her istekte
         # değiştirilince sınır hiç devreye girmiyordu (ölçülen: 200/200 geçti).
         request.state.rate_identity = identity_hash
-        # [PROD AUDIT 2026-10-11 · P0] OPERATÖR KİMLİĞİ: token -> principal.
-        # Oda sahipliği mühürü (get_room) bu değeri ContextVar'dan okur.
-        # Kimlik doğrulama kapalıysa None -> mühür uygulanmaz (development).
+        # OPERATÖR KİMLİĞİ: token -> principal. Oda sahipliği mührü (get_room)
+        # bu değeri ContextVar'dan okur. Kimlik doğrulama kapalıysa None ->
+        # mühür uygulanmaz (development).
         request.state.principal = principal_of_request(presented_token)
         _principal_token = _set_principal(request.state.principal)
         try:
@@ -453,12 +453,9 @@ RATE_LIMITS = {
     # [FAZ D · D4] Dil tespiti/çeviri: tespit saf hesaptır ama çeviri yerel
     # motor çalıştırır; ikisi de sınırsız istek kabul etmez.
     "language": (60, 60),
-    # [PROD AUDIT 2026-10-11 · P1] WebSocket EL SIKIŞMA kovası. /ws/* eskiden
-    # auth_middleware kapsamı DIŞINDAYDI -> SINIRSIZDI; accept() de auth'tan
-    # önce olduğundan kimliksiz istemci sınırsız soket açıp her birini kimlik
-    # penceresinde tutabiliyordu. Kova YENİ BAĞLANTI hızını sınırlar (açık
-    # soket sayısını değil): meşru arayüz tek soket açar, kopmada yeniden
-    # bağlanır. Ayrıntı: backend/routes/websocket.py.
+    # WebSocket EL SIKIŞMA kovası: YENİ BAĞLANTI hızını sınırlar (açık soket
+    # sayısını değil). Meşru arayüz tek soket açar, kopmada yeniden bağlanır;
+    # kapı accept()'ten önce çalışır. Ayrıntı: backend/routes/websocket.py.
     "ws": (30, 60),
 }  # (request count, window seconds)
 class _RateBucket:
@@ -589,12 +586,11 @@ def rate_limit(key: str, bucket: str) -> bool:
 
 app.state.rooms = {}  # client_id -> {"executor": PinealExecutor, "vault": {}, "websockets": set()}
 
-# --- [PROD AUDIT 2026-10-11 · P0] Oda SAHİPLİĞİ (IDOR kapatması) -------------
-# client_id istemcinin seçtiği bir dizedir; TEK BAŞINA güvenlik sınırı değildir.
-# Ölçülen IDOR'un ayrıntılı PoC dökümü ve kural kümesi:
-# `backend/security/principal.py` (modül docstring'i) — TEK kaynak.
-# Kapatma: token -> principal -> oda o kimliğe MÜHÜRLÜ. İsimler buradan
-# YENİDEN İHRAÇ edilir ki `from backend.api import RoomForbiddenError` bozulmasın.
+# --- ODA SAHİPLİĞİ -----------------------------------------------------------
+# Oda (client_id) bir operatör kimliğine mühürlenir; client_id tek başına
+# güvenlik sınırı DEĞİLDİR. Kural kümesi: `backend/security/principal.py`.
+# İsimler buradan YENİDEN İHRAÇ edilir ki
+# `from backend.api import RoomForbiddenError` bozulmasın.
 from backend.routes.websocket import run_telemetry_socket
 from backend.security.principal import (  # noqa: F401  (geriye dönük ihracat)
     forbidden_body as forbidden_body,
@@ -976,7 +972,7 @@ async def room_capacity_handler(request: Request, exc: RoomCapacityExceeded):
 
 @app.exception_handler(RoomForbiddenError)
 async def room_forbidden_handler(request: Request, exc: RoomForbiddenError):
-    """[PROD AUDIT 2026-10-11 · P0] IDOR reddi -> 403 (gövde oda adı İÇERMEZ).
+    """Oda sahipliği reddi -> 403 (gövde oda adı İÇERMEZ).
 
     403 bilinçli (404 değil): operatör kendi client_id'sini yanlış yazdığında
     sessizce YENİ bir oda yaratıldığını sanmasın. Gövde/kod üretimi
@@ -1070,8 +1066,8 @@ def get_room(client_id: str) -> dict:
     now = time.monotonic()
     _evict_rooms(now)
     _rooms_last_seen[client_id] = now
-    # [PROD AUDIT 2026-10-11 · P0] ODA SAHİPLİĞİ MÜHRÜ — IDOR kapatması.
-    # Kural kümesi `backend/security/principal.py::enforce_room_ownership`:
+    # ODA SAHİPLİĞİ MÜHRÜ. Kural kümesi
+    # `backend/security/principal.py::enforce_room_ownership`:
     #   principal None -> auth kapalı (development): mühür uygulanmaz.
     #   oda sahipsiz   -> çağıran mühürler (eski sürümden geçiş).
     #   oda başkasına  -> RoomForbiddenError (403; gövde oda adı İÇERMEZ).

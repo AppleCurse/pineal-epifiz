@@ -1,31 +1,22 @@
 """`/ws/{client_id}` — canlı telemetri soketi OTURUM MANTIĞI.
 
-[PROD AUDIT 2026-10-11] ``docs/reports/API_MONOLITH_SPLIT_PLAN.md`` §3 (satır
-66) ``/ws`` ucu için ``backend/routes/websocket.py`` modülünü öngörür; bu
-dosya o planın UYGULANMIŞ adımıdır. ``backend/api.py`` içinde yalnız ince rota
-sarmalayıcısı kalır (monolit tavanı ratchet'ı: ``api.py`` küçülmelidir).
+``docs/reports/API_MONOLITH_SPLIT_PLAN.md`` §3 ``/ws`` ucu için bu modülü
+öngörür; bu dosya o planın uygulanmış adımıdır. ``backend/api.py`` içinde
+yalnız ince rota sarmalayıcısı kalır (monolit tavanı ratchet'ı: ``api.py``
+küçülmelidir).
 
-Bu uçta denetimde ÖLÇÜLEN üç kusur vardı ve üçü de burada kapatılır:
+OTURUM SIRASI: hız kapısı -> accept -> kimlik -> **SAHİPLİK** -> auth_ok -> oda.
 
-1. **HIZ SINIRI YOKTU.** ``auth_middleware`` yalnız ``/api/`` ve ``/v1/``
-   öneklerini kapsıyordu; ``/ws/`` HİÇ geçmiyordu. ``accept()`` da auth'tan
-   ÖNCE yapıldığı için kimliği olmayan bir istemci sınırsız soket açıp her
-   birini kimlik penceresi boyunca (5 sn) tutabiliyordu: bağlantı/bellek
-   tüketimi ile hizmet dışı bırakma.
-2. **ODA SAHİPLİĞİ YOKTU.** Yalnız paylaşılan dağıtım token'ı doğrulanıyordu.
-   Token'ı bilen herkes ``/ws/{baskasinin_client_id}`` bağlanıp kurbanın
-   odasının CANLI telemetrisini dinleyebiliyordu. Ölçüldü: ``auth_ok`` alındı
-   ve kurbanın kasa logu (``"KASA: API Anahtarı girildi…"``) saldırgana aktı.
-3. **``auth_ok`` SAHİPLİKTEN ÖNCE gönderiliyordu.** Reddedilen saldırgan bile
-   "kimliğim geçerli ve soket açıldı" teyidi alıyordu.
+  * Hız kapısı ``accept()``'ten ÖNCE çalışır: kimliksiz bir bağlantı kaynak
+    tutmadan reddedilir (``ws`` kovası, yeni bağlantı hızı).
+  * Kimlik ilk mesajla gelir (``_authenticate``) ve principal'a çözülür; oda
+    bu kimliğe mühürlüdür (``backend/security/principal.py``).
+  * ``auth_ok`` YALNIZ kimlik ve sahiplik doğrulandıktan sonra gönderilir.
 
-DOĞRU SIRA: hız kapısı -> accept -> kimlik -> **SAHİPLİK** -> auth_ok -> oda.
-
-``accept()`` neden auth'tan ÖNCE kalmak zorunda: Cloudflare'ın istemci
-WebSocket API'si ÖZEL BAŞLIK iletmez (``functions/ws/[[path]].ts`` başlık
-tabanlı auth'u bu yüzden kullanamaz). Token ilk MESAJLA gelir; bu bilinçli bir
-tasarım seçimidir ve sır URL'ye/log'a yazılmaz. Karşılığında kimlik penceresi
-kısa tutulur (``WS_AUTH_TIMEOUT_S``) ve bağlantı hızı sınırlanır.
+``accept()`` neden auth'tan ÖNCE: Cloudflare'ın istemci WebSocket API'si ÖZEL
+BAŞLIK iletmez (``functions/ws/[[path]].ts`` başlık tabanlı auth'u bu yüzden
+kullanamaz). Token ilk MESAJLA gelir ve sır URL'ye/log'a yazılmaz. Karşılığında
+kimlik penceresi kısa tutulur (``WS_AUTH_TIMEOUT_S``).
 """
 
 from __future__ import annotations
