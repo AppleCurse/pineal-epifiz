@@ -1,44 +1,23 @@
-"""Operatör kimliği (principal) ve oda sahipliği mühürü.
+"""Operatör kimliği (principal) ve oda sahipliği mührü.
 
-[PROD AUDIT 2026-10-11 · P0] Bu modül, canlı PoC ile ÖLÇÜLEN bir IDOR
-(Insecure Direct Object Reference) kusurunu kapatmak için eklendi.
+``client_id`` istemcinin serbestçe seçtiği bir dizedir; tek başına güvenlik
+sınırı DEĞİLDİR. Bu modül sunulan token'ı bir operatör KİMLİĞİNE çözer
+(``resolve_principal``) ve odayı o kimliğe MÜHÜRLER. Mühür ``ContextVar`` ile
+taşınır; böylece ``get_room``'un 300+ çağrı yerinin imzası değişmez.
 
-ÖLÇÜLEN KUSUR (yamadan önce, production konfigürasyonu ile çalışan gerçek
-sunucuya karşı):
+Kurallar:
+  * ``principal is None`` -> kimlik doğrulama KAPALI (development): mühür
+    uygulanmaz; mevcut davranış korunur. Production'da auth fail-closed
+    zorunludur (``security_posture`` -> ``PRODUCTION_AUTH_REQUIRED``),
+    dolayısıyla principal daima doludur.
+  * Oda YOK -> çağıran oluşturur ve ``"_owner": principal`` yazar.
+  * Oda VAR ama SAHİPSİZ (eski kayıt) -> ilk erişen mühürler.
+  * Oda başka bir principal'a mühürlü -> erişim reddedilir (403).
 
-    Dağıtımın TEK bir kimliği vardı (``PINEAL_TOKEN``). Oda anahtarı olan
-    ``client_id`` ise istemcinin SERBESTÇE seçtiği bir dizeydi ve sunucuda
-    HİÇBİR sahiplik bağı yoktu — ``get_room()`` yalnız BİÇİM ve UZUNLUK
-    doğruluyordu. Sonuç: aynı token'ı bilen ikinci bir operatör, ``client_id``
-    yazarak başka bir operatörün odasına tam erişiyordu.
-
-    Kanıtlanan saldırılar (hepsi HTTP 200 / kabul edildi):
-      * ``GET  /api/tasks?client_id=<kurban>``       -> görev listesi okundu
-      * ``GET  /api/telemetry?client_id=<kurban>``   -> telemetri okundu
-      * ``GET  /api/vault/status?client_id=<kurban>``-> kasa durumu okundu
-      * ``POST /api/vault``  ``client_id=<kurban>``  -> kurbanın LLM anahtarı
-        ve X oturum çerezi SALDIRGANIN değeriyle DEĞİŞTİRİLDİ
-        (``has_cookie: true``, ``can_scrape: true``)
-      * ``DELETE /api/tasks/<gerçek_id>?client_id=<kurban>`` ->
-        ``{"status":"deleted","memory_file_deleted":true}`` yani ADLİ KANIT
-        DİSKTEN KALICI SİLİNDİ (zincir-i vekaat yok oldu)
-      * ``/ws/<kurban>`` -> ``auth_ok`` + CANLI telemetri karesi yakalandı
-        (kurbanın kasa logu saldırgana aktı)
-
-KAPATMA: token artık bir KİMLİĞE çözülür (``resolve_principal``) ve oda o
-kimliğe MÜHÜRLENİR. Mühür ``ContextVar`` ile taşınır; ``get_room``'un 300+
-çağrı yerinin imzasını değiştirmeye gerek kalmaz.
-
-GERİYE DÖNÜK UYUM (bilinçli):
-  * ``principal is None`` -> kimlik doğrulama KAPALI (development). Mühür
-    uygulanmaz; bu, bugünkü davranışın birebir aynısıdır. Production'da auth
-    zaten fail-closed zorunludur (``security_posture`` ->
-    ``PRODUCTION_AUTH_REQUIRED``), dolayısıyla principal daima doludur.
-  * Tek ``PINEAL_TOKEN`` paylaşan bir dağıtımda herkes AYNI principal'dır
-    ("root") ve mühür AYRIŞTIRMAZ. Kimlikleri ayırt etmek imkânsızdır:
-    TEK token = TEK operatör. Bu yüzden production'da
-    ``PINEAL_OPERATOR_TOKENS`` ile operatör başına ayrı token ZORUNLUDUR
-    (bkz. ``.env.example`` ve ``README.md`` "Çok operatörlü kimlik").
+Tek ``PINEAL_TOKEN`` paylaşan dağıtımda herkes AYNI principal'dır ("root") ve
+mühür ayrıştırmaz: tek token = tek operatör. Operatörleri ayırt etmek için
+``PINEAL_OPERATOR_TOKENS`` ile operatör başına ayrı token tanımlanır
+(bkz. ``.env.example`` ve ``README.md`` "Çok operatörlü kimlik").
 """
 
 from __future__ import annotations
@@ -60,7 +39,7 @@ __all__ = [
 
 
 class RoomForbiddenError(RuntimeError):
-    """Başka bir operatöre mühürlü odaya erişim denemesi (IDOR reddi).
+    """Başka bir operatöre mühürlü odaya erişim denemesi (sahiplik reddi).
 
     Bilinçli olarak ``client_id``'yi MESAJDA TAŞIMAZ: başka bir operatörün oda
     adı başlı başına bilgi olabilir. Yalnız uzunluk loglanır.
@@ -127,8 +106,8 @@ def enforce_room_ownership(
          bırakılmaz; ilk erişen sahip olur.
       4. Oda VAR ve sahibi FARKLI -> ``"forbidden"``.
 
-    Sızıntı yüzeyini daraltmak için ret durumunda odanın VARLIĞI da
-    doğrulanmaz: yanıt 404 değil 403'tür ama gövde oda adı İÇERMEZ.
+    Ret durumunda odanın VARLIĞI da doğrulanmaz: yanıt 404 değil 403'tür ve
+    gövde oda adını İÇERMEZ.
     """
     if principal is None:
         return None
@@ -153,7 +132,7 @@ def forbidden_body(*, openai_style: bool, error_factory) -> dict:
     """403 ROOM_FORBIDDEN gövdesi — TEK sözleşme (HTTP ve /v1 için).
 
     ``openai_style`` -> ``/v1/*`` OpenAI-uyumlu hata şeması ister.
-    Gövde oda adını İÇERMEZ: başka bir operatörün oda adı bilgi sızıntısıdır.
+    Gövde oda adını İÇERMEZ; oda adı yanıtta tekrarlanmaz.
     """
     if openai_style:
         return error_factory(

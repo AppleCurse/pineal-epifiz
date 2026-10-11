@@ -74,8 +74,9 @@ export const onRequest = async (context: any) => {
   // snapshot_update, result, log tipleri şeffaf iletilir. Hiçbir mesaj
   // sessizce düşürülmez.
   //
-  // [PROD AUDIT 2026-10-11 · P1] Bu fonksiyon TANIMLIYDI AMA HİÇ ÇAĞRILMIYORDU
-  // (ölü kod). Aşağıdaki hata ayıklama sayacı artık bunu GERÇEKTEN kullanır.
+  // Agent Rack kare tipi çözümleyicisi: hata ayıklama sayacı bu fonksiyonu
+  // kullanır (agent_status_update/telemetry_update/snapshot_update/result/log
+  // ve EventBus fallback kareleri).
   const isAgentStatusMessage = (data: string): boolean => {
     try {
       const parsed = JSON.parse(data);
@@ -92,22 +93,10 @@ export const onRequest = async (context: any) => {
     }
   };
 
-  // [PROD AUDIT 2026-10-11 · P1] EDGE LOG'UNA İÇERİK YAZILMAZ.
-  //
-  // Ölçülen kusur: pompa, upstream->client yönündeki HER agent_status_update
-  // karesinin İLK 200 KARAKTERİNİ koşulsuz olarak Cloudflare edge loguna
-  // basıyordu (`console.log("[AgentRack] Forwarding: " + ev.data.slice(0,200))`).
-  // Bu kareler hedef kişi hakkında toplanan telemetriyi/ajan meta verisini
-  // taşır; yani üçüncü kişilerin kişisel verisi, operatörün kontrolü
-  // dışındaki bir sağlayıcının (Cloudflare) loglarına kopyalanıyordu. Projenin
-  // kendi tüzüğü (docs/PINEAL_TUZUK.md Madde 3 ve backend'deki redact_text
-  // disiplini) sır/içerik sızıntısını yasaklar; edge katmanı bu disiplinin
-  // dışında kalmıştı.
-  //
-  // Yeni davranış: hata ayıklama logu VARSAYILAN OLARAK KAPALI ve yalnız
-  // WS_DEBUG_LOG=1 ile açılır. Açıkken bile İÇERİK değil, yalnız SAYAÇ ve
-  // BOYUT yazılır (kaç kare, kaç bayt, tip dağılımı). Böylece canlı hata
-  // ayıklama yeteneği korunur, veri minimizasyonu bozulmaz.
+  // EDGE LOG'UNA İÇERİK YAZILMAZ: hata ayıklama logu varsayılan olarak KAPALI,
+  // yalnız WS_DEBUG_LOG=1 ile açılır. Açıkken bile payload değil yalnız SAYAÇ
+  // ve BOYUT yazılır (kaç kare, kaç bayt); böylece canlı hata ayıklama korunur,
+  // mesaj içeriği loglara kopyalanmaz.
   const debugLog = String(context.env?.WS_DEBUG_LOG || "") === "1";
   let forwardedFrames = 0;
   let forwardedBytes = 0;
