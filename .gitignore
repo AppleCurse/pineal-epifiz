@@ -59,3 +59,6 @@ backups/
 
 # scripts/test_disaster_recovery.sh geçici compose override dosyası
 .dr_override.*
+
+# [AUDIT 2026-10-07] Denetim doğrulama ortamı (yerel; üretime girmez)
+.venv-audit/

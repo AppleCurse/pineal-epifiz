@@ -35,16 +35,24 @@
     });
   }
 
-  function toggleSigint() {
-    sigintEngaged.update(v => {
-      const next = !v;
-      playToggle(next);
-      logs.update(l => [...l, { ts: new Date().toLocaleTimeString(), level: 'INFO', msg: next ? 'SIGINT: OPEN' : 'SIGINT: CLOSED' }]);
-      if (next && $isProcessing) {
-        cancelAnalysis();
+  // [PROD AUDIT 2026-10-11 · P2] Svelte store UPDATER'I SAF OLMALIDIR.
+  // Eski kod `sigintEngaged.update(v => {...})` içinde ses çalıyor, log
+  // yazıyor ve AĞA İSTEK ATIYORDU (cancelAnalysis, await'siz + catch'siz).
+  // Updater içinde yan etki iki somut risk taşır: (a) Svelte updater'ı birden
+  // çok çağırırsa ağ isteği de ses de ÇOĞALIR, (b) reddedilen promise kimse
+  // tutmadığı için konsola unhandled rejection düşer. Yan etkiler updater
+  // DIŞINA alındı; durum geçişi `get` + `set` ile deterministik.
+  async function toggleSigint() {
+    const next = !get(sigintEngaged);
+    sigintEngaged.set(next);
+    playToggle(next);
+    logs.update(l => [...l, { ts: new Date().toLocaleTimeString(), level: 'INFO', msg: next ? 'SIGINT: OPEN' : 'SIGINT: CLOSED' }]);
+    if (next && get(isProcessing)) {
+      const cancelled = await cancelAnalysis();
+      if (!cancelled) {
+        logs.update(l => [...l, { ts: new Date().toLocaleTimeString(), level: 'ERROR', msg: 'SIGINT: iptal BAŞARISIZ — görev hâlâ çalışıyor olabilir' }]);
       }
-      return next;
-    });
+    }
   }
 
   function toggleRecord() {
@@ -75,16 +83,30 @@
     });
   }
 
-  function emergencyStop() {
+  // [PROD AUDIT 2026-10-11 · P1] ACİL STOP artık SONUCU BEKLER ve SONUCU
+  // SÖYLER. Eski sürüm "görev iptal emri verildi" logunu istek GÖNDERİLMEDEN
+  // basıyor ve `cancelAnalysis()`'i await/catch etmiyordu: iptal 401/429/503
+  // ile başarısız olsa bile operatör başarılı bir acil stop izliyordu ve
+  // görev (LLM harcaması + hedefe yönelik tarama) arka planda sürüyordu.
+  async function emergencyStop() {
     playHalt();
     const active = get(isProcessing) || get(taskStatus)?.status === 'processing';
-    if (active) {
-      logs.update(l => [...l, { ts: new Date().toLocaleTimeString(), level: 'ERROR', msg: 'ACİL STOP: görev iptal emri verildi' }]);
-      cancelAnalysis();
-    } else {
+    const stamp = () => new Date().toLocaleTimeString();
+    if (!active) {
       playClick(120, 90);
-      logs.update(l => [...l, { ts: new Date().toLocaleTimeString(), level: 'INFO', msg: 'ACİL STOP: hat boşta (iptal edilecek görev yok)' }]);
+      logs.update(l => [...l, { ts: stamp(), level: 'INFO', msg: 'ACİL STOP: hat boşta (iptal edilecek görev yok)' }]);
+      return;
     }
+    // Dürüst sıra: önce "emir GÖNDERİLİYOR", sonra backend'in GERÇEK kararı.
+    logs.update(l => [...l, { ts: stamp(), level: 'ERROR', msg: 'ACİL STOP: iptal emri GÖNDERİLİYOR (sonuç bekleniyor)…' }]);
+    const cancelled = await cancelAnalysis();
+    logs.update(l => [...l, {
+      ts: stamp(),
+      level: cancelled ? 'INFO' : 'ERROR',
+      msg: cancelled
+        ? 'ACİL STOP: görev backend tarafından DURDURULDU'
+        : 'ACİL STOP: İPTAL EDİLEMEDİ — görev hâlâ çalışıyor olabilir, bağlantıyı/token’ı denetleyin',
+    }]);
   }
 
   // Düğmeler GERÇEK işlevlidir (süs değil):
@@ -345,9 +367,21 @@
         }
       }
 
-      // [UI-BRIDGE] Chat ağızları: tüm sekmeler aynı tek /api/aspasia/chat
-      // ağzını kullanır; sekme yalnız bağlam değiştirir.
-      const chatUrl = activeAgentId === 'ASPASIA' ? '/api/aspasia/chat' : '/api/aspasia/chat';
+      // [UI-BRIDGE] Chat ağızları: tüm sekmeler aynı TEK /api/aspasia/chat
+      // ağzını kullanır.
+      // [PROD AUDIT 2026-10-11 · P2] ÖLÜ KOŞUL KALDIRILDI. Eski satır:
+      //     const chatUrl = activeAgentId === 'ASPASIA' ? '/api/aspasia/chat'
+      //                                                 : '/api/aspasia/chat';
+      // İki kol BİREBİR aynıydı: ternary hiçbir şey seçmiyordu. Daha önemlisi
+      // yorum "sekme yalnız bağlam değiştirir" diyordu ama bağlam GÖVDEDE
+      // TAŞINMIYORDU — AspasiaChatPayload (backend/api.py) yalnız
+      // client_id/user_message/model_override/image_data kabul eder, sekme
+      // alanı YOKTUR. Yani seçili ajan sekmesi isteği HİÇ etkilemiyordu.
+      // Uydurma bir alan göndermek yerine gerçek davranış açıkça yazılır:
+      // sekme GÖRSEL bağlamdır, sohbet ucu tektir. Sekme gerçekten sunucuya
+      // taşınacaksa AspasiaChatPayload'a alan EKLENEREK yapılmalıdır (sessiz
+      // sözleşme farkı bırakılmaz — bkz. docs/PINEAL_TUZUK.md giriş).
+      const chatUrl = '/api/aspasia/chat';
       const payload: any = { client_id: $clientId, user_message: currentInput };
       if (currentImage) payload.image_data = currentImage;
       const res = await apiFetch(chatUrl, {
@@ -415,11 +449,63 @@
     }
   }
 
-  async function cancelAnalysis() {
+  // [PROD AUDIT 2026-10-11 · P1] İPTAL, SONUCU DOĞRULANAN BİR İŞLEMDİR.
+  //
+  // Eski kod:
+  //     async function cancelAnalysis() {
+  //       ...
+  //       await apiFetch(`/api/tasks/${activeTaskId}/cancel?...`, {method:'POST'});
+  //     }
+  // ve çağıranlar (emergencyStop, toggleSigint) bunu `await` ETMEDEN,
+  // `.catch()` BAĞLAMADAN çağırıyordu. Üç ölçülen sonuç:
+  //   1. YAKALANMAMIŞ PROMISE REJECTION: ağ hatası / 401 / 429 / 503
+  //      durumunda reddedilen promise kimse tutmuyordu -> konsola unhandled
+  //      rejection düşüyordu.
+  //   2. ARAYÜZ YALAN SÖYLÜYORDU: `playHalt()` sesi ve "ACİL STOP: görev iptal
+  //      emri verildi" logu istekten ÖNCE ve sonuçtan BAĞIMSIZ basılıyordu;
+  //      `res.ok` hiç kontrol edilmiyordu. Yani 401/404/429/503 bile
+  //      "başarılı acil stop" gibi görünüyordu.
+  //   3. GÖREV ÇALIŞMAYA DEVAM EDİYORDU: bu sistem iptal edilmeyen görevde
+  //      LLM bütçesi harcamayı ve hedefe karşı OSINT/tarama sürdürmeyi
+  //      sürdürür. Operatörün kill-switch'i SESSİZCE başarısız oluyordu.
+  //
+  // Yeni sözleşme: true = backend iptali KABUL ETTİ; false = iptal EDİLEMEDİ
+  // ve görev hâlâ çalışıyor olabilir. Başarı iddiası yalnız 2xx'te basılır.
+  async function cancelAnalysis(): Promise<boolean> {
     const activeTaskId = $taskStatus?.task_id;
-    if (!activeTaskId) return;
+    if (!activeTaskId) return false;
     playHalt();
-    await apiFetch(`/api/tasks/${activeTaskId}/cancel?client_id=${$clientId}`, { method: 'POST' });
+    const stamp = () => new Date().toLocaleTimeString();
+    try {
+      const res = await apiFetch(
+        `/api/tasks/${encodeURIComponent(activeTaskId)}/cancel?client_id=${encodeURIComponent($clientId)}`,
+        { method: 'POST' }
+      );
+      if (!res.ok) {
+        // Hata kodunu gövdeden çıkar (backend tutarlı {error:{code}} döner);
+        // gövde JSON değilse sessizce boş bırak — asıl bilgi status kodudur.
+        let code = '';
+        try {
+          code = (await res.json())?.error?.code || '';
+        } catch { /* gövde JSON değil */ }
+        const detail = code ? `${res.status} ${code}` : `${res.status}`;
+        if (isAuthFailure(res)) {
+          logs.update(l => [...l, { ts: stamp(), level: 'ERROR', msg: `İPTAL BAŞARISIZ (${detail}): PINEAL_TOKEN geçersiz/eksik — GÖREV HÂLÂ ÇALIŞIYOR OLABİLİR` }]);
+        } else if (res.status === 429) {
+          logs.update(l => [...l, { ts: stamp(), level: 'ERROR', msg: `İPTAL BAŞARISIZ (${detail}): hız sınırı — birkaç saniye sonra yeniden deneyin, GÖREV ÇALIŞIYOR` }]);
+        } else {
+          logs.update(l => [...l, { ts: stamp(), level: 'ERROR', msg: `İPTAL BAŞARISIZ (${detail}) — GÖREV HÂLÂ ÇALIŞIYOR OLABİLİR` }]);
+        }
+        return false;
+      }
+      logs.update(l => [...l, { ts: stamp(), level: 'INFO', msg: `İPTAL ONAYLANDI (${res.status}): backend görevi durdurdu — ${activeTaskId}` }]);
+      return true;
+    } catch (e: any) {
+      // Ağ katmanı hatası (backend erişilemez, CORS, DNS, bağlantı koptu).
+      // Yutulmaz: operatöre iptalin OLMADIĞI açıkça söylenir.
+      logs.update(l => [...l, { ts: stamp(), level: 'ERROR', msg: `İPTAL GÖNDERİLEMEDİ: ${e?.message || e} — GÖREV HÂLÂ ÇALIŞIYOR OLABİLİR` }]);
+      return false;
+    }
   }
 
   afterUpdate(() => {

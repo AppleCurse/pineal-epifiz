@@ -1,5 +1,160 @@
 # Changelog
 
+## Unreleased — 2026-10-07 — Üretim denetimi (audit) düzeltmeleri
+
+Kullanıcı denetim raporunun (2026-10-07) maddelerinin tamamı uygulandı. Her
+madde, kusuru YENİDEN getirmeyi engelleyen testlerle kilitlendi; her düzeltme
+"kusurlu hâle geri alınınca ilgili testler düşüyor" diye doğrulandı.
+
+### 1 · Gövde tavanı middleware'i istisna yutuyordu (P0)
+- `BodySizeLimitMiddleware` içindeki `except Exception: pass` →
+  `except BodySizeLimitExceeded`. Artık yalnızca KENDİ sinyalini yakalar;
+  uygulama hataları Starlette'in hata katmanına ulaşır.
+- Ölçülen eski davranış: gerçek bir 500'lük hata istemciye boş gövde olarak
+  dönüyordu ve hiçbir yere loglanmıyordu (teşhis edilemez hata).
+- Test: `tests/unit/test_body_size_limit.py` (+5 test).
+
+### 2 · Sürüm kimliği tek kaynağa bağlandı
+- `VERSION` dosyası otorite; FastAPI başlığı ve MCP `server_version` artık
+  OKUYOR (kopyalamıyor). Eski başlık bayat `v3.0.0-rc.1` yazıyordu.
+- npm (kök + frontend), Cargo (`rust_core`, `src-tauri`) ve
+  `tauri.conf.json` sürümleri `VERSION` ile EŞİTLENDİ; kilit dosyaları
+  (`package-lock.json` ×2, `Cargo.lock`) senkron güncellendi — yoksa
+  `npm ci` ve `cargo test --locked` kırılırdı.
+- Yeni: `agent_core/version.py`, `frontend/src/lib/version.ts`.
+- Test: `tests/unit/test_version_identity.py` (25 test).
+
+### 3 · Ajan worker semantiği düzeltildi
+- 12 compose servisi `agent-*` → `beacon-*`: bunlar analiz YÜRÜTMEZ, yalnızca
+  canlılık işaretçisidir (liveness beacon).
+- Eski worker her 30 saniyede bir koşulsuz `Ready` basıyordu; bu, deponun
+  kendi [RÖNTGEN 2026-09-23] ilkesini (`set_all_ready`/`simulate_processing`
+  kaldırıldı) ihlal ediyor, gerçek `Active/Done/Error` durumlarını eziyordu.
+- Yeni işaretçi KENDİ kanalına (`pineal:agent:beacon`) yazar, ajan durum
+  kanalına ASLA yazmaz; analiz yürütmediğini mesajda açıkça etiketler.
+- Arayüz etiketi "12 AUTONOMOUS NODES" → "12 ANALYSIS ROLES"; README düzeltildi.
+- Test: `tests/unit/test_agent_worker.py` (14), `test_ui_honesty_contract.py` (+3).
+
+### 4 · Android eşdeğerlik (parity) — AÇIKÇA ETİKETLENDİ
+- Android hattı TEK Gemini çağrısıdır: bağımsız doğrulayıcı, jüri, entailment,
+  kanıt-URL denetimi ve SHA-256 mühür YOKTUR.
+- EN yerel ayarı hâlâ "9-AGENT EXECUTION PIPELINE" diyordu (TR düzeltilmiş,
+  EN bayat kalmıştı). TR+EN: tek-geçişli çıkarım olarak etiketlendi; ayrıca
+  "ZERO HALLUCINATION", "MULTIMODAL VISION AI", "Verified Reality" gibi
+  ölçülmemiş iddialar kaldırıldı.
+- Test: `tests/unit/test_android_parity_labels.py` (17 test; JVM gerektirmez).
+
+### 5 · `_execute_with_timeout` TypeError ile YENİDEN KOŞU
+- Eski kod: `except TypeError: return await agent.execute(input_data)` —
+  ajanın gövdesindeki gerçek bir hata, ajanı İKİNCİ KEZ koşturuyordu
+  (yan etki tekrarı: ücretli LLM çağrıları) ve hatayı MASKELİYORDU.
+- İmza artık `inspect.signature` ile ÇAĞIRMADAN okunur; ajan TAM BİR KEZ koşar.
+- Test: `tests/unit/test_execute_with_timeout.py` (11 test).
+
+### 6 · `NeuralTelemetryBoard` gizli DOM'dan çıkarıldı
+- `<div style="display: none;" aria-hidden="true">` içinde basılıyordu:
+  kullanıcı HİÇ görmüyordu (gözlemlenebilirlik sıfır).
+- Artık görünür panel + açma/kapama düğmesi; varsayılan AÇIK.
+- Test: `test_ui_honesty_contract.py` (+3).
+
+### 7 · Tauri sistem bilgisi dürüstleştirildi (P2)
+- `get_system_info`: sabit `"version": "5.0.0"` → `env!("CARGO_PKG_VERSION")`;
+  sabit `"gpu_acceleration": true` → ÖLÇÜLEN sonda. Bir Tauri süreci
+  WebView'nin GPU kararını BİLEMEZ; artık `gpu_node_detected` /
+  `webview_gpu_acceleration` / `claim` alanlarıyla açıkça ayrılıyor.
+
+### 8 · `task_executor` içe aktarım yan etkisi kaldırıldı (P2)
+- Modül sonundaki `executor = PinealExecutor()` kaldırıldı. `PinealExecutor()`
+  kurmak diskten yapılandırma okur, 13 ajan + LLM ağ geçidi kurar ve
+  `get_tracker()` ile GLOBAL durum tekilini yaratır — hepsi yalnızca
+  `import agent_core.task_executor` yazınca tetikleniyordu.
+- Test: `tests/unit/test_task_executor_import_purity.py` (5 test, alt süreçte).
+
+### 9 · `backend/api.py` tek-modül şişkinliği: ÖLÇÜM + TAVAN + ilk bölme (P2)
+- Ölçüm: 6.034 satır / 72 uç nokta. İlk ayrıştırma: gövde tavanı middleware'i
+  → `backend/middleware/body_size_limit.py` (api.py: 6.034 → 5.937).
+- Geriye dönük uyumluluk: `backend.api` isimleri yeniden ihraç eder.
+- Tavan (ratchet) + uç nokta envanteri + sıralı bölme planı:
+  `tests/unit/test_api_monolith_ratchet.py`,
+  `docs/reports/API_MONOLITH_SPLIT_PLAN.md`.
+
+### Doğrulama
+- Tam koşu: **2315 passed, 2 skipped, 0 failed**; kapsam %87,07 (eşik %80).
+  Denetim öncesi taban: 2225 passed → **+90 test**, yeşil.
+- `ruff check .` temiz; `generate_routing_shadows.py` + `export_skills.py
+  --check` + `verify_openrouter_catalog.py` geçti.
+- Frontend: `npm ci`, `npm run check` (svelte-check 0 hata), `npm run build`
+  ve CI'nin `grep PINEAL-HERETIC dist/assets/*.js` kontrolü geçti.
+- **CI — TÜM KAPILAR YEŞİL** (PR #117, Actions koşusu `37592447572`):
+  `backend` 3m23s · `frontend` 19s · `smoke` 58s · `rust-core` 49s ·
+  `android` 1m41s · CodeRabbit · Cloudflare Workers Builds (2).
+
+  Not: `cargo check`/`cargo test --locked` ve `gradle` işleri YEREL koşumda
+  doğrulanamadı (JDK/Gradle/Rust araç zinciri yok ve dağıtım adreslerine
+  çıkış kapalı: `static.rust-lang.org`, `crates.io`, `services.gradle.org`,
+  `repo1.maven.org`, `dl.google.com` → bağlantı yok). Bu yüzden
+  Kotlin/Rust için yapısal bütünlük testi eklendi
+  (`tests/unit/test_uncompiled_language_integrity.py`); **asıl doğrulama
+  CI'da yapıldı ve her ikisi de geçti** — Rust tarafında `Cargo.lock`
+  güncellemesi de (`cargo test --locked` koştuğu için zorunluydu) doğrulandı.
+## Unreleased — 2026-10-07 — FAZ E · E0: denetim regresyon bekçisi (24 bulgu makine denetiminde)
+
+- **E0 · DENETİM REGRESYON PAKETİ TAMAM** (FAZ E şemsiye kalemi).
+  `docs/reports/JULES_DENETIM_2026-10-06.md` 24 bulgu üretmiş ve her birine
+  insan gözü için bir `DOĞRULA` komutu yazmıştı; **hiçbiri makine tarafından
+  koşulmuyordu**. Yani bir bulgu onarıldıktan sonra aynı kusurun geri gelmesini
+  engelleyen hiçbir şey yoktu. `scripts/audit_regression.py` o raporu çalışan
+  bekçiye çevirir: rapor ayrıştırılır (hayalet kayıt iki yönde yasak), her bulgu
+  **statik / test-kapılı / doğrulanamaz** sınıflanır, `reports/audit_regression.json`
+  üretilir ve `KNOWN_OPEN` dışında açılan bulguda **exit 1**.
+- **Ölçülen taban:** 24 bulgu → **9 kapandı · 1 kapandı (tasarım) · 11 açık ·
+  3 doğrulanamaz**. Taban çizgisi ölçülen açık kümeyle **birebir**; onarılan bir
+  bulgu listede bırakılırsa da kırmızı yanar → iyileşme kayda geçmek zorunda.
+- **Bekçi kalıbı değil KUSURU arar.** Denetimin iki `DOĞRULA` komutu bugün
+  **bayat** ve birebir koşulsaydı yanlış hüküm verirdi: `grep 'minor_gate'
+  backend/api.py` yalnız bir ölçüm yorumu bulur (kapı `_require_minor_clearance`
+  adıyla yaşıyor → E2 yanlışlıkla "açık" ilan edilirdi); `|| "Veri mevcut değil"`
+  kalıbı yalnız kaldırılmış kusuru anlatan bir **yorumda** durur (onarım
+  `INSUFFICIENT_EVIDENCE` + `hasEvidence()` ile yapılmış → E6). Her ikisi de
+  raporda `audit_verify_stale` alanıyla belgelendi.
+- **Planın beklediği bayat iddia kesinleşti:** `/v1/models` sabit `[]`
+  **döndürmüyor** — envanter `executable_models` · `MODEL_PRICING` · `local_model`
+  kaynaklarından kuruluyor ve e2e testiyle kilitli (E-GÖZ2-2 kapandı).
+- **UYDURMA YASAĞI yapısal:** kanıtsız `closed` hükmü **kurulamaz** (RuntimeError),
+  `unverifiable` sınıfı `closed`/`open` **dönüştüremez**, test-kapılı kapanış
+  ancak test dosyası **gerçek işaretleri** içeriyorsa geçer (boş dosya yetmez).
+  Rust bulguları bilerek "doğrulanamaz" bırakıldı: `cargo` bu ortamda yok,
+  otorite CI'ın `rust-core` işi. Statik gözlem rapora *gözlem* olarak yazılır,
+  hükme çevrilmez.
+- **Bekçinin kendi kusurları yakalanıp kilitlendi** (dürüstlük kaydı): çok
+  satırlı kalıbı görmeyen satır-satır eşleşme (2 sahte açık) · `browser/open`
+  yol adının envanter listesiyle karışması · route gövdesinin sabit pencereyle
+  ölçülüp komşu fonksiyondaki kapıyı sızdırması (**sahte yeşil**) · anlık
+  `generated_at` damgasının CI'daki `git diff --exit-code` adımını her koşuda
+  kırmızıya boyaması · zayıf test-kilit işaretleri (`423` o dosyada yalnız
+  yorumdaydı) → hepsi düzeltildi ve her biri bir testle kilitlendi.
+- **Yedincisini ancak CI yakaladı:** damga `git log`/mtime'dan türetiliyordu; Actions
+  **sığ klon** yaptığı için commit tarihi koşu zamanına eşitleniyor ve checkout mtime'ı
+  her ortamda farklı yazılıyor → aynı içerik iki farklı damga üretip `git diff` kapısını
+  "bayat rapor" diye kırmızıya boyuyordu. Damga artık denetim raporunun **içerik mühürü**
+  (`sha256`) ve adım başarısızlık ayrıntısını **annotation** olarak yüzeye çıkarıyor
+  (loglar Azure blob'dan okunamıyor — repo'nun "sessiz-çökme-yok" kuralı).
+- **Sekizincisi de CI'dan geldi ve annotation sayesinde okundu:** kanıt dizeleri araç
+  zincirinin yolunu gömüyordu; GitHub imajı Rust'ı KURULU getirdiği için CI ile geliştirme
+  ortamı farklı JSON üretti. Araç VAR/YOK gözlemi hükmü değiştirmese de raporu makineye
+  bağlıyordu → gözlem kaldırıldı, sınıflandırma mimariye bağlandı. Kural artık testle
+  kilitli: commit'lenen raporda makine izi SIFIR (sahte `PATH` ile iki yönde ölçülür).
+- **Test:** +41 (`tests/unit/test_audit_regression.py`). Tam koşu: taban
+  **2223P/0F** → E0 ile **2264P/0F** (regresyon yok). `ruff check .` temiz.
+- **CI:** `backend` işine adım olarak eklendi; bekçiyi koşmakla yetinmez,
+  `git diff -- reports/audit_regression.json` ile commit'lenen ölçümün
+  bayatlamadığını da denetler (emsal: routing shadows adımı) ve kırmızıyı
+  **annotation** ile yüzeye çıkarır (log okunamadığında sessiz çökme olmasın).
+- **Ölçülmüş boşluk (bu PR'ın işi değil, kayda geçsin):** CHANGELOG'da FAZ E'nin
+  birleşmiş kalemleri (E2 · E5 · E6 · E7, PR #115) için **hiç kayıt yok**
+  (`grep -c 'FAZ E' CHANGELOG.md` → 0); FAZ E kabul kapısı 6 "CHANGELOG güncel"
+  şartı koşuyor. Bu dosyaya en son FAZ D · D3 yazılmış.
+
 ## Unreleased — 2026-10-07 — FAZ D · D3: medya adli hattı (indir · kare · yazı · eşleştir)
 
 - **D3 · MEDYA ADLİ HATTI TAMAM.** Dört yetenek omurgada:

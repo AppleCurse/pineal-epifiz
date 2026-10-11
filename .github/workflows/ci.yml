@@ -37,6 +37,34 @@ jobs:
         # kilitleyip 20 dakikada iptal ettiriyordu (yerel tam koşu ~100s).
         # Süre aşımı olan test artık TAKILMAZ, FAIL yazar.
         run: PYTHONPATH=$GITHUB_WORKSPACE pytest -q -p no:cacheprovider --timeout=300 --durations=25 --cov=agent_core --cov=backend --cov-report=term-missing:skip-covered --cov-fail-under=80
+      - name: Audit regression guard (E0 — 24 denetim bulgusu makine bekçisinde)
+        # [FAZ E · E0] docs/reports/JULES_DENETIM_2026-10-06.md 24 bulgu üretti ve
+        # her birine insan gözü için bir `DOĞRULA` komutu yazdı; hiçbiri makine
+        # tarafından koşulmuyordu. Bu adım o raporu ÇALIŞAN bekçiye çevirir:
+        # her bulgu statik / test-kapılı / doğrulanamaz olarak sınıflanır,
+        # `reports/audit_regression.json` üretilir ve KNOWN_OPEN dışında AÇILAN
+        # bir bulgu olursa exit 1 (regresyon). Liste bayatlarsa da exit 1 —
+        # yani onarılan bulgu kayda geçmek ZORUNDA (halı altına süpürme yok).
+        #
+        # [SESSİZ-ÇÖKME-YOK] Actions logları Azure blob'da tutulur ve her ortamdan
+        # okunamaz (bu adımın ilk denemesinde tam olarak bu oldu: "exit code 1"
+        # dışında hiçbir şey görünmüyordu). Bu yüzden başarısızlık AYRINTISI
+        # ayrıca workflow ANNOTATION'ı olarak yüzeye çıkarılır — annotation'lar
+        # api.github.com'dan okunabilir.
+        run: |
+          set +e
+          python scripts/audit_regression.py | tee /tmp/audit-guard.log
+          guard_rc=${PIPESTATUS[0]}
+          git diff -- reports/audit_regression.json > /tmp/audit-report.diff
+          if [ -s /tmp/audit-report.diff ]; then
+            blob=$(head -60 /tmp/audit-report.diff | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error title=audit-report-stale::Commit'lenen reports/audit_regression.json bayat — bekçi yeniden koşunca farklı ölçüm üretti. Diff:%0A${blob}"
+            guard_rc=1
+          fi
+          if [ "$guard_rc" -ne 0 ]; then
+            tail -40 /tmp/audit-guard.log
+          fi
+          exit $guard_rc
       - name: Verify routing shadows committed fresh
         run: |
           python scripts/generate_routing_shadows.py

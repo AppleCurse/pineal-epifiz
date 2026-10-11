@@ -72,7 +72,10 @@ export const onRequest = async (context: any) => {
 
   // v5.0: Agent Rack mesaj filtresi — agent_status_update, telemetry_update,
   // snapshot_update, result, log tipleri şeffaf iletilir. Hiçbir mesaj
-  // sessizce düşürülmez; sadece parse edilebilirse loglanır (debug).
+  // sessizce düşürülmez.
+  //
+  // [PROD AUDIT 2026-10-11 · P1] Bu fonksiyon TANIMLIYDI AMA HİÇ ÇAĞRILMIYORDU
+  // (ölü kod). Aşağıdaki hata ayıklama sayacı artık bunu GERÇEKTEN kullanır.
   const isAgentStatusMessage = (data: string): boolean => {
     try {
       const parsed = JSON.parse(data);
@@ -89,20 +92,46 @@ export const onRequest = async (context: any) => {
     }
   };
 
+  // [PROD AUDIT 2026-10-11 · P1] EDGE LOG'UNA İÇERİK YAZILMAZ.
+  //
+  // Ölçülen kusur: pompa, upstream->client yönündeki HER agent_status_update
+  // karesinin İLK 200 KARAKTERİNİ koşulsuz olarak Cloudflare edge loguna
+  // basıyordu (`console.log("[AgentRack] Forwarding: " + ev.data.slice(0,200))`).
+  // Bu kareler hedef kişi hakkında toplanan telemetriyi/ajan meta verisini
+  // taşır; yani üçüncü kişilerin kişisel verisi, operatörün kontrolü
+  // dışındaki bir sağlayıcının (Cloudflare) loglarına kopyalanıyordu. Projenin
+  // kendi tüzüğü (docs/PINEAL_TUZUK.md Madde 3 ve backend'deki redact_text
+  // disiplini) sır/içerik sızıntısını yasaklar; edge katmanı bu disiplinin
+  // dışında kalmıştı.
+  //
+  // Yeni davranış: hata ayıklama logu VARSAYILAN OLARAK KAPALI ve yalnız
+  // WS_DEBUG_LOG=1 ile açılır. Açıkken bile İÇERİK değil, yalnız SAYAÇ ve
+  // BOYUT yazılır (kaç kare, kaç bayt, tip dağılımı). Böylece canlı hata
+  // ayıklama yeteneği korunur, veri minimizasyonu bozulmaz.
+  const debugLog = String(context.env?.WS_DEBUG_LOG || "") === "1";
+  let forwardedFrames = 0;
+  let forwardedBytes = 0;
+  let agentStatusFrames = 0;
+
   const pump = (from: WebSocket, to: WebSocket, label: string) => {
     from.addEventListener("message", (ev: any) => {
       if (to.readyState !== WebSocket.OPEN) return;
       // Tüm mesajlar şeffaf iletilir — özellikle agent_status_update
       // Agent Rack slotlarının Ready/Active/Wait canlı değişimi için kritik
-      try {
-        if (label === "upstream->client" && typeof ev.data === "string") {
-          // Debug: agent status mesajı gelirse console'da görünsün (edge log)
-          if (ev.data.includes("agent_status_update")) {
-            // Cloudflare edge log — prod'da sadece bu tip loglanır
-            console.log(`[AgentRack] Forwarding: ${ev.data.slice(0, 200)}`);
-          }
+      if (label === "upstream->client") {
+        forwardedFrames += 1;
+        if (typeof ev.data === "string") {
+          forwardedBytes += ev.data.length;
+          if (isAgentStatusMessage(ev.data)) agentStatusFrames += 1;
         }
-      } catch {}
+        if (debugLog && forwardedFrames % 50 === 0) {
+          // İÇERİK YOK: yalnız sayaç/boyut. Payload asla loglanmaz.
+          console.log(
+            `[AgentRack] frames=${forwardedFrames} bytes=${forwardedBytes} ` +
+              `agentStatus=${agentStatusFrames}`,
+          );
+        }
+      }
       to.send(ev.data);
     });
     from.addEventListener("close", guard(to));

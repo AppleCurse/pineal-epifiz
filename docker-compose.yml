@@ -39,12 +39,43 @@ services:
       replicas: 1
     restart: unless-stopped
 
-  # ─── Agent Rack Workers — 12 bağımsız ajan servisi ───────────────
+  # ─── Ajan CANLILIK İŞARETÇİLERİ (liveness beacon) — 12 yuva ─────────────
+
+  # [AUDIT 2026-10-07 · Madde 3] BU SERVİSLER ANALİZ YÜRÜTMEZ.
+
+  #
+
+  # Eski adları `agent-*` idi ve "12 bağımsız ajan servisi" diye
+
+  # belgelenmişti; bu, her konteynerin kendi başına analiz çalıştırdığı
+
+  # izlenimini veriyordu. GERÇEK: analizleri `PinealExecutor` SÜREÇ İÇİNDE
+
+  # (in-process) yürütür; bu konteynerler yalnızca "yuva boşta ve canlı"
+
+  # sinyalini KENDİ kanallarına (`pineal:agent:beacon`) yayınlar.
+
+  #
+
+  # Eski kod ayrıca her 30 saniyede bir koşulsuz `Ready` basıyordu; yani
+
+  # hiçbir ajan çalışmadan operasyonel durum UYDURUYORDU. Artık ajan durum
+
+  # kanalına (`pineal:agent:status`) YAZILMAZ, dolayısıyla yürütücünün
+
+  # yazdığı gerçek Active/Ready/Done/Error geçişleri de EZİLMEZ.
+
+  # Ayrıntı: agent_core/workers/agent_worker.py (modül docstring'i).
+
+  #
+
+  # Aynı imaj, farklı AGENT_ID env ile çalışır.
+
   # Her biri Redis Pub/Sub üzerinden durum yayınlar: Ready/Active/Wait
   # Backend /api/agents/status üzerinden de POST edebilirler
   # Aynı imaj, farklı AGENT_ID env ile çalışır
 
-  agent-mirror-truth:
+  beacon-mirror-truth:
     build: { context: . }
     depends_on: [redis]
     environment:
@@ -57,7 +88,7 @@ services:
       - pineal_memory:/app/memory
       - pineal_cache:/app/cache
 
-  agent-autonomous-verifier:
+  beacon-autonomous-verifier:
     build: { context: . }
     depends_on: [redis]
     environment:
@@ -70,7 +101,7 @@ services:
       - pineal_memory:/app/memory
       - pineal_cache:/app/cache
 
-  agent-human-behavior:
+  beacon-human-behavior:
     build: { context: . }
     depends_on: [redis]
     environment:
@@ -83,7 +114,7 @@ services:
       - pineal_memory:/app/memory
       - pineal_cache:/app/cache
 
-  agent-passion-mapper:
+  beacon-passion-mapper:
     build: { context: . }
     depends_on: [redis]
     environment:
@@ -96,7 +127,7 @@ services:
       - pineal_memory:/app/memory
       - pineal_cache:/app/cache
 
-  agent-friction-detector:
+  beacon-friction-detector:
     build: { context: . }
     depends_on: [redis]
     environment:
@@ -109,7 +140,7 @@ services:
       - pineal_memory:/app/memory
       - pineal_cache:/app/cache
 
-  agent-cognitive-profiler:
+  beacon-cognitive-profiler:
     build: { context: . }
     depends_on: [redis]
     environment:
@@ -122,7 +153,7 @@ services:
       - pineal_memory:/app/memory
       - pineal_cache:/app/cache
 
-  agent-resonance-calculator:
+  beacon-resonance-calculator:
     build: { context: . }
     depends_on: [redis]
     environment:
@@ -135,7 +166,7 @@ services:
       - pineal_memory:/app/memory
       - pineal_cache:/app/cache
 
-  agent-pattern-interrupt:
+  beacon-pattern-interrupt:
     build: { context: . }
     depends_on: [redis]
     environment:
@@ -148,7 +179,7 @@ services:
       - pineal_memory:/app/memory
       - pineal_cache:/app/cache
 
-  agent-osint-investigator:
+  beacon-osint-investigator:
     build: { context: . }
     depends_on: [redis]
     environment:
@@ -161,7 +192,7 @@ services:
       - pineal_memory:/app/memory
       - pineal_cache:/app/cache
 
-  agent-authenticity-auditor:
+  beacon-authenticity-auditor:
     build: { context: . }
     depends_on: [redis]
     environment:
@@ -174,7 +205,7 @@ services:
       - pineal_memory:/app/memory
       - pineal_cache:/app/cache
 
-  agent-depth-analyst:
+  beacon-depth-analyst:
     build: { context: . }
     depends_on: [redis]
     environment:
@@ -187,7 +218,7 @@ services:
       - pineal_memory:/app/memory
       - pineal_cache:/app/cache
 
-  agent-resonance-synthesizer:
+  beacon-resonance-synthesizer:
     build: { context: . }
     depends_on: [redis]
     environment:

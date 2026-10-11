@@ -19,8 +19,8 @@
                │                                      │                                  │
                └──────────────────────┬───────────────┴──────────────────────────────────┘
                                       │
-                         [ ⚡ 12 OTONOM AJAN MATRİSİ ]
-                       Docker + Redis Pub/Sub Canlı Rack
+                         [ ⚡ 12 UZMAN ANALİZ ROLÜ ]
+                  Orkestratör süreç içinde yürütür · Canlı Rack
                                       │
                          [ ⚔️ TAKTİK MUHAREBE MASASI ]
                        100% Şeffaf Adli Teftiş & Kara Kutu
@@ -66,14 +66,14 @@ PINEAL-HERETIC v5.1, operatöre hem derin sinematik sezgi hem de cerrahi şeffaf
 - **Kasa Güvenlik Mandalı (Vault LED):**
   - Sol alttaki interaktif mandal. Yeşil (`OPEN`) ve kırmızı (`VAULT LOCKED`) durumları arasında anında kilit değiştirir (`POST /api/vault/status`).
 - **Canlı Agent Rack Yuvası (`AgentRack.svelte`):**
-  - Sağ taraftan açılıp kapanabilen 12 ajanlık rack. Buradaki herhangi bir ajana tıklandığında sistem otomatik olarak Muharebe Masası'na geçer ve o ajanı doğrudan röntgene alır.
+  - Sağ taraftan açılıp kapanabilen 12 rollü analiz rack'i. Buradaki herhangi bir ajana tıklandığında sistem otomatik olarak Muharebe Masası'na geçer ve o ajanı doğrudan röntgene alır.
 
 ---
 
 ### MOD 2: Taktik Muharebe Masası (`TacticalWarRoom.svelte`)
 *100% Şeffaf, Gerçek Zamanlı Adli Teftiş ve Müdahale Güvertesi.*
 
-1. **12 Ajan Kumanda Matrisi (Sol Kolon):**
+1. **12 Rol Kumanda Matrisi (Sol Kolon):**
    - 12 ajanın tamamını anlık durum pilleriyle (`ACTIVE`, `DONE`, `HALTED`, `WAIT`) gösterir.
    - Her ajanın gerçek zamanlı güven barı ve o anda ne yaptığına dair Türkçe operasyonel adım kartları (örn: *"LinkedIn ve Instagram profilleri bağlandı"*, *"3 jürili panelce incelendi"*).
 2. **Hedef & Açık Kanıt Radarı (Orta Kolon):**
@@ -172,9 +172,18 @@ PillarOrchestrator ───┼── StrataEngine     (Zaman İçinde Değişen
 
 ---
 
-## 5. 12 Otonom Ajan Kanonik Boru Hattı
+## 5. 12 Uzman Analiz Rolü — Kanonik Boru Hattı
 
-Sistemdeki 12 uzman ajan, Docker ve Redis Pub/Sub üzerinden asenkron olarak haberleşir:
+> **Mimari not (2026-10-07 denetimi, Madde 3).** 12 rol, Docker'da birbirinden
+> bağımsız çalışan **analiz yürütücüleri değildir**. Rolleri çekirdek
+> orkestratör (`PinealExecutor`) **süreç içinde** (in-process) sırayla yürütür
+> ve gerçek `active / ready / wait` geçişlerini yazar. `docker-compose.yml`
+> içindeki 12 `beacon-*` servisi ise yalnızca **canlılık işaretçisidir**
+> (liveness beacon): "yuva ayakta ve boşta" sinyalini kendi kanalına
+> (`pineal:agent:beacon`) yayınlar; analiz yürütmez ve ajan durumunu **ezmez**.
+
+Sistemdeki 12 uzman rol orkestratör tarafından yürütülür; durumları Redis
+Pub/Sub ve WebSocket üzerinden canlı olarak Rack'e yansır:
 
 ```
 [ OSINT Investigator ] ──> [ 7-Pillar Forensics ] ──> [ Mirror of Truth ]
