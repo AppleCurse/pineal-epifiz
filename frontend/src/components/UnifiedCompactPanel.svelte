@@ -35,13 +35,9 @@
     });
   }
 
-  // [PROD AUDIT 2026-10-11 · P2] Svelte store UPDATER'I SAF OLMALIDIR.
-  // Eski kod `sigintEngaged.update(v => {...})` içinde ses çalıyor, log
-  // yazıyor ve AĞA İSTEK ATIYORDU (cancelAnalysis, await'siz + catch'siz).
-  // Updater içinde yan etki iki somut risk taşır: (a) Svelte updater'ı birden
-  // çok çağırırsa ağ isteği de ses de ÇOĞALIR, (b) reddedilen promise kimse
-  // tutmadığı için konsola unhandled rejection düşer. Yan etkiler updater
-  // DIŞINA alındı; durum geçişi `get` + `set` ile deterministik.
+  // Svelte store updater'ı SAF olmalıdır: ses/log/ağ isteği gibi yan etkiler
+  // updater DIŞINDA yürütülür. Durum geçişi `get` + `set` ile deterministik;
+  // iptal sonucu `await` edilir ve başarısızlık loglanır.
   async function toggleSigint() {
     const next = !get(sigintEngaged);
     sigintEngaged.set(next);
@@ -83,11 +79,9 @@
     });
   }
 
-  // [PROD AUDIT 2026-10-11 · P1] ACİL STOP artık SONUCU BEKLER ve SONUCU
-  // SÖYLER. Eski sürüm "görev iptal emri verildi" logunu istek GÖNDERİLMEDEN
-  // basıyor ve `cancelAnalysis()`'i await/catch etmiyordu: iptal 401/429/503
-  // ile başarısız olsa bile operatör başarılı bir acil stop izliyordu ve
-  // görev (LLM harcaması + hedefe yönelik tarama) arka planda sürüyordu.
+  // ACİL STOP: iptal isteğini gönderir ve SONUCUNU bekler. Başarı/başarısızlık
+  // logu backend'in gerçek yanıtına göre yazılır; hat boştayken (iptal edilecek
+  // görev yokken) istek gönderilmez.
   async function emergencyStop() {
     playHalt();
     const active = get(isProcessing) || get(taskStatus)?.status === 'processing';
@@ -369,18 +363,14 @@
 
       // [UI-BRIDGE] Chat ağızları: tüm sekmeler aynı TEK /api/aspasia/chat
       // ağzını kullanır.
-      // [PROD AUDIT 2026-10-11 · P2] ÖLÜ KOŞUL KALDIRILDI. Eski satır:
+      // Sohbet ucu TEPTİR: tüm sekmeler aynı ağzı kullanır; seçili ajan sekmesi
+      // GÖRSEL bağlamdır, istek gövdesine alan olarak eklenmez. Kaldırılan ölü
+      // ternary iki kolu da aynı uca bağlıyordu:
       //     const chatUrl = activeAgentId === 'ASPASIA' ? '/api/aspasia/chat'
       //                                                 : '/api/aspasia/chat';
-      // İki kol BİREBİR aynıydı: ternary hiçbir şey seçmiyordu. Daha önemlisi
-      // yorum "sekme yalnız bağlam değiştirir" diyordu ama bağlam GÖVDEDE
-      // TAŞINMIYORDU — AspasiaChatPayload (backend/api.py) yalnız
-      // client_id/user_message/model_override/image_data kabul eder, sekme
-      // alanı YOKTUR. Yani seçili ajan sekmesi isteği HİÇ etkilemiyordu.
-      // Uydurma bir alan göndermek yerine gerçek davranış açıkça yazılır:
-      // sekme GÖRSEL bağlamdır, sohbet ucu tektir. Sekme gerçekten sunucuya
-      // taşınacaksa AspasiaChatPayload'a alan EKLENEREK yapılmalıdır (sessiz
-      // sözleşme farkı bırakılmaz — bkz. docs/PINEAL_TUZUK.md giriş).
+      // AspasiaChatPayload (backend/api.py) yalnız client_id / user_message /
+      // model_override / image_data kabul eder; sekme sunucuya taşınacaksa
+      // payload'a alan EKLENMELİDİR.
       const chatUrl = '/api/aspasia/chat';
       const payload: any = { client_id: $clientId, user_message: currentInput };
       if (currentImage) payload.image_data = currentImage;
@@ -449,28 +439,10 @@
     }
   }
 
-  // [PROD AUDIT 2026-10-11 · P1] İPTAL, SONUCU DOĞRULANAN BİR İŞLEMDİR.
-  //
-  // Eski kod:
-  //     async function cancelAnalysis() {
-  //       ...
-  //       await apiFetch(`/api/tasks/${activeTaskId}/cancel?...`, {method:'POST'});
-  //     }
-  // ve çağıranlar (emergencyStop, toggleSigint) bunu `await` ETMEDEN,
-  // `.catch()` BAĞLAMADAN çağırıyordu. Üç ölçülen sonuç:
-  //   1. YAKALANMAMIŞ PROMISE REJECTION: ağ hatası / 401 / 429 / 503
-  //      durumunda reddedilen promise kimse tutmuyordu -> konsola unhandled
-  //      rejection düşüyordu.
-  //   2. ARAYÜZ YALAN SÖYLÜYORDU: `playHalt()` sesi ve "ACİL STOP: görev iptal
-  //      emri verildi" logu istekten ÖNCE ve sonuçtan BAĞIMSIZ basılıyordu;
-  //      `res.ok` hiç kontrol edilmiyordu. Yani 401/404/429/503 bile
-  //      "başarılı acil stop" gibi görünüyordu.
-  //   3. GÖREV ÇALIŞMAYA DEVAM EDİYORDU: bu sistem iptal edilmeyen görevde
-  //      LLM bütçesi harcamayı ve hedefe karşı OSINT/tarama sürdürmeyi
-  //      sürdürür. Operatörün kill-switch'i SESSİZCE başarısız oluyordu.
-  //
-  // Yeni sözleşme: true = backend iptali KABUL ETTİ; false = iptal EDİLEMEDİ
-  // ve görev hâlâ çalışıyor olabilir. Başarı iddiası yalnız 2xx'te basılır.
+  // İPTAL, sonucu doğrulanan bir işlemdir: başarı iddiası yalnız `res.ok`
+  // (2xx) ile basılır. Dönüş sözleşmesi: true = backend iptali KABUL ETTİ;
+  // false = iptal EDİLEMEDİ (görev hâlâ çalışıyor olabilir). Hata durumunda
+  // HTTP status ve gövdedeki hata kodu loglanır.
   async function cancelAnalysis(): Promise<boolean> {
     const activeTaskId = $taskStatus?.task_id;
     if (!activeTaskId) return false;
