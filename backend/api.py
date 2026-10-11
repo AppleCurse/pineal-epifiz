@@ -53,6 +53,7 @@ from agent_core.services.unified_router import RoutingStrategy
 from agent_core.shadow.shadow_executor import ShadowExecutor
 from agent_core.utils.security import (
     SecurityConfigurationError,
+    principal_of_request,
     redact_structure,
     redact_text,
     safe_child_path,
@@ -327,34 +328,57 @@ async def auth_middleware(request: Request, call_next):
         # client_id'yi anahtar olarak kullanıyordu; client_id her istekte
         # değiştirilince sınır hiç devreye girmiyordu (ölçülen: 200/200 geçti).
         request.state.rate_identity = identity_hash
-        if path.startswith("/api/experimental/"):
-            if not rate_limit(f"experimental:{identity_hash}", "experimental"):
-                return JSONResponse(
-                    {"error": {"code": "RATE_LIMITED", "message": "Experimental endpoint rate limit exceeded"}},
-                    status_code=429,
-                )
-        elif is_openai and not rate_limit(f"openai:{identity_hash}", "openai"):
+        # [PROD AUDIT 2026-10-11 · P0] OPERATÖR KİMLİĞİ: token -> principal.
+        # Oda sahipliği mühürü (get_room) bu değeri ContextVar'dan okur.
+        # Kimlik doğrulama kapalıysa None -> mühür uygulanmaz (development).
+        request.state.principal = principal_of_request(presented_token)
+        _principal_token = _set_principal(request.state.principal)
+        try:
+            return await _authorized_call_next(
+                request, call_next, path, is_api, is_openai, identity_hash
+            )
+        finally:
+            _reset_principal(_principal_token)
+    return await call_next(request)
+
+
+async def _authorized_call_next(
+    request: Request, call_next, path: str, is_api: bool, is_openai: bool,
+    identity_hash: str,
+):
+    """Hız sınırı kovası + handler çağrısı.
+
+    Ayrı fonksiyon: ContextVar ömrü. principal, handler çalışırken BAĞLI
+    kalmalı, istek bitince GERİ ALINMALIDIR (çağırandaki try/finally).
+    """
+    if path.startswith("/api/experimental/"):
+        if not rate_limit(f"experimental:{identity_hash}", "experimental"):
             return JSONResponse(
-                _openai_error(
-                    "OpenAI-compatible endpoint rate limit exceeded",
-                    "rate_limit_error",
-                    "rate_limit_exceeded",
-                ),
+                {"error": {"code": "RATE_LIMITED", "message": "Experimental endpoint rate limit exceeded"}},
                 status_code=429,
             )
-        # [AUDIT P1-18b] Genel kova yalnızca MUTASYON yöntemlerine uygulanır.
-        # Tek kova tüm yöntemleri paylaşsaydı ucuz GET'ler (telemetri, görev
-        # listesi) mutasyonlar için gereken bütçeyi tüketiyordu — ölçülen:
-        # 305 GET sonrası aynı kimlik POST'larında erken 429.
-        if (
-            is_api
-            and request.method not in ("GET", "HEAD", "OPTIONS")
-            and not rate_limit(f"api:{identity_hash}", "api")
-        ):
-            return JSONResponse(
-                {"error": {"code": "RATE_LIMITED", "message": "API rate limit exceeded"}},
-                status_code=429,
-            )
+    elif is_openai and not rate_limit(f"openai:{identity_hash}", "openai"):
+        return JSONResponse(
+            _openai_error(
+                "OpenAI-compatible endpoint rate limit exceeded",
+                "rate_limit_error",
+                "rate_limit_exceeded",
+            ),
+            status_code=429,
+        )
+    # [AUDIT P1-18b] Genel kova yalnızca MUTASYON yöntemlerine uygulanır.
+    # Tek kova tüm yöntemleri paylaşsaydı ucuz GET'ler (telemetri, görev
+    # listesi) mutasyonlar için gereken bütçeyi tüketiyordu — ölçülen:
+    # 305 GET sonrası aynı kimlik POST'larında erken 429.
+    if (
+        is_api
+        and request.method not in ("GET", "HEAD", "OPTIONS")
+        and not rate_limit(f"api:{identity_hash}", "api")
+    ):
+        return JSONResponse(
+            {"error": {"code": "RATE_LIMITED", "message": "API rate limit exceeded"}},
+            status_code=429,
+        )
     return await call_next(request)
 
 
@@ -429,6 +453,13 @@ RATE_LIMITS = {
     # [FAZ D · D4] Dil tespiti/çeviri: tespit saf hesaptır ama çeviri yerel
     # motor çalıştırır; ikisi de sınırsız istek kabul etmez.
     "language": (60, 60),
+    # [PROD AUDIT 2026-10-11 · P1] WebSocket EL SIKIŞMA kovası. /ws/* eskiden
+    # auth_middleware kapsamı DIŞINDAYDI -> SINIRSIZDI; accept() de auth'tan
+    # önce olduğundan kimliksiz istemci sınırsız soket açıp her birini kimlik
+    # penceresinde tutabiliyordu. Kova YENİ BAĞLANTI hızını sınırlar (açık
+    # soket sayısını değil): meşru arayüz tek soket açar, kopmada yeniden
+    # bağlanır. Ayrıntı: backend/routes/websocket.py.
+    "ws": (30, 60),
 }  # (request count, window seconds)
 class _RateBucket:
     """Kayan pencere olayları + BU kovaya ait pencere süresi.
@@ -557,6 +588,23 @@ def rate_limit(key: str, bucket: str) -> bool:
     return True
 
 app.state.rooms = {}  # client_id -> {"executor": PinealExecutor, "vault": {}, "websockets": set()}
+
+# --- [PROD AUDIT 2026-10-11 · P0] Oda SAHİPLİĞİ (IDOR kapatması) -------------
+# client_id istemcinin seçtiği bir dizedir; TEK BAŞINA güvenlik sınırı değildir.
+# Ölçülen IDOR'un ayrıntılı PoC dökümü ve kural kümesi:
+# `backend/security/principal.py` (modül docstring'i) — TEK kaynak.
+# Kapatma: token -> principal -> oda o kimliğe MÜHÜRLÜ. İsimler buradan
+# YENİDEN İHRAÇ edilir ki `from backend.api import RoomForbiddenError` bozulmasın.
+from backend.routes.websocket import run_telemetry_socket
+from backend.security.principal import (  # noqa: F401  (geriye dönük ihracat)
+    forbidden_body as forbidden_body,
+    RoomForbiddenError as RoomForbiddenError,
+    bind_principal as _set_principal,
+    current_principal as _get_principal,
+    enforce_room_ownership as _enforce_room_ownership,
+    reset_principal as _reset_principal,
+)
+
 # [ÇOCUK KİLİDİ — API girişi] Operatörün çocuk BEYANI burada yaşar: oda
 # YAŞAM DÖNGÜSÜNDEN BAĞIMSIZDIR. Bilinçli: kilit "küresel ve istisnasız"dır;
 # odaya bağlansaydı boşta kalan oda tahliye edilince (30 dk) beyan sessizce
@@ -926,6 +974,24 @@ async def room_capacity_handler(request: Request, exc: RoomCapacityExceeded):
     return JSONResponse(body, status_code=503)
 
 
+@app.exception_handler(RoomForbiddenError)
+async def room_forbidden_handler(request: Request, exc: RoomForbiddenError):
+    """[PROD AUDIT 2026-10-11 · P0] IDOR reddi -> 403 (gövde oda adı İÇERMEZ).
+
+    403 bilinçli (404 değil): operatör kendi client_id'sini yanlış yazdığında
+    sessizce YENİ bir oda yaratıldığını sanmasın. Gövde/kod üretimi
+    `backend/security/principal.py::forbidden_body` içindedir (tek sözleşme).
+    """
+    logger.warning("ROOM_FORBIDDEN path=%s", _secure_path(request))
+    return JSONResponse(
+        forbidden_body(
+            openai_style=_secure_path(request).startswith("/v1/"),
+            error_factory=_openai_error,
+        ),
+        status_code=403,
+    )
+
+
 # [FIX #7] _close_room senkron bir helper (evictor/sweeper'dan await
 # edilmez). Browser kapatma async olduğundan detached task + done-callback
 # ile garanti edilir; done-callback seti büyütmekten de korur.
@@ -1004,6 +1070,16 @@ def get_room(client_id: str) -> dict:
     now = time.monotonic()
     _evict_rooms(now)
     _rooms_last_seen[client_id] = now
+    # [PROD AUDIT 2026-10-11 · P0] ODA SAHİPLİĞİ MÜHRÜ — IDOR kapatması.
+    # Kural kümesi `backend/security/principal.py::enforce_room_ownership`:
+    #   principal None -> auth kapalı (development): mühür uygulanmaz.
+    #   oda sahipsiz   -> çağıran mühürler (eski sürümden geçiş).
+    #   oda başkasına  -> RoomForbiddenError (403; gövde oda adı İÇERMEZ).
+    principal = _get_principal()
+    if _enforce_room_ownership(
+        client_id, app.state.rooms.get(client_id), principal
+    ) == "forbidden":
+        raise RoomForbiddenError(client_id)
     if client_id not in app.state.rooms:
         if len(app.state.rooms) >= _MAX_ROOMS:
             raise RoomCapacityExceeded(
@@ -1122,6 +1198,7 @@ def get_room(client_id: str) -> dict:
             # [KASA MANDALI] Oda kendi kimliğini taşır: tarayıcı oturumu ve
             # arama motoru mandalı bu kimlikle interlock'a bağlanır.
             "client_id": client_id,
+            "_owner": principal,  # [P0] odayı oluşturan OPERATÖR KİMLİĞİ
             "executor": executor,
             "vault": vault,
             "websockets": set(),
@@ -2081,38 +2158,23 @@ def sync_snapshot(client_id: str, snapshot: Any):
 
 @app.websocket("/ws/{client_id}")
 async def websocket_endpoint(websocket: WebSocket, client_id: str):
-    try:
-        posture = security_posture()
-    except SecurityConfigurationError:
-        await websocket.close(code=1013)
-        return
+    """Canlı telemetri soketi — ince rota sarmalayıcısı.
 
-    await websocket.accept()
-    if posture["auth_required"]:
-        try:
-            auth_message = await asyncio.wait_for(websocket.receive_json(), timeout=5.0)
-        except (asyncio.TimeoutError, ValueError):
-            await websocket.close(code=1008)
-            return
-        if auth_message.get("type") != "auth" or not token_matches(auth_message.get("token")):
-            await websocket.close(code=1008)
-            return
-        await websocket.send_json({"type": "auth_ok"})
+    Oturum mantığı `backend/routes/websocket.py` modülündedir
+    (API_MONOLITH_SPLIT_PLAN §3 satır 66'nın öngördüğü modül); ölçülen üç
+    kusur — /ws/* hız sınırı yoktu, oda sahipliği yoktu, auth_ok sahiplikten
+    önce gidiyordu — orada kapatılır. Bağımlılıklar ENJEKTE edilir: modül
+    `backend.api`'yi içe aktarmaz (dairesel bağımlılık yok).
+    """
+    await run_telemetry_socket(
+        websocket,
+        client_id,
+        get_room=get_room,
+        rate_limit=rate_limit,
+        room_capacity_error=RoomCapacityExceeded,
+        http_exception=HTTPException,
+    )
 
-    room = get_room(client_id)
-    room["websockets"].add(websocket)
-    try:
-        while True:
-            await websocket.receive_text()
-    except Exception:
-        # [AUDIT P1-18c] Eskiden bare `except:` idi. Ölçülen: bare except
-        # BaseException'ı da yakaladığı için asyncio.CancelledError yutuluyor
-        # ve görev iptal edilmiş sayılmıyordu (task.cancelled() == False).
-        # `except Exception:`'a geçmek tek başına YETMEZ: kontrol ölçümünde
-        # iptal durumunda temizlik kayboldu. Bu yüzden temizlik finally'de.
-        logger.debug("WebSocket bağlantısı koptu: %s", client_id)
-    finally:
-        room["websockets"].discard(websocket)
 
 class InitiatePayload(BaseModel):
     # [AUDIT 2026-09-11 P2] Public /api/initiate gövdesi sınırsız string
