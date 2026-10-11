@@ -131,10 +131,125 @@ def security_posture() -> dict:
 
 
 def token_matches(candidate: Optional[str], expected: Optional[str] = None) -> bool:
-    expected = os.getenv("PINEAL_TOKEN", "") if expected is None else expected
+    """Kimlik doğrulama kararı.
+
+    ``expected`` AÇIKÇA verildiyse (testler ve iç çağrılar) davranış eskisiyle
+    birebir aynıdır: tek değerle sabit zamanlı karşılaştırma.
+
+    ``expected`` verilmediyse (HTTP/WS auth hattı) kök token (``PINEAL_TOKEN``)
+    VEYA tanımlı herhangi bir operatör token'ı (``PINEAL_OPERATOR_TOKENS``)
+    kabul edilir.
+
+    [PROD AUDIT 2026-10-11 · P0] Bu genişletme OLMADAN çok-operatörlü kimlik
+    çalışmıyordu: ``resolve_principal`` operatör token'ını doğru kimliğe
+    çözüyordu ama auth kapısı yalnız ``PINEAL_TOKEN``'ı kabul ettiği için
+    operatörler 401 alıyordu (PoC ile ölçüldü: alice 401). Yani oda sahipliği
+    mühürü hiç devreye giremiyordu. ``PINEAL_OPERATOR_TOKENS`` tanımsızken
+    (testler, tek-token dağıtım) sonuç eskisiyle aynıdır.
+    """
+    if expected is None:
+        if not candidate:
+            return False
+        return resolve_principal(candidate) is not None
     if not candidate or not expected:
         return False
     return secrets.compare_digest(candidate.encode("utf-8"), expected.encode("utf-8"))
+
+
+# --- [PROD AUDIT 2026-10-11 · P0] Operatör kimliği (principal) --------------
+# NEDEN: Tek bir PINEAL_TOKEN tüm dağıtımın TEK kimliğiydi. Oda (room) anahtarı
+# olan client_id ise istemcinin serbestçe seçtiği bir dizeydi ve SUNUCUDA HİÇBİR
+# SAHİPLİK BAĞI YOKTU. Ölçülen sonuç (canlı PoC, 2026-10-11): aynı token'ı
+# bilen ikinci bir operatör client_id'yi değiştirerek başka bir operatörün
+#   * görev listesini ve telemetrisini OKUYABİLİYOR,
+#   * /ws/{client_id} üzerinden CANLI telemetriyi DİNLEYEBİLİYOR,
+#   * DELETE /api/tasks/{id} ile kanıt dosyasını DİSKTEN SİLEBİLİYOR
+#     (yanıt: memory_file_deleted=true),
+#   * POST /api/vault ile kurbanın LLM anahtarını/oturum çerezini
+#     DEĞİŞTİREBİLİYORDU.
+# Bu bir IDOR'dur (Insecure Direct Object Reference). Kapatmak için token'a
+# GERÇEK bir kimlik bağlanır: her operatör kendi token'ını alır, token ->
+# principal çözülür ve oda o principal'a mühürlenir.
+#
+# GERİYE DÖNÜK UYUM: PINEAL_TOKEN aynen çalışmaya devam eder (principal="root").
+# PINEAL_OPERATOR_TOKENS tanımlı DEĞİLSE davranış bugünküyle birebir aynıdır;
+# yalnızca ek operatör token'ları tanımlandığında sahiplik ayrışır.
+_OPERATOR_TOKEN_ENV = "PINEAL_OPERATOR_TOKENS"
+_ROOT_PRINCIPAL = "root"
+
+
+def _operator_tokens() -> tuple[tuple[str, str], ...]:
+    """PINEAL_OPERATOR_TOKENS -> ((principal, token), ...)
+
+    Biçim: virgülle ayrılmış girdiler; her girdi ``etiket:token`` ya da çıplak
+    ``token`` (etiket otomatik ``op<N>`` olur). Etiket ``[A-Za-z0-9_.-]+``.
+    Boş/bozuk girdiler SESSİZCE KABUL EDİLMEZ ama diğerlerini de düşürmez:
+    hatalı girdi atlanır ve loglanır (fail-safe: yanlış yazılmış bir satır
+    bütün operatör listesini kullanılamaz hale getirmemeli).
+    """
+    raw = os.getenv(_OPERATOR_TOKEN_ENV, "")
+    if not raw or not raw.strip():
+        return ()
+    out: list[tuple[str, str]] = []
+    for index, entry in enumerate(raw.split(",")):
+        entry = entry.strip()
+        if not entry:
+            continue
+        label, separator, value = entry.partition(":")
+        if separator and value.strip():
+            principal, token = label.strip(), value.strip()
+            if not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", principal):
+                logger.warning(
+                    "OPERATOR_TOKEN_REJECTED: geçersiz etiket (girdi #%d); "
+                    "yalnız [A-Za-z0-9_.-]{1,64} kabul edilir", index,
+                )
+                continue
+        else:
+            # Çıplak token: etiket yok -> konuma göre kararlı ad üret.
+            principal, token = f"op{index}", entry
+        if len(token) < 8:
+            logger.warning(
+                "OPERATOR_TOKEN_REJECTED: token çok kısa (girdi #%d, <8 karakter)",
+                index,
+            )
+            continue
+        out.append((principal, token))
+    return tuple(out)
+
+
+def resolve_principal(candidate: Optional[str]) -> Optional[str]:
+    """Sunulan token'ı bir OPERATÖR KİMLİĞİNE çözer; eşleşme yoksa ``None``.
+
+    Kimlik doğrulama kararı için ``token_matches`` kullanılmaya devam eder;
+    bu fonksiyon yalnız "HANGİ operatör?" sorusunu yanıtlar (oda sahipliği).
+    Karşılaştırmalar ``secrets.compare_digest`` ile sabit zamanlıdır.
+    """
+    if not candidate:
+        return None
+    candidate_bytes = candidate.encode("utf-8")
+    root_token = os.getenv("PINEAL_TOKEN", "")
+    if root_token and secrets.compare_digest(candidate_bytes, root_token.encode("utf-8")):
+        return _ROOT_PRINCIPAL
+    for principal, token in _operator_tokens():
+        if secrets.compare_digest(candidate_bytes, token.encode("utf-8")):
+            return principal
+    return None
+
+
+def principal_of_request(candidate: Optional[str]) -> Optional[str]:
+    """Kimlik doğrulama KAPALIYSA ``None`` (geliştirme), açıkken principal.
+
+    ``None`` -> sahiplik mühürü uygulanmaz (bugünkü davranış). Bu yalnız
+    development modunda olur; production'da auth fail-closed zorunludur
+    (bkz. ``security_posture``), dolayısıyla principal daima doludur.
+    """
+    try:
+        posture = security_posture()
+    except SecurityConfigurationError:
+        return None
+    if not posture.get("auth_required"):
+        return None
+    return resolve_principal(candidate)
 
 
 def validate_identifier(value: str, *, field: str = "identifier") -> str:
