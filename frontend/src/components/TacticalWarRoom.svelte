@@ -106,7 +106,7 @@
       return 'Sırada bekliyor';
     }
     if (run.status === 'halted') {
-      return `DURDU: ${run.error_message || 'Düşük kanıt'}`;
+      return `DURDU: ${run.error_message || 'Hedefte yeterli bilgi bulunamadı'}`;
     }
     if (run.status === 'completed_no_decision') {
       // Koşu tamam ama KARAR yok: güven uydurulmaz, ölçülen değer gösterilir.
@@ -199,7 +199,7 @@
         })
       });
     } catch (e: any) {
-      console.error('Mission launch failed:', e);
+      console.error('Sistem Görevi Başlatamadı:', e);
       isProcessing.set(false);
     }
   }
