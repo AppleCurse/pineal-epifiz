@@ -73,9 +73,12 @@ Kimlik zinciri (ölçüldü):
 
 ---
 
-## 4. ⚠ CANLIYA ÇIKMADAN ÖNCE BİLİNMESİ GEREKEN AÇIK P0
+## 4. P0 — kanıt deposu oda başına ayrışmıyordu → **KAPATILDI (2026-10-12)**
 
-**Oda mührü çalışıyor, ama kanıt deposu oda başına AYRIŞMIYOR.**
+**Durum: kapatıldı.** Kalıcı `task_id → principal` sahipliği eklendi; ölçülen
+PoC artık `403 ROOM_FORBIDDEN` dönüyor ve kanıt diskte kalıyor.
+
+### Ölçülen orijinal kusur
 
 Kök neden: görev kayıtları `CanonicalMemory(storage_path)` altında **yalnız
 `task_id` ile anahtarlanmış düz bir dosya alanıdır**
@@ -83,9 +86,10 @@ Kök neden: görev kayıtları `CanonicalMemory(storage_path)` altında **yalnı
 `safe_child_path(storage_path, f"{task_id}.json")`), ve `storage_path`
 `os.getenv("PINEAL_MEMORY_PATH", "./memory/")` değerinden gelir
 (`agent_core/services/hindsight_memory.py:326`). Yani **tüm odalar aynı klasörü
-paylaşır**; kayıtta oda/operatör damgası yoktur.
+paylaşır**; kayıtta oda/operatör damgası yoktu. Oda mührü bu yüzden yalnız ODA
+ADI sınırını koruyordu.
 
-Ölçülen canlı PoC (production modu, iki ayrı operatör token'ı):
+Ölçülen canlı PoC (production modu, iki ayrı operatör token'ı) — kapatmadan önce:
 
 ```
 alice room tasks BEFORE: ['op_20261012021906_296645f1', 'op_20261012022612_1f843326']
@@ -95,30 +99,41 @@ alice room tasks AFTER : ['op_20261012022612_1f843326']
 disk: memory/op_20261012021906_296645f1.json  →  artık yok
 ```
 
-Yani Bob, **kendi** `client_id`'sini kullanarak Alice'in kanıt dosyasını diskten
-kalıcı silebiliyor. `DELETE /api/tasks/{task_id}` (`backend/api.py:5947`)
-`get_room(client_id)` ile yalnız ÇAĞIRANIN odasını mühürler; dosya yolu ise
-paylaşılan kökten üretilir. Görev listesi (`GET /api/tasks`) de aynı kökü
-okuduğu için operatörler birbirinin görev geçmişini görür.
+### Kapatma
 
-**Sonuç:** "IDOR kapandı" ifadesi yalnız *oda adı* sınırı için doğrudur.
-KVKK/GDPR açısından asıl kritik olan *kanıt bütünlüğü* hâlâ çok operatörlü
-kurulumda korunmuyor.
+| Katman | Dosya | Ne yapar |
+|---|---|---|
+| Kayıt | `backend/security/task_ownership.py` | `task_id → principal` SQLite'ta (`PINEAL_TASK_OWNERS_DB`, varsayılan `PINEAL_MEMORY_PATH/task_owners.db`). Süreç yeniden başlayınca sahiplik **kaybolmaz** — süreç içi sözlük bu işi görmezdi, çünkü silme kalıcıdır. |
+| Uygulama | `backend/security/task_access.py` | `guard_task` / `visible_tasks` / `record_new_task` + `MAX_TASK_ID_LENGTH` (tek sözleşme). |
+| Yazma | `backend/api.py` `/api/initiate` ve `/api/aspasia/command` | Sahiplik **kanıt dosyası oluşmadan ÖNCE** yazılır (aksi halde pencerede görev sahipsiz görünürdü). |
+| Okuma | `backend/routes/tasks.py` `GET /api/tasks` | Başka operatöre kayıtlı satır listeye **hiç girmez** — "bu görev var ama senin değil" bilgisi de sızmaz. |
+| Silme | `backend/routes/tasks.py` `DELETE /api/tasks/{id}` | Farklı principal → `403 ROOM_FORBIDDEN` (gövde oda reddiyle **birebir aynı**: görevin varlığı doğrulanmaz). |
+| İptal | `backend/api.py::_terminate_mission` | Savunma derinliği; yaşam döngüsü kaydı zaten oda başına. |
 
-### Geçici azaltma (kod değişikliği YOK)
+Semantik oda mührüyle birebir aynıdır:
 
-Çok operatörlü kurulumda **her operatöre ayrı süreç + ayrı `PINEAL_MEMORY_PATH`**
-verin (ör. `railway.toml`'daki `/app/memory` volume'ünü operatör başına ayırın).
-Tek operatörlü kurulumda risk yoktur (tek kimlik = tek sahip).
+* `principal is None` (kimlik doğrulama kapalı / development) → mühür yok,
+  mevcut davranış korunur.
+* Kayıt **yok** (bu sürümden önce üretilmiş kanıt) → **İLK ERİŞEN SAHİPLENİR.**
+  Bilinçli: mevcut dağıtımlar kilitlenip dışarıda bırakılmaz. Bedeli: sahipsiz
+  eski kanıtı ilk okuyan operatör onun sahibi olur.
+* Kayıt başka operatörde → ret.
+* `PINEAL_TASK_OWNERS_DB` yazılamıyorsa **fail-OPEN** ve dar: görev erişilebilir
+  kalır + uyarı loglanır (kayıt kanıt değildir; yanlışlıkla kimse kilitlenmez).
 
-### Kalıcı düzeltmenin dokunacağı yer
+Kilit testleri: `tests/unit/test_task_ownership.py` (13 test). Bir mührü
+gevşetirseniz orada kırmızı yanar — DELETE mühürü kaldırıldığında **4 test
+kırmızıya döndü** (ölçüldü), yani testler gerçekten bu kodu koşuyor.
 
-1. Görev oluşturulurken (`backend/api.py:2824` ve `:4025`, `mission_tasks[task_id]`)
-   `task_id → principal` sahipliği kalıcı olarak kaydedilmeli.
-2. `GET /api/tasks`, `/cancel`, `/halt`, `DELETE` bu sahipliği okuyup farklı
-   principal'da `403 ROOM_FORBIDDEN` dönmeli.
-3. Ya da `storage_path` oda/kimlik başına ayrılmalı (göç planı gerekir: mevcut
-   `memory/*.json` kayıtlarının sahibi bilinmiyor).
+### Kalan sınır (bilinçli)
+
+Sahiplik **görev** düzeyindedir, **depo** düzeyinde değil: `memory/` hâlâ düz ve
+paylaşımlıdır. Yani sahiplik kaydı silinirse/başka makineye taşınmazsa kanıt
+tekrar sahipsiz görünür ve ilk erişen sahiplenir. Depoyu operatör başına
+ayırmak (`PINEAL_MEMORY_PATH` bölme) daha köklü bir çözümdür ama mevcut
+`memory/*.json` kayıtlarının sahibi bilinmediği için göç planı ister; ürün
+sahibi kararı gereği bu turda uygulanmadı.
+
 
 ---
 
@@ -126,12 +141,12 @@ Tek operatörlü kurulumda risk yoktur (tek kimlik = tek sahip).
 
 | # | Bulgu | Ölçüm | Önem |
 |---|---|---|---|
-| 5.1 | `GET /api/minor/state?client_id=<başkasının odası>` oda mührü **UYGULANMIYOR** | Bob, Alice'in oda adıyla `200` aldı; gövde `{"client_id":"alice-room-01","declared":false,...}`. Beyan olsaydı `case_type` + `case_id` de sızardı. Kod: `backend/api.py:3650` — `_minor_case_for(client_id)` doğrudan okunuyor, `get_room` çağrılmıyor. | **P1** (çocuk kilidi denetim kaydında çapraz operatör bilgi sızıntısı) |
+| 5.1 | Çocuk kilidi uçları çapraz operatör **mühürsüzdü** — **KAPATILDI (2026-10-12)** | Ölçülen: Bob, Alice'in oda adıyla `GET /api/minor/state` → `200` (`case_type` + `case_id` sızıyordu). Daha ağırı: `POST /api/minor/clear` beyanı SİLİYORDU, yani **çocuk kilidi çapraz operatör AÇILABİLİYORDU**. Kapatma: `principal.check_room_seal` (oda OLUŞTURMAYAN denetim) üç uca da kondu — `state`, `case`, `clear`. Ölçülen sonrası: üçü de `403 ROOM_FORBIDDEN`, Alice'in beyanı yerinde, Alice kendi beyanını silebiliyor. Kilit testleri: `tests/unit/test_task_ownership.py` (5 test; mühür kaldırılınca 3'ü kırmızıya döndü — ölçüldü). | Kapatıldı |
 | 5.2 | WS `_authenticate` `WebSocketDisconnect` yakalamıyor | `backend/routes/websocket.py:148` yalnız `TimeoutError/ValueError/RuntimeError` yakalıyor. İstemci auth çerçevesi göndermeden kapatınca gerçek sunucu logu: `starlette.websockets.WebSocketDisconnect: (1005, None)` izi. Modül docstring'i "fonksiyon istisna FIRLATMAZ" diyor — **sözleşme ihlali**. | P2 (dürüstlük/log gürültüsü; bağlantı zaten kapanıyor) |
 | 5.3 | Kimliksiz WS soketi 5 sn açık kalıyor | Hız kapısı `accept()`ten önce (doğru), ama `WS_AUTH_TIMEOUT_S = 5.0` (`backend/routes/websocket.py:47`) içinde kimliksiz soket kabul edilip bekletiliyor. Kova `ws: 30/60 sn` olduğundan sınırsız değil, IP başına 30/60 sn. | P3 |
 | 5.4 | `import backend.api` diske yazıyor — **DÜZELTİLMEDİ** | Boş bir CWD'de `python -c "import backend.api"` → `cache/responses.db`, `-wal`, `-shm` ve `frontend/` oluştu. Kaynak: `agent_core/services/response_cache.py:97` (`os.makedirs`) + `backend/api.py:5993` (`os.makedirs(static_dir)`). Testlerde görünmüyor çünkü `tests/conftest.py:35-42` modül seviyesinde env ile izole ediyor. Salt-okunur dosya sisteminde açılış patlar. | P2 |
 | 5.5 | Pydantic doğrulaması sahiplikten önce | Bozuk gövde → `422` alan şeması sızıntısı, oda mührü hiç çalışmadan. Örnek: `POST /api/aspasia/chat` gövdesinde `user_message` eksikken `422`; doğru gövdeyle `403 ROOM_FORBIDDEN`. | P3 |
-| 5.6 | Çocuk kilidi **beyana dayalı** | `agent_core/safety/minor_gate.py:172` `evaluate(case)` yalnız operatör beyanını değerlendirir; `estimate_age` yok (grep ile doğrulandı). `POST /api/minor/case` ile beyan edilmezse kilit devreye girmez. Tüzük metni ("hiçbir çocuk araştırılamaz") ile kod ("operatör beyan ederse") farklıdır. **Bilinçli ürün kuralı; hukuki sorumluluk operatördedir.** | Karar konusu |
+| 5.6 | Çocuk kilidi **beyana dayalı** | `agent_core/safety/minor_gate.py:172` `evaluate(case)` yalnız operatör beyanını değerlendirir; `estimate_age` yok (grep ile doğrulandı). `POST /api/minor/case` ile beyan edilmezse kilit devreye girmez. **Düzeltme:** önceki denetim "tüzük metni ile kod farklı" demişti — bu tam doğru değildi: `docs/PINEAL_TUZUK.md` Madde 4/A bir *politika* koyar ("18 yaşından küçük her birey çocuktur"), yaş *tespit yöntemi* emretmez. Asıl boşluk, tüzüğün sistemin yaş TAHMİN ETMEDİĞİNİ hiç yazmamasıydı. | **KARAR VERİLDİ (2026-10-12):** beyana dayalı kalıyor; Madde 4/A'ya 9. fıkra eklendi (sistem yaş tespit etmez, tetik operatör beyanıdır, hukuki sorumluluk beyan makamınındır). |
 | 5.7 | Tek replika zorunlu | Oda/kasa/hız kovası süreç içi; `railway.toml` → `numReplicas = 1` + uyarı yorumu. Redis yalnız telemetri köprüsüdür. Ölçeklerseniz oturumlar ve kovalar sıfırlanır. | Bilinçli |
 | 5.8 | Cloudflare worker `cf-connecting-ip` siliyor | Token'sız akışta tüm anonim kullanıcılar aynı hız kovasını paylaşır. Token'lı akışta kimlik token hash'i olduğu için sorun yok. | Bilinçli |
 | 5.9 | 2.84 MB PNG üretim bundle'ında | Ölçüldü: `vite build` → `dist/assets/cockpit-v10-reference-nfBm81wi.png 2,838.59 kB`. Bilinçli tasarım; WebP'ye çevirmek ~%85 küçültür. | İyileştirme |
@@ -173,7 +188,12 @@ python3 -c "import secrets;print(secrets.token_urlsafe(32))"
 | Canlı HTTP IDOR | 2 operatör token'lı production sunucu | Oda adı üzerinden **11/11 kapalı** (`403 ROOM_FORBIDDEN`): `/api/tasks`, `/api/telemetry`, `/api/vault/status`, `POST /api/vault`, `DELETE /api/tasks/<id>`, `POST /api/initiate`, `POST /api/aspasia/chat`; `root` token'ı da Alice'in odasına giremedi; tokensiz istek `401`; Bob kendi odasında `200`. |
 | Canlı WS sahipliği | aynı sunucu | Bob → Alice'in odası: **`auth_ok` HİÇ gönderilmedi**, soket `1008` ile kapandı. Alice kendi odasında `auth_ok` aldı. Anonim ve yanlış token: `1008`. |
 | Canlı WS hız kovası | aynı IP'den 35 ardışık bağlantı | **27 kabul, 8 `1013` (try-again-later)** — kova `ws: (30, 60)` (`backend/api.py:459`). |
-| **Kanıt deposu ayrışması** | aynı sunucu | **BAŞARISIZ** — bkz. §4. Bob, Alice'in görevini kendi odasından görüp silebildi. |
+| **Kanıt deposu ayrışması** | aynı sunucu | Kapatmadan önce **BAŞARISIZ** (Bob, Alice'in görevini kendi odasından görüp silebildi); §4'teki kapatmadan sonra `tests/unit/test_task_ownership.py` **13 passed**. |
+| Sahiplik testleri gerçekten ölçüyor mu | DELETE mühürü geçici olarak kaldırıldı | **4 test kırmızıya döndü** (`test_stranger_cannot_delete_victim_evidence_from_his_own_room`, `test_root_token_cannot_delete_operator_evidence`, `test_task_forbidden_body_is_identical_to_room_forbidden`, `test_unowned_legacy_task_is_adopted_by_first_accessor`); mühür geri konunca 13/13 yeşil. |
+| Monolit tavanı (ratchet) | `pytest tests/unit/test_api_monolith_ratchet.py -q` | Önce **2 FAILED** (`backend/api.py` 6070 satır > tavan 6000) → görev uç noktaları `backend/routes/tasks.py`'e taşındı → **5969 satır**, tavan testleri yeşil. |
+| Çocuk kilidi mührü gerçekten ölçüyor mu | `_require_room_seal` gövdesi geçici olarak boşaltıldı | **3 test kırmızıya döndü** (`test_stranger_cannot_read_victim_minor_state`, `test_stranger_cannot_unlock_victim_child_lock`, `test_stranger_cannot_declare_into_victim_room`); mühür geri konunca 18/18 yeşil. |
+| Canlı uçtan uca (production, 2 operatör) | `uvicorn` + `httpx` PoC | **9/9 PASS**: Bob Alice'in görevini görmüyor; `DELETE` → `403`; kanıt diskte; Alice'in çocuk beyanı odasını `451` ile kilitliyor; Bob beyan durumunu OKUYAMIYOR (`403`), beyanı SİLEMİYOR (`403`), Alice kendi beyanını silebiliyor. |
+| Tam koşu (kapatmalardan sonra) | `pytest tests -q` | **40 failed / 2349 passed / 9 skipped** — kırmızı kümesi baseline ile BİREBİR aynı (tümü eksik opsiyonel paket), **0 regresyon**, +18 yeni geçen test. |
 
 **DOĞRULANMADI:** CI'ın yeşil olduğu (bu sandbox'ta GitHub Actions koşmadı);
 `maigret`/`holehe`/`socid-extractor` kurulu bir ortamda 40 kırmızının sıfırlandığı
@@ -213,7 +233,8 @@ Manuel IDOR doğrulaması (iki operatörle):
 ```bash
 # Bob, Alice'in oda adıyla → 403 ROOM_FORBIDDEN beklenir
 curl -s -H "X-API-Key: $BOB_TOKEN" "$ORIGIN/api/tasks?client_id=alice-room-01"
-# ⚠ §4'teki P0 yüzünden bu da çalışır: Bob KENDİ odasıyla Alice'in task_id'sini siler
+# §4 kapatıldı: Bob KENDİ odasıyla Alice'in task_id'sini silmeye çalışınca
+# 403 ROOM_FORBIDDEN beklenir ve kanıt dosyası diskte kalır
 curl -s -X DELETE -H "X-API-Key: $BOB_TOKEN" \
   "$ORIGIN/api/tasks/<alice_task_id>?client_id=bob-room-01"
 ```

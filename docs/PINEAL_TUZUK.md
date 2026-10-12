@@ -93,6 +93,15 @@ Bu yüzden tüzük yeniden yazıldı:
    zaman damgası saklanır. Bu kayıt operatörü korur.
 8. **Bu maddeyi gevşetmek tüzük ihlalidir.** Kilit `agent_core/safety/minor_gate.py`
    dosyasındadır; testleri `tests/unit/test_minor_gate_faz0.py` içinde kilitlidir.
+9. **Sistem yaş TESPİT ETMEZ; tetik operatör BEYANIDIR (ürün sahibi kararı,
+   2026-10-12).** Bu maddedeki kırmızı çizgi bir *politika*dır; yaş *tahmini*
+   değildir. Kodda yaş tahmini YOKTUR (`estimate_age` yok — denetimde ölçüldü):
+   kilit, operatör `POST /api/minor/case` ile "bu hedef çocuk" beyan ettiğinde
+   devreye girer ve o andan itibaren istisnasızdır. **Beyan etme sorumluluğu
+   operatördedir** ve beyan edilmeyen vaka kilit dışında kalır — yani bu madde
+   operatörü otomatik olarak korumaz, operatörün beyanını korur. Bu sınır
+   bilinçlidir, kayda geçmiştir ve denetim raporunda (`GO_LIVE.md` §5.6) açık
+   yazılır; hukuki sorumluluk beyan makamına, yani operatöre aittir.
 
 ## Madde 5 · Operatör kimliği: taklit yok, kayıt var
 
