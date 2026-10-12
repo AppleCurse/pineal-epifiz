@@ -86,7 +86,9 @@
   const SOURCE_LABELS: Record<string, string> = {
     redis_bus: 'REDIS PUB/SUB',
     in_memory: 'YEREL BELLEK (REDIS YOK)',
-    fallback: 'TRACKER YÜKLÜ DEĞİL',
+    // [UX] "TRACKER YÜKLÜ DEĞİL" yazılımcı jargonuydu (tracker = iç modül adı).
+    // Operatör diline çevrildi; anahtar (`fallback`) backend sözleşmesidir ve korunur.
+    fallback: 'BAĞLANTI KOPTU',
     error: 'SİSTEM YANIT VERMİYOR',
     unreachable: 'API ERİŞİLEMEDİ',
     none: 'KAYNAK YOK',
@@ -166,7 +168,8 @@
       <span class="stat-value wait">{waitCount}</span>
     </div>
     <div class="footer-stat">
-      <span class="stat-label">ERROR</span>
+      <!-- [UX] Slot rozetleri 'HATA' basarken alt toplam 'ERROR' diyordu (EN/TR karışık). -->
+      <span class="stat-label">HATA</span>
       <span class="stat-value error">{errorCount}</span>
     </div>
     <div class="footer-source" title="Durum kaynağı backend beyanıdır">

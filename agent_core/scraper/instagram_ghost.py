@@ -211,8 +211,8 @@ class InstagramGhostScraper:
                     text = ((edges[0] or {}).get("node") or {}).get("text")
                     if isinstance(text, str) and text.strip():
                         return text[:2200]
-            except Exception:
-                pass
+            except Exception as exc:
+                logging.debug("Instagram caption okunamadı (%s): %s", type(exc).__name__, exc)
             cap = node.get("caption")
             if isinstance(cap, dict) and isinstance(cap.get("text"), str) and cap["text"].strip():
                 return cap["text"][:2200]

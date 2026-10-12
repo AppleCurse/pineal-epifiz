@@ -106,7 +106,9 @@
       return 'Sırada bekliyor';
     }
     if (run.status === 'halted') {
-      return `DURDU: ${run.error_message || 'Hedefte yeterli bilgi bulunamadı'}`;
+      // [UX] Karta ham teknik metin basılmaz; insani cümle. Ham neden röntgen
+      // panelinde TEKNİK AYRINTI etiketiyle korunur (gizlenmez).
+      return 'DURDU: yeterli veri bulunamadığı için güvenli şekilde durduruldu';
     }
     if (run.status === 'completed_no_decision') {
       // Koşu tamam ama KARAR yok: güven uydurulmaz, ölçülen değer gösterilir.
@@ -177,10 +179,14 @@
   }
 
   // Görevi Başlat
+  // [UX] Başlatma arızası sessizdi (yalnız konsol): operatör düğmeye basar,
+  // hiçbir şey olmazdı. Artık Türkçe yönlendirici mesaj ekranda (role="alert").
+  let launchError: string | null = null;
   async function launchTask() {
     const q = targetUrl.trim();
     if (!q || $isProcessing) return;
     playRunning();
+    launchError = null;
     isProcessing.set(true);
 
     try {
@@ -200,6 +206,7 @@
       });
     } catch (e: any) {
       console.error('Sistem Görevi Başlatamadı:', e);
+      launchError = 'Görev başlatılamadı, internet bağlantınızı kontrol edip tekrar deneyin.';
       isProcessing.set(false);
     }
   }
@@ -290,6 +297,9 @@
           </button>
         {/if}
       </div>
+      {#if launchError}
+        <div class="launch-alert" role="alert">{launchError}</div>
+      {/if}
       {#if showOperatorData}
         <div class="operator-data-row">
           <input type="text" bind:value={userRituals} class="operator-input" disabled={$isProcessing}
@@ -518,7 +528,9 @@
               {#if run.error_message}
                 <div class="error-banner">
                   <span class="err-title">DURMA / HATA BİLDİRİMİ:</span>
-                  <p class="err-desc">{run.error_message}</p>
+                  <!-- [UX] İnsani cümle önce; ham teknik neden gizlenmez, etiketli korunur. -->
+                  <p class="err-desc">Sistem bu hedef için yeterli veri bulamadığı için araştırmayı güvenli şekilde durdurdu.</p>
+                  <p class="err-tech">TEKNİK AYRINTI: {run.error_message}</p>
                 </div>
               {/if}
 
@@ -1327,6 +1339,23 @@
     font-size: 11px;
     color: #fca5a5;
     margin: 4px 0 0 0;
+  }
+
+  .err-tech {
+    font-size: 10px;
+    color: #94a3b8;
+    margin: 6px 0 0 0;
+    word-break: break-word;
+  }
+
+  .launch-alert {
+    margin-top: 6px;
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid #ef4444;
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 11px;
+    color: #fca5a5;
   }
 
   /* FOOTER TERMINAL */

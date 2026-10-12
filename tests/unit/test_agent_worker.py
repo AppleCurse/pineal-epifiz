@@ -312,3 +312,95 @@ def test_cli_accepts_agent_id(monkeypatch):
 
     assert captured["agent_id"] == "depth_analyst"
     assert captured["heartbeat_interval"] == 30.0
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 6) E-GÖZ2-1 — degraded_mode sözleşmesi (ölçülen düşüş beyan edilir)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def test_degraded_mode_true_only_on_measured_redis_failure():
+    """`degraded_mode` yalnız ÖLÇÜLEN `redis_link is False` iken `True`."""
+    assert build_liveness_message("a", redis_link=False)["beacon"]["degraded_mode"] is True
+    assert build_liveness_message("a", redis_link=True)["beacon"]["degraded_mode"] is False
+
+
+def test_degraded_mode_not_fabricated_when_unmeasured():
+    """Ölçüm yokken `False` yazmak 'her şey yolunda' uydurması olur → `None`."""
+    assert build_liveness_message("a")["beacon"]["degraded_mode"] is None
+    assert build_liveness_message("a", redis_link=None)["beacon"]["degraded_mode"] is None
+
+
+def test_publish_carries_degraded_flag_on_the_wire():
+    """Yayın yolunda bayrak düşmez: False bağlantı → telde `degraded_mode: true`."""
+    bus = RecordingBus()
+    asyncio.run(publish_liveness(bus, "mirror_truth", redis_link=False, backend_link=True))
+    assert bus.messages[0]["beacon"]["degraded_mode"] is True
+
+    bus = RecordingBus()
+    asyncio.run(publish_liveness(bus, "mirror_truth", redis_link=True, backend_link=True))
+    assert bus.messages[0]["beacon"]["degraded_mode"] is False
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 7) E-GÖZ1-1 — sessiz yutma YOK (tek izinli dal: Windows sinyal kaydı)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def test_no_silent_except_pass_outside_the_windows_branch():
+    """Worker'da logsuz `except: pass` YOK; tek istisna platform dalıdır.
+
+    Bekçi (``scripts/audit_regression.py`` E-GÖZ1-1) aynı kuralı AST ile ölçer;
+    bu test kuralı worker sözleşmesinin parçası olarak kilitler: biri sessiz
+    bir kol eklerse İKİ yerden kırmızı yanar.
+    """
+    import ast as _ast
+
+    source = Path(agent_worker.__file__).read_text(encoding="utf-8")
+    tree = _ast.parse(source)
+
+    offenders: list[str] = []
+    for node in _ast.walk(tree):
+        if not isinstance(node, _ast.ExceptHandler):
+            continue
+        if not (len(node.body) == 1 and isinstance(node.body[0], _ast.Pass)):
+            continue
+        handler_type = node.type.id if isinstance(node.type, _ast.Name) else "<bare>"
+        if handler_type == "NotImplementedError":
+            continue  # izinli: Windows'ta sinyal kaydı (platform dalı)
+        offenders.append(f"satır {node.lineno}: sessiz `except {handler_type}: pass`")
+
+    assert not offenders, "sessiz yutma geri gelmiş: " + "; ".join(offenders)
+
+
+def test_shutdown_publish_failure_is_logged_not_swallowed(caplog):
+    """Kapanış kolundaki yayın arızası `WARNING` bırakır (E-GÖZ1-6 kilidi)."""
+    import logging
+
+    class _ShutdownFailingBus(RecordingBus):
+        """Kalp atışları tutar, yalnız kapanış (`alive: false`) yayını düşer."""
+
+        async def publish(self, channel: str, message: dict) -> int:
+            if message.get("beacon", {}).get("alive") is False:
+                raise RuntimeError("kapanış yayını düştü (test)")
+            return await super().publish(channel, message)
+
+    bus = _ShutdownFailingBus()
+
+    async def scenario():
+        task = asyncio.create_task(
+            run_worker("mirror_truth", bus=bus, heartbeat_interval=999, backend_url="")
+        )
+        await asyncio.sleep(0)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    with caplog.at_level(logging.WARNING, logger="agent_worker"):
+        asyncio.run(scenario())
+
+    assert any(
+        "kapanış bildirimi yayınlanamadı" in record.message for record in caplog.records
+    ), "kapanış arızası loglanmadı — sessiz yutma geri gelmiş"

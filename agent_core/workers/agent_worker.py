@@ -97,6 +97,7 @@ def build_liveness_message(
     redis_link: Optional[bool] = None,
     backend_link: Optional[bool] = None,
     timestamp: Optional[str] = None,
+    degraded_mode: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """İşaretçinin yayınlayacağı canlılık mesajını kurar (saf fonksiyon).
 
@@ -104,7 +105,15 @@ def build_liveness_message(
     YOKTUR, çünkü ajanın durumu bu sürecin bilebileceği bir şey değildir.
     Yalnızca doğrudan ölçtüğü üç şeyi yazar: kendisi ayakta mı, Redis'e
     erişiyor mu, backend'e erişiyor mu.
+
+    ``degraded_mode`` sözleşmesi (E-GÖZ2-1): in-memory yedeğe düşüldüğü
+    **ölçülmüşse** (``redis_link is False``) ``True``; Redis bağlantısı
+    ölçülmüş ve sağlamsa ``False``; hiç ölçülmediyse (``None``) ``None``.
+    Ölçüm yokken ``False`` yazmak "her şey yolunda" uydurması olurdu —
+    bu yüzden ``None`` olduğu gibi taşınır.
     """
+    if degraded_mode is None and redis_link is not None:
+        degraded_mode = redis_link is False
     return {
         "type": "agent_beacon_liveness",
         "agent_id": agent_id,
@@ -117,6 +126,7 @@ def build_liveness_message(
             "alive": alive,
             "redis_link": redis_link,
             "backend_link": backend_link,
+            "degraded_mode": degraded_mode,
         },
     }
 
@@ -155,7 +165,11 @@ async def publish_liveness(
     ``redis_link`` bayrağı mesajın içinde açıkça taşınır.
     """
     message = build_liveness_message(
-        agent_id, alive=alive, redis_link=redis_link, backend_link=backend_link
+        agent_id,
+        alive=alive,
+        redis_link=redis_link,
+        backend_link=backend_link,
+        degraded_mode=(redis_link is False) if redis_link is not None else None,
     )
     await bus.publish(BEACON_CHANNEL, message)
     return message
@@ -189,7 +203,10 @@ async def run_worker(
         try:
             from agent_core.services.redis_bus import init_redis_bus
         except ImportError as exc:
-            logger.warning("Redis bus import edilemedi (yalnızca log modunda): %s", exc)
+            # E-GÖZ2-1: Redis'e düşememek KRİTİK bir ortam arızasıdır; WARNING
+            # ile kapatılamaz. İşaretçi yine de yaşar (liveness), ama arıza
+            # ERROR seviyesinde iz bırakır ve beacon `degraded_mode: true` taşır.
+            logger.error("Redis bus import edilemedi, in-memory fallback: %s", exc)
             init_redis_bus = None  # type: ignore[assignment]
 
         if init_redis_bus is not None:
@@ -198,7 +215,7 @@ async def run_worker(
                 redis_link = getattr(bus, "connection_state", lambda: "unknown")() == "connected"
                 logger.info("[%s] Redis veri yolu kuruldu: %s", agent_id, REDIS_URL)
             except Exception as exc:  # noqa: BLE001 - işaretçi: Redis yoksa da yaşamalı
-                logger.warning("[%s] Redis kurulamadı: %s — yalnızca log modu", agent_id, exc)
+                logger.error("[%s] Redis kurulamadı, in-memory fallback: %s", agent_id, exc)
                 redis_link = False
 
     if bus is None:
@@ -235,8 +252,8 @@ async def run_worker(
             await publish_liveness(
                 bus, agent_id, alive=False, redis_link=redis_link, backend_link=None
             )
-        except Exception:  # noqa: BLE001 - kapanışta yayın başarısız olabilir
-            pass
+        except Exception as exc:  # noqa: BLE001 - kapanışta yayın başarısız olabilir
+            logger.warning("[%s] kapanış bildirimi yayınlanamadı: %s", agent_id, exc)
         raise
     finally:
         logger.info("[%s] işaretçi döngüsü sonlandı (%d yayın)", agent_id, beats)

@@ -142,14 +142,23 @@ def test_known_open_matches_the_measured_open_set_exactly(report):
 
 
 def test_gate_bites_when_known_open_is_emptied(report, monkeypatch):
-    """Isırmayan kapı dekorasyondur: liste boşaltılınca her açık bulgu regresyon."""
+    """Isırmayan kapı dekorasyondur: liste boşaltılınca her açık bulgu regresyon.
+
+    Beklenen açık küme SABİT SAYI değil, yamalanmamış raporun ölçümüdür:
+    meşru onarımlar sayıyı düşürür (ilerleme), kapı zayıflaması değil. Test,
+    "liste boşken ÖLÇÜLEN açıkların TAMAMI regresyon olur" kuralını kilitler.
+    """
+    expected_open = sorted(
+        fid for fid, e in report["findings"].items() if e["status"] == ar.OPEN
+    )
+    assert expected_open, "ölçülen açık bulgu yok — kapının ısıracağı bir şey kalmamış"
     monkeypatch.setattr(ar, "KNOWN_OPEN", frozenset())
     rep = ar.build_report(ar.parse_findings(ar.AUDIT_REPORT.read_text(encoding="utf-8")))
     open_findings = sorted(
         fid for fid, e in rep["findings"].items() if e["status"] == ar.OPEN
     )
+    assert open_findings == expected_open
     assert rep["meta"]["regressions"] == open_findings
-    assert len(open_findings) >= 10, "beklenen açık bulgu sayısı düştü — kapı zayıfladı"
     assert rep["meta"]["gate_passed"] is False
 
 
@@ -168,7 +177,10 @@ def test_gate_flags_a_single_new_regression(monkeypatch):
 
 def test_gate_flags_a_stale_baseline_entry(monkeypatch):
     """Onarılan bulgu listede bırakılırsa 'bayat taban' olarak yakalanır."""
-    victim = "E-GÖZ1-1"  # bugün açık ve listede
+    # Kurban SABİT DEĞİL: taban çizgisinin ilk üyesi. Meşru onarımlar listeyi
+    # küçültür; test "listede kalıp kapanan ÜYE bayat sayılır" kuralını kilitler.
+    assert ar.KNOWN_OPEN, "taban çizgisi boş — bayatlık testi anlamsız"
+    victim = sorted(ar.KNOWN_OPEN)[0]
     assert victim in ar.KNOWN_OPEN
     monkeypatch.setattr(
         ar, "CHECKS", {**ar.CHECKS, victim: ar.Check(victim, "static", lambda: ar.CheckResult(ar.CLOSED, ("onarıldı",)))}

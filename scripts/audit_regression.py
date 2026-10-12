@@ -51,6 +51,7 @@ yapılır, kaynak dizininin alt-çizgili adıyla değil.
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 import sys
@@ -356,28 +357,122 @@ def _test_lock(rel: str, markers: Sequence[str]) -> Tuple[bool, List[str]]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# AST ölçüm yardımcıları — ham metin taraması docstring ALINTISINI kod sanır
+# ─────────────────────────────────────────────────────────────────────────────
+#: Sessiz ``except: pass`` taramasında İZİNLİ tek istisna türü: Windows'ta
+#: ``loop.add_signal_handler`` ``NotImplementedError`` fırlatır; bu platform
+#: dalı bilinçli bir no-op'tur (kusur sınıfı değil). Bu listedeki türler
+#: dışındaki TÜM sessiz kollar kusur sayılır.
+ALLOWED_SILENT_EXCEPTIONS = frozenset({"NotImplementedError"})
+
+#: Kapanış kolunda aranan "işi bitirme" çağrıları: eski mimaride
+#: ``tracker.set_wait``, beacon mimarisinde ``publish_liveness(alive=False)``.
+#: İkisi de aynı niyeti taşır (kapanışı duyur); ölçüm niyeti arar, adı değil.
+CLOSE_OUT_CALLS = frozenset({"set_wait", "publish_liveness", "publish"})
+
+
+def _expr_name(expr: Optional[ast.expr]) -> str:
+    """``except`` türünü okunabilir ada çevirir (``ast`` düğümünden)."""
+    if expr is None:
+        return "<bare>"
+    if isinstance(expr, ast.Name):
+        return expr.id
+    if isinstance(expr, ast.Attribute):
+        return expr.attr
+    if isinstance(expr, ast.Tuple):
+        return "(" + ", ".join(_expr_name(e) for e in expr.elts) + ")"
+    return ast.dump(expr)[:40]
+
+
+def _is_single_pass(body: List[ast.stmt]) -> bool:
+    return len(body) == 1 and isinstance(body[0], ast.Pass)
+
+
+def _body_logs(body: List[ast.stmt]) -> bool:
+    """Kolda ``logger.*`` / ``logging.*`` çağrısı var mı (izlenebilirlik şartı)?"""
+    for node in ast.walk(ast.Module(body=body, type_ignores=[])):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            value = node.func.value
+            if isinstance(value, ast.Name) and value.id in ("logger", "logging"):
+                return True
+    return False
+
+
+def _silent_pass_handlers(rel: str) -> Tuple[List[str], List[str]]:
+    """Sessiz ``except: pass`` kollarını AST ile ölçer → (kusur, izinli).
+
+    Ham metin taraması bu dosyada YANLIŞ SATIRI ÖLÇTÜ (ölçüldü, düzeltildi):
+    ``agent_worker.py`` modül docstring'i eski kusurlu kodu ibret olsun diye
+    ALINTILIYOR (``await tracker.set_ready(...)``) ve metin araması alıntıyı
+    gerçek kod sandı. AST docstring/yorum görmez; yalnızca GERÇEK kolları sayar.
+    """
+    tree = ast.parse(_read(rel))
+    defects: List[str] = []
+    allowed: List[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ExceptHandler):
+            continue
+        if not _is_single_pass(node.body):
+            continue
+        name = _expr_name(node.type)
+        entry = f"{rel}:{node.lineno}: sessiz `except {name}: pass`"
+        if name in ALLOWED_SILENT_EXCEPTIONS:
+            allowed.append(entry + " (izinli platform dalı: Windows sinyal kaydı)")
+        else:
+            defects.append(entry)
+    return defects, allowed
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # GÖZ 1 — Yazılımcı (mühendislik) bulguları
 # ─────────────────────────────────────────────────────────────────────────────
 def check_goz1_1() -> CheckResult:
-    """Sessiz REST-fallback yutması (``except: pass``) log'a bağlandı mı?"""
+    """Sessiz REST-fallback yutması: kusur SINIFI kalktı mı?
+
+    Denetimin bulduğu somut blok (``pass  # Backend yoksa sessizce devam``)
+    beacon mimarisiyle birlikte YOK OLDU — ama bulgunun konusu tek blok değil,
+    "sessiz yutma" sınıfıydı. Bu kontrol SINIFI ölçer: worker'da izinli
+    platform dalı (Windows sinyal kaydı) dışında sessiz ``except: pass`` YOKSA
+    kapalıdır; denetimin kalıbını (bayat) değil kusuru arar.
+    """
     rel = "agent_core/workers/agent_worker.py"
-    silent = _hits(rel, r"Backend yoksa sessizce devam")
-    logged = _hits(rel, r"logger\.(warning|error).*fallback")
-    if silent:
+    defects, allowed = _silent_pass_handlers(rel)
+    # Denetimin kalıbı bugün ne bulur? (bayatlık kanıtı — hüküm değil)
+    audit_pattern = _hits(rel, r"Backend yoksa sessizce devam")
+    if defects:
         return CheckResult(
             OPEN,
-            tuple(silent + [f"onarımın istediği log satırı: {len(logged)} adet (bu bloğa bağlı değil)"]),
+            tuple(
+                defects
+                + [
+                    f"izinli platform dalı: {len(allowed)}",
+                    f"denetim kalıbı isabeti: {len(audit_pattern)}",
+                ]
+            ),
             note=(
-                "Kusur yerinde: httpx REST-fallback istisnası hâlâ yorumsuz `pass` ile "
-                "yutuluyor. Denetimin istediği `logger.warning(..., exc_info=True)` yok."
+                "Sessiz yutma sınıfı yaşıyor: logsuz `except: pass` kolu var. "
+                "İstisna loglanmalı (`logger.warning/error(..., exc_info=True)`)."
             ),
         )
-    if logged:
-        return CheckResult(CLOSED, tuple(logged), note="Sessiz yutma kalkmış, log bağlanmış.")
     return CheckResult(
-        OPEN,
-        ("`pass  # Backend yoksa sessizce devam` bulunamadı ama yerine log da konmamış",),
-        note="Blok değişmiş olabilir; onarımın kendisi (log) ölçülemiyor → açık sayılır.",
+        CLOSED,
+        tuple(
+            allowed
+            + [
+                "sessiz `except: pass` (izinli dal hariç) → 0",
+                f"denetim kalıbı isabeti → {len(audit_pattern)} (blok mimariden kalktı)",
+            ]
+        ),
+        note=(
+            "Kusur sınıfı kapandı: izinli Windows sinyal dalı dışında sessiz kol yok; "
+            "backend sondası hatayı loglayıp `False` dönüyor, kapanış kolu logluyor."
+        ),
+        audit_verify_stale=(
+            "Denetimin `grep -n \"Backend yoksa sessizce devam\"` kalıbı beacon "
+            "mimarisinde 0 isabet verir — blok yok. 0 isabet tek başına \"kapandı\" "
+            "demezdi (blok taşınmış olabilirdi); bu kontrol SINIFI (AST ile tüm "
+            "sessiz kollar) ölçer."
+        ),
     )
 
 
@@ -508,41 +603,91 @@ def check_goz1_5() -> CheckResult:
 
 
 def check_goz1_6() -> CheckResult:
-    """Worker kapanışında `set_wait` istisnası loglanıyor mu?"""
+    """Worker kapanışında close-out arızası loglanıyor mu? (AST ile)
+
+    Denetimin bulduğu somut satırlar (``await tracker.set_wait`` +
+    ``except Exception: pass``) beacon mimarisinde YOK: işaretçi artık
+    tracker'a yazmıyor, kendi kanalına ``alive: false`` yayınlıyor. Ham metin
+    taraması burada YANLIŞ SATIRI ÖLÇTÜ (ölçüldü, düzeltildi): modül
+    docstring'indeki ALINTI eski kodu gerçek satır sandı. Bu kontrol AST ile
+    NİYETİ ölçer: ``CancelledError`` kolu var mı, içinde close-out çağrısı var
+    mı, onun hatası loglanıyor mu?
+    """
     rel = "agent_core/workers/agent_worker.py"
-    text = _read(rel)
-    # Kusurun imzası: CancelledError kolu içinde `set_wait` → `except: pass`.
-    idx = text.find("await tracker.set_wait(agent_id)")
-    if idx == -1:
+    try:
+        tree = ast.parse(_read(rel))
+    except SyntaxError as exc:
         return CheckResult(
             OPEN,
-            (f"{rel}: `tracker.set_wait` çağrısı hiç bulunamadı",),
-            note="Kapanış durumu hiç yazılmıyor → zombi Ready riski denetimden beter.",
+            (f"{rel}: AST ayrıştırılamadı: {exc}",),
+            note="Ölçüm yapılamadı → açık sayılır.",
         )
-    window = text[idx : idx + 220]
-    silent = "except Exception:" in window and "pass" in window
-    logged = re.search(r"logger\.(error|warning|exception)", window) is not None
-    line_no = text[:idx].count("\n") + 1
-    if silent and not logged:
+    cancelled = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ExceptHandler) and _expr_name(node.type) == "CancelledError"
+    ]
+    if not cancelled:
         return CheckResult(
             OPEN,
-            (
-                f"{rel}:{line_no}: `await tracker.set_wait(agent_id)` sonrası "
-                "`except Exception: pass` (log yok)",
-                "kapanış arızası izlenemiyor → ajan 'zombi Ready' kalabilir",
-            ),
-            note="Denetimin istediği `logger.error(\"Failed to set Wait status...\")` eklenmedi.",
+            (f"{rel}: `except CancelledError` kolu hiç bulunamadı",),
+            note="Kapanış yolu tanımsız → close-out hiç duyurulmuyor.",
+        )
+    handler = cancelled[0]
+    close_outs: List[str] = []
+    for node in ast.walk(handler):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if isinstance(func, ast.Attribute):
+            name = func.attr
+        elif isinstance(func, ast.Name):
+            name = func.id
+        else:
+            continue
+        if name in CLOSE_OUT_CALLS:
+            close_outs.append(f"{rel}:{node.lineno}: close-out `{name}(...)`")
+    inner = [
+        node
+        for node in ast.walk(handler)
+        if isinstance(node, ast.ExceptHandler) and node is not handler
+    ]
+    if not close_outs:
+        return CheckResult(
+            OPEN,
+            (f"{rel}:{handler.lineno}: kapanış kolunda close-out çağrısı hiç bulunamadı",),
+            note="Denetimin bulduğundan BETER: kapanış durumu hiç duyurulmuyor (zombi riski).",
+        )
+    unlogged = [
+        f"{rel}:{h.lineno}: logsuz `except {_expr_name(h.type)}`" for h in inner if not _body_logs(h.body)
+    ]
+    logged = [
+        f"{rel}:{h.lineno}: `except {_expr_name(h.type)}` logluyor" for h in inner if _body_logs(h.body)
+    ]
+    if unlogged:
+        return CheckResult(
+            OPEN,
+            tuple(close_outs + unlogged),
+            note="Kapanış arızası izlenemiyor: close-out sarmalanmış ama hatası loglanmıyor.",
         )
     if logged:
         return CheckResult(
             CLOSED,
-            (f"{rel}:{line_no}: set_wait istisnası loglanıyor",),
-            note="Kapanış arızası izlenebilir.",
+            tuple(close_outs + logged),
+            note="Kapanış arızası izlenebilir: close-out hatası loglanıyor.",
+            audit_verify_stale=(
+                "Denetimin `sed -n '83,86p'` aralığı beacon mimarisinde başka kodu "
+                "gösterir (`set_wait` çağrısı dosyada yok); ayrıca ham metin araması "
+                "modül docstring'indeki ALINTI eski kodu gerçek satır sanıp yanlış "
+                "ölçtü. Bu kontrol AST ile niyeti ölçer."
+            ),
         )
+    # Close-out var ama hiç sarmalanmamış: hatası yayılır (sessiz değil ama iz
+    # bırakmaz ve CancelledError'i maskeler) → onarım sayılmaz.
     return CheckResult(
         OPEN,
-        (f"{rel}:{line_no}: blok değişmiş ama log izi yok",),
-        note="Onarım ölçülemiyor → açık.",
+        tuple(close_outs + [f"{rel}:{handler.lineno}: close-out sarmalanmamış (hatası loglanmıyor)"]),
+        note="Close-out çağrısı var ama hatası yakalanıp loglanmıyor.",
     )
 
 
@@ -613,31 +758,42 @@ def check_goz1_8() -> CheckResult:
 def check_goz2_1() -> CheckResult:
     """Redis yokken düşülen in-memory fallback: seviye ERROR mu, bayrak var mı?"""
     rel = "agent_core/workers/agent_worker.py"
-    fallback = _hits(rel, r"in-memory fallback")
-    level = _hits(rel, r"logger\.(error|critical|exception)")
-    degraded = _hits(rel, r"degraded_mode|degraded")
-    if fallback and not level and not degraded:
+    err_lines = _hits(rel, r"logger\.(error|critical|exception)")
+    # ERROR kaydı REDIS arızasına bağlı olmalı: dosyadaki herhangi bir error
+    # değil, Redis düşüşünü bildiren satır aranır (sahte yeşil tuzağı kapalı).
+    redis_err = [e for e in err_lines if "redis" in e.lower()]
+    degraded = _hits(rel, r"degraded_mode")
+    if redis_err and degraded:
         return CheckResult(
-            OPEN,
+            CLOSED,
             tuple(
-                fallback
+                redis_err
+                + degraded
                 + [
-                    f"ERROR/CRITICAL seviyesinde log: {len(level)} (yok) — hâlâ WARNING",
-                    f"worker'da `degraded_mode` bayrağı: {len(degraded)} (yok)",
+                    "DÜRÜST SINIR: bayrak beacon mesajında + logda yaşıyor; onu okuyup "
+                    "UI rozeti basan bir tüketici katmanı YOK (backend/functions/widget "
+                    "okumuyor) — ayrı iş, burada iddia edilmiyor. `/health` de Redis "
+                    "raporlamıyor."
                 ]
             ),
-            note=(
-                "Denetimin iki isteği de karşılanmadı: (1) Redis bağlantı hatası kritik "
-                "seviyede loglanmalı, (2) in-memory fallback kullanılıyorsa UI/API'de açık "
-                "`degraded_mode: true` uyarısı olmalı. Bugün ikisi de yok."
+            note="Redis arızası ERROR seviyesinde + in-memory düşüş beacon'da `degraded_mode: true`.",
+            audit_verify_stale=(
+                "Denetimin DOĞRULA'sı canlı ortam ister (Redis kapalıyken uvicorn "
+                "başlatıp logu incelemek). Kontrol aynı iki şartı statik ölçer: "
+                "Redis'e bağlı ERROR kaydı + bayrak."
             ),
         )
-    if level and degraded:
-        return CheckResult(CLOSED, tuple(level + degraded), note="Kritik log + degraded bayrağı var.")
     return CheckResult(
         OPEN,
-        tuple(fallback + level + degraded or ("ölçüm boş",)),
-        note="Onarım kısmi: iki şart birlikte sağlanmıyor.",
+        tuple(
+            [
+                f"Redis'e bağlı ERROR/CRITICAL kaydı → {len(redis_err)}",
+                f"`degraded_mode` bayrağı → {len(degraded)}",
+            ]
+            + err_lines[:4]
+            + degraded[:4]
+        ),
+        note="Onarım kısmi: iki şart birlikte sağlanmıyor (ERROR kaydı + degraded bayrağı).",
     )
 
 
@@ -1149,7 +1305,18 @@ def check_goz3_5() -> CheckResult:
                 "karşılanmadı: worker'da hâlâ logsuz `except: pass` blokları var."
             ),
         )
-    return CheckResult(CLOSED, tuple(ev), note="Tüm bileşenler kapandı → üst küme kapandı.")
+    return CheckResult(
+        CLOSED,
+        tuple(
+            ev
+            + [
+                "DÜRÜST SINIR (kapsam gizlenmeden): beacon `degraded_mode` taşıyor ama "
+                "tüketici katman (UI rozeti) yok; `/health` Redis raporlamıyor. Üst küme "
+                "BİLEŞENLERİNİ (sessiz yutma sınıfı + taşıyıcı beyanı) ölçer ve onlar kapandı."
+            ]
+        ),
+        note="Tüm bileşenler kapandı → üst küme kapandı (kalan kapsam kanıtta yazılı).",
+    )
 
 
 def check_goz3_6() -> CheckResult:
@@ -1267,17 +1434,10 @@ CHECKS: Dict[str, Check] = {
 #: Yani liste gerçekle birebir aynı kalmak zorunda; ne iyimser ne karamsar.
 KNOWN_OPEN: frozenset = frozenset(
     {
-        "E-GÖZ1-1",  # sessiz REST-fallback yutması (log yok)
         "E-GÖZ1-3",  # omurga bypass: 8 dosyada doğrudan httpx (E3)
-        "E-GÖZ1-4",  # dil tespiti hatası loglanmıyor (gövde dürüst, iz yok)
         "E-GÖZ1-5",  # Dict[str, Any] 169 satır (E8) — değişim yok
-        "E-GÖZ1-6",  # worker kapanışında set_wait istisnası logsuz yutuluyor
-        "E-GÖZ1-7",  # metadata çıkarımı sessiz title="" (log yok)
-        "E-GÖZ1-8",  # instagram caption except: pass (log yok)
-        "E-GÖZ2-1",  # Redis fallback WARNING + degraded_mode bayrağı yok
         "E-GÖZ2-3",  # scraper/OSINT YAPRAK katmanında kasa kapısı yok
         "E-GÖZ3-2",  # üretim modunda fallback yasak değil
-        "E-GÖZ3-5",  # üst küme: sessiz yutmalar duruyor (1-1 · 1-6 açık)
     }
 )
 

@@ -68,7 +68,8 @@ def _language_scope(text: str, engine: str, url: str) -> dict[str, Any]:
 
     try:
         finding = detect_language(text)
-    except Exception:  # tespit çıkarıcıyı düşürmez; sessizlik de yok
+    except Exception as exc:  # tespit çıkarıcıyı düşürmez; sessizlik de yok
+        logger.error("Dil tespiti hatası: %s", exc)
         return {"language": "unknown", "language_reason": "detect_error"}
     record_finding(finding, source_engine=engine, url=url)
     scope: dict[str, Any] = {
@@ -140,6 +141,7 @@ class TrafilaturaCapability(BaseCapability):
                 if meta is not None:
                     title = (getattr(meta, "title", "") or "").strip()
             except Exception:  # metadata opsiyoneldir; metin varsa devam
+                logger.debug("Metadata extraction failed", exc_info=True)
                 title = ""
             return text, title
 

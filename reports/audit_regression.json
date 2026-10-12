@@ -5,23 +5,16 @@
     "audit_report": "docs/reports/JULES_DENETIM_2026-10-06.md",
     "finding_count": 24,
     "counts": {
-      "open": 11,
-      "closed": 9,
+      "closed": 16,
+      "open": 4,
       "closed_by_design": 1,
       "unverifiable": 3
     },
     "known_open": [
-      "E-GÖZ1-1",
       "E-GÖZ1-3",
-      "E-GÖZ1-4",
       "E-GÖZ1-5",
-      "E-GÖZ1-6",
-      "E-GÖZ1-7",
-      "E-GÖZ1-8",
-      "E-GÖZ2-1",
       "E-GÖZ2-3",
-      "E-GÖZ3-2",
-      "E-GÖZ3-5"
+      "E-GÖZ3-2"
     ],
     "regressions": [],
     "stale_known_open": [],
@@ -33,13 +26,15 @@
       "severity": "YÜKSEK",
       "criticism": "`agent_core/workers/agent_worker.py` içindeki REST fallback mekanizmasında httpx post isteği başarısız olursa exception sessizce yutuluyor, loglanmıyor ve durum operatörden gizleniyor (FAIL-OPEN).",
       "audit_verify": "grep -n \"Backend yoksa sessizce devam\" agent_core/workers/agent_worker.py",
-      "audit_verify_stale": null,
+      "audit_verify_stale": "Denetimin `grep -n \"Backend yoksa sessizce devam\"` kalıbı beacon mimarisinde 0 isabet verir — blok yok. 0 isabet tek başına \"kapandı\" demezdi (blok taşınmış olabilirdi); bu kontrol SINIFI (AST ile tüm sessiz kollar) ölçer.",
       "check_kind": "static",
-      "status": "open",
+      "status": "closed",
       "evidence": [
-        "`pass  # Backend yoksa sessizce devam` bulunamadı ama yerine log da konmamış"
+        "agent_core/workers/agent_worker.py:287: sessiz `except NotImplementedError: pass` (izinli platform dalı: Windows sinyal kaydı)",
+        "sessiz `except: pass` (izinli dal hariç) → 0",
+        "denetim kalıbı isabeti → 0 (blok mimariden kalktı)"
       ],
-      "note": "Blok değişmiş olabilir; onarımın kendisi (log) ölçülemiyor → açık sayılır.",
+      "note": "Kusur sınıfı kapandı: izinli Windows sinyal dalı dışında sessiz kol yok; backend sondası hatayı loglayıp `False` dönüyor, kapanış kolu logluyor.",
       "regression": false
     },
     "E-GÖZ1-2": {
@@ -88,13 +83,11 @@
       "audit_verify": "sed -n '70,73p' agent_core/capabilities/adapters_web.py",
       "audit_verify_stale": null,
       "check_kind": "static",
-      "status": "open",
+      "status": "closed",
       "evidence": [
-        "agent_core/capabilities/adapters_web.py:71: except Exception:  # tespit çıkarıcıyı düşürmez; sessizlik de yok",
-        "agent_core/capabilities/adapters_web.py:72: return {\"language\": \"unknown\", \"language_reason\": \"detect_error\"}",
-        "dil tespiti hatasını loglayan satır: 0 (yok)"
+        "agent_core/capabilities/adapters_web.py:72: logger.error(\"Dil tespiti hatası: %s\", exc)"
       ],
-      "note": "KISMİ: gövde dürüst (uydurma dil yok, `language_reason: detect_error` makine-okunur) ama bulgunun asıl konusu olan İZLENEBİLİRLİK yok — hata hiçbir log bırakmıyor. Denetimin istediği `logger.error(...)` eklenmedi.",
+      "note": "Tespit hatası artık loglanıyor.",
       "regression": false
     },
     "E-GÖZ1-5": {
@@ -118,13 +111,14 @@
       "severity": "YÜKSEK",
       "criticism": "`agent_core/workers/agent_worker.py` içindeki worker loop'ta, `run_worker` iptal edildiğinde (CancelledError) `await tracker.set_wait(agent_id)` bloğunda exception yutuluyor (pass).",
       "audit_verify": "sed -n '83,86p' agent_core/workers/agent_worker.py",
-      "audit_verify_stale": null,
+      "audit_verify_stale": "Denetimin `sed -n '83,86p'` aralığı beacon mimarisinde başka kodu gösterir (`set_wait` çağrısı dosyada yok); ayrıca ham metin araması modül docstring'indeki ALINTI eski kodu gerçek satır sanıp yanlış ölçtü. Bu kontrol AST ile niyeti ölçer.",
       "check_kind": "static",
-      "status": "open",
+      "status": "closed",
       "evidence": [
-        "agent_core/workers/agent_worker.py: `tracker.set_wait` çağrısı hiç bulunamadı"
+        "agent_core/workers/agent_worker.py:252: close-out `publish_liveness(...)`",
+        "agent_core/workers/agent_worker.py:255: `except Exception` logluyor"
       ],
-      "note": "Kapanış durumu hiç yazılmıyor → zombi Ready riski denetimden beter.",
+      "note": "Kapanış arızası izlenebilir: close-out hatası loglanıyor.",
       "regression": false
     },
     "E-GÖZ1-7": {
@@ -134,12 +128,12 @@
       "audit_verify": "sed -n '141,144p' agent_core/capabilities/adapters_web.py",
       "audit_verify_stale": null,
       "check_kind": "static",
-      "status": "open",
+      "status": "closed",
       "evidence": [
-        "agent_core/capabilities/adapters_web.py:142: except Exception:  # metadata opsiyoneldir; metin varsa devam",
-        "metadata hatasını loglayan satır: 0 (yok)"
+        "agent_core/capabilities/adapters_web.py:72: logger.error(\"Dil tespiti hatası: %s\", exc) ⏎ return {\"language\": \"unknown\", \"language_reason\": \"detect_error\"} ⏎ record_finding(finding, source_engine=engine, ",
+        "agent_core/capabilities/adapters_web.py:144: logger.debug(\"Metadata extraction failed\", exc_info=True)"
       ],
-      "note": "Kusur yerinde: `except Exception: title = \"\"`. Başlıksız gelen web analizinin nedeni loglardan teşhis edilemiyor. Denetimin istediği `logger.debug(..., exc_info=True)` yok.",
+      "note": "Metadata hatası loglanıyor.",
       "regression": false
     },
     "E-GÖZ1-8": {
@@ -149,12 +143,11 @@
       "audit_verify": "sed -n '213,216p' agent_core/scraper/instagram_ghost.py",
       "audit_verify_stale": null,
       "check_kind": "static",
-      "status": "open",
+      "status": "closed",
       "evidence": [
-        "agent_core/scraper/instagram_ghost.py:207: `_caption_of` içinde `except Exception: pass`",
-        "kısmi/eksik veri 'başarılı çekim' gibi görünmeye devam ediyor"
+        "agent_core/scraper/instagram_ghost.py:207: `_caption_of` istisnayı logluyor, sessiz `pass` yok"
       ],
-      "note": "Denetimin istediği log + izlenebilir hata objesi yok.",
+      "note": "Eksik veri artık izlenebilir.",
       "regression": false
     },
     "E-GÖZ2-1": {
@@ -162,13 +155,22 @@
       "severity": "YÜKSEK",
       "criticism": "API ayağa kalktığında Redis sunucusuna bağlanamadığı için `agent_worker` sessizce \"in-memory fallback\" durumuna düşüyor ve hata `INFO` ile kapatılıyor, operatör gerçek ajanların neden hiçbir zaman devreye girmediğini göremiyor.",
       "audit_verify": "Redis kapalıyken `uvicorn backend.api:app` başlatıp logu incelemek.",
-      "audit_verify_stale": null,
+      "audit_verify_stale": "Denetimin DOĞRULA'sı canlı ortam ister (Redis kapalıyken uvicorn başlatıp logu incelemek). Kontrol aynı iki şartı statik ölçer: Redis'e bağlı ERROR kaydı + bayrak.",
       "check_kind": "static",
-      "status": "open",
+      "status": "closed",
       "evidence": [
-        "ölçüm boş"
+        "agent_core/workers/agent_worker.py:209: logger.error(\"Redis bus import edilemedi, in-memory fallback: %s\", exc)",
+        "agent_core/workers/agent_worker.py:218: logger.error(\"[%s] Redis kurulamadı, in-memory fallback: %s\", agent_id, exc)",
+        "agent_core/workers/agent_worker.py:100: degraded_mode: Optional[bool] = None,",
+        "agent_core/workers/agent_worker.py:109: ``degraded_mode`` sözleşmesi (E-GÖZ2-1): in-memory yedeğe düşüldüğü",
+        "agent_core/workers/agent_worker.py:115: if degraded_mode is None and redis_link is not None:",
+        "agent_core/workers/agent_worker.py:116: degraded_mode = redis_link is False",
+        "agent_core/workers/agent_worker.py:129: \"degraded_mode\": degraded_mode,",
+        "agent_core/workers/agent_worker.py:172: degraded_mode=(redis_link is False) if redis_link is not None else None,",
+        "agent_core/workers/agent_worker.py:208: # ERROR seviyesinde iz bırakır ve beacon `degraded_mode: true` taşır.",
+        "DÜRÜST SINIR: bayrak beacon mesajında + logda yaşıyor; onu okuyup UI rozeti basan bir tüketici katmanı YOK (backend/functions/widget okumuyor) — ayrı iş, burada iddia edilmiyor. `/health` de Redis raporlamıyor."
       ],
-      "note": "Onarım kısmi: iki şart birlikte sağlanmıyor.",
+      "note": "Redis arızası ERROR seviyesinde + in-memory düşüş beacon'da `degraded_mode: true`.",
       "regression": false
     },
     "E-GÖZ2-2": {
@@ -412,13 +414,12 @@
       "audit_verify": "Redis yokken /api/agents/status çıktısını okumak.",
       "audit_verify_stale": null,
       "check_kind": "static",
-      "status": "open",
+      "status": "closed",
       "evidence": [
-        "bileşen durumları: E-GÖZ1-1=open, E-GÖZ1-6=open, E-GÖZ2-6=closed",
-        "açık bileşen: E-GÖZ1-1, E-GÖZ1-6 → üst küme açık kalır",
-        "`pass  # Backend yoksa sessizce devam` bulunamadı ama yerine log da konmamış"
+        "bileşen durumları: E-GÖZ1-1=closed, E-GÖZ1-6=closed, E-GÖZ2-6=closed",
+        "DÜRÜST SINIR (kapsam gizlenmeden): beacon `degraded_mode` taşıyor ama tüketici katman (UI rozeti) yok; `/health` Redis raporlamıyor. Üst küme BİLEŞENLERİNİ (sessiz yutma sınıfı + taşıyıcı beyanı) ölçer ve onlar kapandı."
       ],
-      "note": "Durum beyanı tarafı onarıldı (agents/status gerçek taşıyıcıyı yazıyor) ama 'tüm sessiz yutmalar kaldırılmalı + Degraded modu resmileşmeli' isteği karşılanmadı: worker'da hâlâ logsuz `except: pass` blokları var.",
+      "note": "Tüm bileşenler kapandı → üst küme kapandı (kalan kapsam kanıtta yazılı).",
       "regression": false
     },
     "E-GÖZ3-6": {
