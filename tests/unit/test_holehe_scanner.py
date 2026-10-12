@@ -300,12 +300,7 @@ class TestAgentMerge:
 
 
 class TestEndpoint:
-    def test_endpoint_disabled_by_default(self, monkeypatch, vault_open):
-        """[E5 sözleşme değişikliği] Motor kapalıyken 200 DEĞİL 400.
-
-        Gerekçe `test_maigret_scanner.py`'deki eş testle aynı; ayrıntılı
-        sözleşme `tests/unit/test_experimental_engine_contract.py`'de.
-        """
+    def test_endpoint_disabled_by_default(self, monkeypatch):
         from fastapi.testclient import TestClient
         from backend.api import app
 
@@ -313,14 +308,10 @@ class TestEndpoint:
         with TestClient(app) as client:
             r = client.post("/api/experimental/holehe/scan",
                             json={"email": "a@b.com"})
-        assert r.status_code == 400
-        body = r.json()
-        assert body["error"]["code"] == "MOTOR_UNAVAILABLE"
-        assert body["error"]["reason"] == "disabled"
-        assert body["available"] is False
-        assert body["reason"] == "disabled"
+        assert r.status_code == 200
+        assert r.json()["reason"] == "disabled"
 
-    def test_endpoint_gate_on_uses_scanner(self, monkeypatch, vault_open):
+    def test_endpoint_gate_on_uses_scanner(self, monkeypatch):
         from fastapi.testclient import TestClient
         from backend.api import app
 

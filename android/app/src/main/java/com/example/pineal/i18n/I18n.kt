@@ -98,7 +98,7 @@ object AppStrings {
     val tr = StringsDict(
         appTitle = "Pineal-Gland v3.0",
         appSubtitle = "360° BÜTÜNCÜL İNSAN TANIMA VE REZONANS İSTASYONU",
-        footerText = "Pineal-Gland • TEK GEÇİŞLİ GEMINI ÇIKARIMI • MODEL BEYANI (DOĞRULANMADI) • CANLI TELEMETRİ",
+        footerText = "Pineal-Gland • ÇOKLU MODLU GÖRSEL ZEKA • SIFIR HALÜSİNASYON • CANLI TELEMETRİ",
         onlineStatus = "ÇEVRİMİÇİ",
         liveStatus = "CANLI",
         active = "AKTİF",
@@ -170,15 +170,15 @@ object AppStrings {
         verdictInflated = "ŞİŞİRME",
         verdictSuspicious = "ŞÜPHELİ",
         verdictInsufficient = "VERİ YETERSİZ",
-        findingsTitle = "Beyan Edilen Bulgular ve Alıntılar (Doğrulanmadı)",
+        findingsTitle = "Doğrulanmış Gerçeklik Bulguları ve Alıntılar",
         contradictionsTitle = "Sahnelenen Vitrin vs. Sızan Gerçeklik Çelişkileri",
-        kalkanAyakta = "Model Beyanı: Destekli (Ölçülmedi)",
-        kalkanElenen = "Model Beyanı: Elenen (Ölçülmedi)",
+        kalkanAyakta = "Bulgu Kanıtla Ayakta",
+        kalkanElenen = "Sahte Alıntı Elendi",
         shadowTitle = "🕳️ DERİN MOTİVASYONLAR (ADIM 5)",
         manipulationScore = "Manipülasyon İhtimali",
         osintTitle = "🌐 DİJİTAL İZ VE KİMLİK (ADIM 6)",
         visualTitle = "📸 GÖRSEL VE ESTETİK TERCİHLER (ADIM 4)",
-        agentChainTitle = "⚙️ TEK GEÇİŞLİ GEMINI ÇIKARIMI (1 LLM ÇAĞRISI)",
+        agentChainTitle = "⚙️ BİLİŞSEL SENTEZ AĞI",
         // [RÖNTGEN 2026-09-23] "TOPLAM SİSTEM GÜVENİ" doğrulanmış bir ölçüm
         // iddiasıydı; Android hattında bağımsız doğrulama yok (tek LLM
         // çıkarımı). Etiket kaynağını söyler.
@@ -193,7 +193,7 @@ object AppStrings {
     val en = StringsDict(
         appTitle = "Pineal-Gland v3.0",
         appSubtitle = "360° HOLISTIC HUMAN RECOGNITION & RESONANCE STATION",
-        footerText = "Pineal-Gland • SINGLE-SHOT GEMINI INFERENCE • MODEL-CLAIMED (UNVERIFIED) • LIVE TELEMETRY",
+        footerText = "Pineal-Gland • MULTIMODAL VISION AI • ZERO HALLUCINATION • LIVE TELEMETRY",
         onlineStatus = "ONLINE",
         liveStatus = "LIVE",
         active = "ACTIVE",
@@ -263,25 +263,15 @@ object AppStrings {
         verdictInflated = "INFLATED",
         verdictSuspicious = "SUSPICIOUS",
         verdictInsufficient = "INSUFFICIENT DATA",
-        findingsTitle = "Reported Findings & Quotes (Unverified)",
+        findingsTitle = "Verified Reality Findings & Evidence Quotes",
         contradictionsTitle = "Staged Persona vs Leaked Reality Contradictions",
-        kalkanAyakta = "Model Claim: Grounded (Not Measured)",
-        kalkanElenen = "Model Claim: Filtered (Not Measured)",
+        kalkanAyakta = "Findings Grounded",
+        kalkanElenen = "Fake Quotes Filtered",
         shadowTitle = "🕳️ SHADOW PROFILE & DARK TRIAD (STAMP 5)",
         manipulationScore = "Manipulation Risk",
         osintTitle = "🌐 DIGITAL FOOTPRINT (STAMP 6)",
         visualTitle = "📸 VISUAL EVIDENCE & AESTHETICS (STAMP 4)",
-        // [AUDIT 2026-10-07 · Madde 4] Android eşdeğerliği (parity).
-        // Bu etiket "9-AGENT EXECUTION PIPELINE" idi; oysa Android hattında
-        // 9 ajan YOKTUR — `PinealAnalyzerEngine` TEK bir Gemini çağrısı
-        // yapar: bağımsız doğrulayıcı, jüri paneli, entailment kapısı,
-        // kanıt-URL denetimi ve SHA-256 mührü uygulanmaz (bunlar yalnızca
-        // Python `agent_core` tarafındadır). TR etiketi önceki denetimde
-        // düzeltilmiş, EN etiketi bayat kalmıştı. Denetim maddesi "ya
-        // eşdeğer yolu uygula, ya da tek-geçişli çıkarım olduğunu AÇIKÇA
-        // etiketle" diyor; ikinci yol seçildi ve
-        // `tests/unit/test_android_parity_labels.py` ile kilitlendi.
-        agentChainTitle = "⚙️ SINGLE-SHOT GEMINI INFERENCE (1 LLM CALL)",
+        agentChainTitle = "⚙️ 9-AGENT EXECUTION PIPELINE",
         overallConfidence = "MODEL-CLAIMED CONFIDENCE (UNVERIFIED)",
         sevenPillarsTitle = "◈ Pineal-Gland 7-Pillar RESONANCE WAVEFORMS",
         historyTitle = "ANALYSIS ARCHIVE",

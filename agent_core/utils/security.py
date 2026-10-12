@@ -131,108 +131,10 @@ def security_posture() -> dict:
 
 
 def token_matches(candidate: Optional[str], expected: Optional[str] = None) -> bool:
-    """Kimlik doğrulama kararı.
-
-    ``expected`` AÇIKÇA verildiyse (testler ve iç çağrılar) davranış eskisiyle
-    birebir aynıdır: tek değerle sabit zamanlı karşılaştırma.
-
-    ``expected`` verilmediyse (HTTP/WS auth hattı) kök token (``PINEAL_TOKEN``)
-    VEYA tanımlı herhangi bir operatör token'ı (``PINEAL_OPERATOR_TOKENS``)
-    kabul edilir; böylece ``resolve_principal``'ın çözebildiği her kimlik auth
-    kapısından da geçer. ``PINEAL_OPERATOR_TOKENS`` tanımsızken (tek-token
-    dağıtım, testler) sonuç eskisiyle aynıdır.
-    """
-    if expected is None:
-        if not candidate:
-            return False
-        return resolve_principal(candidate) is not None
+    expected = os.getenv("PINEAL_TOKEN", "") if expected is None else expected
     if not candidate or not expected:
         return False
     return secrets.compare_digest(candidate.encode("utf-8"), expected.encode("utf-8"))
-
-
-# --- Operatör kimliği (principal) -------------------------------------------
-# Token -> principal eşlemesi. Oda sahipliği mührü (backend/security/principal.py)
-# bu kimliği kullanır: PINEAL_TOKEN "root" kimliğidir, PINEAL_OPERATOR_TOKENS
-# ile tanımlanan her ek token kendi kimliğine çözülür ve odalar token başına
-# ayrışır. PINEAL_OPERATOR_TOKENS tanımsızken davranış tek-token dağıtımıyla
-# birebir aynıdır.
-_OPERATOR_TOKEN_ENV = "PINEAL_OPERATOR_TOKENS"
-_ROOT_PRINCIPAL = "root"
-
-
-def _operator_tokens() -> tuple[tuple[str, str], ...]:
-    """PINEAL_OPERATOR_TOKENS -> ((principal, token), ...)
-
-    Biçim: virgülle ayrılmış girdiler; her girdi ``etiket:token`` ya da çıplak
-    ``token`` (etiket otomatik ``op<N>`` olur). Etiket ``[A-Za-z0-9_.-]+``.
-    Boş/bozuk girdiler SESSİZCE KABUL EDİLMEZ ama diğerlerini de düşürmez:
-    hatalı girdi atlanır ve loglanır (fail-safe: yanlış yazılmış bir satır
-    bütün operatör listesini kullanılamaz hale getirmemeli).
-    """
-    raw = os.getenv(_OPERATOR_TOKEN_ENV, "")
-    if not raw or not raw.strip():
-        return ()
-    out: list[tuple[str, str]] = []
-    for index, entry in enumerate(raw.split(",")):
-        entry = entry.strip()
-        if not entry:
-            continue
-        label, separator, value = entry.partition(":")
-        if separator and value.strip():
-            principal, token = label.strip(), value.strip()
-            if not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", principal):
-                logger.warning(
-                    "OPERATOR_TOKEN_REJECTED: geçersiz etiket (girdi #%d); "
-                    "yalnız [A-Za-z0-9_.-]{1,64} kabul edilir", index,
-                )
-                continue
-        else:
-            # Çıplak token: etiket yok -> konuma göre kararlı ad üret.
-            principal, token = f"op{index}", entry
-        if len(token) < 8:
-            logger.warning(
-                "OPERATOR_TOKEN_REJECTED: token çok kısa (girdi #%d, <8 karakter)",
-                index,
-            )
-            continue
-        out.append((principal, token))
-    return tuple(out)
-
-
-def resolve_principal(candidate: Optional[str]) -> Optional[str]:
-    """Sunulan token'ı bir OPERATÖR KİMLİĞİNE çözer; eşleşme yoksa ``None``.
-
-    Kimlik doğrulama kararı için ``token_matches`` kullanılmaya devam eder;
-    bu fonksiyon yalnız "HANGİ operatör?" sorusunu yanıtlar (oda sahipliği).
-    Karşılaştırmalar ``secrets.compare_digest`` ile sabit zamanlıdır.
-    """
-    if not candidate:
-        return None
-    candidate_bytes = candidate.encode("utf-8")
-    root_token = os.getenv("PINEAL_TOKEN", "")
-    if root_token and secrets.compare_digest(candidate_bytes, root_token.encode("utf-8")):
-        return _ROOT_PRINCIPAL
-    for principal, token in _operator_tokens():
-        if secrets.compare_digest(candidate_bytes, token.encode("utf-8")):
-            return principal
-    return None
-
-
-def principal_of_request(candidate: Optional[str]) -> Optional[str]:
-    """Kimlik doğrulama KAPALIYSA ``None`` (geliştirme), açıkken principal.
-
-    ``None`` -> sahiplik mühürü uygulanmaz (bugünkü davranış). Bu yalnız
-    development modunda olur; production'da auth fail-closed zorunludur
-    (bkz. ``security_posture``), dolayısıyla principal daima doludur.
-    """
-    try:
-        posture = security_posture()
-    except SecurityConfigurationError:
-        return None
-    if not posture.get("auth_required"):
-        return None
-    return resolve_principal(candidate)
 
 
 def validate_identifier(value: str, *, field: str = "identifier") -> str:

@@ -72,11 +72,7 @@ export const onRequest = async (context: any) => {
 
   // v5.0: Agent Rack mesaj filtresi — agent_status_update, telemetry_update,
   // snapshot_update, result, log tipleri şeffaf iletilir. Hiçbir mesaj
-  // sessizce düşürülmez.
-  //
-  // Agent Rack kare tipi çözümleyicisi: hata ayıklama sayacı bu fonksiyonu
-  // kullanır (agent_status_update/telemetry_update/snapshot_update/result/log
-  // ve EventBus fallback kareleri).
+  // sessizce düşürülmez; sadece parse edilebilirse loglanır (debug).
   const isAgentStatusMessage = (data: string): boolean => {
     try {
       const parsed = JSON.parse(data);
@@ -93,34 +89,20 @@ export const onRequest = async (context: any) => {
     }
   };
 
-  // EDGE LOG'UNA İÇERİK YAZILMAZ: hata ayıklama logu varsayılan olarak KAPALI,
-  // yalnız WS_DEBUG_LOG=1 ile açılır. Açıkken bile payload değil yalnız SAYAÇ
-  // ve BOYUT yazılır (kaç kare, kaç bayt); böylece canlı hata ayıklama korunur,
-  // mesaj içeriği loglara kopyalanmaz.
-  const debugLog = String(context.env?.WS_DEBUG_LOG || "") === "1";
-  let forwardedFrames = 0;
-  let forwardedBytes = 0;
-  let agentStatusFrames = 0;
-
   const pump = (from: WebSocket, to: WebSocket, label: string) => {
     from.addEventListener("message", (ev: any) => {
       if (to.readyState !== WebSocket.OPEN) return;
       // Tüm mesajlar şeffaf iletilir — özellikle agent_status_update
       // Agent Rack slotlarının Ready/Active/Wait canlı değişimi için kritik
-      if (label === "upstream->client") {
-        forwardedFrames += 1;
-        if (typeof ev.data === "string") {
-          forwardedBytes += ev.data.length;
-          if (isAgentStatusMessage(ev.data)) agentStatusFrames += 1;
+      try {
+        if (label === "upstream->client" && typeof ev.data === "string") {
+          // Debug: agent status mesajı gelirse console'da görünsün (edge log)
+          if (ev.data.includes("agent_status_update")) {
+            // Cloudflare edge log — prod'da sadece bu tip loglanır
+            console.log(`[AgentRack] Forwarding: ${ev.data.slice(0, 200)}`);
+          }
         }
-        if (debugLog && forwardedFrames % 50 === 0) {
-          // İÇERİK YOK: yalnız sayaç/boyut. Payload asla loglanmaz.
-          console.log(
-            `[AgentRack] frames=${forwardedFrames} bytes=${forwardedBytes} ` +
-              `agentStatus=${agentStatusFrames}`,
-          );
-        }
-      }
+      } catch {}
       to.send(ev.data);
     });
     from.addEventListener("close", guard(to));

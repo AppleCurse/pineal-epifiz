@@ -14,12 +14,7 @@ os.environ["LIVE_LLM_E2E"] = "1"
 
 logging.basicConfig(level=logging.DEBUG, format='%(name)s - %(levelname)s - %(message)s')
 
-# [AUDIT 2026-10-07 · P2] `task_executor` artık içe aktarımda HAZIR bir
-# yürütücü örneği sunmuyor (modül yan etkisi kaldırıldı); burada
-# kendi örneğimizi kuruyoruz.
-from agent_core.task_executor import PinealExecutor
-
-executor = PinealExecutor()
+from agent_core.task_executor import executor
 
 # Bu dosya elle çalıştırılan canlı bir LLM script'idir (python scripts/e2e_test.py);
 # pytest'in 'test' fonksiyonunu test sanıp toplamasını engelle.

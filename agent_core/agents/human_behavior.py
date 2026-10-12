@@ -7,8 +7,8 @@ observations rather than diagnoses.
 
 from __future__ import annotations
 
-import json
 import logging
+import json
 from typing import Any, Dict, List, Optional
 
 import cv2
@@ -136,9 +136,12 @@ class HumanBehaviorAnalyzer:
             ) as client:
                 # Use a shared httpx.AsyncClient to enable connection pooling for concurrent requests
                 tasks = [_fetch_and_analyze_image(client, url) for url in images[: self.MAX_IMAGES]]
-                # [E7-muaf] İç coroutine (`_fetch_and_analyze_image`) her
-                # hatayı yakalar ve [] döner; düşen URL diğerlerini düşürmez.
-                results = await asyncio.gather(*tasks)
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                for res in results:
+                    if isinstance(res, Exception):
+                        logging.error(f"Task failed in human_behavior: {res}")
+                        continue
+
                 for res in results:
                     visual_signals.extend(res)
         except httpx.HTTPError as exc:

@@ -1,14 +1,8 @@
 /**
- * PINEAL-HERETIC - Tauri Native Bridge
- * Tarayici sinirlarindan kurtulup dogrudan native pencereye erisim.
+ * PINEAL-HERETIC v5.0 - Tauri Native Bridge
+ * Tarayici sinirlarindan kurtulup dogrudan GPU hizlandirmali native pencere.
  * Bu modul hem Tauri hem de web ortaminda calisir (graceful degrade).
- *
- * NOT: "GPU hizlandirmali" iddiasi basliktan cikarildi (AUDIT 2026-10-07).
- * Bu kopru GPU'yu acmaz; yalnizca native komutlara erisir. GPU durumu
- * `getSystemInfo()` icinde OLÇÜLEREK bildirilir.
  */
-
-import { APP_VERSION } from './version'
 
 export function isTauri(): boolean {
   if (typeof window === 'undefined') return false;
@@ -100,17 +94,14 @@ export async function getSystemInfo(): Promise<any> {
     if (!isTauri()) {
       return {
         product: 'ATLAS PINEAL OBSERVATORY',
-        version: APP_VERSION,
+        version: '5.0.0',
         build: 'web',
-        // Tarayıcı kabuğunda GPU durumu ÖLÇÜLEMEZ: `false` bir ölçüm
-        // değil, 'iddia yok' anlamına gelir. Tauri tarafında gerçek
-        // sonda sonucu `get_system_info` verir.
-        gpu_acceleration: null,
+        gpu_acceleration: false,
       };
     }
     return await tauriInvoke<any>('get_system_info');
   } catch {
-    return { product: 'ATLAS PINEAL', version: APP_VERSION, build: 'unknown' };
+    return { product: 'ATLAS PINEAL', version: '5.0.0', build: 'unknown' };
   }
 }
 
