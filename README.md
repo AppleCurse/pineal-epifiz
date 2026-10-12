@@ -1,10 +1,8 @@
-# PINEAL EPİFİZ v5.1 · PINEAL-HERETIC
+# PINEAL-HERETIC (İçgörü Asistanı)
 
-> **"Kodu okuyanla belgeyi okuyan aynı şeyi görecek."**  
-> Bu belge, depodaki canlı koddan iğneden ipliğe doğrulanmış teknik, mimari ve operasyonel kılavuzdur.  
-> **Doğrulama Noktası:** HEAD `f8a50d14` (2026-09-23).  
-> Bu sürümde yalnızca **kodda birebir karşılığı olan** bileşenler, ajanlar, algoritmalar ve arayüzler anlatılır; hayali iddia, sahte simülasyon veya uydurma rota yer almaz.
+Merhaba! Pineal-Heretic, sosyal medya (özellikle Instagram ve X) üzerindeki herkese açık profilleri inceleyen, gördüklerini sizin yerinize "insani bir gözle" okuyup analiz eden akıllı bir asistandır.
 
+Bu program **kesinlikle bir hacker aracı değildir**, şifre kırmaz veya gizli hesaplara sızmaz. Sadece internetteki herkese açık resimleri, yazıları ve paylaşım saatlerini alır, tıpkı sizin günlerce ekrana bakarak yapacağınız gibi okur, ancak bunu saniyeler içinde yaparak size anlaşılır, dürüst bir "profil özeti" sunar.
 ---
 
 ```
@@ -125,27 +123,25 @@ PINEAL-HERETIC v5.1, operatöre hem derin sinematik sezgi hem de cerrahi şeffaf
 
 ---
 
-## 3. Veri Toplama & Çok Kanallı OSINT Sensörleri
+## Ne İşe Yarar ve Nasıl Çalışır?
 
-Sistem, hedef hakkındaki verileri tek bir kaynağa bağımlı kalmadan çok kanallı paralel hatlarla toplar:
-
-- **Çoklu Paralel OSINT Motoru (`backend/api.py:2136-2180`):**
-  - Hedef ad veya kullanıcı adı verildiğinde eşzamanlı olarak:
-    - `site:instagram.com "hedef"`
-    - `site:linkedin.com/in "hedef"`
-    - `site:x.com "hedef"` / `site:twitter.com "hedef"`
-    - Genel web sorgularını **Tavily**, **Exa** ve **SerpAPI** üzerinden paralel olarak koşturur.
-- **Instagram Ghost Scraper (`scraper/instagram_ghost.py`):**
-  - Playwright tabanlı başsız tarayıcı. Oturumlu çerezlerle profil metinlerini, biyografiyi, gönderi açıklamalarını ve fotoğraf linklerini çıkarır.
-- **X / Twitter Direkt Hat:**
-  - Operatör politikası gereği aktiftir (`ENABLE_TWITTER=true`, `ENABLE_X=true`).
-- **Gelişmiş Ayak İzi Tarayıcıları:**
-  - `services/maigret_scanner.py` (Kullanıcı adı korelasyonu)
-  - `services/holehe_scanner.py` (E-posta varlık denetimi)
-  - Operatör anahtarıyla devreye alınabilir (`ENABLE_MAIGRET=true`, `ENABLE_HOLEHE=true`).
+Diyelim ki bir hesabı incelemek istiyorsunuz. Programın içinde birbirinden farklı uzmanlıkları olan **12 Akıllı Ajan (Uzman)** bulunur. Görevi başlattığınızda şunlar olur:
+1. **Veri Toplar:** Sizin verdiğiniz linkteki herkese açık resimleri ve yazıları çeker.
+2. **Davranış ve Karakter Analizi Yazar:**
+   - *Zamanlama Uzmanı*, kişinin hangi saatlerde daha aktif olduğunu söyler.
+   - *İnsan Davranışı Analisti*, o kişinin paylaşımlarından ne tarz şeyleri sevdiğini, hobilerini ve karakter yapısını anlamaya çalışır.
+   - Bütün uzmanlar kendi aralarında toplanıp hedefin profilini tartışarak tek, net bir rapor çıkarır.
+3. **Kasa (Vault) Güvenliği:** Asistan, topladığı notları ve gördüğü fotoğrafları hiçbir zaman internette bırakmaz. Bilgisayarınızın derinlerinde yer alan, adına "Kasa (Vault)" dediğimiz şifreli bir odada tutar. **Ekranda kasayı kilitle derseniz**, sistem dış dünyayla (internetle) bağını tamamen koparır ve asla araştırma yapmaz.
+4. **Çocuk Koruması (Kırmızı Çizgi):** Hedef hesaptaki kişi 18 yaşının altındaysa asistan bunu tespit eder etmez araştırmayı durdurur. Bu, sistemin üzerine kurulu olduğu değişmez, aşılamaz, en temel kuraldır.
 
 ---
 
+## 💻 Mühendisler ve Geliştiriciler İçin Kurulum Rehberi
+
+> **Canlıya almadan önce:** [GO_LIVE.md](GO_LIVE.md) — port haritası, mimari
+> şema, BLOCKER `.env` tablosu, tek komutla kaldırma ve **ölçülmüş** doğrulama
+> sonuçları. Çok operatörlü kurulumda `PINEAL_OPERATOR_TOKENS` zorunludur;
+> görev sahipliği mührü (§4) ve açık bulgular listesi (§5) oradadır.
 ## 4. Epifiz'in Yedi Nöro-Bilişsel Dalga Motoru (LLM'siz Saf Matematik)
 
 Bu motorlar `agent_core/engines/` dizininde bulunur. Sıfır LLM çağrısıyla, deterministik formüllerle çalışırlar:
@@ -201,140 +197,31 @@ Pub/Sub ve WebSocket üzerinden canlı olarak Rack'e yansır:
 (Beklenti Kırma Ağacı)      (İlk Temas Mesajı)        (Gerçeklik Endeksi & Mühür)
 ```
 
-1. **`osint_investigator`:** Dijital ayak izlerini ve açık profilleri toplar.
-2. **`pineal_7pillar`:** Deterministik 7 dalga motorunu çalıştırıp mühür basar.
-3. **`mirror_truth`:** Kullanıcının niyeti ile yüzey personasını yüzleştirir.
-4. **`autonomous_verifier`:** 3 bağımsız jürili panel (`Google`, `Claude`, `Open`) ile çıkarımları denetler. (Analizi üreten model kendi jürisinde yer alamaz).
-5. **`human_behavior`:** Dijital beden dili ve psikolojik aşil tendonu tespiti yapar.
-6. **`passion_mapper`:** Hedefin tutkularını ve yüksek enerji tetikleyicilerini haritalandırır.
-7. **`friction_detector`:** Savunma mekanizmalarını, mahremiyet sınırlarını ve sürtünme alanlarını bulur.
-8. **`cognitive_profiler`:** Soyut/somut, analitik/sezgisel düşünme üslubunu çözer.
-9. **`resonance_calc`:** İki zihin arasındaki vektörel uyumu Numpy kosinüs benzerliği ile ölçer (<0.70 ise durur).
-10. **`pattern_interrupt`:** Ezber diyalogları kıran sürpriz konuşma dalları üretir.
-11. **`resonance_synthesizer`:** Manipülasyondan arındırılmış, sahici ilk temas köprüsünü kurar.
-12. **`depth_analyst`:** Tüm veriyi birleştirerek gerçeklik endeksini (`reality_index`) ve adli raporu mühürler.
+Proje hem **Python** tabanlı, dağıtık otonom ajanlarla çalışan bir Backend'den hem de **Svelte** ile yazılmış hızlı bir arayüzden oluşur.
+
+### 1. Kurulum ve Başlatma
+Sistemi sıfırdan kurmak ve çalıştırmak için:
+- Gerekli kütüphaneleri yüklemek için (Backend):
+  ```bash
+  python3 -m venv .venv
+  source .venv/bin/activate
+  pip install -r requirements.lock
+  ```
+- Sistemi doğrudan başlatmak için Windows'ta `baslat.bat` dosyasını, Unix sistemlerde ise Docker komutunu (`docker compose up --build -d`) kullanabilirsiniz.
+- Frontend'i (Ön Yüz) elle derlemek isterseniz:
+  ```bash
+  cd frontend
+  npm ci
+  npm run build
+  ```
+
+### 2. Arayüze Erişim
+Kurulum bittikten sonra internet tarayıcınızı (Chrome, Safari vb.) açıp **`http://localhost:8000`** adresine gidin. Karşınıza görev kontrol ekranı ve asistanınız "Aspasia" gelecektir.
+
+### 3. Yapılandırma ve Çalışma Prensibi (Kısa Mimari)
+- Tüm sistem dışarıya çıkışlarını `agent_core/capabilities/` isimli omurgadan (backbone) geçirir. Asla dış kütüphaneler (örneğin OpenAI vb.) doğrudan kullanılamaz; daima bu geçit kapısından onay alır.
+- Veri yetersizse sistem kendi kendine veri "uydurmaz". Analiz başarısız olur ve kırmızı bir uyarı basar (`Fail-Closed` kuralı).
 
 ---
 
-## 6. Çoklu Sağlayıcı LLM Omurgası (Direct MP-Routing + 9Router)
-
-Pineal v5.1, tek bir sağlayıcının çökmesiyle durmayacak şekilde hibrit bir routing mimarisine sahiptir:
-
-1. **Yerel 9Router Omurgası (`http://127.0.0.1:20128/v1`):**
-   - Makinede koşan yerel yönlendirici (17 hesap, 130 model, deterministik fallback).
-2. **Doğrudan Çoklu Sağlayıcı Havuzu (Direct MP-Routing):**
-   - **Google Gemini:** `gemini-3.7-flash`, `gemini-2.5-flash`, Gemini Pro, Vertex token desteği.
-   - **Groq:** Llama 3.3, GPT-OSS 120b ultra-hızlı çıkarım.
-   - **Nous Research, DeepSeek, Cerebras, Together, SambaNova, Mistral, NVIDIA NIM, iFlow, Kimchi, Fireworks.**
-   - **Yerel LLM:** Ollama / LM Studio entegrasyonu (`USE_LOCAL_LLM=true`).
-3. **OpenRouter 401 Graceful Fallback:**
-   - Harici ağ geçidi 401 veya kota aşımı verirse sistem zincirleme çökmez; doğrudan yerel veya alternatif sağlayıcı zincirine güvenli düşüş yapar.
-
----
-
-## 7. Kurulum, Yapılandırma ve Çalıştırma
-
-> **Canlıya almadan önce:** [GO_LIVE.md](GO_LIVE.md) — port haritası, mimari
-> şema, BLOCKER `.env` tablosu, tek komutla kaldırma ve **ölçülmüş** doğrulama
-> sonuçları. Çok operatörlü kurulumda açık bir P0 (paylaşılan kanıt deposu) ve
-> açık bulgular listesi oradadır; §4'ü okumadan dağıtmayın.
-
-### Hızlı Başlatma (Windows)
-```bat
-baslat.bat
-```
-*Sanal ortamı kontrol eder, frontend derlemesini yapar ve API sunucusunu başlatır.*
-
-### Geliştirici Ortamı (Terminal)
-Python ve Node sürümlerini repository manifestlerine göre kurun (`package.json` Node `>=20.19 <23` ister). Örnek yerel başlangıç:
-
-```bash
-# 1. Python Bağımlılıkları
-cp .env.example .env
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-python -m playwright install chromium
-
-# 2. Frontend Derlemesi (Svelte 5 + Vite)
-cd frontend
-npm ci
-npm run build
-cd ..
-
-# 3. Backend API Sunucusu (FastAPI + WebSocket)
-python -m uvicorn backend.api:app --host 127.0.0.1 --port 8000
-
-# 4. Canlı Önizleme (Opsiyonel)
-cd frontend && npm run preview -- --host 127.0.0.1 --port 4173
-```
-
-### Port Haritası
-
-| Port | Servis | Açıklama |
-|---|---|---|
-| `8000` | FastAPI Backend | REST API, WebSocket uplink, telemetri ve adli bellek |
-| `4173` | Frontend Preview | Svelte 5 üretim derlemesi canlı önizleme |
-| `5173` | Vite Dev Server | HMR destekli canlı frontend geliştirme |
-| `20128` | 9Router Local Hub | Yerel OpenAI-uyumlu çoklu hesap yönlendiricisi |
-| `6379` | Redis | Ajanlar arası Pub/Sub durum haberleşmesi |
-
----
-
-## 8. Test ve Doğrulama Standartları
-
-İki ayrı terminalde çalıştırın:
-
-```bash
-# Backend — yerel geliştirme ortamını açıkça seçin
-PINEAL_ENV=development python -m uvicorn backend.api:app --host 0.0.0.0 --port 8000
-
-# Frontend — Vite varsayılan olarak 1420 portunu kullanır;
-# /api ve /ws isteklerini backend'in 8000 portuna proxy eder.
-npm run dev --prefix frontend -- --host 0.0.0.0
-```
-
-Sistem her commit öncesinde sıkı kalite kapılarından geçer:
-
-- **Birim ve Entegrasyon Testleri:**
-  ```bash
-  pytest tests/unit/ tests/integration/
-  ```
-- **Sözleşme ve Rota Gölgeleri Denetimi:**
-  ```bash
-  python scripts/generate_routing_shadows.py --check
-  ```
-- **Frontend Tip ve Derleme Denetimi:**
-  ```bash
-  cd frontend && npm run build
-  ```
-- **Canlı 9Router Sağlık Probu:**
-  ```bash
-  python scripts/preflight_9router.py
-  ```
-
----
-
-## 9. Sıkça Sorulan Sorular (SSS)
-
-**S: Neden hedef hakkında hemen fal gibi analiz üretilmiyor?**  
-**C:** Çünkü Pineal Epifiz fal bakmaz. Kanıt Mührü ilkesi gereği, hedef hakkında açık veri toplanmadan hiçbir motor çalıştırılamaz. Veri yoksa sistem dürüstçe durur (`InsufficientEvidenceError`).
-
-**S: Muharebe Masası ile Atlas Kokpiti arasındaki fark nedir?**  
-**C:** Atlas Kokpiti, sezgisel ve yaşayan epifiz gözüyle derin sentez sunan estetik komuta merkezidir. Muharebe Masası (Tactical War Room) ise her ajanın girdi ve çıktısını, ham JSON sözleşmesini ve loglarını ameliyat masasına yatıran 100% şeffaf teftiş platformudur.
-
-**S: Kasa (Vault) kilitliyken ne olur?**  
-**C:** Kasa güvenlik mandalı kapalıyken dış dünyaya tek bir ağ isteği dahi çıkamaz. Kilit açılmadan sistem hiçbir harici platformu taramaz.
-
-`.env.example` içindeki sağlayıcı, canlı LLM, harcama sınırı, kimlik doğrulama ve deneysel özellik ayarlarını çalıştırmadan önce gözden geçirin. Sunucu anahtarlarını `VITE_*` frontend değişkenlerine koymayın. İsteğe bağlı bağımlılık ve geliştirme kontrolleri için root `package.json`, `requirements-*.txt` ve [frontend notlarına](frontend/README.md) bakın.
-
-### Tüzük
-
-- [Atlas Pineal Tüzüğü (v2, 2026-10-05)](docs/PINEAL_TUZUK.md) — 10 madde, yasaklar, sahalar
-
-### İnceleme raporları
-
-- [Yıldız depo karar ağacı — 325 depo, 8 kapı, 10 faz](docs/reports/YILDIZ_DEPO_KARAR_AGACI_2026-10-05.md) *(entegrasyon hükmü ve yol haritası)*
-- [Yedi önerilen eksikliğin kaynak kodu incelemesi](docs/reports/EKSIK_YETENEKLER_2026-09-26.md)
-- [C0 salt-okunur veri envanteri](docs/reports/C0_BASELINE_VERI_ENVANTERI_2026-09-26.md)
-- [P0 tarihsel baseline altyapısı için açık kapsam kararları](docs/reports/P0_PERSONAL_BASELINE_INFRASTRUCTURE_SCOPE_2026-09-26.md)
+*(Not: Eski yapay zeka denemeleri, bozuk kod parçaları ve kafa karıştırıcı dallar temizlenmiştir. Burası, uygulamanın çalışır ve insani en net halidir.)*

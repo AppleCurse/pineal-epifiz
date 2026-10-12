@@ -394,7 +394,7 @@
         window.speechSynthesis.speak(u);
       }
     } catch (error: any) {
-      messages = [...messages, { sender: 'SİSTEM', text: `HATA: ${error.message}`, time: nowTime }];
+      messages = [...messages, { sender: 'SİSTEM', text: `SİSTEM UYARISI: ${error.message}`, time: nowTime }];
     } finally {
       isSending = false;
     }

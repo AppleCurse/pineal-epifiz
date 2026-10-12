@@ -83,7 +83,7 @@
       }
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        log('ERROR', `TARAYICI: ${data?.error?.message || label + ' başarısız'}`);
+        log('ERROR', `TARAYICI: ${data?.error?.message || label + ' Tarayıcıyı başlatırken bir sorun oluştu'}`);
         return;
       }
       if (data?.url) pageUrl = data.url;
