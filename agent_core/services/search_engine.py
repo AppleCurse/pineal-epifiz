@@ -1,9 +1,12 @@
 import asyncio
+import logging
 import os
 import re
 import httpx
-from typing import List, Optional
+from typing import Callable, List, Optional
 from pydantic import BaseModel, ConfigDict
+
+logger = logging.getLogger(__name__)
 
 class SearchResult(BaseModel):
     query: str
@@ -15,18 +18,40 @@ class SearchResult(BaseModel):
 class SearchOutcome(BaseModel):
     """Provider availability is distinct from a legitimate empty search."""
     results: List[SearchResult] = []
-    status: str = "NO_RESULTS"  # OK, PARTIAL, NO_RESULTS, UNAVAILABLE
+    # OK, PARTIAL, NO_RESULTS, UNAVAILABLE, VAULT_LOCKED
+    status: str = "NO_RESULTS"
     error: Optional[str] = None
     available: bool = True
     model_config = ConfigDict(extra="forbid")
+
+
+#: Kasa kilitliyken dönen dürüst durum. `NO_RESULTS` DEĞİLDİR: "aradık, bir
+#: şey bulamadık" ile "kasa kilitli olduğu için HİÇ ARAMADIK" aynı şey değil.
+VAULT_LOCKED_STATUS = "VAULT_LOCKED"
+VAULT_LOCKED_ERROR = "vault_locked"
+
 
 class SearchEngine:
     """
     3 Kaynaklı Eşzamanlı Arama ve Doğrulama Motoru (Tavily + SerpAPI + Exa + DuckDuckGo).
     Tüm sağlayıcı çağrıları tek paylaşımlı httpx.AsyncClient üzerinden yapılır
     (connection pooling — bolt async-http-pool çalışması).
+
+    KASA MANDALI (Tüzük Md.4): kasa kilitliyse bu motor DIŞARIYA HİÇ ÇIKMAZ.
+    Eskiden yalnız SearXNG omurga yeteneği kapıdan geçiyor, Tavily/SerpAPI/Exa
+    ve "ücretsiz" DuckDuckGo yolu kasa kilidine BAKMADAN doğrudan httpx ile
+    dışarı çıkıyordu (koddaki eski itiraf: "Ücretsiz DuckDuckGo yolu bugünkü
+    davranışını korur"). Bu bir delikti: kasa "kilitli" görünürken arama
+    trafiği dışarı sızıyordu. Artık karar, herhangi bir istemci
+    oluşturulmadan ÖNCE verilir.
     """
-    def __init__(self, tavily_key: Optional[str] = None, serpapi_key: Optional[str] = None, exa_key: Optional[str] = None):
+    def __init__(
+        self,
+        tavily_key: Optional[str] = None,
+        serpapi_key: Optional[str] = None,
+        exa_key: Optional[str] = None,
+        vault_state: Optional[Callable[[], bool]] = None,
+    ):
         self.tavily_key = os.getenv("TAVILY_API_KEY") if tavily_key is None else (tavily_key if tavily_key != "" else None)
         self.serpapi_key = os.getenv("SERPAPI_API_KEY") if serpapi_key is None else (serpapi_key if serpapi_key != "" else None)
         self.exa_key = os.getenv("EXA_API_KEY") if exa_key is None else (exa_key if exa_key != "" else None)
@@ -34,6 +59,9 @@ class SearchEngine:
         # yazılır; yazılmadıysa ücretsiz yedekler (DuckDuckGo/SearXNG) mevcut
         # davranışla aynı şekilde çalışır — kasa kararını bu sınıf uydurmaz.
         self.policy: dict = {}
+        # Canlı kasa mandalı (True = kasa AÇIK). Verilmezse `policy` anlık
+        # görüntüsüne düşülür; o da yoksa DAR TARAF: kilitli.
+        self._vault_state = vault_state
 
     def set_keys(self, tavily: Optional[str] = None, serpapi: Optional[str] = None, exa: Optional[str] = None):
         if tavily is not None:
@@ -47,7 +75,49 @@ class SearchEngine:
         """Kasa/hız gerçeğini omurgaya taşır (tek kaynak: api.py interlock'u)."""
         self.policy = dict(policy or {})
 
+    def set_vault_state(self, vault_state: Optional[Callable[[], bool]]) -> None:
+        """Canlı kasa mandalını bağlar (``True`` dönerse kasa AÇIK)."""
+        self._vault_state = vault_state
+
+    def vault_locked(self) -> bool:
+        """Kasa kilitli mi? Kararın TEK yeri.
+
+        Öncelik: (1) canlı mandal, (2) ``set_policy`` anlık görüntüsü,
+        (3) hiçbiri yoksa **KİLİTLİ** (dar taraf — ``capabilities/state.py``
+        doktrini: belirsizlik asla gevşek tarafa yorumlanmaz).
+        """
+        if self._vault_state is not None:
+            try:
+                return not bool(self._vault_state())
+            except Exception:
+                # Sessiz yutma YOK: mandal okunamıyorsa bu bir arızadır,
+                # loglanır ve dar tarafa (kilitli) düşülür.
+                logger.error(
+                    "KASA MANDALI OKUNAMADI — dar taraf: KİLİTLİ (dış arama reddedilecek)",
+                    exc_info=True,
+                )
+                return True
+        if "vault_locked" in self.policy:
+            return bool(self.policy["vault_locked"])
+        return True
+
     async def search(self, query: str, num_results: int = 5) -> SearchOutcome:
+        # ── KASA MANDALI — HER ŞEYDEN ÖNCE ────────────────────────────────
+        # Kasa kilitliyse TEK BİR bayt bile dışarı çıkmaz: httpx istemcisi
+        # HİÇ OLUŞTURULMAZ, hiçbir sağlayıcı (ücretli veya "ücretsiz")
+        # çağrılmaz. Dürüst cevap: aramadık, çünkü kasa kilitli.
+        if self.vault_locked():
+            logger.warning(
+                "KASA KİLİTLİ: dış arama reddedildi (sağlayıcı isteği oluşturulmadı) query=%r",
+                (query or "")[:64],
+            )
+            return SearchOutcome(
+                results=[],
+                status=VAULT_LOCKED_STATUS,
+                error=VAULT_LOCKED_ERROR,
+                available=False,
+            )
+
         # One shared client for all providers in this query (pooling);
         # per-provider availability is reported via SearchOutcome.
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -117,7 +187,8 @@ class SearchEngine:
             "sensor.search.searxng",
             CapabilityContext(subject=query, params={"limit": num_results}),
             state=policy_state(
-                vault_locked=bool(self.policy.get("vault_locked", False)),
+                # Tek kaynak: `vault_locked()` (canlı mandal → policy → dar taraf).
+                vault_locked=self.vault_locked(),
                 rate_ok=self.policy.get("rate_ok"),
             ),
         )

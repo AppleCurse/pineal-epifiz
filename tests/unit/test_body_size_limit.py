@@ -131,3 +131,141 @@ def test_custom_env_override(client, monkeypatch):
     data = res_over.json()
     assert "BODY_TOO_LARGE" in str(data)
     assert data.get("max_bytes") == 500 or data.get("error", {}).get("max_bytes") == 500
+
+# ─────────────────────────────────────────────────────────────────────────
+# [AUDIT 2026-10-07 · P0] Middleware'in istisna yutma kusuru
+#
+# Kusur: `BodySizeLimitMiddleware.__call__` içindeki `except Exception: pass`
+# gövde tavanıyla ilgisi OLMAYAN her uygulama hatasını yutuyordu. İstemci
+# yarım/boş cevap alıyor, hata Starlette'in ServerErrorMiddleware'ine hiç
+# ulaşmıyordu (teşhis edilemez 500'ler). Sözleşme artık: bu middleware
+# YALNIZCA kendi BodySizeLimitExceeded sinyalini yakalar.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def _build_probe_app():
+    """Middleware'i saran, kontrollü şekilde patlayan minimal bir uygulama."""
+    from fastapi import FastAPI
+
+    probe = FastAPI()
+    probe.add_middleware(BodySizeLimitMiddleware)
+
+    @probe.post("/boom")
+    async def boom():
+        raise RuntimeError("DOWNSTREAM_SENTINEL")
+
+    @probe.get("/ok")
+    async def ok():
+        return {"ok": True}
+
+    return probe
+
+
+def test_unrelated_downstream_exception_reaches_the_client():
+    """Ajan/uygulama hatası YUTULMAZ: istemci açıklamalı bir 500 alır.
+
+    Kusurlu sürümde cevap gövdesi TAMAMEN BOŞ kalıyordu (''), çünkü
+    middleware hatayı yutup sessizce dönüyordu. Düzeltilmiş sürümde hata
+    ServerErrorMiddleware'e ulaşır ve istemci standart 'Internal Server
+    Error' gövdesini alır. Bu yüzden gövdeyi de kontrol ediyoruz.
+    """
+    client = TestClient(_build_probe_app(), raise_server_exceptions=False)
+    response = client.post("/boom", json={})
+    assert response.status_code == 500
+    assert response.text == "Internal Server Error", (
+        "boş cevap gövdesi = istisna hâlâ yutuluyor: gövde-tavanı "
+        "middleware'i kendisine ait olmayan hatayı sahiplenmiş"
+    )
+
+
+def test_downstream_exception_surfaces_to_the_server_layer():
+    """Hata ServerErrorMiddleware'e ulaşmalı: orijinal istisna yükselir.
+
+    Starlette'in ServerErrorMiddleware'i istemciye 500 yazdıktan sonra
+    ASGI sunucusuna (burada TestClient'a) orijinal istisnayı yeniden
+    fırlatır. Middleware hatayı yutarsa bu katman hiç devreye girmez ve
+    orijinal istisna çağırana hiç ulaşmaz — yani teşhis imkânsız olur.
+    """
+    client = TestClient(_build_probe_app(), raise_server_exceptions=True)
+    with pytest.raises(RuntimeError, match="DOWNSTREAM_SENTINEL"):
+        client.post("/boom", json={})
+
+
+def test_middleware_reraises_non_body_limit_exceptions():
+    """Birim düzeyi kanıt: BodySizeLimitExceeded DIŞINDA her şey yükselir."""
+
+    async def exploding_app(scope, receive, send):  # noqa: ARG001
+        raise RuntimeError("DOWNSTREAM_SENTINEL")
+
+    middleware = BodySizeLimitMiddleware(exploding_app, max_bytes=1024)
+    scope = {"type": "http", "headers": []}
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):  # pragma: no cover - hiç çağrılmamalı
+        raise AssertionError("istisna yutuldu: cevap kanalı kullanıldı")
+
+    import asyncio
+
+    with pytest.raises(RuntimeError, match="DOWNSTREAM_SENTINEL"):
+        asyncio.run(middleware(scope, receive, send))
+
+
+def test_middleware_swallows_only_its_own_body_limit_signal():
+    """Kendi sinyali yutulur ve 413 üretilir (kontrol deneyi)."""
+    sent = []
+
+    async def oversized_app(scope, receive, send):  # noqa: ARG001
+        # Gövdeyi sonuna kadar oku -> tavan aşılır -> sinyal fırlar.
+        while True:
+            message = await receive()
+            if not message.get("more_body", False):
+                break
+
+    middleware = BodySizeLimitMiddleware(oversized_app, max_bytes=10)
+    scope = {"type": "http", "headers": []}
+    chunks = [b"X" * 6, b"Y" * 6]
+    index = {"i": 0}
+
+    async def receive():
+        i = index["i"]
+        index["i"] += 1
+        if i < len(chunks):
+            return {"type": "http.request", "body": chunks[i], "more_body": True}
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):
+        sent.append(message)
+
+    import asyncio
+
+    asyncio.run(middleware(scope, receive, send))
+
+    statuses = [m.get("status") for m in sent if m["type"] == "http.response.start"]
+    assert statuses == [413], f"yalnızca tek bir 413 çerçevesi beklenir, gelen: {statuses}"
+
+
+def test_cancellation_is_never_swallowed():
+    """CancelledError bir BaseException'dır: middleware onu da yutmamalı."""
+    import asyncio
+
+    async def cancelling_app(scope, receive, send):  # noqa: ARG001
+        raise asyncio.CancelledError()
+
+    middleware = BodySizeLimitMiddleware(cancelling_app, max_bytes=1024)
+    scope = {"type": "http", "headers": []}
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):  # pragma: no cover
+        raise AssertionError("iptal yutuldu")
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(middleware(scope, receive, send))
+
+
+def test_healthy_route_is_unaffected_by_the_narrowed_handler(client):
+    """Daraltılmış yakalayıcı normal akışı bozmaz (regresyon koruması)."""
+    assert client.get("/health").status_code in (200, 503)

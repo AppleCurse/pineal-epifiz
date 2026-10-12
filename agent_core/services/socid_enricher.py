@@ -102,12 +102,37 @@ async def enrich_urls(urls, limit: int = 3):
 
     Dönen listede yalnız `available=True` kayıtlar bulunur; hatalar sessizce
     yutulmaz — çağıran isterse `extract_profile` ile tekil sebep alabilir.
+
+    [E7] Kısmi sonuç koruması: `asyncio.gather` artık `return_exceptions=True`
+    ile koşar. Eskiden BEKLENMEDİK bir istisna (ör. socid_extractor sürüm
+    farkı) tüm partiyi düşürüyordu — yani tek bozuk URL yüzünden elde
+    edilebilir diğer kayıtlar da kayboluyordu. Şimdi düşen hedef kendi
+    `scan_error` kaydına dönüşür, parti devam eder ve düşüş SESSİZ KALMAZ
+    (uyarı logu + makine-okunur sebep; isteyen `extract_profile` ile tekil
+    kayda bakar).
     """
     import asyncio
+    import logging
 
     targets = [u for u in (urls or []) if isinstance(u, str)][:limit]
     if not targets:
         return []
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT, follow_redirects=False) as client:
-        records = await asyncio.gather(*(extract_profile(u, client=client) for u in targets))
+        raw = await asyncio.gather(
+            *(extract_profile(u, client=client) for u in targets),
+            return_exceptions=True,
+        )
+    records = []
+    for url, item in zip(targets, raw):
+        if isinstance(item, SocidRecord):
+            records.append(item)
+        else:
+            # Dürüstlük: beklenmedik istisna "sonuç yok" DEĞİL, "hata"dır.
+            logging.warning(
+                "socid enrich beklenmedik hata (hedef kayıt düşürüldü): %s",
+                type(item).__name__,
+            )
+            records.append(
+                SocidRecord(source_url=url, available=False, reason="scan_error")
+            )
     return [r for r in records if r.available]

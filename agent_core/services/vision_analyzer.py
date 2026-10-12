@@ -182,6 +182,9 @@ class VisionAnalyzer:
         # Parallel image download with shared client for connection pooling
         async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
             tasks = [self._download_image_record(url, client=client) for url in valid_urls]
+            # [E7-muaf] `_download_image_record` hata yerine KAYIT döner
+            # (status/reason alanlarıyla); provenance listesi bu yüzden
+            # "hangi URL neden düştü"yü gösterebiliyor.
             records = await asyncio.gather(*tasks)
 
         # [014] provenance: hangi URL analiz edildi, hangisi neden düşürüldü.

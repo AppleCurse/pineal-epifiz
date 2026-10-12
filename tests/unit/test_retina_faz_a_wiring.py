@@ -283,16 +283,25 @@ async def test_searxng_blocked_when_vault_locked(monkeypatch):
 
     Koşturucu MOCKLANMAZ (mock kapıyı atlardı); bunun yerine HTTP istemcisi
     "patlayan" bir istemciyle değiştirilir: istek çıkarsa test düşer.
+
+    [KASA MANDALI — SIKILAŞTIRILDI] Bu test eskiden iki şeyi gizliyordu:
+      1. `_search_duckduckgo` boş döndürecek şekilde MAYMUNLANIYORDU, yani
+         kasa kapalıyken DuckDuckGo'ya GERÇEKTEN istek çıkması görünmüyordu.
+      2. Sonuç `NO_RESULTS` + `available=True` idi: "aradık, bulamadık"
+         demek, "kasa kilitli olduğu için HİÇ ARAMADIK" demek DEĞİLDİR.
+    Artık hem search_engine'in hem omurganın httpx istemcisi patlayıcı;
+    istemci OLUSTURULURSA test düşer. Beklenen dürüst cevap VAULT_LOCKED.
     """
     from agent_core.capabilities import adapters_sensors
+    from agent_core.services import search_engine as search_mod
     from agent_core.services.search_engine import SearchEngine
 
     class _BoomClient:
-        def __init__(self, **kw):
-            pass
+        def __init__(self, *a, **kw):
+            raise AssertionError("kasa kapalıyken dışarı HTTP istemcisi oluşturuldu")
 
         async def __aenter__(self):
-            return self
+            raise AssertionError("kasa kapalıyken dışarı HTTP istemcisi oluşturuldu")
 
         async def __aexit__(self, *a):
             return False
@@ -300,20 +309,23 @@ async def test_searxng_blocked_when_vault_locked(monkeypatch):
         async def get(self, *a, **kw):
             raise AssertionError("kasa kapalıyken dışarı HTTP isteği çıktı")
 
+        async def post(self, *a, **kw):
+            raise AssertionError("kasa kapalıyken dışarı HTTP isteği çıktı")
+
     monkeypatch.setattr(adapters_sensors.httpx, "AsyncClient", _BoomClient)
+    monkeypatch.setattr(search_mod.httpx, "AsyncClient", _BoomClient)
     monkeypatch.setenv("ENABLE_SEARXNG", "true")
     monkeypatch.setenv("SEARXNG_BASE_URL", "http://127.0.0.1:8080")
 
     engine = SearchEngine()
     engine.set_policy({"vault_locked": True})
 
-    async def _no_dd(self, query, num_results, client=None):
-        return []
-
-    monkeypatch.setattr(SearchEngine, "_search_duckduckgo", _no_dd)
+    # DuckDuckGo MAYMUNLANMAZ: kasa kapalıyken ona da ulaşılmamalı.
     outcome = await engine.search("hedef", num_results=3)
     assert outcome.results == []
-    assert outcome.status == "NO_RESULTS"
+    assert outcome.status == "VAULT_LOCKED"
+    assert outcome.available is False
+    assert outcome.error == "vault_locked"
 
 
 @pytest.mark.asyncio

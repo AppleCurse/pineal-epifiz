@@ -213,7 +213,14 @@ def test_safe_child_path_rejects_traversal_and_outside_symlink(tmp_path):
     storage.mkdir()
     outside = tmp_path / "outside.json"
     outside.write_text("secret", encoding="utf-8")
-    (storage / "linked.json").symlink_to(outside)
+    try:
+        (storage / "linked.json").symlink_to(outside)
+    except (OSError, NotImplementedError) as exc:
+        # [2026-10-07] Windows'ta sembolik bağ oluşturmak yönetici hakkı ya da
+        # Geliştirici Modu ister; yoksa symlink_to() WinError 1314 ile düşer.
+        # Test edilen mantık (bağ dışarıyı gösteriyorsa ret) doğru kalır —
+        # atlanan şey platformun kısıtı, kapsam değil. Linux CI'da koşar.
+        pytest.skip(f"sembolik bağ oluşturulamadı (platform kısıtı): {exc}")
 
     with pytest.raises(ValueError, match="PATH_TRAVERSAL_BLOCKED"):
         safe_child_path(str(storage), "../outside.json")

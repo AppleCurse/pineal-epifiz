@@ -1,9 +1,9 @@
 [package]
 name = "pineal_heretic_core"
-version = "5.0.0"
+version = "3.0.0-rc.2"
 edition = "2021"
 authors = ["Pineal-Heretic Team"]
-description = "Core Rust engine for Pineal-Heretic v5.0 - Memory-safe, type-secure agent orchestration"
+description = "Core Rust engine for PINEAL-HERETIC v3.0.0-rc.2 - Memory-safe, type-secure agent orchestration"
 
 [lib]
 name = "pineal_heretic_core"

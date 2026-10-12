@@ -94,7 +94,8 @@ async def test_invalid_target_url():
     assert research["available"] is False
 
 
-def test_endpoint_authorize_runs_real_research():
+def test_endpoint_authorize_runs_real_research(vault_open):
+    # Ön koşul: kasa AÇIK (bu test mandalı değil, gerçek araştırma akışını ölçer).
     cid = "fx_alt_research"
     with TestClient(app) as client:
         client.websocket_connect  # noqa: B018 — ws kullanılmıyor, HTTP yolu test ediliyor

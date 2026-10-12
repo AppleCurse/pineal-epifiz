@@ -34,6 +34,7 @@ import hashlib
 import json
 import os
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -47,6 +48,7 @@ __all__ = [
     "MinorDecision",
     "MinorGate",
     "MinorCaseLedger",
+    "coerce_minor_case",
 ]
 
 #: 18 yaşından küçük her birey çocuktur (ürün kuralı — tartışmaya kapalı).
@@ -73,6 +75,80 @@ class MinorCaseContext:
     verified: bool = False                   # 3) vaka doğrulandı mı
     council_approvals: tuple[str, ...] = ()  # 4) konsorsiyum onaylayıcıları
     case_id: str = ""
+
+
+def _strict_bool(value: Any) -> bool:
+    """Yalnız GERÇEK ``True`` sayılır — ``"true"`` · ``1`` · ``"evet"`` DEĞİL.
+
+    DÖRT ŞART için geçerlidir (aile bilgisi, doğrulama): şartlardan biri
+    metinle "doğru gibi görünerek" GEÇEMEZ. JSON'dan gelen gerçek boolean tek
+    kabul edilen biçimdir.
+    """
+    return value is True
+
+
+def _declared_minor(value: Any) -> bool:
+    """BEYANIN KENDİSİ — burada fail-closed yön TERSİNE çalışır.
+
+    ``_strict_bool`` beyan alanına uygulansaydı ``{"subject_is_minor": "true"}``
+    gönderen bir istemci "çocuk değil" hükmü almış olurdu: yani beyanı
+    yorumlayamamak onu YOK SAYMAK hâline gelirdi — kilidi delmenin en sessiz
+    biçimi. Bu yüzden yalnız AÇIKÇA ``False`` (+ eşanlamlıları) "yetişkin"
+    sayılır; alanın yokluğu ve okunamayan her değer beyan SAYILIR.
+    """
+    if value is None:
+        return True  # alan yok: nesnenin kendisi zaten beyandır
+    if value is False:
+        return False
+    if isinstance(value, str) and value.strip().lower() in {
+        "false", "0", "no", "hayir", "hayır",
+    }:
+        return False
+    return True
+
+
+def _coerce_approvals(value: Any) -> tuple[str, ...]:
+    """Onay listesini metin demetine çevirir (tek metin de kabul edilir)."""
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        return tuple(part.strip() for part in value.split(",") if part.strip())
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return tuple(str(item).strip() for item in value if str(item).strip())
+    return ()
+
+
+def coerce_minor_case(value: Any) -> "MinorCaseContext | None":
+    """Ham beyanı ``MinorCaseContext``e çevirir — BEYAN ASLA SESSİZCE DÜŞMEZ.
+
+    API ve görev katmanları ham JSON taşır; kilidin tek sahibi burasıdır.
+
+    - ``None`` → beyan yok (``None``): yetişkin yolu, karar mercii operatördür.
+    - ``MinorCaseContext`` → aynen döner (oda zaten nesne tutuyorsa).
+    - ``Mapping`` → bilinen alanlar okunur. **Dört şart** eksik/bozuk ise
+      güvenli varsayılana düşer (``False`` / ``""``) ve ``MinorGate`` bunları
+      REDDEDER; yani yarım beyan "dur" demektir, "geç" değil. Beyanın kendisi
+      (``subject_is_minor``) ise TERS yönde fail-closed'dır: yalnız açıkça
+      ``False`` yetişkin sayılır (bkz. ``_declared_minor``).
+    - Tanınmayan tip → ``subject_is_minor=True`` + boş vaka: **fail-closed**.
+      Operatörün çocuk beyanını yorumlayamadı diye yok saymak, kilidi delmek
+      olurdu.
+    """
+    if value is None:
+        return None
+    if isinstance(value, MinorCaseContext):
+        return value
+    if isinstance(value, Mapping):
+        return MinorCaseContext(
+            subject_is_minor=_declared_minor(value.get("subject_is_minor")),
+            case_type=str(value.get("case_type") or ""),
+            family_notified=_strict_bool(value.get("family_notified")),
+            reason=str(value.get("reason") or ""),
+            verified=_strict_bool(value.get("verified")),
+            council_approvals=_coerce_approvals(value.get("council_approvals")),
+            case_id=str(value.get("case_id") or ""),
+        )
+    return MinorCaseContext(subject_is_minor=True)
 
 
 @dataclass(frozen=True)

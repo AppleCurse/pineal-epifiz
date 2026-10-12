@@ -56,6 +56,9 @@ class PillarOrchestrator:
         # Insufficient input is represented by each engine's typed
         # INSUFFICIENT_DATA report. Exceptions are actual failures and must
         # reach PinealExecutor's critical 7-pillar policy.
+        # [E7-muaf] BİLİNÇLİ all-or-nothing: 7-sütun politikası bir sütunun
+        # hatasını GÖRMEK zorundadır (aşağıdaki yorum). Kısmi sonuç burada
+        # "rapor tamam" görüntüsü üretirdi — E7'nin kendi gerekçesiyle çelişir.
         f, s, v, st, g, p = await asyncio.gather(*(run_component(*x) for x in specs))
         try:
             k = await self.key.analyze(freq=f, seismos=s, void=v, strata=st, gravity=g, pulse=p)

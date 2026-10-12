@@ -99,6 +99,9 @@ class XTwscrapeCapability(BaseCapability):
                 return CapabilityResult(
                     capability_id=self.id, available=False, unavailable_reason="user_not_found"
                 )
+            # [E7-muaf] twscrape'in KENDİ gather'ı (asyncio değil) ve zaten
+            # tek çağrı; hatası aşağıdaki try/except ile dürüst
+            # CapabilityResult(available=False) hâline gelir.
             tweets = await gather(api.user_tweets(user.id, limit=limit))
         except asyncio.TimeoutError:
             return CapabilityResult(

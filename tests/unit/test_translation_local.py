@@ -11,6 +11,7 @@ Kilitlenen iddialar:
 from __future__ import annotations
 
 import json
+import os
 import stat
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -22,6 +23,19 @@ from agent_core.services import translation
 TR_TEXT = (
     "Merhaba, bugün hava çok güzel ve ben dışarı çıkmak istiyorum. "
     "Ama önce işlerimi bitirmem gerekiyor çünkü yarın için hazırlık yapmalıyım."
+)
+
+# [2026-10-07] Sahte çeviri CLI'ları POSIX kabuk betiği (`#!/bin/sh`).
+# `_run_cli` komutu `create_subprocess_exec` ile doğrudan çalıştırır; Windows
+# betik dosyasını yürütemez (WinError 193) — yani kırılan şey çeviri mantığı
+# değil, sahtenin çalıştırılabilirliği. Sözleşme POSIX'te (CI: ubuntu-latest)
+# ölçülmeye devam eder; Windows'ta dürüstçe atlanır.
+_POSIX_SHELL_CLI = pytest.mark.skipif(
+    os.name != "posix",
+    reason=(
+        "sahte CLI POSIX kabuk betiği (#!/bin/sh); "
+        "create_subprocess_exec Windows'ta betiği yürütemez (WinError 193)"
+    ),
 )
 
 
@@ -166,6 +180,7 @@ class TestLocalEndpoint:
             server.shutdown()
 
 
+@_POSIX_SHELL_CLI
 class TestLocalCli:
     @pytest.fixture()
     def cli_engine(self, monkeypatch, tmp_path):

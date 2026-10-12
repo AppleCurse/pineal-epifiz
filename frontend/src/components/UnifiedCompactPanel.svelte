@@ -35,16 +35,20 @@
     });
   }
 
-  function toggleSigint() {
-    sigintEngaged.update(v => {
-      const next = !v;
-      playToggle(next);
-      logs.update(l => [...l, { ts: new Date().toLocaleTimeString(), level: 'INFO', msg: next ? 'SIGINT: OPEN' : 'SIGINT: CLOSED' }]);
-      if (next && $isProcessing) {
-        cancelAnalysis();
+  // Svelte store updater'ı SAF olmalıdır: ses/log/ağ isteği gibi yan etkiler
+  // updater DIŞINDA yürütülür. Durum geçişi `get` + `set` ile deterministik;
+  // iptal sonucu `await` edilir ve başarısızlık loglanır.
+  async function toggleSigint() {
+    const next = !get(sigintEngaged);
+    sigintEngaged.set(next);
+    playToggle(next);
+    logs.update(l => [...l, { ts: new Date().toLocaleTimeString(), level: 'INFO', msg: next ? 'SIGINT: OPEN' : 'SIGINT: CLOSED' }]);
+    if (next && get(isProcessing)) {
+      const cancelled = await cancelAnalysis();
+      if (!cancelled) {
+        logs.update(l => [...l, { ts: new Date().toLocaleTimeString(), level: 'ERROR', msg: 'SIGINT: iptal BAŞARISIZ — görev hâlâ çalışıyor olabilir' }]);
       }
-      return next;
-    });
+    }
   }
 
   function toggleRecord() {
@@ -75,16 +79,28 @@
     });
   }
 
-  function emergencyStop() {
+  // ACİL STOP: iptal isteğini gönderir ve SONUCUNU bekler. Başarı/başarısızlık
+  // logu backend'in gerçek yanıtına göre yazılır; hat boştayken (iptal edilecek
+  // görev yokken) istek gönderilmez.
+  async function emergencyStop() {
     playHalt();
     const active = get(isProcessing) || get(taskStatus)?.status === 'processing';
-    if (active) {
-      logs.update(l => [...l, { ts: new Date().toLocaleTimeString(), level: 'ERROR', msg: 'ACİL STOP: görev iptal emri verildi' }]);
-      cancelAnalysis();
-    } else {
+    const stamp = () => new Date().toLocaleTimeString();
+    if (!active) {
       playClick(120, 90);
-      logs.update(l => [...l, { ts: new Date().toLocaleTimeString(), level: 'INFO', msg: 'ACİL STOP: hat boşta (iptal edilecek görev yok)' }]);
+      logs.update(l => [...l, { ts: stamp(), level: 'INFO', msg: 'ACİL STOP: hat boşta (iptal edilecek görev yok)' }]);
+      return;
     }
+    // Dürüst sıra: önce "emir GÖNDERİLİYOR", sonra backend'in GERÇEK kararı.
+    logs.update(l => [...l, { ts: stamp(), level: 'ERROR', msg: 'ACİL STOP: iptal emri GÖNDERİLİYOR (sonuç bekleniyor)…' }]);
+    const cancelled = await cancelAnalysis();
+    logs.update(l => [...l, {
+      ts: stamp(),
+      level: cancelled ? 'INFO' : 'ERROR',
+      msg: cancelled
+        ? 'ACİL STOP: görev backend tarafından DURDURULDU'
+        : 'ACİL STOP: İPTAL EDİLEMEDİ — görev hâlâ çalışıyor olabilir, bağlantıyı/token’ı denetleyin',
+    }]);
   }
 
   // Düğmeler GERÇEK işlevlidir (süs değil):
@@ -345,9 +361,17 @@
         }
       }
 
-      // [UI-BRIDGE] Chat ağızları: tüm sekmeler aynı tek /api/aspasia/chat
-      // ağzını kullanır; sekme yalnız bağlam değiştirir.
-      const chatUrl = activeAgentId === 'ASPASIA' ? '/api/aspasia/chat' : '/api/aspasia/chat';
+      // [UI-BRIDGE] Chat ağızları: tüm sekmeler aynı TEK /api/aspasia/chat
+      // ağzını kullanır.
+      // Sohbet ucu TEPTİR: tüm sekmeler aynı ağzı kullanır; seçili ajan sekmesi
+      // GÖRSEL bağlamdır, istek gövdesine alan olarak eklenmez. Kaldırılan ölü
+      // ternary iki kolu da aynı uca bağlıyordu:
+      //     const chatUrl = activeAgentId === 'ASPASIA' ? '/api/aspasia/chat'
+      //                                                 : '/api/aspasia/chat';
+      // AspasiaChatPayload (backend/api.py) yalnız client_id / user_message /
+      // model_override / image_data kabul eder; sekme sunucuya taşınacaksa
+      // payload'a alan EKLENMELİDİR.
+      const chatUrl = '/api/aspasia/chat';
       const payload: any = { client_id: $clientId, user_message: currentInput };
       if (currentImage) payload.image_data = currentImage;
       const res = await apiFetch(chatUrl, {
@@ -415,11 +439,45 @@
     }
   }
 
-  async function cancelAnalysis() {
+  // İPTAL, sonucu doğrulanan bir işlemdir: başarı iddiası yalnız `res.ok`
+  // (2xx) ile basılır. Dönüş sözleşmesi: true = backend iptali KABUL ETTİ;
+  // false = iptal EDİLEMEDİ (görev hâlâ çalışıyor olabilir). Hata durumunda
+  // HTTP status ve gövdedeki hata kodu loglanır.
+  async function cancelAnalysis(): Promise<boolean> {
     const activeTaskId = $taskStatus?.task_id;
-    if (!activeTaskId) return;
+    if (!activeTaskId) return false;
     playHalt();
-    await apiFetch(`/api/tasks/${activeTaskId}/cancel?client_id=${$clientId}`, { method: 'POST' });
+    const stamp = () => new Date().toLocaleTimeString();
+    try {
+      const res = await apiFetch(
+        `/api/tasks/${encodeURIComponent(activeTaskId)}/cancel?client_id=${encodeURIComponent($clientId)}`,
+        { method: 'POST' }
+      );
+      if (!res.ok) {
+        // Hata kodunu gövdeden çıkar (backend tutarlı {error:{code}} döner);
+        // gövde JSON değilse sessizce boş bırak — asıl bilgi status kodudur.
+        let code = '';
+        try {
+          code = (await res.json())?.error?.code || '';
+        } catch { /* gövde JSON değil */ }
+        const detail = code ? `${res.status} ${code}` : `${res.status}`;
+        if (isAuthFailure(res)) {
+          logs.update(l => [...l, { ts: stamp(), level: 'ERROR', msg: `İPTAL BAŞARISIZ (${detail}): PINEAL_TOKEN geçersiz/eksik — GÖREV HÂLÂ ÇALIŞIYOR OLABİLİR` }]);
+        } else if (res.status === 429) {
+          logs.update(l => [...l, { ts: stamp(), level: 'ERROR', msg: `İPTAL BAŞARISIZ (${detail}): hız sınırı — birkaç saniye sonra yeniden deneyin, GÖREV ÇALIŞIYOR` }]);
+        } else {
+          logs.update(l => [...l, { ts: stamp(), level: 'ERROR', msg: `İPTAL BAŞARISIZ (${detail}) — GÖREV HÂLÂ ÇALIŞIYOR OLABİLİR` }]);
+        }
+        return false;
+      }
+      logs.update(l => [...l, { ts: stamp(), level: 'INFO', msg: `İPTAL ONAYLANDI (${res.status}): backend görevi durdurdu — ${activeTaskId}` }]);
+      return true;
+    } catch (e: any) {
+      // Ağ katmanı hatası (backend erişilemez, CORS, DNS, bağlantı koptu).
+      // Yutulmaz: operatöre iptalin OLMADIĞI açıkça söylenir.
+      logs.update(l => [...l, { ts: stamp(), level: 'ERROR', msg: `İPTAL GÖNDERİLEMEDİ: ${e?.message || e} — GÖREV HÂLÂ ÇALIŞIYOR OLABİLİR` }]);
+      return false;
+    }
   }
 
   afterUpdate(() => {

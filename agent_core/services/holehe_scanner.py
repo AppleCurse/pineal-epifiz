@@ -124,6 +124,8 @@ async def _run_library_scan(
                 stalled.append(name)
 
     try:
+        # [E7-muaf] `_runner` her istisnayı yakalar ve modülü `stalled`
+        # listesine yazar (dürüst kayıt); gather'a istisna SIZMAZ.
         await asyncio.gather(*(_runner(fn) for fn in functions))
     finally:
         await client.aclose()
