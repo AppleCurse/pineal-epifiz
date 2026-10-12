@@ -234,6 +234,11 @@ Pineal v5.1, tek bir sağlayıcının çökmesiyle durmayacak şekilde hibrit bi
 
 ## 7. Kurulum, Yapılandırma ve Çalıştırma
 
+> **Canlıya almadan önce:** [GO_LIVE.md](GO_LIVE.md) — port haritası, mimari
+> şema, BLOCKER `.env` tablosu, tek komutla kaldırma ve **ölçülmüş** doğrulama
+> sonuçları. Çok operatörlü kurulumda açık bir P0 (paylaşılan kanıt deposu) ve
+> açık bulgular listesi oradadır; §4'ü okumadan dağıtmayın.
+
 ### Hızlı Başlatma (Windows)
 ```bat
 baslat.bat
