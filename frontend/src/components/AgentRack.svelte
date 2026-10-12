@@ -54,8 +54,8 @@
       case 'queued': return 'WAIT';
       case 'done': return 'DONE';
       case 'completed': return 'DONE';
-      case 'error': return 'ERROR';
-      case 'failed': return 'ERROR';
+      case 'error': return 'HATA';
+      case 'failed': return 'HATA';
       default: return status?.toUpperCase() || 'WAIT';
     }
   }
@@ -76,7 +76,7 @@
   $: readyCount = slotLabels.filter((l) => l === 'READY').length;
   $: activeCount = slotLabels.filter((l) => l === 'ACTIVE').length;
   $: waitCount = slotLabels.filter((l) => l === 'WAIT').length;
-  $: errorCount = slotLabels.filter((l) => l === 'ERROR').length;
+  $: errorCount = slotLabels.filter((l) => l === 'HATA').length;
   $: hasBackendStatus = Object.keys(statuses).length > 0;
 
   // Durum kaynağı backend beyanından gelir; süs etiketi basılmaz.
@@ -87,7 +87,7 @@
     redis_bus: 'REDIS PUB/SUB',
     in_memory: 'YEREL BELLEK (REDIS YOK)',
     fallback: 'TRACKER YÜKLÜ DEĞİL',
-    error: 'TRACKER HATASI',
+    error: 'SİSTEM YANIT VERMİYOR',
     unreachable: 'API ERİŞİLEMEDİ',
     none: 'KAYNAK YOK',
   };
@@ -111,7 +111,7 @@
         class:active={label === 'ACTIVE'} 
         class:ready={label === 'READY'} 
         class:wait={label === 'WAIT'} 
-        class:error={label === 'ERROR'}
+        class:error={label === 'HATA'}
         class:selected={selectedAgentId === agent.id}
         style="--agent-color:{agent.color}; --status-color:{color}; cursor: pointer;"
         on:click={() => selectAgent(agent.id)}
