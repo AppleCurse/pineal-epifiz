@@ -166,7 +166,6 @@
     { id: "authenticity_auditor",  name: "AUTHENTICITY AUDITOR",  color: "#eab308", primaryModel: "pineal-vision",             backupModel: "(forensic)",        via: "9router", capability: "vision+verify",   glyph: "🔍" },
     { id: "depth_analyst",         name: "DEPTH ANALYST",         color: "#8b5cf6", primaryModel: "pineal-deep-reasoning",     backupModel: "(combo)",           via: "9router", capability: "strong_reasoning", glyph: "💎" },
   ];
-
 // <ROUTING-GENERATED-END>
 
   // --- İKİ DİLLİ ETİKETLER (EN gravür + TR alt satır) ---
