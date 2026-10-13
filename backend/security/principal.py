@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "RoomForbiddenError",
     "bind_principal",
+    "check_room_seal",
     "current_principal",
     "enforce_room_ownership",
     "forbidden_body",
@@ -146,3 +147,38 @@ def forbidden_body(*, openai_style: bool, error_factory) -> dict:
             "message": "Bu oda başka bir operatöre mühürlü.",
         }
     }
+
+
+def check_room_seal(
+    client_id: str,
+    rooms: Optional[dict],
+    principal: Optional[str],
+) -> Optional[str]:
+    """ODA OLUŞTURMADAN sahiplik denetimi — salt-okunur uçlar için.
+
+    ``enforce_room_ownership`` oda kaydına mührü YAZAR ve çağıran taraf odayı
+    oluşturur; durum sorguları (ör. ``GET /api/minor/state``) ise bilinçli
+    olarak yan etkisizdir: durum sorgusu oda açıp bellek tüketmemelidir. Bu
+    yüzden aynı kuralın OLUŞTURMAYAN sürümü burada:
+
+      * ``principal is None``  -> mühür yok (development).
+      * Oda YOK                -> henüz mühürlenmedi; serbest.
+      * Oda SAHİPSİZ           -> serbest (ilk yazan ``get_room`` ile mühürler).
+      * Oda BAŞKASINA mühürlü  -> ``"forbidden"`` (çağıran 403 üretir).
+
+    Ölçülen kusur (GO_LIVE.md §5.1): çocuk kilidi uçları ``client_id``'yi hiç
+    denetlemiyordu; başka operatörün odası için beyan durumu OKUNABİLİYOR,
+    beyan KAYDEDİLEBİLİYOR ve ``/api/minor/clear`` ile SİLİNEBİLİYORDU — yani
+    çocuk kilidi çapraz operatör AÇILABİLİYORDU.
+    """
+    if principal is None or rooms is None:
+        return None
+    owner = rooms.get(client_id, {}).get("_owner")
+    if owner is not None and owner != principal:
+        logger.warning(
+            "ROOM_FORBIDDEN (salt-okunur denetim): principal=%s (client_id uzunluğu=%d)",
+            principal,
+            len(client_id or ""),
+        )
+        return "forbidden"
+    return None

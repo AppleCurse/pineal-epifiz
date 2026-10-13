@@ -596,9 +596,24 @@ from backend.security.principal import (  # noqa: F401  (geriye dönük ihracat)
     forbidden_body as forbidden_body,
     RoomForbiddenError as RoomForbiddenError,
     bind_principal as _set_principal,
+    check_room_seal as _check_room_seal,
     current_principal as _get_principal,
     enforce_room_ownership as _enforce_room_ownership,
     reset_principal as _reset_principal,
+)
+# --- GÖREV SAHİPLİĞİ ---------------------------------------------------------
+# Oda mührü tek başına YETMİYORDU: kanıt deposu (`CanonicalMemory`) yalnız
+# `task_id` ile anahtarlanmış DÜZ bir dosya alanıdır ve `PINEAL_MEMORY_PATH`
+# tüm odalarca paylaşılır. Ölçülen sonuç (GO_LIVE.md §4): operatör B, KENDİ
+# client_id'siyle A'nın görevini listeleyip `DELETE` ile kanıtını diskten
+# kalıcı silebiliyordu. Kalıcı `task_id -> principal` kaydı bu deliği kapatır;
+# semantik oda mührüyle birebir aynıdır (kayıt yoksa ilk erişen sahiplenir).
+from backend.routes.tasks import delete_task, list_visible_tasks
+from backend.security.task_ownership import (  # noqa: F401  (geriye dönük ihracat)
+    TaskForbiddenError as TaskForbiddenError,
+    adopt as _adopt_task,
+    record_owner as _record_task_owner,
+    task_access as _task_access,
 )
 
 # [ÇOCUK KİLİDİ — API girişi] Operatörün çocuk BEYANI burada yaşar: oda
@@ -942,7 +957,7 @@ _MAX_CLIENT_ID_LENGTH = _bounded_env_int("PINEAL_MAX_CLIENT_ID_LENGTH", 64, 8, 4
 # task_id giriş noktalarına taşınmadı (ChatPayload.task_id gövdede SINIRSIZ,
 # /api/tasks/{task_id}/cancel|halt path param'ı doğrulanmıyordu). Sunucu
 # ürettiği task_id 27 karakter (op_YYYYMMDDHHMMSS_<8hex>); 128 geniş paydır.
-_MAX_TASK_ID_LENGTH = _bounded_env_int("PINEAL_MAX_TASK_ID_LENGTH", 128, 8, 4_096)
+from backend.security.task_access import MAX_TASK_ID_LENGTH as _MAX_TASK_ID_LENGTH
 _MAX_TERMINATE_REASON_LENGTH = 500
 _ROOM_TTL_SECONDS = float(os.getenv("PINEAL_ROOM_TTL_SECONDS", "1800"))
 #: Çocuk beyanı deposunun üst sınırı (sınırsız büyüme yok; aşımda dürüst 503).
@@ -979,6 +994,24 @@ async def room_forbidden_handler(request: Request, exc: RoomForbiddenError):
     `backend/security/principal.py::forbidden_body` içindedir (tek sözleşme).
     """
     logger.warning("ROOM_FORBIDDEN path=%s", _secure_path(request))
+    return JSONResponse(
+        forbidden_body(
+            openai_style=_secure_path(request).startswith("/v1/"),
+            error_factory=_openai_error,
+        ),
+        status_code=403,
+    )
+
+
+@app.exception_handler(TaskForbiddenError)
+async def task_forbidden_handler(request: Request, exc: TaskForbiddenError):
+    """Görev sahipliği reddi -> 403 (aynı gövde sözleşmesi; task_id İÇERMEZ).
+
+    Oda mührüyle AYNI kod ve AYNI gövde kullanılır: saldırgan "oda benim ama
+    görev başkasının" ayrımını yanıt üzerinden ÖĞRENEMEZ. 403/404 farkı da
+    görevin VARLIĞINI doğrulamaz.
+    """
+    logger.warning("TASK_FORBIDDEN path=%s", _secure_path(request))
     return JSONResponse(
         forbidden_body(
             openai_style=_secure_path(request).startswith("/v1/"),
@@ -2808,6 +2841,10 @@ async def api_initiate(req: InitiatePayload, request: Request):
             status_code=503,
         )
     task_id = _new_task_id()
+    # GÖREV SAHİPLİĞİ KAYDI: kanıt dosyası üretilmeden ÖNCE yazılır; aksi halde
+    # kayıt ile dosya arasındaki pencerede görev sahipsiz görünür ve başka bir
+    # operatör sahiplenebilirdi. `_owner` oda mühründen gelir (`get_room`).
+    _record_task_owner(task_id, room.get("_owner") or _get_principal())
     _lifecycle(room).transition(task_id, "processing")
     # Agent Rack: görev başladı — tüm slotlar BEKLEMEDE (Wait).
     # [RÖNTGEN 2026-09-23] Eskiden burada "tahmini plan" bahanesiyle
@@ -3457,6 +3494,18 @@ class ClientRefPayload(BaseModel):
     client_id: str = Field(default="default", max_length=_MAX_CLIENT_ID_LENGTH)
 
 
+
+def _require_room_seal(client_id: str):
+    """Oda mührü — ama odayı OLUŞTURMADAN (salt-okunur/beyan uçları için).
+
+    Ret durumunda ``RoomForbiddenError`` fırlatır; gövde oda reddiyle birebir
+    aynıdır (oda adı ve beyanın varlığı doğrulanmaz). ``None`` -> serbest.
+    """
+    if _check_room_seal(client_id, app.state.rooms, _get_principal()) == "forbidden":
+        raise RoomForbiddenError(client_id)
+    return None
+
+
 def _minor_case_for(client_id: str):
     """Odaya ait çocuk BEYANI — yoksa ``None``. Oda OLUŞTURMAZ (salt okunur).
 
@@ -3597,6 +3646,9 @@ async def api_minor_case_register(req: MinorCasePayload):
             {"error": {"code": "INVALID_CLIENT_ID", "message": "Geçersiz client_id"}},
             status_code=400,
         )
+    # ÇAPRAZ OPERATÖR YAZMASI KAPANDI: başka operatörün odasına beyan
+    # KONULAMAZ (kilidi kilitleyerek DoS ya da sahte "onaylı vaka" üretme).
+    _require_room_seal(req.client_id)
     if (
         req.client_id not in app.state.minor_cases
         and len(app.state.minor_cases) >= _MINOR_CASE_MAX_ENTRIES
@@ -3641,6 +3693,9 @@ async def api_minor_case_register(req: MinorCasePayload):
 @app.post("/api/minor/clear")
 async def api_minor_case_clear(req: ClientRefPayload):
     """Çocuk beyanını KALDIRIR (vaka kapandı) — kilidi zaman aşımı açmaz."""
+    # EN KRİTİK MÜHÜR: beyanı silmek çocuk KİLİDİNİ AÇAR. Başka bir operatör
+    # bunu yapabiliyordu; artık 403 (GO_LIVE.md §5.1).
+    _require_room_seal(req.client_id)
     had = app.state.minor_cases.pop(req.client_id, None) is not None
     if had:
         logger.info("ÇOCUK KİLİDİ: beyan operatör tarafından kaldırıldı (client_id=%s)", req.client_id)
@@ -3655,6 +3710,9 @@ async def api_minor_case_state(client_id: str = "default"):
             {"error": {"code": "INVALID_CLIENT_ID", "message": "Geçersiz client_id"}},
             status_code=400,
         )
+    # ÇAPRAZ OPERATÖR SIZINTISI KAPANDI: beyan durumu başka operatörün odası
+    # için okunamaz (case_type/case_id sızıyordu). Oda OLUŞTURMAZ.
+    _require_room_seal(client_id)
     case = _minor_case_for(client_id)
     if case is None:
         return {
@@ -4020,6 +4078,9 @@ def _aspasia_command_dispatch(spec: dict) -> "str | None":
         aspasia_goals=list(spec.get("goals") or []),
     )
     task_id = _new_task_id()
+    # GÖREV SAHİPLİĞİ KAYDI (bkz. /api/initiate): ASPASIA komutu da kanıt
+    # üretir, dolayısıyla aynı kalıcı sahiplik kaydı gerekir.
+    _record_task_owner(task_id, room.get("_owner") or _get_principal())
     _lifecycle(room).transition(task_id, "processing")
     mission = asyncio.create_task(run_mission(req, task_id))
     room["mission_tasks"][task_id] = mission
@@ -4598,50 +4659,19 @@ async def interpreter_execute(req: InterpreterPayload):
         
     return res.model_dump()
 
-# --- Görev geçmişi ve veri silme (FAZ 3 / etik çerçeve: kişisel veri hedefli sistemde
-#     retention hakkı): bellekteki kanıt dosyaları listelenir ve KALICI olarak silinir. ---
+# --- Görev geçmişi ve veri silme (FAZ 3 / etik çerçeve: kişisel veri hedefli
+#     sistemde retention hakkı): bellekteki kanıt dosyaları listelenir ve
+#     KALICI olarak silinir.
+#
+#     [MONOLİT RATCHET] `GET /api/tasks` gövdesi `backend/routes/tasks.py`
+#     modülüne taşındı (tavan 6000 satır; kural: yeni uç nokta eklemek yerine
+#     MODÜL ÇIKAR). Rota burada KAYDEDİLİR ki `/` statik mount'undan ÖNCE
+#     sıralansın; bağımlılıklar ENJEKTE edilir (modül `backend.api`'yi içe
+#     aktarmaz, dairesel bağımlılık yok). ---
+app.get("/api/tasks")(
+    list_visible_tasks(get_room=get_room, principal_getter=_get_principal)
+)
 
-def _read_tasks_sync(storage: str):
-    tasks = []
-    if os.path.isdir(storage):
-        for fn in sorted(os.listdir(storage)):
-            if not fn.endswith(".json") or fn == "learnings.json":
-                continue
-            task_id = fn[:-5]
-            try:
-                path = safe_child_path(storage, fn)
-                with open(path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                if not isinstance(data, dict) or not isinstance(data.get("evidence", []), list):
-                    raise ValueError("invalid canonical memory schema")
-                tasks.append({
-                    "task_id": data.get("task_id", task_id),
-                    "last_updated": data.get("last_updated"),
-                    "evidence_count": len(data.get("evidence", [])),
-                    "confidence": data.get("confidence"),
-                    "memory_state": "READY",
-                    "memory_error_code": None,
-                })
-            except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
-                # A malformed task remains visible and is never represented as
-                # an absent task in retention/operations APIs.
-                tasks.append({
-                    "task_id": task_id,
-                    "last_updated": None,
-                    "evidence_count": None,
-                    "confidence": None,
-                    "memory_state": "CORRUPTED",
-                    "memory_error_code": "MEMORY_CORRUPTED",
-                })
-    return tasks
-
-@app.get("/api/tasks")
-async def api_list_tasks(client_id: str):
-    room = get_room(client_id)
-    storage = room["executor"].memory.storage_path
-    tasks = await asyncio.to_thread(_read_tasks_sync, storage)
-    active = list(room.get("active_tasks", {}).keys())
-    return {"tasks": tasks, "active_tasks": active}
 
 
 def _terminate_mission(client_id: str, task_id: str, action: str, reason: str):
@@ -4669,6 +4699,13 @@ def _terminate_mission(client_id: str, task_id: str, action: str, reason: str):
             {"error": {"code": "TASK_NOT_FOUND", "message": "Task not found"}},
             status_code=404,
         )
+    # GÖREV SAHİPLİĞİ (savunma derinliği): yaşam döngüsü kaydı ODA başına
+    # olduğundan başka operatörün görevi zaten 404 döner; bu mühür, görev
+    # kaydı ileride süreç geneline taşınırsa deliğin kendiliğinden açılmasını
+    # engeller. 404'ten SONRA gelir: var olmayan görev için sahiplik sorgusu
+    # yapılmaz (yoksa "görev var mı" sorusuna ikinci bir yanıt kanalı olurdu).
+    if _task_access(task_id, room.get("_owner") or _get_principal()) == "forbidden":
+        raise TaskForbiddenError(task_id)
     decision = _lifecycle(room).terminate(task_id, action)
     if not decision.accepted:
         return JSONResponse(
@@ -5943,50 +5980,9 @@ async def api_halt_task(task_id: str = Path(min_length=1, max_length=_MAX_TASK_I
     return _terminate_mission(client_id, task_id, "halt", reason)
 
 
-@app.delete("/api/tasks/{task_id}")
-async def api_delete_task(task_id: str, client_id: str):
-    """Bir görevin tüm izlerini kalıcı siler (bellek dosyası + aktif snapshot)."""
-    room = get_room(client_id)
-
-    try:
-        # [AUDIT R3] regex + uzunluk (client_id ile aynı sözleşme).
-        if len(task_id) > _MAX_TASK_ID_LENGTH:
-            raise ValueError
-        validate_identifier(task_id, field="task_id")
-        mem_path = safe_child_path(
-            room["executor"].memory.storage_path,
-            f"{task_id}.json",
-        )
-    except ValueError:
-        return JSONResponse(
-            {"error": {"code": "INVALID_TASK_ID", "message": "Invalid task identifier"}},
-            status_code=400,
-        )
-    removed_snapshot = room.get("active_tasks", {}).pop(task_id, None)
-    file_deleted = False
-    if os.path.exists(mem_path):
-        try:
-            os.remove(mem_path)
-            file_deleted = True
-        except OSError as e:
-            return JSONResponse(
-                {"error": {"code": "DELETE_FAILED", "message": redact_text(e)[:120]}},
-                status_code=500,
-            )
-
-    if not removed_snapshot and not file_deleted:
-        return JSONResponse(
-            {"error": {"code": "NOT_FOUND", "message": f"Görev bulunamadı: {task_id}"}},
-            status_code=404,
-        )
-
-    broadcast_log(client_id, "INFO", f"VERİ SİLME: '{task_id}' görev izleri kalıcı olarak silindi (retention).")
-    return {
-        "status": "deleted",
-        "task_id": task_id,
-        "snapshot_removed": removed_snapshot is not None,
-        "memory_file_deleted": file_deleted,
-    }
+app.delete("/api/tasks/{task_id}")(
+    delete_task(get_room=get_room, broadcast_log=broadcast_log)
+)
 
 
 static_dir = "frontend/dist" if os.path.exists("frontend/dist") else "frontend"
