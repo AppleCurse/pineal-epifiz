@@ -1,10 +1,12 @@
-# PINEAL-HERETIC v2.0 — tek imajlı paket (multi-stage)
+# PINEAL-HERETIC — tek imajlı paket (multi-stage); release identity comes from VERSION
 # 1. Aşama: frontend derlemesi (Svelte -> statik dist)
 # 2. Aşama: Python runtime + FastAPI + Playwright/Chromium (scraper için)
 
 # ---------- Stage 1: frontend ----------
 FROM node:22-slim AS frontend
 WORKDIR /app/frontend
+# Vite reads the canonical release identity from the repository root.
+COPY VERSION /app/VERSION
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY frontend/ ./
@@ -30,6 +32,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+# Runtime version identity (FastAPI/MCP) uses the same canonical source.
+COPY VERSION ./VERSION
 # [AUDIT 2026-09-11 P1] Production imaj DETERMİNİSTİK lock'tan kurulur:
 # bugün build edilen imaj ile yarınki aynı dependency ağacını alır.
 # (requirements.txt/requirements-osint.txt soyut şartnamedir; lock'u

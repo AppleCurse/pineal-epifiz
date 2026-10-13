@@ -2,8 +2,10 @@
 setlocal
 chcp 65001 >nul
 cd /d "%~dp0"
+set "PINEAL_VERSION=unknown"
+if exist VERSION set /p PINEAL_VERSION=<VERSION
 echo ==============================================
-echo PINEAL-HERETIC v2.0 - COMMAND CENTER INITIATION
+echo PINEAL-HERETIC v%PINEAL_VERSION% - COMMAND CENTER INITIATION
 echo ==============================================
 echo.
 

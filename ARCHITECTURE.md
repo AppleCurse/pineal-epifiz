@@ -73,7 +73,9 @@ Android App
 ```
 
 CI `android` job'u: lint + unit test + assemble. Bu, backend pipeline entegrasyonu
-kanıtı değildir. Android ve backend ayrı release döngülerine sahiptir.
+kanıtı değildir. Android bağımsız, tek-geçişli Gemini istemcisidir; `versionName`
+ortak depo kimliği için kök `VERSION` dosyasından üretilir. Ortak sürüm numarası,
+backend özellik eşdeğerliği veya entegrasyon iddiası değildir.
 
 ## Güvenlik yüzeyi
 `PINEAL_ENV=production` için zorunlu `PINEAL_TOKEN` (HTTP `X-API-Key`; WebSocket ilk auth mesajı, URL'de sır yok) · CORS localhost kümesi · rate limit (initiate 5/dk, aspasia 20/dk, experimental 10/dk) · hata modeli: uygulama hataları `{error:{code,message}}`, şema doğrulama (422) standart FastAPI `{detail:[...]}` · DNS-pinned SSRF/redirect koruması · sırlar yalnız gateway belleğinde (log/event/yanıt redaction testli) · containment kontrollü retention: `DELETE /api/tasks/{id}`

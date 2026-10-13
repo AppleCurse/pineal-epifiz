@@ -1,4 +1,5 @@
 import { writable } from 'svelte/store';
+import { APP_VERSION } from './lib/version'
 
 export type Language = 'tr' | 'en';
 
@@ -7,9 +8,9 @@ export const currentLang = writable<Language>('tr');
 export const t = {
   tr: {
     // Header & Brand
-    appTitle: "PINEAL-HERETIC v3.0",
+    appTitle: `PINEAL-HERETIC v${APP_VERSION}`,
     appSubtitle: "360° BÜTÜNCÜL İNSAN TANIMA VE REZONANS İSTASYONU",
-    footerText: "PINEAL 3.0 • ÇOKLU MODLU GÖRSEL ZEKA • SIFIR HALÜSİNASYON • CANLI TELEMETRİ",
+    footerText: `PINEAL-HERETIC v${APP_VERSION} • ÇOKLU MODLU GÖRSEL ZEKA • SIFIR HALÜSİNASYON • CANLI TELEMETRİ`,
 
     // Left Panel: Telemetry & Vault
     engineTelemetry: "MOTOR TELEMETRİSİ",
@@ -116,9 +117,9 @@ export const t = {
   },
   en: {
     // Header & Brand
-    appTitle: "PINEAL-HERETIC v3.0",
+    appTitle: `PINEAL-HERETIC v${APP_VERSION}`,
     appSubtitle: "360° HOLISTIC HUMAN RECOGNITION & RESONANCE STATION",
-    footerText: "PINEAL 3.0 • MULTIMODAL VISION • ZERO HALLUCINATION • REAL-TIME TELEMETRY",
+    footerText: `PINEAL-HERETIC v${APP_VERSION} • MULTIMODAL VISION • ZERO HALLUCINATION • REAL-TIME TELEMETRY`,
 
     // Left Panel: Telemetry & Vault
     engineTelemetry: "ENGINE TELEMETRY",

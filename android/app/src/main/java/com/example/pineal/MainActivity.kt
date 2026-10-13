@@ -150,7 +150,7 @@ fun PinealMainScreen(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = s.appTitle,
+                    text = "${s.appTitle} v${BuildConfig.VERSION_NAME}",
                     style = MaterialTheme.typography.titleLarge,
                     color = CyberGold,
                     fontWeight = FontWeight.ExtraBold,
@@ -249,7 +249,7 @@ fun PinealMainScreen(
                 .border(1.dp, BorderDim, RoundedCornerShape(16.dp))
         ) {
             val tabs = listOf(
-                CockpitTab.PROFILE_360 to "🧠 360° Harita",
+                CockpitTab.PROFILE_360 to "🧠 Profil",
                 CockpitTab.ASPASIA_CHAT to "💬 Aspasia",
                 CockpitTab.LOGS_TELEMETRY to "📡 Telemetri",
                 CockpitTab.HISTORY to "📜 Arşiv"
@@ -300,7 +300,7 @@ fun PinealMainScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "Analiz başlatıldığında 360° bütüncül insan profili burada mühürlenecektir.",
+                                text = "Tek geçişli Gemini çıkarımı başlatıldığında doğrulanmamış model profili burada gösterilir.",
                                 fontSize = 11.sp,
                                 color = TextMuted
                             )

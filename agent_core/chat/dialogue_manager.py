@@ -4,6 +4,7 @@ import time
 from typing import List, Dict
 from pydantic import BaseModel
 from agent_core.services.llm_gateway import LLMGateway
+from agent_core.version import VERSION
 
 class DialogueContext(BaseModel):
     task_id: str
@@ -96,7 +97,7 @@ class DialogueManager:
         history_str = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in ctx.history])
         
         prompt = f"""
-SEN BİR DİJİTAL PSİKOLOJİK HARP VE SOSYAL MÜHENDİSLİK YAPAY ZEKASISIN (PINEAL-HERETIC v3.0).
+SEN BİR DİJİTAL PSİKOLOJİK HARP VE SOSYAL MÜHENDİSLİK YAPAY ZEKASISIN (PINEAL-HERETIC v{VERSION}).
 Hedefle bir konuşma içerisindesin. Aşağıda hedefin profili, senin kuralların ve şu ana kadarki diyalog geçmişi var.
 
 HEDEF PROFİLİ:
