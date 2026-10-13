@@ -14,6 +14,10 @@ Ayrıntılı bölme planı: ``docs/reports/API_MONOLITH_SPLIT_PLAN.md``.
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import json
 import os
 from typing import Optional
@@ -62,8 +66,10 @@ class BodySizeLimitMiddleware:
                     if content_length > max_bytes:
                         await self._send_413(send, max_bytes)
                         return
-                except (ValueError, UnicodeDecodeError):
-                    pass
+                except (ValueError, UnicodeDecodeError) as exc:
+                    logger.warning(
+                        "[__call__] beklenmeyen hata (ValueError,UnicodeDecodeError) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+                    )
                 break
 
         # 2. Akış / Parçalı (chunked) gövde kontrolü
@@ -98,7 +104,10 @@ class BodySizeLimitMiddleware:
             # ve hata Starlette'in ServerErrorMiddleware'ine hiç görünmüyordu.
             # Bu middleware bir hata izolasyon katmanı DEĞİLDİR; tek işi
             # gövde tavanıdır. Alakasız istisnalar hata katmanına bırakılır.
-            pass
+            #
+            # [AUDIT 2026-10-08] Kasıtlı sinyal: bu bir HATA değil, istemci
+            # kaynaklı reddir — traceback'siz tek satırlık info izi bırakılır.
+            logger.info("BODY_TOO_LARGE: gövde tavanı aşıldı, 413 döndürülüyor")
 
         if body_size_exceeded:
             await self._send_413(send, max_bytes)

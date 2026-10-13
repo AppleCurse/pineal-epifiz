@@ -193,7 +193,7 @@ def test_egress_endpoints_do_not_reach_the_engine_when_locked(monkeypatch, tmp_p
     monkeypatch.setattr(BrowserSession, "press", _aboom)
     monkeypatch.setattr(BrowserSession, "back", _aboom)
     monkeypatch.setattr(BrowserSession, "session_cookie", _aboom)
-    monkeypatch.setattr(search_mod.httpx, "AsyncClient", _boom)
+    monkeypatch.setattr(search_mod, "build_secure_client", _boom)
     monkeypatch.setattr("agent_core.services.crawl_enricher.fetch_readable", _aboom)
     monkeypatch.setattr("agent_core.services.socid_enricher.extract_profile", _aboom)
     monkeypatch.setattr("agent_core.services.maigret_scanner.scan_username", _aboom)
@@ -284,7 +284,7 @@ async def test_search_engine_creates_no_http_client_when_locked(monkeypatch):
     "ücretsiz" DuckDuckGo yolu doğrudan httpx ile dışarı çıkıyordu (kodda
     açıkça yazıyordu: "Ücretsiz DuckDuckGo yolu bugünkü davranışını korur").
     Artık istemci HİÇ OLUŞTURULMUYOR."""
-    monkeypatch.setattr(search_mod.httpx, "AsyncClient", _BoomClient)
+    monkeypatch.setattr(search_mod, "build_secure_client", _BoomClient)
     monkeypatch.setenv("TAVILY_API_KEY", "tvly-gercek")
     engine = SearchEngine(tavily_key="tvly-gercek")
     engine.set_policy({"vault_locked": True})
@@ -300,7 +300,7 @@ async def test_search_engine_creates_no_http_client_when_locked(monkeypatch):
 async def test_search_engine_defaults_to_locked_when_vault_state_unknown(monkeypatch):
     """Belirsizlik DAR tarafa yorumlanır: kasa durumu hiç bildirilmediyse
     motor dışarı ÇIKMAZ (`capabilities/state.py` doktrini)."""
-    monkeypatch.setattr(search_mod.httpx, "AsyncClient", _BoomClient)
+    monkeypatch.setattr(search_mod, "build_secure_client", _BoomClient)
     engine = SearchEngine(tavily_key="tvly-gercek")
     assert engine.vault_locked() is True
 
@@ -313,7 +313,7 @@ async def test_search_engine_defaults_to_locked_when_vault_state_unknown(monkeyp
 async def test_search_engine_uses_live_vault_state_not_stale_snapshot(monkeypatch):
     """Canlı mandal, anlık görüntüden ÖNCE gelir: görev başladıktan sonra
     kasa kilitlenirse arama anında durur (bayat "açık" anlık görüntüsü kullanılmaz)."""
-    monkeypatch.setattr(search_mod.httpx, "AsyncClient", _BoomClient)
+    monkeypatch.setattr(search_mod, "build_secure_client", _BoomClient)
     engine = SearchEngine(tavily_key="tvly-gercek")
     engine.set_policy({"vault_locked": False})  # bayat anlık görüntü: AÇIK
 
@@ -328,7 +328,7 @@ async def test_search_engine_uses_live_vault_state_not_stale_snapshot(monkeypatc
 @pytest.mark.asyncio
 async def test_search_engine_vault_state_failure_falls_closed(monkeypatch):
     """Mandal okunamıyorsa arıza YUTULMAZ: dar taraf (kilitli) + ERROR logu."""
-    monkeypatch.setattr(search_mod.httpx, "AsyncClient", _BoomClient)
+    monkeypatch.setattr(search_mod, "build_secure_client", _BoomClient)
 
     def _boom():
         raise RuntimeError("interlock çöktü")

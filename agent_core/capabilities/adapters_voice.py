@@ -21,6 +21,10 @@ metin parmak izi, kaç bayt, kaç ms) — sonra "bunu söyledik" iddiası izlene
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import asyncio
 import hashlib
 import json
@@ -462,6 +466,8 @@ class LocalSTTCapability(BaseCapability):
                 text = str(parsed.get("text") or parsed.get("transcript") or "").strip()
                 if text:
                     return text, ""
-        except (ValueError, TypeError):
-            pass
+        except (ValueError, TypeError) as exc:
+            logger.warning(
+                "[_run_local_endpoint] beklenmeyen hata (ValueError,TypeError) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+            )
         return raw, ""

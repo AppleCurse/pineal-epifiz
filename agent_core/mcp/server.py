@@ -354,8 +354,9 @@ def stdio_main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):
         try:  # Windows kod sayfası cp1254'te Türkçe/Yunanca karakterler patlamasın
             stream.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
-        except (AttributeError, ValueError):  # pragma: no cover - akış yönlendirilmişse
-            pass
+        except (AttributeError, ValueError) as exc:  # pragma: no cover - akış yönlendirilmişse
+            # Beklenen platform koşulu (yönlendirilmiş akış / salt-okunur stdout).
+            logger.debug("[stdio_main] stdout/stderr utf-8 yapılamadı (yönlendirilmiş akış?): %s", exc)
 
     server = MCPServer()
 

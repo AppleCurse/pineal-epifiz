@@ -1,3 +1,6 @@
+import logging
+
+logger = logging.getLogger(__name__)
 import inspect
 import os
 import tempfile
@@ -851,8 +854,9 @@ class PinealExecutor:
         for path in (input_data.pop("_downloaded_temp_images", None) or []):
             try:
                 os.remove(path)
-            except OSError:
-                pass
+            except OSError as exc:
+                # Geçici dosya temizliği: dosya zaten yoksa/erişilemezse atlanır.
+                logger.debug("[_cleanup_temp_images] geçici dosya silinemedi: %s -> %s", path, exc)
 
     async def _execute_task_impl(self, input_data: Dict[str, Any], task_id: str) -> TaskStatus:
         from agent_core.schemas.telemetry import (

@@ -1,3 +1,6 @@
+import logging
+
+logger = logging.getLogger(__name__)
 import re
 from difflib import SequenceMatcher
 from typing import Dict, List, Tuple, Any, Optional
@@ -87,8 +90,10 @@ def quote_matches(
                 claim_id=claim_id,
                 note=f"eşik={threshold:.2f}",
             )
-        except Exception:  # noqa: BLE001 - kalibrasyon kaydı kararı bozamaz
-            pass
+        except Exception as exc:  # noqa: BLE001 - kalibrasyon kaydı kararı bozamaz
+            logger.warning(
+                "[quote_matches] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+            )
     return score >= threshold
 
 

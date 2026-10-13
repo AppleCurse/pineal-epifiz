@@ -24,6 +24,10 @@ Kullanım:
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import os
 import re
 import sys
@@ -36,8 +40,10 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning(
+            "[<modül>] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+        )
 
 SVELTE = ROOT / "frontend/src/components/UnifiedCompactPanel.svelte"
 RUNBOOK = ROOT / "RUNBOOK.md"

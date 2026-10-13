@@ -1,3 +1,6 @@
+import logging
+
+logger = logging.getLogger(__name__)
 from typing import Any, Optional
 from pydantic import BaseModel
 
@@ -73,8 +76,10 @@ class AspasiaChief:
             )
             if digest:
                 return digest
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "[_oversight_digest] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+            )
         return ""
 
 
@@ -280,8 +285,10 @@ Cevabın kısa ve net olsun: sonuç, sonra gerekiyorsa neden ve tek bir sonraki 
                 if not decision.kept:
                     final_msg = decision.message
                     assessment = "filtered_generic"
-            except Exception:  # filtre asla sohbeti düşürmez
-                pass
+            except Exception as exc:  # filtre asla sohbeti düşürmez
+                logger.warning(
+                    "[chat] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+                )
         except Exception as e:
             # Fallback Aspasia Response
             final_msg = (

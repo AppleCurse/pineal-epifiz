@@ -686,9 +686,11 @@ class RoutedChatExecutor:
                 snapshot,
                 model_id=target.model.id,
             )
-        except (CatalogError, ModelNotFound, KeyError):
+        except (CatalogError, ModelNotFound, KeyError) as exc:
             # Quota bookkeeping must never fail the request itself.
-            pass
+            logger.warning(
+                "[_push_quota] beklenmeyen hata (CatalogError,ModelNotFound,KeyError) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+            )
 
     def _quota_status_value(self, target) -> str:
         return self.quota_governor.status(target.provider.id, target.model.id).value

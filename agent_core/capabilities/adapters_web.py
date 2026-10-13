@@ -68,7 +68,10 @@ def _language_scope(text: str, engine: str, url: str) -> dict[str, Any]:
 
     try:
         finding = detect_language(text)
-    except Exception:  # tespit çıkarıcıyı düşürmez; sessizlik de yok
+    except Exception as exc:  # tespit çıkarıcıyı düşürmez; sessizlik de yok
+        # [AUDIT 2026-10-08 · E-GÖZ1-4] Hata yutulmuyor: iz (log) bırakılıyor,
+        # gövde yine dürüst kalır (uydurma dil yok).
+        logger.error("dil tespiti başarısız (detect_error): %s", exc, exc_info=True)
         return {"language": "unknown", "language_reason": "detect_error"}
     record_finding(finding, source_engine=engine, url=url)
     scope: dict[str, Any] = {
@@ -139,7 +142,10 @@ class TrafilaturaCapability(BaseCapability):
                 meta = trafilatura.extract_metadata(downloaded)
                 if meta is not None:
                     title = (getattr(meta, "title", "") or "").strip()
-            except Exception:  # metadata opsiyoneldir; metin varsa devam
+            except Exception as exc:  # metadata opsiyoneldir; metin varsa devam
+                # [AUDIT 2026-10-08 · E-GÖZ1-7] Başlıksız gelişin nedeni logdan
+                # teşhis edilebilir; sessiz title="" yok.
+                logger.debug("Metadata çıkarımı başarısız, başlık boş bırakıldı: %s", exc, exc_info=True)
                 title = ""
             return text, title
 
