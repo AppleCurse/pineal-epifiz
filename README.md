@@ -137,6 +137,11 @@ Diyelim ki bir hesabı incelemek istiyorsunuz. Programın içinde birbirinden fa
 ---
 
 ## 💻 Mühendisler ve Geliştiriciler İçin Kurulum Rehberi
+
+> **Canlıya almadan önce:** [GO_LIVE.md](GO_LIVE.md) — port haritası, mimari
+> şema, BLOCKER `.env` tablosu, tek komutla kaldırma ve **ölçülmüş** doğrulama
+> sonuçları. Çok operatörlü kurulumda `PINEAL_OPERATOR_TOKENS` zorunludur;
+> görev sahipliği mührü (§4) ve açık bulgular listesi (§5) oradadır.
 ## 4. Epifiz'in Yedi Nöro-Bilişsel Dalga Motoru (LLM'siz Saf Matematik)
 
 Bu motorlar `agent_core/engines/` dizininde bulunur. Sıfır LLM çağrısıyla, deterministik formüllerle çalışırlar:

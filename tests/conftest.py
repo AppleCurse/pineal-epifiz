@@ -39,6 +39,15 @@ os.environ.setdefault(
     "PINEAL_MINOR_LEDGER_PATH",
     os.path.join(_SESSION_ROOT, "memory", "ledger", "minor-cases.jsonl"),
 )
+# GÖREV SAHİPLİĞİ KAYDI da izole edilir: `backend/security/task_ownership.py`
+# varsayılanını PINEAL_MEMORY_PATH'ten TÜRETİR (memory/task_owners.db), ama
+# modül ilk kullanımda DİSKTE dosya açar. Fixture yetişemeyecek import-time
+# yan etkisi olmasa da, depo köküne kalıcı bir .db düşmesin diye hem oturum
+# kökünde hem fixture içinde tmp_path'e bağlanır.
+os.environ.setdefault(
+    "PINEAL_TASK_OWNERS_DB",
+    os.path.join(_SESSION_ROOT, "memory", "task_owners.db"),
+)
 
 
 @pytest.fixture(autouse=True)
@@ -69,6 +78,9 @@ def _isolate_response_cache(tmp_path, monkeypatch):
     monkeypatch.setenv(
         "PINEAL_MINOR_LEDGER_PATH", str(_memory_root / "ledger" / "minor-cases.jsonl")
     )
+    # Görev sahipliği kaydı testler arasında SIZMASIN: Alice'in görevini
+    # sahiplenen kayıt Bob'un testine kalırsa sahiplik kararı yanlış ölçülür.
+    monkeypatch.setenv("PINEAL_TASK_OWNERS_DB", str(_memory_root / "task_owners.db"))
     monkeypatch.setenv("PINEAL_MEDIA_DIR", str(_memory_root / "media"))
     monkeypatch.setenv("PINEAL_REPORT_DIR", str(_memory_root / "reports"))
     monkeypatch.setenv("PINEAL_CALIB_DIR", str(_memory_root / "calibration"))
