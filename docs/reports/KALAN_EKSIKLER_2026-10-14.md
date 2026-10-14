@@ -61,6 +61,30 @@ anahtar yok → dürüst SKIP).
 
 ---
 
+### 1c · Fiyat kayması: bekçinin yakaladığı GERÇEK sapma (2026-10-14)
+
+| Ölçüm | Değer |
+|---|---|
+| `openai/gpt-5.6-sol-pro` canlı (iki ardışık koşu) | **$4/$20** per 1M |
+| Deponun pinlediği (beş kopyada) | $2/$10 (promo dönemi) |
+| Etki | `MODEL_PRICING`'e bakan **spend cap maliyeti yarı sayardı** |
+| Onarım | Beş kopya canlı değere hizalandı + kopyalar arası tutarlılık kilidi |
+
+Ek olarak **bayat kopya** bulundu ve düzeltildi: katalogdaki
+`openrouter/deepseek/deepseek-v4-flash` $0.0679/$0.168'de kalmıştı; gateway
+kopyası 2026-09-08'de $0.09/$0.18'e düzeltilmişti — katalog geride kalmış.
+
+**Doğrulama kapsamı genişletildi** (inanç → doğrulama): `deepseek-v4-flash`
+(TIER_2 varsayılanı), `deepseek-v4-pro`, `claude-sonnet-5` artık her CI
+koşusunda canlı katalogla karşılaştırılıyor.
+
+**AÇIK KALEM (bu ortamda kanıtlanamaz):** `anthropic/claude-sonnet-5@nous-research`
+etkin fiyatı (1.60/8.00) $2/$10 promosuna göre hesaplanmış; promo bitti. Nous'un
+kendi fiyat listesi olmadan güncellenemez — OpenRouter kataloğu Nous'un kanıtı
+sayılmaz (deponun kendi kuralı). Ayrıca fiyat kopyaları hâlâ **elle senkron**;
+kilit ayrışmayı yakalar ama tek kaynaktan TÜRETMEZ (kalıcı çözüm: fiyatların
+`config/provider_catalog.json`'dan okunması).
+
 ## 2 · KAPANMAYANLAR — tam liste (9 yetenek + 2 kanıt kalemi)
 
 | # | Kalem | Bugünkü sebep (ölçüm) | Tam olarak gereken | Kim |

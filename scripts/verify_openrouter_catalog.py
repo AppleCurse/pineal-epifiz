@@ -58,7 +58,20 @@ CATALOG_PATH = REPO_ROOT / "config" / "provider_catalog.json"
 # ($ per 1M tokens, input/output). Verified against the decision matrix.
 REQUIRED_OPENROUTTER = {
     "google/gemini-3.7-flash": (0.75, 3.75),
-    "openai/gpt-5.6-sol-pro": (2.0, 10.0),
+    # [2026-10-14 · canlı teyit] CI'ın canlı çapraz kontrolü sol-pro'yu $2/$10
+    # pinliyken $4/$20 olarak okudu (iki ardışık koşuda aynı: main + dal).
+    # Depo politikası gereği ("CI canlı-kontrol teyitten sonra güncellenir")
+    # pin canlı değere hizalandı; eski değer promosyon dönemine aitti.
+    "openai/gpt-5.6-sol-pro": (4.0, 20.0),
+    # [2026-10-14 · kapsam genişletmesi] Aşağıdaki üç model harcama sayacının
+    # (LLMGateway.MODEL_PRICING) ve TIER_2 varsayılanının taşıdığı modellerdi;
+    # fiyatları yalnız "inanç" olarak duruyordu — hiçbir canlı kontrol yoktu.
+    # Artık CI her koşuda canlı katalogla karşılaştırır: fark çıkarsa DURUM
+    # makine-okunur bir `FAIL:` satırıyla bildirilir ve tablolar ona göre
+    # güncellenir (tahminle değil, ölçümle).
+    "deepseek/deepseek-v4-flash": (0.09, 0.18),
+    "deepseek/deepseek-v4-pro": (0.4679, 0.9358),
+    "anthropic/claude-sonnet-5": (2.0, 10.0),
 }
 
 # Nous FINAL-KARAR-MATRIX facts. These are verified locally, never against

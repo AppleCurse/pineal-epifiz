@@ -144,13 +144,22 @@ def test_forbidden_free_route_stays_out_of_the_catalog(isolated_catalog):
 # ─────────────────────────────────────────────────────────────────────────────
 # 2) ÜÇ HÜKÜM AYRI MI (fail / unverified / skip)
 # ─────────────────────────────────────────────────────────────────────────────
-def _payload(price_in: float, price_out: float) -> bytes:
-    return json.dumps({"data": [
-        {"id": "google/gemini-3.7-flash",
-         "pricing": {"prompt": str(price_in), "completion": str(price_out)}},
-        {"id": "openai/gpt-5.6-sol-pro",
-         "pricing": {"prompt": str(2.0 / 1_000_000), "completion": str(10.0 / 1_000_000)}},
-    ]}).encode()
+def _payload(overrides: dict[str, tuple[float, float]] | None = None) -> bytes:
+    """Canlı katalog yanıtını PİNLERDEN türetir.
+
+    Sabit iki model yazmak yerine pin kümesi gezilir: kapsam büyüdüğünde
+    (2026-10-14'te 2 -> 5 oldu) test kendiliğinden uyumlu kalır; aksi hâlde
+    "missing from live catalog" yüzünden yanlış kırmızı üretirdi.
+    """
+    overrides = overrides or {}
+    data = []
+    for model_id, (pin_in, pin_out) in oc.REQUIRED_OPENROUTTER.items():
+        live_in, live_out = overrides.get(model_id, (pin_in, pin_out))
+        data.append({
+            "id": model_id,
+            "pricing": {"prompt": str(live_in / 1_000_000), "completion": str(live_out / 1_000_000)},
+        })
+    return json.dumps({"data": data}).encode()
 
 
 class _Response:
@@ -170,7 +179,7 @@ class _Response:
 def test_live_match_yields_no_failures_and_no_unverified(monkeypatch):
     monkeypatch.setattr(
         oc.urllib.request, "urlopen",
-        lambda *a, **k: _Response(_payload(0.75 / 1_000_000, 3.75 / 1_000_000)),
+        lambda *a, **k: _Response(_payload()),
     )
     failures, unverified = oc.verify_live_openrouter("key")
     assert failures == [] and unverified is None
@@ -179,7 +188,7 @@ def test_live_match_yields_no_failures_and_no_unverified(monkeypatch):
 def test_live_price_drift_is_a_failure_not_an_unverified_start(monkeypatch):
     monkeypatch.setattr(
         oc.urllib.request, "urlopen",
-        lambda *a, **k: _Response(_payload(0.99 / 1_000_000, 3.75 / 1_000_000)),
+        lambda *a, **k: _Response(_payload({"google/gemini-3.7-flash": (0.99, 3.75)})),
     )
     failures, unverified = oc.verify_live_openrouter("key")
     assert unverified is None, "katalog okunduysa 'doğrulanamadı' DENEMEZ"
@@ -219,7 +228,7 @@ def test_failures_are_printed_where_ci_can_read_them(monkeypatch, capsys):
     monkeypatch.setenv(FREE_KEY, "key")
     monkeypatch.setattr(
         oc.urllib.request, "urlopen",
-        lambda *a, **k: _Response(_payload(0.99 / 1_000_000, 3.75 / 1_000_000)),
+        lambda *a, **k: _Response(_payload({"google/gemini-3.7-flash": (0.99, 3.75)})),
     )
     rc = oc.main()
     out, err = capsys.readouterr()
@@ -237,7 +246,7 @@ def test_transient_failure_is_retried_then_succeeds(monkeypatch):
         calls["n"] += 1
         if calls["n"] == 1:
             raise urllib.error.URLError("geçici DNS sarsıntısı")
-        return _Response(_payload(0.75 / 1_000_000, 3.75 / 1_000_000))
+        return _Response(_payload())
 
     monkeypatch.setattr(oc.urllib.request, "urlopen", _flaky)
     failures, unverified = oc.verify_live_openrouter("key")
@@ -257,6 +266,82 @@ def test_retries_are_bounded_and_report_the_last_error(monkeypatch):
     assert failures == []
     assert unverified is not None and "unreachable" in unverified
     assert calls["n"] == oc._LIVE_MAX_ATTEMPTS, "deneme sayısı sabit ve sınırlı"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 5) KOPYALAR ARASI TUTARLILIK (kök onarım)
+# ─────────────────────────────────────────────────────────────────────────────
+def test_pinned_prices_agree_in_every_copy():
+    """Aynı fiyat DÖRT yerde yaşıyor; dördü de aynı olmak ZORUNDA.
+
+    Neden bu test var: 2026-10-14'te canlı kontrol, sol-pro'nun fiyatının
+    $2/$10'dan $4/$20'ye çıktığını gösterdi. Fiyat şu dört kopyada duruyordu ve
+    aralarındaki tutarlılığı denetleyen HİÇBİR şey yoktu:
+
+      1. ``scripts/verify_openrouter_catalog.py`` → ``REQUIRED_OPENROUTTER`` (pin)
+      2. ``config/provider_catalog.json`` → ``openrouter/<id>``
+      3. ``agent_core/services/llm_gateway.py`` → ``LLMGateway.MODEL_PRICING``
+         (harcama sayacı/spend cap BUNA bakar)
+      4. ``agent_core/services/final_routing_policy.py`` → ``ROUTES[<id>@openrouter]``
+
+    Kopyalardan biri güncellenip diğeri unutulursa harcama sayacı sessizce
+    yanlış sayar (ölçülen: sol-pro'da tam 2×). Bu kilit o sınıfı kapatır.
+
+    Kapsam dürüstçe: yalnız CANLI KONTROL EDİLEN pinli küme için eşitlik
+    aranır (nous-research gibi kanal-indirimli fiyatlar bilinçli olarak farklı
+    kanalları gösterir ve bu testin dışındadır).
+    """
+    from agent_core.services.final_routing_policy import ROUTES
+    from agent_core.services.llm_gateway import LLMGateway
+
+    catalog = json.loads(oc.CATALOG_PATH.read_text(encoding="utf-8"))
+    katalog = {}
+    for provider in catalog["providers"]:
+        if provider["id"] != "openrouter":
+            continue
+        for model in provider.get("models", []):
+            pricing = model.get("pricing") or {}
+            katalog[model["id"]] = (
+                pricing.get("input_per_million_usd"),
+                pricing.get("output_per_million_usd"),
+            )
+
+    sorunlar: list[str] = []
+    for model_id, pin in oc.REQUIRED_OPENROUTTER.items():
+        if katalog.get(model_id) != pin:
+            sorunlar.append(f"katalog[openrouter/{model_id}]={katalog.get(model_id)} != pin{tuple(pin)}")
+        gateway = LLMGateway.MODEL_PRICING.get(model_id)
+        if gateway is None or (gateway["in"], gateway["out"]) != tuple(pin):
+            sorunlar.append(f"MODEL_PRICING[{model_id}]={gateway} != pin{tuple(pin)}")
+        route = ROUTES.get(f"{model_id}@openrouter")
+        if route is not None and (route.input_per_million_usd, route.output_per_million_usd) != tuple(pin):
+            sorunlar.append(
+                f"ROUTES[{model_id}@openrouter]="
+                f"({route.input_per_million_usd}, {route.output_per_million_usd}) != pin{tuple(pin)}"
+            )
+    assert not sorunlar, "fiyat kopyaları ayrışmış:\n  " + "\n  ".join(sorunlar)
+
+
+def test_pinned_live_coverage_includes_the_spend_cap_models():
+    """Doğrulama kapsamı boşaltılamaz: harcama sayacının taşıdığı modeller pinli.
+
+    ``anthropic/claude-sonnet-5`` · ``deepseek/deepseek-v4-flash`` ·
+    ``deepseek/deepseek-v4-pro`` harcama tablosunda fiyatlıydı ama hiçbir canlı
+    kontrol yoktu — yani "inanç" olarak duruyorlardı. Bu test, kapsamın sessizce
+    daraltılmasını engeller (ölçülen inanç ≠ doğrulama).
+    """
+    from agent_core.services.llm_gateway import LLMGateway
+
+    beklenen = {
+        "anthropic/claude-sonnet-5",
+        "deepseek/deepseek-v4-flash",
+        "deepseek/deepseek-v4-pro",
+    }
+    assert beklenen <= set(oc.REQUIRED_OPENROUTTER), (
+        "bu modeller harcama sayacında fiyatlı ama canlı kontrolden çıkarılmış"
+    )
+    for model_id in beklenen:
+        assert model_id in LLMGateway.MODEL_PRICING, model_id
 
 
 # ─────────────────────────────────────────────────────────────────────────────

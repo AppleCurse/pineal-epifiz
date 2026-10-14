@@ -551,7 +551,10 @@ class LLMGateway:
         "openai/gpt-oss-120b": {"in": 0.15, "out": 0.60},
         # live_llm_gate.py varsayılan hakemi (OPENROUTER_JUDGE_MODEL). Guard bunu
         # fiyatsız görüp gate'i UNKNOWN_PRICING ile düşürüyordu — eklendi.
-        "openai/gpt-5.6-sol-pro": {"in": 2.0, "out": 10.0},
+        # [2026-10-14 · canlı teyit] $2/$10 promo bitti; CI canlı çapraz kontrolü
+        # $4/$20 okudu (iki ardışık koşu). Eski değer harcama sayacını YARI
+        # sayıyordu: spend cap 2× kadar geç fark ederdi.
+        "openai/gpt-5.6-sol-pro": {"in": 4.0, "out": 20.0},
         # FAZ-2 free model accounting record
         "poolside/laguna-s-2.1:free": {"in": 0.0, "out": 0.0},
     }

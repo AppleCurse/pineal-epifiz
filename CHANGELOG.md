@@ -1,5 +1,43 @@
 # Changelog
 
+## Unreleased — 2026-10-14 — Katalog bekçisinin yakaladığı GERÇEK fiyat kayması
+
+Bekçi kırmızıyı hak ediyordu: düşüşün sebebi kesinti değil, **gerçek fiyat
+değişimi**. Teşhis mekanizması kurulur kurulmaz sebep makine-okunur hâle geldi:
+
+```
+FAIL: openai/gpt-5.6-sol-pro: live input price 4e-06 != 2.0/1M
+FAIL: openai/gpt-5.6-sol-pro: live output price 2e-05 != 10.0/1M
+```
+
+- **Ölçüm:** aynı ağaçta 18:2x koşusu GEÇTİ (SKIP uyarısı yok → canlı kontrol
+  gerçekten koştu ve eşleşti), 19:13 (main) ve 19:5x (dal) koşuları $4/$20
+  okudu. Yani fiyat o aralıkta gerçekten değişti; deponun pinlediği $2/$10
+  promosyon dönemine aitti (depoda bu desenin kaydı zaten var: "archived
+  $2/$10 promo").
+- **Etki:** aynı fiyat BEŞ yerde kopyalıydı (pin · `config/provider_catalog.json`
+  · `LLMGateway.MODEL_PRICING` · `ROUTES[<id>@openrouter]` · karar matrisi
+  testi) ve aralarında tutarlılık kilidi YOKTU. Harcama sayacı `MODEL_PRICING`'e
+  baktığı için, tablo güncellenmeden kalsaydı spend cap gerçek maliyeti **yarı
+  yarıya** sayardı.
+- **Onarım:** beş kopyanın tamamı canlı doğrulanan değere ($4/$20) hizalandı +
+  `test_pinned_prices_agree_in_every_copy` (kopyalar ayrışırsa kırmızı) ve
+  `test_pinned_live_coverage_includes_the_spend_cap_models` (kapsam sessizce
+  daraltılamaz) kilitleri eklendi.
+- **Kapsam genişletildi (inanç → doğrulama):** `deepseek/deepseek-v4-flash`
+  (TIER_2 varsayılanı), `deepseek/deepseek-v4-pro` ve `anthropic/claude-sonnet-5`
+  harcama tablosunda fiyatlıydı ama hiç canlı kontrol edilmiyordu; artık pinli
+  ve her CI koşusunda canlı katalogla karşılaştırılıyor. Bayat kopya da
+  düzeltildi: `openrouter/deepseek/deepseek-v4-flash` katalogda $0.0679/$0.168
+  kalmıştı, gateway 2026-09-08'de $0.09/$0.18'e düzeltmişti.
+- **AÇIK KALAN (doğrulanamaz burada):** `ROUTES[anthropic/claude-sonnet-5@nous-research]`
+  etkin fiyatı (1.60/8.00) $2/$10 promosuna göre hesaplanmıştı; promo bitti.
+  Nous kanalının kendi fiyat listesi olmadan güncellenemez — OpenRouter
+  kataloğu Nous'un kanıtı DEĞİLDİR (deponun kendi kuralı). Operatör teyidi
+  gerekir; sayılar raporda açık kalem olarak yazılı.
+- Sağlamlık: canlı kontrol artık 5 modeli doğrular; sahte test gövdesi pinlerden
+  TÜRETİLİR (kapsam büyüyünce yanlış kırmızı üretmez).
+
 ## Unreleased — 2026-10-14 — Merge sonrası main kırmızısı: katalog adımı kör kaldı
 
 Kök neden ve onarım — "testler geçti" demek "iş bitti" değil, üçüncü kanıt:
