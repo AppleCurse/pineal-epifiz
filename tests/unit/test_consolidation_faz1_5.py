@@ -155,3 +155,17 @@ class TestDeclaredLibrariesInstalled:
             reason="crawl4ai ikinci-adım dosyasındadır (pip install -r requirements-osint.txt); CI yalnız birinci adımı kurar",
         )
         assert crawl4ai is not None
+
+
+#: [CANLI KANIT 2026-10-14] requirements-retina.txt'te BEYANLI isteğe bağlı
+#: bağımlılıklar (üçüncü adım). CI yalnız requirements.lock kurar (birinci adım); bunlar
+#: ikinci adımdır → yoksa dürüstçe SKIP, varsa import KANITLANIR. Beyan ile
+#: gerçeklik arasındaki fark sessizce kapanmasın diye ayrı test.
+@pytest.mark.parametrize("module", ["trafilatura", "scrapling", "twscrape", "instagrapi"])
+def test_optional_web_osint_deps_declared_and_importable_when_installed(module):
+    mod = pytest.importorskip(
+        module,
+        reason=f"{module} requirements-retina.txt ÜÇÜNCÜ adımındadır "
+               "(pip install -r requirements-retina.txt); CI yalnız birinci adımı kurar",
+    )
+    assert mod is not None

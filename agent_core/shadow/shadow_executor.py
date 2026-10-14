@@ -1,3 +1,16 @@
+"""Gölge yürütücü — NLP katmanlarını temel mesajın ÜZERİNE bindirir.
+
+Katmanlar: gömülü komut motoru, varsayım (presupposition) zinciri ve strateji
+sentezi. ``_synthesize`` hepsini tek mesaja indirger (``ShadowResult``).
+
+Dürüstlük kapısı: hedef üzerinde GERÇEK analiz kanıtı yoksa
+(``_has_target_evidence``) ajan mesaj ÜRETMEZ — süslenmiş boş içerik yerine
+gerekçeli ret döner.
+
+Tüketici: ``task_executor`` + ``backend/api.py`` (``/api/experimental/shadow/*``).
+Test: ``tests/unit/test_dark_nlp_and_shadow.py``.
+"""
+
 from typing import Dict, Optional
 from pydantic import BaseModel, ConfigDict
 

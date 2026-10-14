@@ -1,3 +1,17 @@
+"""Karar motoru — kanıt taşımayan ajanı "başarılı" saymayan tam durum makinesi.
+
+``make_decision(agent_runs)`` koşu kayıtlarını tarayıp görevin devam/insan
+onayı/durma kararını verir. Kritik kural: ``completed`` görünen bir kayıt
+GERÇEKTEN kanıt taşımıyorsa (``_run_bears_evidence``) başarı sayılmaz; kaynak
+kullanılamazlık sinyalleri (``UNAVAILABLE_WARNING_CODES``) gerekçeye yazılır.
+
+Konfigürasyon ``agent_core/config_loader.DecisionConfig`` üzerinden gelir
+(``config/decision_config.yaml``) — eşikler kod içine gömülmez.
+
+Test: ``tests/unit/test_decision_engine.py``,
+``tests/unit/test_decision_engine_degraded.py``.
+"""
+
 import logging
 from typing import Dict, Any
 

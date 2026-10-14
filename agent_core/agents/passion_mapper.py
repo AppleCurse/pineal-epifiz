@@ -1,3 +1,12 @@
+"""Tutku lensi — hedefin neşe, yaratıcılık ve entelektüel ilgi alanları.
+
+``TargetPsycheProfiler`` omurgasına bağlı ince kabuk; çıktı ``PassionProfile``.
+Yalnız somut paylaşımlardan/dilden kanıt toplar, ilgi uydurmaz; boş kanıt
+durumunda liste boş kalır ve neden yazılır.
+
+Ortak köprü önerisi (``AuthenticBridge``) bu profilden beslenir.
+"""
+
 import logging
 from typing import Dict, Any
 from agent_core.domain.memory_models import PassionProfile

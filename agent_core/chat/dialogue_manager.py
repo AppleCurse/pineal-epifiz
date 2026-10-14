@@ -1,3 +1,16 @@
+"""Diyalog yöneticisi — görev başına oturum, mesaj geçmişi ve sıralı yanıt üretimi.
+
+Oturumlar ``task_id`` ile açılır (``start_session``); geçmiş sınırlı tutulur ve
+süresi dolan/tavanı aşan oturumlar geri kazanılır (``_evict_sessions`` —
+TTL ve oturum tavanı env'den okunur, ``_bounded_float`` ile doğrulanır).
+
+``generate_response`` hedef mesajına karşılık yanıt üretir; model çağrısı
+gateway üzerindendir, oturum durumu asla prompt'a ham dökülmez.
+
+Tüketici: ``backend/api.py`` (``/api/dialogue/sessions``,
+``/api/experimental/chat/respond``).
+"""
+
 import json
 import os
 import time

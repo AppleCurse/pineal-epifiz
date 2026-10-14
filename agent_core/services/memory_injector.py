@@ -1,3 +1,14 @@
+"""Bellek enjektörü — operatör kurallarını (dealbreakers) prompt'a taşır.
+
+``fetch_active_rules`` kullanıcı tarafından yazılmış aktif kuralları okur ve
+prompt bloğu olarak döner. Girdi GÜVENİLMEZ kabul edilir: kontrol karakterleri
+ve çit kırıcılar temizlenir (``_sanitize_rule_text``), prompt enjeksiyonu
+desenleri işaretlenir (``_looks_like_injection``).
+
+Kural metni asla sistem talimatı yerine geçmez; yalnız "sınır/tercih" olarak
+enjekte edilir.
+"""
+
 import json
 import os
 import re

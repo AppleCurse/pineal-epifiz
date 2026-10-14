@@ -5,6 +5,10 @@ kuruluyordu. Üretim yolu (backend/api.py → platform_registry) artık durumu
 buradan alır. Kural [009]: ikinci bir "env okuyup durum üreten" katman
 YARATILMAZ — kapılar `PolicyKernel`'de, durum burada.
 
+[DENETİM 2026-10-14] Kapı ADLARI da tek kaynaktır: `policy.MANAGED_GATE_FLAGS`.
+Bu modül onu yalnız yeniden ihraç eder (iki kopya = "adaptörde kapı var,
+durumda yok" kusuru; bkz. B1).
+
 Kasıtlı olarak sade tutuldu:
 - Hiçbir gizli değer okunmaz, hiçbir anahtar saklanmaz.
 - Bilinmeyen/belirsiz değer → dar taraf (vault_locked=True, rate_ok=None).
@@ -15,7 +19,7 @@ from __future__ import annotations
 import os
 from typing import Any, Mapping
 
-from agent_core.capabilities.policy import PolicyState
+from agent_core.capabilities.policy import MANAGED_GATE_FLAGS, PolicyState
 
 __all__ = [
     "MANAGED_GATE_FLAGS",
@@ -25,30 +29,16 @@ __all__ = [
 ]
 
 
-#: Spine'in bildiği env kapıları. Bu listede OLMAYAN bir `ENABLE_*` anahtarı
-#: geliştirici hatasıdır: `PolicyKernel` onu "unknown_gate" ile reddeder ve
-#: denetim izinde görünür (sessizce yok sayılmaz).
-MANAGED_GATE_FLAGS: tuple[str, ...] = (
-    "ENABLE_MAIGRET",
-    "ENABLE_HOLEHE",
-    "ENABLE_CRAWL4AI",
-    "ENABLE_SCRAPLING",
-    "ENABLE_X_SENSOR",
-    "ENABLE_IG_SECONDARY",
-    "ENABLE_AGENT_REACH",
-    "ENABLE_SEARXNG",
-    # [FAZ D · D4] Çeviri yerel motora bağlıdır; varsayılan KAPALI.
-    "ENABLE_LOCAL_TRANSLATE",
-    # [FAZ D · D2] Yerel jüri: yerel modeller hazır olana kadar varsayılan KAPALI.
-    "ENABLE_LOCAL_JURY",
-    # [FAZ D · D6] Kurum hedefi: theHarvester/ağ koşusu; varsayılan KAPALI.
-    "ENABLE_COMPANY_TARGETING",
-    # [FAZ D · D5] Rapor fabrikası: kanıt dışa aktarımı; varsayılan KAPALI.
-    "ENABLE_REPORT_FACTORY",
-    # [FAZ D · D3] Medya adli hattı: indirme/kare/transkript; varsayılan KAPALI.
-    "ENABLE_MEDIA_FORENSICS",
-)
-
+#: Spine'in bildiği env kapıları — TEK KAYNAK: ``policy.MANAGED_GATE_FLAGS``.
+#: (Denetim 2026-10-14 · B1) Liste burada TUTULMAZ, yalnız yeniden ihraç edilir:
+#: iki kopya, ses kapılarının "adaptörde var, durumda yok" hâline yol açmıştı.
+#: Burada OLMAYAN bir ``ENABLE_*`` anahtarı geliştirici hatasıdır: ``PolicyKernel``
+#: onu ``unknown_gate`` ile reddeder ve denetim izinde görünür (sessizce yok sayılmaz).
+#:
+#: [DENETİM 2026-10-14 · B2] Bu cümlenin ÖNCEDEN yanlış olduğu ölçüldü: çekirdek
+#: ``ENABLE_`` dalını bilinmeyen-kapı denetiminden önce işlediği için uydurma bir
+#: bayrak bile ``gate_disabled`` dönüyordu. Sıra artık ``policy.py``'de doğru;
+#: ``tests/unit/test_capability_spine_faz0.py`` ikisini de kilitler.
 _TRUTHY = frozenset({"1", "true", "yes", "on", "enabled"})
 
 

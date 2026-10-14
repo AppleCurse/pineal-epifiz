@@ -43,6 +43,10 @@ memory/calibration/
 memory/crystals/
 memory/telemetry/
 memory/speech/
+#: [2026-10-14] Rapor fabrikasının ÜRETTİĞİ paketler (md/pdf/png + manifest):
+#: çalışma-zamanı çıktısıdır, depo kuralı gereği izlenmez (kanıt JSON'unda
+#: yol + sha256 olarak kayıtlıdır: reports/canli_calisirlik_kanit.json).
+memory/reports/
 # [FAZ C · C3] STT gecici kayit alani (transkriptten sonra silinir)
 memory/speech/.stt/
 cov_out.txt

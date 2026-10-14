@@ -1,3 +1,16 @@
+"""Dil kalıpları motoru — gömülü komut ve varsayım (presupposition) üretimi.
+
+``EmbeddedCommandEngine`` hedefin temsil sistemi (görsel/işitsel/dokunsal) ve
+profili üzerinden sıralı bir pace–komut–kapanış akışı kurar;
+``PresuppositionEngine`` verilen inançlardan varsayım zinciri üretir.
+
+Bu modül ETİK SINIRIN altındadır: manipülasyon değil, yalnız ifade biçimi
+üretir; çıktılar ``shadow_executor`` içinde "öneri" olarak taşınır ve kanıt
+yoksa hiç üretilmez.
+
+Test: ``tests/unit/test_dark_nlp_and_shadow.py``.
+"""
+
 from typing import List, Dict
 import re
 

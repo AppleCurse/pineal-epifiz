@@ -1,3 +1,13 @@
+"""Geliştirici demosu — yürütücüyü doğrudan çağıran en küçük koşu.
+
+Örnek bir kullanıcı/hedef payload'ı ile ``PinealExecutor``'u çalıştırır, görev
+durumunu, kanıt zinciri uzunluğunu ve üretilen mesajı basar. Amaç: API'yi
+ayağa kaldırmadan boru hattını uçtan uca gözlemek.
+
+Üretim girişi DEĞİLDİR (üretim yolu ``uvicorn backend.api:app``); sahte
+girdiler burada yalnız gösterim amaçlıdır.
+"""
+
 import asyncio
 from agent_core.task_executor import PinealExecutor
 # Register pattern_interrupt dynamically

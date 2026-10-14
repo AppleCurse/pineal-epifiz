@@ -1,0 +1,454 @@
+{
+  "mod": "kanit",
+  "zaman": 1791998453.3209884,
+  "client_id": "canli-kanit",
+  "adimlar": [
+    {
+      "adim": "dil_tespiti",
+      "ok": true,
+      "sure_ms": 4,
+      "sonuc": {
+        "status": 200,
+        "govde": {
+          "tur": "nesne",
+          "anahtarlar": [
+            "available",
+            "chars",
+            "confidence",
+            "denied_by",
+            "detect_reason",
+            "language",
+            "reason",
+            "script"
+          ],
+          "ilk": "{\"available\": true, \"denied_by\": null, \"reason\": null, \"language\": \"tr\", \"confidence\": 0.77, \"script\": \"latin\", \"detect_reason\": null, \"chars\": 42}"
+        }
+      }
+    },
+    {
+      "adim": "rapor_durumu",
+      "ok": true,
+      "sure_ms": 2,
+      "sonuc": {
+        "status": 200,
+        "govde": {
+          "tur": "nesne",
+          "anahtarlar": [
+            "any_available",
+            "formats",
+            "gate",
+            "manifest_schema",
+            "report_dir",
+            "seal"
+          ],
+          "ilk": "{\"gate\": \"ENABLE_REPORT_FACTORY\", \"report_dir\": \"memory/reports\", \"formats\": [{\"format\": \"diagram\", \"available\": true, \"reason\": \"\"}, {\"format\": \"markdown\", \"available\": true, \"reason\": \"\"}, {\"format\": \"pdf\", \"available\": true, \"reason\": \"\""
+        }
+      }
+    },
+    {
+      "adim": "rapor_uret",
+      "ok": true,
+      "sure_ms": 36,
+      "sonuc": {
+        "status": 200,
+        "diskte": [
+          {
+            "format": "pdf",
+            "dosya": "memory/reports/20261014-172054-canli-kanit-raporu.md",
+            "bayt": 342,
+            "sha256": "b9de1386cd52dfc30f62",
+            "muhur_dogrulandi": true
+          },
+          {
+            "format": "pdf",
+            "dosya": "memory/reports/20261014-172054-canli-kanit-raporu.pdf",
+            "bayt": 1849,
+            "sha256": "359c9bb48ac456d369c5",
+            "muhur_dogrulandi": true
+          },
+          {
+            "format": "diagram",
+            "dosya": "memory/reports/20261014-172054-canli-kanit-raporu.md",
+            "bayt": 342,
+            "sha256": "b9de1386cd52dfc30f62",
+            "muhur_dogrulandi": true
+          },
+          {
+            "format": "diagram",
+            "dosya": "memory/reports/20261014-172054-canli-kanit-raporu.png",
+            "bayt": 4716,
+            "sha256": "974aa7fdd41a0c98e8a5",
+            "muhur_dogrulandi": true
+          }
+        ],
+        "reddedilen_kanit": {
+          "pdf": 2,
+          "diagram": 2
+        }
+      }
+    },
+    {
+      "adim": "gercek_sayfa_metin",
+      "ok": true,
+      "sure_ms": 1227,
+      "sonuc": {
+        "status": 200,
+        "bayt": 8000,
+        "ilk_200": "[Skip to content](https://github.com/AppleCurse/pineal-epifiz#start-of-content)\n## Navigation Menu\n[](https://github.com/)\n[Sign in](https://github.com/login?return_to=https%3A%2F%2Fgithub.com%2FApple",
+        "govde": null
+      }
+    },
+    {
+      "adim": "ajan_rostosu",
+      "ok": true,
+      "sure_ms": 2,
+      "sonuc": {
+        "status": 200,
+        "govde": {
+          "tur": "nesne",
+          "anahtarlar": [
+            "agents",
+            "count",
+            "source"
+          ],
+          "ilk": "{\"agents\": [{\"agent_id\": \"mirror_truth\", \"name\": \"MIRROR TRUTH\", \"status\": \"Wait\", \"color\": \"#10b981\", \"glyph\": \"🪞\", \"tier\": 1, \"timestamp\": \"2026-10-14T17:20:53.685741+00:00\", \"metadata\": {}}, {\"agent_id\": \"autonomous_verifier\", \"name\": \"A"
+        }
+      }
+    },
+    {
+      "adim": "ses_durumu",
+      "ok": true,
+      "sure_ms": 5,
+      "sonuc": {
+        "status": 200,
+        "govde": {
+          "tur": "nesne",
+          "anahtarlar": [
+            "available",
+            "capability_id",
+            "engine",
+            "gate",
+            "gate_enabled",
+            "interrupted",
+            "interrupted_from",
+            "known_states",
+            "last",
+            "last_heard",
+            "machine_note",
+            "reason",
+            "report",
+            "state",
+            "stt",
+            "tts",
+            "updated_at"
+          ],
+          "ilk": "{\"capability_id\": \"voice.tts.local\", \"gate\": \"ENABLE_LOCAL_TTS\", \"gate_enabled\": true, \"engine\": \"\", \"available\": false, \"reason\": \"no_local_endpoint\", \"tts\": {\"capability_id\": \"voice.tts.local\", \"gate\": \"ENABLE_LOCAL_TTS\", \"gate_enabled\": "
+        }
+      }
+    },
+    {
+      "adim": "yetenek_tablosu",
+      "ok": true,
+      "sure_ms": 1,
+      "sonuc": {
+        "kayitli": 26,
+        "hazir": 17,
+        "satirlar": [
+          {
+            "id": "analyzer.media.frames",
+            "hazir": true,
+            "karar": true,
+            "sebep": null
+          },
+          {
+            "id": "analyzer.media.similarity",
+            "hazir": true,
+            "karar": true,
+            "sebep": null
+          },
+          {
+            "id": "extractor.identity.socid",
+            "hazir": true,
+            "karar": true,
+            "sebep": null
+          },
+          {
+            "id": "extractor.media.transcript",
+            "hazir": false,
+            "karar": true,
+            "sebep": "no_engine"
+          },
+          {
+            "id": "extractor.text.language",
+            "hazir": true,
+            "karar": true,
+            "sebep": null
+          },
+          {
+            "id": "extractor.text.translate_local",
+            "hazir": false,
+            "karar": true,
+            "sebep": "no_engine"
+          },
+          {
+            "id": "extractor.web.crawl4ai",
+            "hazir": true,
+            "karar": true,
+            "sebep": null
+          },
+          {
+            "id": "extractor.web.scrapling",
+            "hazir": true,
+            "karar": true,
+            "sebep": null
+          },
+          {
+            "id": "extractor.web.trafilatura",
+            "hazir": true,
+            "karar": true,
+            "sebep": null
+          },
+          {
+            "id": "renderer.report.diagram",
+            "hazir": true,
+            "karar": true,
+            "sebep": null
+          },
+          {
+            "id": "renderer.report.pdf",
+            "hazir": true,
+            "karar": true,
+            "sebep": null
+          },
+          {
+            "id": "renderer.report.video",
+            "hazir": true,
+            "karar": true,
+            "sebep": null
+          },
+          {
+            "id": "sensor.company.harvester",
+            "hazir": false,
+            "karar": true,
+            "sebep": "dependency_missing:theHarvester"
+          },
+          {
+            "id": "sensor.company.people",
+            "hazir": true,
+            "karar": true,
+            "sebep": null
+          },
+          {
+            "id": "sensor.company.seo",
+            "hazir": true,
+            "karar": true,
+            "sebep": null
+          },
+          {
+            "id": "sensor.identity.holehe",
+            "hazir": true,
+            "karar": true,
+            "sebep": null
+          },
+          {
+            "id": "sensor.identity.maigret",
+            "hazir": true,
+            "karar": true,
+            "sebep": null
+          },
+          {
+            "id": "sensor.ig.instagrapi",
+            "hazir": false,
+            "karar": true,
+            "sebep": "credentials_missing:IG_USERNAME/IG_PASSWORD"
+          },
+          {
+            "id": "sensor.media.fetch",
+            "hazir": true,
+            "karar": true,
+            "sebep": null
+          },
+          {
+            "id": "sensor.search.searxng",
+            "hazir": false,
+            "karar": true,
+            "sebep": "config_missing:SEARXNG_BASE_URL"
+          },
+          {
+            "id": "sensor.web.agent_reach",
+            "hazir": false,
+            "karar": true,
+            "sebep": "dependency_missing:agent-reach"
+          },
+          {
+            "id": "sensor.x.twscrape",
+            "hazir": true,
+            "karar": true,
+            "sebep": null
+          },
+          {
+            "id": "verifier.jury.local",
+            "hazir": false,
+            "karar": true,
+            "sebep": "no_local_models"
+          },
+          {
+            "id": "voice.report.script",
+            "hazir": true,
+            "karar": true,
+            "sebep": null
+          },
+          {
+            "id": "voice.stt.local",
+            "hazir": false,
+            "karar": true,
+            "sebep": "no_local_endpoint"
+          },
+          {
+            "id": "voice.tts.local",
+            "hazir": false,
+            "karar": true,
+            "sebep": "no_local_endpoint"
+          }
+        ]
+      }
+    },
+    {
+      "adim": "gercek_yetenek_kosumlari",
+      "ok": true,
+      "sure_ms": 27564,
+      "sonuc": {
+        "satirlar": [
+          {
+            "yetenek": "renderer.report.pdf",
+            "available": true,
+            "denied_by": null,
+            "sebep": null,
+            "kanit_sayisi": 2,
+            "sure_ms": 1,
+            "hata": null,
+            "payload_ozet": null
+          },
+          {
+            "yetenek": "renderer.report.diagram",
+            "available": true,
+            "denied_by": null,
+            "sebep": null,
+            "kanit_sayisi": 2,
+            "sure_ms": 5,
+            "hata": null,
+            "payload_ozet": null
+          },
+          {
+            "yetenek": "extractor.web.crawl4ai",
+            "available": true,
+            "denied_by": null,
+            "sebep": null,
+            "kanit_sayisi": 1,
+            "sure_ms": 4427,
+            "hata": null,
+            "payload_ozet": null
+          },
+          {
+            "yetenek": "extractor.text.language",
+            "available": true,
+            "denied_by": null,
+            "sebep": null,
+            "kanit_sayisi": 1,
+            "sure_ms": 0,
+            "hata": null,
+            "payload_ozet": null
+          },
+          {
+            "yetenek": "extractor.web.trafilatura",
+            "available": true,
+            "denied_by": null,
+            "sebep": null,
+            "kanit_sayisi": 1,
+            "sure_ms": 22018,
+            "hata": null,
+            "payload_ozet": "{'url': 'https://github.com/AppleCurse/pineal-epifiz', 'title': 'GitHub - AppleCurse/pineal-epifiz', 'text': 'Merhaba! Pineal-Heretic, sosyal medya (özellikle Instagram ve X) üzerindeki herkese açık profilleri inceleyen, gördüklerini sizin yerinize \"insani bir gözle\" okuyup analiz eden akıllı bir asistandır.\\n\\n## Bu program **kesinlikle bir hacker aracı değildir**, şifre kırmaz veya gizli hesapla"
+          },
+          {
+            "yetenek": "extractor.web.scrapling",
+            "available": true,
+            "denied_by": null,
+            "sebep": null,
+            "kanit_sayisi": 1,
+            "sure_ms": 432,
+            "hata": null,
+            "payload_ozet": null
+          },
+          {
+            "yetenek": "renderer.report.video",
+            "available": true,
+            "denied_by": null,
+            "sebep": null,
+            "kanit_sayisi": 2,
+            "sure_ms": 52,
+            "hata": null,
+            "payload_ozet": null
+          },
+          {
+            "yetenek": "sensor.identity.holehe",
+            "available": false,
+            "denied_by": null,
+            "sebep": "scan_unavailable:provider_errors",
+            "kanit_sayisi": 0,
+            "sure_ms": 622,
+            "hata": null,
+            "payload_ozet": null
+          }
+        ],
+        "calisan": 7,
+        "kayitli_toplam": 8
+      }
+    },
+    {
+      "adim": "ses_uctan_uca_say",
+      "ok": true,
+      "sure_ms": 32,
+      "sonuc": {
+        "durum": 200,
+        "available": true,
+        "reason": "",
+        "url": "/api/speech/audio/11c8ed592fdbad76.wav",
+        "audio_durum": 200,
+        "audio_bayt": 6444,
+        "riff_mi": true,
+        "sha256": "11c8ed592fdbad76"
+      }
+    },
+    {
+      "adim": "ses_uctan_uca_dinle",
+      "ok": true,
+      "sure_ms": 25,
+      "sonuc": {
+        "durum": 200,
+        "available": true,
+        "transcript": "taklit transkript: ses yerelde çözüldü",
+        "engine": "local_endpoint",
+        "reason": ""
+      }
+    }
+  ],
+  "kasa_mandali": "oda mandalı açıldı (sahte anahtar yok)",
+  "yerel_uc_kayitlari": {
+    "port": 42149,
+    "istekler": [
+      {
+        "uc": "tts",
+        "govde_ilk": "{\"text\":\"Mösyö, kanıt cümlesi.\"}"
+      },
+      {
+        "uc": "stt",
+        "govde_bayt": 6630,
+        "multipart": true
+      }
+    ]
+  },
+  "llm_gecidi_kimliksiz": {
+    "yanit_verdi": false,
+    "hata": "RuntimeError: REAL_LLM_CALL_NOT_EXECUTED: Canlı LLM çağrıları kapalı. Açmak için: (1) Kasa'ya API anahtarı girin (oturum boyunca açılır), veya (2) .env dosyasına OPENROUTER_API_KEY yazıp LIVE_LLM_E2E=1 yapıp sunucuyu yeniden başlatın."
+  }
+}

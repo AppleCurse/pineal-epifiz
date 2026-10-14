@@ -1,3 +1,36 @@
+"""PINEAL yürütücüsü — 360° boru hattının orkestra şefi (sistemin kalbi).
+
+``execute_task(input_data, task_id)`` çağrısı, önce plan (``CognitiveRouter``)
+sonra ajan sırası olacak şekilde TÜM görevi yönetir:
+
+  1. **Plan**: hangi ajanların koşacağı girdiye göre belirlenir.
+  2. **Bellek**: kanonik bellek + kristal hatırlama (``_recall_memory_crystal``);
+     görev sonunda kanıt hedef profiliyle birlikte kalıcı yazılır
+     (``_merge_task_memory``).
+  3. **Ajan koşusu**: her ajan AYRI duvar saati sınırıyla koşar
+     (``_execute_with_timeout`` → ``AgentTimeoutError``); ajan başına girdi
+     özeti, çıktı kanıt kaydı ve hash üretilir (``_evidence_record``,
+     ``_hash_evidence_result``).
+  4. **Deterministik motor**: 7-sütun (``PillarOrchestrator``) LLM'siz çalışır;
+     çıktısı ``pillar_evidence_adapter`` ile kanonik kanıta ve nötr zaman
+     çizelgesine dönüştürülür.
+  5. **Kapılar**: ``claim_decision_gate`` engelli iddiayı bastırır; ``quote_guard``
+     alıntıyı kaynağa bağlar; Tier-2 alanlar allowlist ile yazılır.
+  6. **Sorumluluk zinciri**: her ajan için açılan egress denemeleri ve kanıt
+     hash'i mühürlenir (``_responsibility_trail``); Agent Rack durumu YALNIZ
+     adı taşıdığı ajanın koşusundan yayınlanır (ödünç slot yasak).
+  7. **Destek & devam**: kanıt yetmezse ``ResumeBlockedError``/destek talebi
+     üretilir; destek hâlâ açıkken devam REDDEDİLİR. Bitmiş adımlar
+     ``_resume_done`` ile atlanır (yan etki tekrarı yok).
+
+Her çıkış yolunda geçici görseller silinir. Hata gizlenmez: loglanır, olay
+olarak yayınlanır ve yukarı iletilir.
+
+Tüketici: ``backend/api.py``, ``main.py``, CLI scriptleri.
+Test: ``tests/integration/test_task_executor_flow.py``, ``tests/unit/test_execute_with_timeout.py``,
+``tests/unit/test_evidence_hash_and_fallback_gate.py``.
+"""
+
 import copy
 import inspect
 import os

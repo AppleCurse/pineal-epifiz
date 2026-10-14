@@ -1,3 +1,10 @@
+"""[DEPO DIŞI · ARŞİV] Sabit (fixture) girdilerle uçtan uca koşu.
+
+Gerçek ağ yerine yerel fixture'lar ve (varsa) ``.pineal_vault.json`` kullanır;
+``snapshot_handler`` ile anlık görüntüleri toplar. Canlı anahtar gerektirmez,
+ancak canlı LLM kapısı (``LIVE_LLM_E2E``) yine açılmalıdır.
+"""
+
 import asyncio
 import json
 import os

@@ -1,3 +1,12 @@
+"""[DEPO DIŞI · ARŞİV] Canlı 360° bütüncül analiz koşusu.
+
+Gerçek sağlayıcı anahtarı + ``LIVE_LLM_E2E=1`` ile ``PinealExecutor``'u koşar ve
+bütüncül profili konsola döker; üretim yolu değildir, tanı amaçlı tutulur
+(bkz. ``scripts/archive/README.md``).
+
+Ağ erişimi ve canlı model gerektirir; CI'da koşmaz.
+"""
+
 import asyncio
 import json
 import os

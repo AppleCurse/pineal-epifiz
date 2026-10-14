@@ -1,3 +1,18 @@
+"""SOTA OSINT katmanı — kullanıcı adı, e-posta ve açık kaynak izleri.
+
+Gerçek taramaları YETENEK OMURGASI (``agent_core.capabilities``) üzerinden
+koşar; her çağrının çıktısı kanıt zaman çizelgesine mühürlenir. Faz 2 Maigret
+kullanıcı-adı taraması, Faz 3 Holehe e-posta kayıt taraması görev payload'ının
+politika durumuna göre "dürüstçe birleştirilir" — yetenek kapalıysa uydurma
+bulgu üretilmez, kaynak-kullanılamaz sinyali yazılır.
+
+Kasa (vault) kilitliyken dış çağrı yapılmaz; politika tek kaynaktan
+(``capabilities.state``) okunur.
+
+Test: ``tests/unit/test_osint_*.py``, ``tests/unit/test_maigret_scanner.py``,
+``tests/unit/test_holehe_scanner.py``.
+"""
+
 import logging
 import asyncio
 import aiohttp

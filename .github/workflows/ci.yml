@@ -69,6 +69,11 @@ jobs:
         run: |
           python scripts/generate_routing_shadows.py
           git diff --exit-code
+      - name: Verify inventory page committed fresh
+        # [ENVANTER 2026-10-14] docs/envanter.html kaynaktan üretilir (docstring'ler,
+        # git ls-files, .env.example, config/*). Elle düzenlenmiş ya da unutulmuş
+        # bir sayfa sessizce geçemez: --check fark bulursa sıfırdan farklı döner.
+        run: python scripts/generate_inventory_page.py --check
       - name: Verify skills package committed fresh
         # [FAZ D · D1] Skills paketi defterden üretilir; elle düzenlenmiş ya da
         # defterde olmayan bir yetenek dosyası sessizce geçemez (exit 3 = bayat).

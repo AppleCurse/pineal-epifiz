@@ -123,9 +123,26 @@ class TrafilaturaCapability(BaseCapability):
             )
 
         def _work() -> tuple[str, str]:
+            import copy
+
             import trafilatura  # lazy: paket yoksa availability zaten ret döner
 
-            downloaded = trafilatura.fetch_url(url)
+            # [2026-10-14 · CANLI KANIT] İNDİRME TAVANI yeteneğin KENDİ bütçesinin
+            # altında olmalı. trafilatura'nın varsayılanı 30 sn; yetenek bütçesi de
+            # 30 sn olduğu için indirme, dış `wait_for` ile YARIŞIYORDU ve yavaş
+            # sayfada yetenek "timeout" dönüyordu — oysa indirme 6,5 sn'de
+            # başarıyordu (ölçüm: github.com, 433 KB). Tavanı bütçenin altına
+            # çekince gerçek metin döner; yine de makul taban (5 sn) korunur.
+            download_timeout = max(5, min(20, int(self.timeout_seconds) - 5))
+            try:
+                from trafilatura import settings as trafilatura_settings
+
+                config = copy.deepcopy(trafilatura_settings.DEFAULT_CONFIG)
+                config.set("DEFAULT", "DOWNLOAD_TIMEOUT", str(download_timeout))
+            except Exception:  # ayar üretilemezse varsayılanla devam (dürüst davranış)
+                config = None
+
+            downloaded = trafilatura.fetch_url(url, config=config) if config else trafilatura.fetch_url(url)
             if not downloaded:
                 return "", ""
             text = trafilatura.extract(
@@ -200,7 +217,12 @@ class Crawl4AICapability(BaseCapability):
     id = "extractor.web.crawl4ai"
     kind = CapabilityKind.EXTRACTOR
     license = "Apache-2.0"
-    gates = frozenset({"vault"})
+    #: [DENETİM 2026-10-14 · B15] Bayrak BEYAN EDİLİR: `availability()` kapıyı
+    #: servis üzerinden (`crawl_enricher.is_enabled()`) okuyordu ama omurga
+    #: kapı kümesinde yazmıyordu → çekirdek "izinli" derken yetenek "kapalı"
+    #: diyordu (çelişki). Artık kernel de aynı bayrağı görür: kapalıysa
+    #: `gate_disabled:ENABLE_CRAWL4AI`, açıksa availability kararı verir.
+    gates = frozenset({"ENABLE_CRAWL4AI", "vault"})
     timeout_seconds = 60.0
     description = "JS'li/ağır sayfalar için tarayıcılı kazıma (ikinci kademe)."
 

@@ -1,3 +1,16 @@
+"""Hedef ruh hâli profiler'ı — üç lensin ortak omurgası (tek gerçek kaynak).
+
+``profile_passions`` / ``profile_frictions`` / ``profile_cognitive`` üçlüsü aynı
+kanıt ayrıştırmasını (``_extract_target_context``: metin + görsel delil) paylaşır.
+İnce kabuklar (``passion_mapper``, ``friction_detector``, ``cognitive_profiler``)
+yalnız bu sınıfı çağırır — kopyalanmış prompt yasaktır.
+
+``profile_all`` üç analizi sıralı/paralel tek koşuda birleştirir. Boş kanıtta
+skor/uydurma üretilmez; veri güveni açıkça raporlanır.
+
+Test: ``tests/unit/test_cognitive_profiler.py``, ``tests/unit/test_friction_detector.py``.
+"""
+
 import logging
 from typing import Dict, Any, Optional, Tuple
 from agent_core.domain.memory_models import PassionProfile, FrictionProfile, CognitiveStyle

@@ -1,3 +1,10 @@
+"""[DEPO DIŞI · ARŞİV] Görsel indirme gecikme ölçümü.
+
+Yürütücünün ``_download_images`` yolunu gecikmeli uçlarla (httpbin delay)
+koşup toplam süreyi ölçer. Yalnız performans tanısı içindir; ağ erişimi
+gerektirir, CI'da koşmaz.
+"""
+
 import asyncio
 import time
 import sys

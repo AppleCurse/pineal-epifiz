@@ -19,6 +19,12 @@ trafilatura>=1.12.0
 # 3. kademe: adaptif kazıma; site yapısı değişse de kırılmaz, anti-bot direnci
 # (BSD-3-Clause). Kapı: ENABLE_SCRAPLING.
 scrapling>=0.9.0
+# [CANLI KANIT 2026-10-14] scrapling 0.4.x `browserforge`'u ZORUNLU kullanır
+# ama paket metadata'sında bildirmez: temiz kurulumda yetenek
+# `extract_error` (`ModuleNotFoundError: browserforge`) dönüyordu. Ölçüm:
+# browserforge kurulunca aynı yetenek gerçek metni üretti (github.com,
+# 19.351 bayt). Beyan bu yüzden AÇIK yazılır.
+browserforge>=1.2
 
 # --- Retina · sensörler ------------------------------------------------------
 # X/Twitter sensörü (MIT). Operatörün KENDİ hesabı; çoklu hesap +
@@ -29,9 +35,13 @@ twscrape>=0.15.0
 instagrapi>=2.0.0
 
 # NOTLAR
-# - Agent-Reach (`sensor.web.agent_reach`) bir PYTHON PAKETİ DEĞİL, harici CLI:
-#   `npm i -g agent-reach` ile kurulur; Pineal onu alt süreç olarak çağırır
-#   (kod gömülmez, API ücreti yoktur). Kapı: ENABLE_AGENT_REACH.
+# - Agent-Reach (`sensor.web.agent_reach`) bir PYTHON PAKETİ DEĞİL, harici CLI.
+#   [UYARI · 2026-10-14 ölçümü] `npm i -g agent-reach` komutu artık AYNI ADLI
+#   BAŞKA bir projeyi kuruyor (npm agent-reach@0.3.4 = "Nostr ajan ağı"), PyPI'de
+#   de aynı adlı ilgisiz bir paket var (jgalea/agent-reach). Kör kurulum, yanlış
+#   aracın "hazır" sayılmasına yol açar. Gerçek CLI'ın yolunu operatör açıkça
+#   işaret eder: PINEAL_AGENT_REACH_CMD=/yol/agent-reach (kaynağı sabitlenmiş
+#   tarball/commit olmalı). Kapı: ENABLE_AGENT_REACH.
 # - SearXNG (`sensor.search.searxng`) AYRI BİR SERVİSTİR (AGPL-3.0): kod
 #   gömülmez, yalnız HTTP ile konuşulur. Docker ile ayağa kaldırılır ve
 #   SEARXNG_BASE_URL ile gösterilir. Kapı: ENABLE_SEARXNG.

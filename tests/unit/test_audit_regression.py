@@ -126,6 +126,27 @@ def test_baseline_gate_passes_today(report):
     assert report["meta"]["gate_passed"] is True
 
 
+def test_committed_report_matches_fresh_generation(report):
+    """CI'ın tazelik kapısı (`git diff --exit-code`) yerelde de ısırsın.
+
+    Bekçinin kanıt dizeleri **mutlak satır numarası** gömüyor
+    (``agent_core/capabilities/adapters_web.py:161`` gibi). Bu yüzden satır
+    kaydıran masum bir düzenleme bile komutlu `reports/audit_regression.json`'ı
+    bayatlatır. 2026-10-14'te tam bu oldu: trafilatura yaması 12 satır ekledi,
+    bekçi adımı CI'da `git diff` kapısında düştü ve ardından gelen 3 doğrulama
+    adımı hiç koşmadı — yerelde ise bekçi "GEÇTİ" diyordu, çünkü burada
+    `git diff` koşulmuyor. Bu test aynı kapıyı yerelde kilitler: komutlu rapor
+    ile taze üretim BİREBİR aynı olmalı.
+    """
+    fresh = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
+    committed = ar.REPORT_OUT.read_text(encoding="utf-8")
+    assert committed == fresh, (
+        "reports/audit_regression.json BAYAT — kanıt satır numaraları kaymış "
+        "olabilir. Onarım: `python scripts/audit_regression.py` koş, çıkan "
+        "dosyayı commit et (CI tazelik kapısı da bunu ister)."
+    )
+
+
 def test_known_open_matches_the_measured_open_set_exactly(report):
     """KNOWN_OPEN ne iyimser ne karamsar — ölçülen açık kümeyle BİREBİR.
 

@@ -1,0 +1,1096 @@
+{
+  "mod": "sunucu",
+  "base_url": "http://127.0.0.1:8000",
+  "zaman": 1791992887.9445548,
+  "health": {
+    "status": 200,
+    "body": {
+      "tur": "nesne",
+      "anahtarlar": [
+        "components",
+        "dependencies",
+        "error_code",
+        "security",
+        "spend_cap_unlimited",
+        "spend_cap_usd",
+        "status"
+      ],
+      "ilk": "{\"status\": \"ready\", \"error_code\": null, \"dependencies\": [{\"dependency\": \"pydantic\", \"status\": \"ready\", \"feature_flag\": null}, {\"dependency\": \"fastapi\", \"status\": \"ready\", \"feature_flag\": null}, {\"dependency\": \"httpx\", \"status\": \"ready\", \"fe"
+    }
+  },
+  "openapi": {
+    "status": 200
+  },
+  "uclar": [
+    {
+      "path": "/api/agents/status",
+      "methods": [
+        "get"
+      ],
+      "status": 200,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "agents",
+          "count",
+          "source"
+        ],
+        "ilk": "{\"agents\": [{\"agent_id\": \"mirror_truth\", \"name\": \"MIRROR TRUTH\", \"status\": \"Wait\", \"color\": \"#10b981\", \"glyph\": \"🪞\", \"tier\": 1, \"timestamp\": \"2026-10-14T15:45:53.425519+00:00\", \"metadata\": {}}, {\"agent_id\": \"autonomous_verifier\", \"name\": \"A"
+      }
+    },
+    {
+      "path": "/api/agents/status/{agent_id}",
+      "methods": [
+        "post"
+      ],
+      "status": null,
+      "not": "yol parametresi gerekir"
+    },
+    {
+      "path": "/api/aspasia/chat",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"client_id\"], \"msg\": \"Field required\", \"input\": {}}, {\"type\": \"missing\", \"loc\": [\"body\", \"user_message\"], \"msg\": \"Field required\", \"input\": {}}]}"
+      }
+    },
+    {
+      "path": "/api/aspasia/command",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"client_id\"], \"msg\": \"Field required\", \"input\": {}}, {\"type\": \"missing\", \"loc\": [\"body\", \"user_message\"], \"msg\": \"Field required\", \"input\": {}}]}"
+      }
+    },
+    {
+      "path": "/api/aspasia/state",
+      "methods": [
+        "get"
+      ],
+      "status": 200,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "anomalies",
+          "budget",
+          "quota",
+          "registry",
+          "run"
+        ],
+        "ilk": "{\"registry\": [\"authenticity_auditor\", \"autonomous_verifier\", \"cognitive_profiler\", \"depth_analyst\", \"friction_detector\", \"human_behavior\", \"mirror_truth\", \"osint_investigator\", \"passion_mapper\", \"pattern_interrupt\", \"resonance_calc\", \"reson"
+      }
+    },
+    {
+      "path": "/api/browser/back",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"client_id\"], \"msg\": \"Field required\", \"input\": {}}]}"
+      }
+    },
+    {
+      "path": "/api/browser/click",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"client_id\"], \"msg\": \"Field required\", \"input\": {}}]}"
+      }
+    },
+    {
+      "path": "/api/browser/close",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"client_id\"], \"msg\": \"Field required\", \"input\": {}}]}"
+      }
+    },
+    {
+      "path": "/api/browser/open",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"client_id\"], \"msg\": \"Field required\", \"input\": {}}]}"
+      }
+    },
+    {
+      "path": "/api/browser/press",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"client_id\"], \"msg\": \"Field required\", \"input\": {}}, {\"type\": \"missing\", \"loc\": [\"body\", \"key\"], \"msg\": \"Field required\", \"input\": {}}]}"
+      }
+    },
+    {
+      "path": "/api/browser/save",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"client_id\"], \"msg\": \"Field required\", \"input\": {}}]}"
+      }
+    },
+    {
+      "path": "/api/browser/shot",
+      "methods": [
+        "get"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"query\", \"client_id\"], \"msg\": \"Field required\", \"input\": null}]}"
+      }
+    },
+    {
+      "path": "/api/browser/state",
+      "methods": [
+        "get"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"query\", \"client_id\"], \"msg\": \"Field required\", \"input\": null}]}"
+      }
+    },
+    {
+      "path": "/api/browser/type",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"client_id\"], \"msg\": \"Field required\", \"input\": {}}, {\"type\": \"missing\", \"loc\": [\"body\", \"text\"], \"msg\": \"Field required\", \"input\": {}}]}"
+      }
+    },
+    {
+      "path": "/api/calibration",
+      "methods": [
+        "get"
+      ],
+      "status": 200,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "ledger",
+          "min_samples",
+          "scopes"
+        ],
+        "ilk": "{\"scopes\": {\"quote\": {\"scope\": \"quote\", \"threshold\": 0.7, \"source\": \"varsayılan\", \"reason\": \"yetersiz_etiketli_örnek:0<30\", \"report\": {\"scope\": \"quote\", \"samples\": 0, \"labeled\": 0, \"unlabeled\": 0, \"min_samples\": 30, \"available\": false, \"rea"
+      }
+    },
+    {
+      "path": "/api/calibration/adjudicate",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"observation_id\"], \"msg\": \"Field required\", \"input\": {}}, {\"type\": \"missing\", \"loc\": [\"body\", \"truth\"], \"msg\": \"Field required\", \"input\": {}}]}"
+      }
+    },
+    {
+      "path": "/api/calibration/observations",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"score\"], \"msg\": \"Field required\", \"input\": {}}]}"
+      }
+    },
+    {
+      "path": "/api/company/scan",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"domain\"], \"msg\": \"Field required\", \"input\": {}}]}"
+      }
+    },
+    {
+      "path": "/api/company/status",
+      "methods": [
+        "get"
+      ],
+      "status": 200,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "any_available",
+          "domain_hint",
+          "gate",
+          "modes"
+        ],
+        "ilk": "{\"gate\": \"ENABLE_COMPANY_TARGETING\", \"domain_hint\": \"yalnız alan adı (örn. ornek.com); özel/yerel adresler reddedilir\", \"modes\": [{\"mode\": \"harvester\", \"capability_id\": \"sensor.company.harvester\", \"available\": false, \"reason\": \"gate_disable"
+      }
+    },
+    {
+      "path": "/api/dialogue/sessions",
+      "methods": [
+        "get"
+      ],
+      "status": 200,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "count",
+          "evicted",
+          "sessions"
+        ],
+        "ilk": "{\"sessions\": [], \"count\": 0, \"evicted\": 0}"
+      }
+    },
+    {
+      "path": "/api/executor/intervene",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"client_id\"], \"msg\": \"Field required\", \"input\": {}}, {\"type\": \"missing\", \"loc\": [\"body\", \"action_type\"], \"msg\": \"Field required\", \"input\": {}}]}"
+      }
+    },
+    {
+      "path": "/api/experimental/chat/respond",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"task_id\"], \"msg\": \"Field required\", \"input\": {}}, {\"type\": \"missing\", \"loc\": [\"body\", \"target_profile\"], \"msg\": \"Field required\", \"input\": {}}, {\"type\": \"missing\", \"loc\": [\"body\", \"user_profi"
+      }
+    },
+    {
+      "path": "/api/experimental/crawl/fetch",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"url\"], \"msg\": \"Field required\", \"input\": {}}]}"
+      }
+    },
+    {
+      "path": "/api/experimental/holehe/scan",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"email\"], \"msg\": \"Field required\", \"input\": {}}]}"
+      }
+    },
+    {
+      "path": "/api/experimental/interpreter/execute",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"client_id\"], \"msg\": \"Field required\", \"input\": {}}, {\"type\": \"missing\", \"loc\": [\"body\", \"prompt\"], \"msg\": \"Field required\", \"input\": {}}]}"
+      }
+    },
+    {
+      "path": "/api/experimental/maigret/scan",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"username\"], \"msg\": \"Field required\", \"input\": {}}]}"
+      }
+    },
+    {
+      "path": "/api/experimental/shadow/analyze",
+      "methods": [
+        "post"
+      ],
+      "status": 200,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "exploitability",
+          "machiavellianism",
+          "narcissism",
+          "psychopathy",
+          "theme_analysis"
+        ],
+        "ilk": "{\"machiavellianism\": 0.0, \"narcissism\": 0.0, \"psychopathy\": 0.0, \"exploitability\": 0.0, \"theme_analysis\": {\"method\": \"char3gram-cosine-unionfind\", \"threshold\": 0.3, \"n_texts\": 0, \"n_themes\": 0, \"themes\": [], \"repetition_score\": 0.0, \"anomal"
+      }
+    },
+    {
+      "path": "/api/experimental/shadow/generate",
+      "methods": [
+        "post"
+      ],
+      "status": 200,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "confidence",
+          "dark_profile",
+          "data_confidence",
+          "fallback_reason",
+          "message",
+          "nlp_sequence",
+          "strategy"
+        ],
+        "ilk": "{\"message\": \"\", \"dark_profile\": {\"machiavellianism\": 0.0, \"narcissism\": 0.0, \"psychopathy\": 0.0, \"exploitability\": 0.0, \"theme_analysis\": null}, \"strategy\": \"unavailable\", \"nlp_sequence\": [], \"confidence\": 0.0, \"data_confidence\": false, \"fa"
+      }
+    },
+    {
+      "path": "/api/experimental/socid/extract",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"url\"], \"msg\": \"Field required\", \"input\": {}}]}"
+      }
+    },
+    {
+      "path": "/api/experimental/stealth",
+      "methods": [
+        "get"
+      ],
+      "status": 200,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "available",
+          "kind",
+          "provider",
+          "reason",
+          "requested"
+        ],
+        "ilk": "{\"requested\": \"playwright_stealth\", \"provider\": \"playwright_stealth\", \"available\": true, \"reason\": null, \"kind\": \"page\"}"
+      }
+    },
+    {
+      "path": "/api/initiate",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"client_id\"], \"msg\": \"Field required\", \"input\": {}}, {\"type\": \"missing\", \"loc\": [\"body\", \"url\"], \"msg\": \"Field required\", \"input\": {}}]}"
+      }
+    },
+    {
+      "path": "/api/jury/status",
+      "methods": [
+        "get"
+      ],
+      "status": 200,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "available",
+          "duplicates_removed",
+          "endpoint",
+          "gate",
+          "independent_seats",
+          "max_seats",
+          "models",
+          "note",
+          "quorum",
+          "reason",
+          "seats"
+        ],
+        "ilk": "{\"available\": false, \"reason\": \"no_local_models\", \"gate\": \"ENABLE_LOCAL_JURY\", \"endpoint\": \"http://127.0.0.1:11434/v1\", \"models\": [], \"seats\": 0, \"independent_seats\": false, \"duplicates_removed\": [], \"quorum\": 1, \"max_seats\": 5, \"note\": \"\"}"
+      }
+    },
+    {
+      "path": "/api/jury/vote",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"claim\"], \"msg\": \"Field required\", \"input\": {}}, {\"type\": \"missing\", \"loc\": [\"body\", \"evidence\"], \"msg\": \"Field required\", \"input\": {}}]}"
+      }
+    },
+    {
+      "path": "/api/language/detect",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"text\"], \"msg\": \"Field required\", \"input\": {}}]}"
+      }
+    },
+    {
+      "path": "/api/language/status",
+      "methods": [
+        "get"
+      ],
+      "status": 200,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detect",
+          "last",
+          "translate"
+        ],
+        "ilk": "{\"detect\": {\"available\": true, \"method\": \"deterministic_local\"}, \"translate\": {\"available\": false, \"engine\": null, \"reason\": \"no_engine\", \"gate\": \"ENABLE_LOCAL_TRANSLATE\", \"url_configured\": false, \"max_chars\": 2000}, \"last\": null}"
+      }
+    },
+    {
+      "path": "/api/language/translate",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"text\"], \"msg\": \"Field required\", \"input\": {}}]}"
+      }
+    },
+    {
+      "path": "/api/mcp/status",
+      "methods": [
+        "get"
+      ],
+      "status": 200,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "available",
+          "capabilities",
+          "command",
+          "gate",
+          "message",
+          "protocol_current",
+          "protocol_supported",
+          "rate_limit",
+          "server_version",
+          "skills_dir",
+          "tools",
+          "transport",
+          "vault_locked"
+        ],
+        "ilk": "{\"available\": true, \"transport\": \"stdio\", \"command\": \"python -m agent_core.mcp\", \"capabilities\": 26, \"tools\": 27, \"server_version\": \"3.0.0-rc.2\", \"protocol_current\": \"2026-07-28\", \"protocol_supported\": [\"2026-07-28\", \"2025-11-25\", \"2025-06-"
+      }
+    },
+    {
+      "path": "/api/media/analyze",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"source\"], \"msg\": \"Field required\", \"input\": {}}]}"
+      }
+    },
+    {
+      "path": "/api/media/status",
+      "methods": [
+        "get"
+      ],
+      "status": 200,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "any_available",
+          "gate",
+          "media_dir",
+          "modes",
+          "tools",
+          "transcribe_engine_reason"
+        ],
+        "ilk": "{\"gate\": \"ENABLE_MEDIA_FORENSICS\", \"media_dir\": \"memory/media\", \"tools\": {\"yt-dlp\": false, \"ffmpeg\": false, \"opencv\": true, \"transcribe_engine\": \"\"}, \"transcribe_engine_reason\": \"no_engine\", \"modes\": [{\"mode\": \"fetch\", \"capability_id\": \"sen"
+      }
+    },
+    {
+      "path": "/api/memory/{target}",
+      "methods": [
+        "get"
+      ],
+      "status": null,
+      "not": "yol parametresi gerekir"
+    },
+    {
+      "path": "/api/memory/{target}/recall",
+      "methods": [
+        "get"
+      ],
+      "status": null,
+      "not": "yol parametresi gerekir"
+    },
+    {
+      "path": "/api/minor/case",
+      "methods": [
+        "post"
+      ],
+      "status": 200,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "allowed",
+          "case_id",
+          "client_id",
+          "declared",
+          "detail",
+          "reason_code",
+          "subject_is_minor"
+        ],
+        "ilk": "{\"client_id\": \"default\", \"declared\": true, \"subject_is_minor\": true, \"allowed\": false, \"reason_code\": \"case_type_not_allowed\", \"detail\": \"Çocuk vakası yalnızca KAYIP / YARALANMA (missing_or_harm) sebebiyle açılabilir. Bu vaka tipi izinli de"
+      }
+    },
+    {
+      "path": "/api/minor/clear",
+      "methods": [
+        "post"
+      ],
+      "status": 200,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "cleared",
+          "client_id"
+        ],
+        "ilk": "{\"client_id\": \"default\", \"cleared\": true}"
+      }
+    },
+    {
+      "path": "/api/minor/state",
+      "methods": [
+        "get"
+      ],
+      "status": 200,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "cleared",
+          "client_id",
+          "declared",
+          "detail",
+          "reason_code"
+        ],
+        "ilk": "{\"client_id\": \"default\", \"declared\": false, \"cleared\": true, \"reason_code\": \"not_declared\", \"detail\": \"Bu oda için çocuk beyanı yok. Bu katman yaş UYDURMAZ; hedefin çocuk olduğu biliniyorsa operatör beyan etmelidir.\"}"
+      }
+    },
+    {
+      "path": "/api/override",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"client_id\"], \"msg\": \"Field required\", \"input\": {}}, {\"type\": \"missing\", \"loc\": [\"body\", \"fact\"], \"msg\": \"Field required\", \"input\": {}}, {\"type\": \"missing\", \"loc\": [\"body\", \"tag\"], \"msg\": \"Fie"
+      }
+    },
+    {
+      "path": "/api/report/build",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"title\"], \"msg\": \"Field required\", \"input\": {}}]}"
+      }
+    },
+    {
+      "path": "/api/report/status",
+      "methods": [
+        "get"
+      ],
+      "status": 200,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "any_available",
+          "formats",
+          "gate",
+          "manifest_schema",
+          "report_dir",
+          "seal"
+        ],
+        "ilk": "{\"gate\": \"ENABLE_REPORT_FACTORY\", \"report_dir\": \"memory/reports\", \"formats\": [{\"format\": \"diagram\", \"available\": true, \"reason\": \"\"}, {\"format\": \"markdown\", \"available\": true, \"reason\": \"\"}, {\"format\": \"pdf\", \"available\": true, \"reason\": \"\""
+      }
+    },
+    {
+      "path": "/api/scraper/authorize-alternative",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"client_id\"], \"msg\": \"Field required\", \"input\": {}}, {\"type\": \"missing\", \"loc\": [\"body\", \"alternative\"], \"msg\": \"Field required\", \"input\": {}}, {\"type\": \"missing\", \"loc\": [\"body\", \"approved\"],"
+      }
+    },
+    {
+      "path": "/api/speech/audio/{name}",
+      "methods": [
+        "get"
+      ],
+      "status": null,
+      "not": "yol parametresi gerekir"
+    },
+    {
+      "path": "/api/speech/listen",
+      "methods": [
+        "post"
+      ],
+      "status": 400,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "error"
+        ],
+        "ilk": "{\"error\": {\"code\": \"NO_AUDIO\", \"message\": \"Ses dosyası yok\"}}"
+      }
+    },
+    {
+      "path": "/api/speech/report",
+      "methods": [
+        "post"
+      ],
+      "status": 200,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "available",
+          "bytes",
+          "chars",
+          "duration_ms",
+          "engine",
+          "machine_note",
+          "name",
+          "reason",
+          "script",
+          "sections",
+          "sha256",
+          "state",
+          "truncated",
+          "url",
+          "voice"
+        ],
+        "ilk": "{\"available\": false, \"reason\": \"policy:vault_locked\", \"state\": \"denied\", \"engine\": \"\", \"voice\": \"\", \"name\": \"\", \"url\": \"\", \"bytes\": 0, \"duration_ms\": null, \"sha256\": \"\", \"chars\": 0, \"machine_note\": \"SES: rapor okunamadı — policy:vault_locke"
+      }
+    },
+    {
+      "path": "/api/speech/say",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"text\"], \"msg\": \"Field required\", \"input\": {}}]}"
+      }
+    },
+    {
+      "path": "/api/speech/status",
+      "methods": [
+        "get"
+      ],
+      "status": 200,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "available",
+          "capability_id",
+          "engine",
+          "gate",
+          "gate_enabled",
+          "interrupted",
+          "interrupted_from",
+          "known_states",
+          "last",
+          "last_heard",
+          "machine_note",
+          "reason",
+          "report",
+          "state",
+          "stt",
+          "tts",
+          "updated_at"
+        ],
+        "ilk": "{\"capability_id\": \"voice.tts.local\", \"gate\": \"ENABLE_LOCAL_TTS\", \"gate_enabled\": false, \"engine\": \"\", \"available\": false, \"reason\": \"no_local_endpoint\", \"tts\": {\"capability_id\": \"voice.tts.local\", \"gate\": \"ENABLE_LOCAL_TTS\", \"gate_enabled\":"
+      }
+    },
+    {
+      "path": "/api/speech/stop",
+      "methods": [
+        "post"
+      ],
+      "status": 200,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "state",
+          "status"
+        ],
+        "ilk": "{\"status\": \"stopped\", \"state\": \"idle\"}"
+      }
+    },
+    {
+      "path": "/api/tasks",
+      "methods": [
+        "get"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"query\", \"client_id\"], \"msg\": \"Field required\", \"input\": null}]}"
+      }
+    },
+    {
+      "path": "/api/tasks/{task_id}",
+      "methods": [
+        "delete"
+      ],
+      "status": null,
+      "not": "yol parametresi gerekir"
+    },
+    {
+      "path": "/api/tasks/{task_id}/cancel",
+      "methods": [
+        "post"
+      ],
+      "status": null,
+      "not": "yol parametresi gerekir"
+    },
+    {
+      "path": "/api/tasks/{task_id}/changes",
+      "methods": [
+        "get"
+      ],
+      "status": null,
+      "not": "yol parametresi gerekir"
+    },
+    {
+      "path": "/api/tasks/{task_id}/graph",
+      "methods": [
+        "get"
+      ],
+      "status": null,
+      "not": "yol parametresi gerekir"
+    },
+    {
+      "path": "/api/tasks/{task_id}/halt",
+      "methods": [
+        "post"
+      ],
+      "status": null,
+      "not": "yol parametresi gerekir"
+    },
+    {
+      "path": "/api/tasks/{task_id}/memory",
+      "methods": [
+        "get"
+      ],
+      "status": null,
+      "not": "yol parametresi gerekir"
+    },
+    {
+      "path": "/api/tasks/{task_id}/resume",
+      "methods": [
+        "post"
+      ],
+      "status": null,
+      "not": "yol parametresi gerekir"
+    },
+    {
+      "path": "/api/tasks/{task_id}/support",
+      "methods": [
+        "get"
+      ],
+      "status": null,
+      "not": "yol parametresi gerekir"
+    },
+    {
+      "path": "/api/tasks/{task_id}/support/{support_id}",
+      "methods": [
+        "post"
+      ],
+      "status": null,
+      "not": "yol parametresi gerekir"
+    },
+    {
+      "path": "/api/telemetry",
+      "methods": [
+        "get"
+      ],
+      "status": 200,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "agent_statuses",
+          "browser_installed",
+          "core",
+          "gateway",
+          "instagram_scraper",
+          "instagram_session",
+          "llm_active_reservations",
+          "llm_reserved_spend_usd",
+          "llm_spend_cap_usd",
+          "llm_spend_usd",
+          "llm_unpriced_calls",
+          "rust_core",
+          "scraper",
+          "search_engine",
+          "task_lifecycle",
+          "telemetry_delivery",
+          "vault",
+          "vault_locked"
+        ],
+        "ilk": "{\"core\": true, \"gateway\": false, \"scraper\": false, \"vault\": false, \"search_engine\": false, \"x_scraper\": false, \"instagram_scraper\": false, \"instagram_session\": false, \"browser_installed\": false, \"llm_spend_usd\": 0.0, \"llm_reserved_spend_usd"
+      }
+    },
+    {
+      "path": "/api/telemetry/taste",
+      "methods": [
+        "get"
+      ],
+      "status": 200,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "dropped",
+          "machine_note",
+          "mean_score",
+          "recent",
+          "schema_version",
+          "scope",
+          "threshold",
+          "top_reasons",
+          "total"
+        ],
+        "ilk": "{\"schema_version\": \"taste-telemetry-v1\", \"scope\": \"taste\", \"threshold\": 0.7, \"total\": 0, \"dropped\": 0, \"mean_score\": 0.0, \"top_reasons\": [], \"recent\": [], \"machine_note\": \"TASTE: 0/0 yanıt jenerik bulundu · eşik 0.70\"}"
+      }
+    },
+    {
+      "path": "/api/vault",
+      "methods": [
+        "post"
+      ],
+      "status": 422,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "detail"
+        ],
+        "ilk": "{\"detail\": [{\"type\": \"missing\", \"loc\": [\"body\", \"client_id\"], \"msg\": \"Field required\", \"input\": {}}]}"
+      }
+    },
+    {
+      "path": "/api/vault/lock",
+      "methods": [
+        "post"
+      ],
+      "status": 200,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "message",
+          "status"
+        ],
+        "ilk": "{\"status\": \"locked\", \"message\": \"Kasa kilitlendi, dis dunya erisimi durduruldu\"}"
+      }
+    },
+    {
+      "path": "/api/vault/status",
+      "methods": [
+        "get"
+      ],
+      "status": 200,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "can_scrape",
+          "file_vault_exists",
+          "file_vault_has_keys",
+          "has_api_key",
+          "has_cookie",
+          "has_session",
+          "locked",
+          "message"
+        ],
+        "ilk": "{\"locked\": true, \"has_api_key\": false, \"has_session\": false, \"has_cookie\": false, \"file_vault_exists\": false, \"file_vault_has_keys\": false, \"can_scrape\": false, \"message\": \"VAULT KILITLI - operator anahtari cevirmeden OSINT/Scraper cikmaz\"}"
+      }
+    },
+    {
+      "path": "/api/vault/status",
+      "methods": [
+        "post"
+      ],
+      "status": 200,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "can_scrape",
+          "file_vault_exists",
+          "file_vault_has_keys",
+          "has_api_key",
+          "has_cookie",
+          "has_session",
+          "locked",
+          "message"
+        ],
+        "ilk": "{\"locked\": true, \"has_api_key\": false, \"has_session\": false, \"has_cookie\": false, \"file_vault_exists\": false, \"file_vault_has_keys\": false, \"can_scrape\": false, \"message\": \"VAULT KILITLI - operator anahtari cevirmeden OSINT/Scraper cikmaz\"}"
+      }
+    },
+    {
+      "path": "/api/vault/unlock",
+      "methods": [
+        "post"
+      ],
+      "status": 423,
+      "body": {
+        "tur": "nesne",
+        "anahtarlar": [
+          "error"
+        ],
+        "ilk": "{\"error\": {\"code\": \"VAULT_LOCKED\", \"message\": \"Kasada anahtar yok, once /api/vault ile anahtar girin\"}}"
+      }
+    }
+  ],
+  "ozet": {
+    "toplam_deneme": 58,
+    "durum_dagilimi": {
+      "200": 24,
+      "400": 1,
+      "422": 32,
+      "423": 1
+    },
+    "500_sayisi": 0,
+    "200_sayisi": 24
+  }
+}

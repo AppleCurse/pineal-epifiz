@@ -6,7 +6,9 @@ Kilitlenen iddialar:
     * `/api/language/translate` ses/dinleme ile aynı kurala bağlıdır: kapı
       kapalıyken ve motor yokken çeviri ÜRETİLMEZ; YEREL uç çalışır ve
       kaynak dili raporlar; UZAK uç reddedilir.
-    * `/api/language/status` gerçek durumu gösterir (uydurma uygunluk yok).
+    * `/api/language/status` gerçek durumu gösterir (uydurma uygunluk yok),
+      `?client_id=` ile kimlik alır ve `detect`/`translate` ile AYNI hız sınırı
+      kovasını paylaşır (429 gövdesi ortaktır).
 """
 
 from __future__ import annotations
@@ -62,6 +64,26 @@ class TestStatus:
         assert payload["translate"]["gate"] == "ENABLE_LOCAL_TRANSLATE"
         assert payload["translate"]["available"] is False  # motor yok: dürüst
         assert payload["last"] is None  # hiç ölçüm yapılmadı
+
+    def test_status_takes_client_id_from_query(self, client):
+        """[DENETİM 2026-10-14] status artık hız sınırı taşır; istemci kimliği
+        GET gövdesi olmadığı için `?client_id=` ile gelir (ön yüz böyle çağırıyor)."""
+        payload = client.get("/api/language/status?client_id=lsp-sorgu").json()
+        assert payload["detect"]["available"] is True
+        # Kimlik kovayı belirler: aynı istemciden ikinci istek de geçer.
+        assert client.get("/api/language/status?client_id=lsp-sorgu").status_code == 200
+
+    def test_status_is_rate_limited(self, client):
+        """status, modül sözleşmesinin söz verdiği kovayı UYGULAR (bulgu 1'in düzeltmesi)."""
+        cid = "lsp-durum-limit"
+        limit = api.RATE_LIMITS["language"][0]
+        kodlar = [client.get(f"/api/language/status?client_id={cid}").status_code
+                  for _ in range(limit + 1)]
+        assert kodlar[:-1] == [200] * limit, f"limite kadar geçmeliydi: {kodlar[-3:]}"
+        assert kodlar[-1] == 429, "limit aşımı 429 dönmeli"
+        resp = client.get(f"/api/language/status?client_id={cid}")
+        assert resp.status_code == 429
+        assert resp.json()["error"]["code"] == "RATE_LIMITED"
 
 
 class TestDetect:

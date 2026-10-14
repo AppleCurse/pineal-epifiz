@@ -1,3 +1,18 @@
+"""Alan modelleri — görev, profil ve oturum verisinin TİPLİ sözleşmesi.
+
+Kanıt zinciri kayıtları (``AgentRun``), üç kişilik lensinin çıktıları
+(``PassionProfile``, ``FrictionProfile``, ``CognitiveStyle``), köprü
+(``AuthenticBridge``), 360° birleşik profil (``HolisticProfile``), görev anlık
+görüntüsü (``TaskSnapshot``) ve ASPASIA oturumu (``AspasiaSession``) burada
+tanımlanır.
+
+Kural: ajan çıktıları sözlük değil MODEL döner; alan eklemek şema değişikliğidir
+ve testlerle kilitlenir (``extra="forbid"`` kullanılan yerlerde sessiz alan
+şişmesi imkânsızdır).
+
+Tüketici: neredeyse tüm ajanlar, ``task_executor``, ``backend/api.py``.
+"""
+
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime, timezone

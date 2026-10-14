@@ -1,3 +1,35 @@
+"""LLM ağ geçidi — tüm model trafiğinin TEK kapısı (yetki, maliyet, kanıt, kimlik).
+
+Sorumluluklar:
+  * **Taşıma seçimi**: 9Router (yerel hub) → openrouter → doğrudan sağlayıcılar
+    → yerel LLM; her çağrı hangi rotadan geçtiyse ``provider`` etiketiyle
+    kaydedilir (``provider_label_for_endpoint``/``model_family``).
+  * **Yönlendirme**: ``get_chain``/``get_agent_chain`` görev ve ajan bazlı model
+    zincirleri; ``effective_routing_snapshot`` salt-okunur denetim görünümü
+    (registry + çözülmüş zincirler + rotalar + tier'lar).
+  * **Maliyet kapısı**: her ücretli çağrıdan ÖNCE en kötü durum maliyeti
+    ayrılır (``_reserve_budget``), sonra gözlenen kullanımla kapatılır
+    (``_settle_budget``); ``OPENROUTER_MAX_SPEND_USD`` aşılırsa
+    ``SpendCapExceeded`` — üretimde pozitif olması fail-closed kapıdır.
+  * **Dürüst hata sözleşmesi**: 200 ama boş ``choices`` →
+    ``ProviderEmptyResponseError``; model değişimi yalnız izinliyse
+    (``ModelSubstitutionDeniedError``); retry YALNIZ geçici hata sınıflarına
+    (``_is_retryable_error``, ``_is_strict_retryable_error``).
+  * **Şeffaflık/denetim**: ``capture_calls`` bir görev+ajan koşusuna bağlı
+    çağrı kayıtlarını toplar; ``annotate_call`` sınırlı telemetri alanlarını
+    işler; her mantıksal çağrı DEĞİŞMEZ bir call-id üretir ve tam olarak bir
+    kayıt bırakır (``query``).
+
+Ağ güvenliği: DNS rebinding'e karşı doğrulanmış ana bilgisayar önceden
+çözülen adrese sabitlenir (``_PinnedAsyncHTTPTransport``); RTK sıkıştırması
+fail-open'dır ve yalnız metin parçalarına dokunur.
+
+Tüketici: tüm ajanlar/servisler + ``backend/api.py``.
+Test: ``tests/unit/test_llm_gateway.py``, ``tests/unit/test_gateway_cost_and_retry.py``,
+``tests/unit/test_concurrent_spend_cap.py``, ``tests/unit/test_llm_call_observability.py``,
+``tests/integration/test_llm_gateway_integration.py``.
+"""
+
 import contextvars
 import hashlib
 import json

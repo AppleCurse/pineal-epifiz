@@ -1,3 +1,18 @@
+"""ASPASIA — kullanıcıya bakan Sokratik şef katmanı (danışman, kanıt bekçisi).
+
+``chat`` akışı: oda durumu (telemetri + kanıt zinciri) yapılandırılmış özet
+hâline getirilir (``build_telemetry_summary``), kaynak-destekli denetim bloğu
+eklenir (``_oversight_digest`` — okuma hatası sessiz boşluğa düşer, uydurmaya
+değil) ve model çağrısı gateway üzerinden yapılır.
+
+ASPASIA görev YÜRÜTMEZ; komutları ``AspasiaCommandGateway`` üzerinden
+yürütücüye devreder ve sonucu yorumlar. ``set_preferred_model`` ile model
+tercihi oda bazında değiştirilebilir.
+
+Tüketici: ``backend/api.py`` (``/api/aspasia/*``).
+Test: ``tests/unit/test_aspasia_chief_layer.py``, ``tests/integration/test_aspasia_chief.py``.
+"""
+
 from typing import Any, Optional
 from pydantic import BaseModel
 

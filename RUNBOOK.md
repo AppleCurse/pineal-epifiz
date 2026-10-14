@@ -19,7 +19,10 @@
   `ENABLE_SEARXNG`. Kütüphaneleri (trafilatura/scrapling/twscrape/instagrapi)
   **üçüncü adım** dosyasındadır: `pip install -r requirements-retina.txt`
   (isteğe bağlı; kurulmazsa ilgili yetenek dürüst `dependency_missing` döner).
-  Agent-Reach Python paketi değil — harici CLI (`npm i -g agent-reach`).
+  Agent-Reach Python paketi değil — harici CLI. UYARI (2026-10-14 ölçümü):
+  `npm i -g agent-reach` artık AYNI ADLI BAŞKA bir projeyi kuruyor (npm
+  agent-reach@0.3.4 = Nostr ajan ağı; PyPI'de de ilgisiz bir `agent-reach` var).
+  Gerçek CLI'ın yolunu açıkça verin: `PINEAL_AGENT_REACH_CMD=/yol/agent-reach`.
   SearXNG ayrı servistir (`SEARXNG_BASE_URL` ile gösterilir).
 - Vision: `OPENROUTER_VISION_MODEL` — varsayılan `google/gemini-3.7-flash`; VisionAnalyzer (profil fotoğrafları) ve görselli Aspasia isteklerinde kullanılır.
 - Model varsayılanları (2026-09-02 karar matrisi):
