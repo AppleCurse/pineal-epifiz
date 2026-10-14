@@ -17,15 +17,30 @@ Uç sözleşmeleri (gövdeler taşınırken DEĞİŞTİRİLMEDİ):
     REDDEDİLİR (``non_local_endpoint``); motor yoksa çeviri üretilmez
     (``available:false`` + sebep), kaynak metin hedef dilmiş gibi DÖNMEZ.
 
-Her üç uç da hız sınırı kovasını (``language:{client_id}``) paylaşır.
+HIZ SINIRI (sözleşme — ``tests/integration/test_language_transport_contract.py`` kilitler):
+ÜÇ uç da AYNI kovayı paylaşır: ``language:{client_id}`` · 60 istek/60 sn
+(``backend/api.py`` → ``RATE_LIMITS["language"]``). ``client_id``:
+``detect``/``translate`` gövdeden, ``status`` ise ``?client_id=`` sorgu
+parametresinden alınır (varsayılan ``default``). Aşımda üçü de AYNI gövdeyle 429
+döner: ``{"error": {"code": "RATE_LIMITED", ...}}``. Kova paylaşıldığı için bir uçta
+harcanan istek diğerlerinin bütçesinden düşer.
 
-Test: ``tests/integration/test_language_api_faz_d.py``,
-``tests/unit/test_language_detect.py``.
+KASA MANDALI (vault): ``detect`` ve ``translate`` kilitliyken KOŞMAZ
+(``denied_by == "vault"`` — Tüzük Md.4). ``status`` yalnız OKUMA raporudur
+(motor var mı, kapı açık mı, son ölçüm ne); kasadan bağımsız çalışır ve bu,
+davranış sözleşmesinin parçasıdır — gizli bir istisna değil.
+
+Test: ``tests/integration/test_language_api_faz_d.py`` (davranış),
+``tests/integration/test_language_transport_contract.py`` (taşıma sözleşmesi:
+hız sınırı paylaşımı · 429 gövdesi · kasa mandalı · 422),
+``tests/unit/test_language_detect.py`` (dil ölçümü).
 """
 
 from __future__ import annotations
 
 from typing import Any, Callable
+
+from fastapi import Query
 
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -68,9 +83,38 @@ def register_language_routes(
     """
 
     @app.get("/api/language/status")
-    async def api_language_status():
+    async def api_language_status(
+        client_id: str = Query(
+            "default",
+            min_length=1,
+            max_length=128,
+            pattern=r"^[A-Za-z0-9_-]+$",
+            description="Hız sınırı kovasının istemci kimliği (60 istek/60 sn).",
+            examples=["client_ab12cd3"],
+        )
+    ):
         """[FAZ D · D4] Dil hattının GERÇEK durumu: tespit her zaman yereldir;
-        çeviri motoru var mı, kapı açık mı, kanıta işlenen SON ölçüm ne?"""
+        çeviri motoru var mı, kapı açık mı, kanıta işlenen SON ölçüm ne?
+
+        [DENETİM 2026-10-14] Bu uç, modül docstring'inin söz verdiği kovayı
+        (``language:{client_id}``) ``detect``/``translate`` ile PAYLAŞIR; modül
+        açıklaması üç ucun paylaştığını yazıp burada sınır uygulanmaması
+        "yazılanla koşanın ayrışması" kusuruydu. ``client_id`` sorgu
+        parametresinden gelir çünkü GET gövdesi yoktur (ön yüz zaten
+        ``?client_id=`` gönderiyor).
+
+        Parametre sözleşmesi: 1..128 karakter ve ``^[A-Za-z0-9_-]+$`` — gövde
+        modellerindeki (`LanguageRequest.client_id`, ``max_length=128``) sınırın
+        aynısıdır ki üç uç aynı kimlikleri kabul etsin. İhlalde 422 döner;
+        böylece sorgu dizesi, kova sözlüğüne keyfî biçimde anahtar yazamaz
+        (``backend/api.py`` P0-4 kuralı: client_id biçim VE uzunluk doğrulanır).
+        """
+        if not rate_limit(f"language:{client_id}", "language"):
+            return JSONResponse(
+                {"error": {"code": "RATE_LIMITED", "message": "Çok fazla dil durumu isteği"}},
+                status_code=429,
+            )
+
         from agent_core.services import language, translation
 
         return {

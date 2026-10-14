@@ -165,6 +165,20 @@ FOLDER_HIGHLIGHTS = NOTES["folder_highlights"]
 SECTION_NOTES = NOTES["section_notes"]
 
 TESTS_NOTE = "Test adları davranış sözleşmesidir: adı okuyunca neyin kilitlendiği anlaşılır."
+
+# ── NOT DOSYASINDAKİ YER TUTUCULAR ──────────────────────────────────────────
+# `docs/inventory_notes.json` ELLE SAYI TAŞIMAZ: {test_modulu} gibi yer tutucular
+# aşağıdaki ölçümlerle doldurulur. Gerekçe: aynı sayı üç yerde (bu sayfa,
+# inventory_notes.json, CHANGELOG) elle yazılınca üç farklı değere ayrışmıştı
+# (ölçüldü 2026-10-14: 234 / 235 / 233). Sayı artık TEK KAYNAKTAN gelir.
+_NOTES_TOKENS: dict[str, str] = {}
+
+
+def fill_notes(text: str) -> str:
+    """Not metnindeki {yer tutucuları} ÖLÇÜLMÜŞ değerlerle doldurur (elle sayı yasak)."""
+    for anahtar, deger in _NOTES_TOKENS.items():
+        text = text.replace("{" + anahtar + "}", deger)
+    return text
 ENV_NOTE = SECTION_NOTES.get("env", "")
 CONFIG_NOTE = SECTION_NOTES.get("config", "")
 
@@ -179,7 +193,25 @@ def read_text(path: Path) -> str:
         return ""
 
 
+# İkili/arşiv uzantıları: "satır sayısı" bunlar için ANLAMSIZDIR. Ölçüldü
+# (2026-10-14): `docs/pineal_envanter.zip` 4 MB'lık bir arşivken sayfada
+# "14.965 satır" diye görünüyordu — yani sayı, okuyucuya sahte bir metin izlenimi
+# veriyordu. Ayrıca bu satırlar `toplam satır` istatistiğini de şişiriyordu.
+BINARY_SUFFIXES = {
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".icns",
+    ".jar", ".zip", ".gz", ".tar", ".woff", ".woff2", ".ttf", ".otf",
+    ".pdf", ".so", ".dylib", ".dll", ".exe",
+}
+
+
+def is_binary_path(rel: str) -> bool:
+    """Uzantıya göre metin değil mi? (İçerik taraması pahalı; uzantı deterministik.)"""
+    return Path(rel).suffix.lower() in BINARY_SUFFIXES
+
+
 def loc_of(path: Path) -> int:
+    if is_binary_path(path.name):
+        return 0          # satır sayılmaz: metin değil
     try:
         with path.open("rb") as fh:
             return sum(1 for _ in fh)
@@ -364,8 +396,55 @@ def auto_desc(path: str, p: Path) -> tuple:
 # 3) DOSYA ENVANTERİ
 # --------------------------------------------------------------------------- #
 
+# ── TEST SAYISI: TEK KAYNAK ─────────────────────────────────────────────────
+# "test modülü" = pytest'in TOPLADIĞI dosyalar = `tests/` altındaki `test_*.py`.
+# `tests/` ağacındaki TÜM dosya sayısı AYRI ölçüdür (conftest.py gibi yardımcılar
+# dâhil) ve ayrı etiketlenir. İkisini aynı adla yazmak "üç yerde üç sayı"
+# kusurunu doğuruyordu (denetim 2026-10-14, bulgu 2): ölçüldü → 234 / 235 / 233.
+# Tanım ARTIK BURADA yaşar; sayfa, not dosyası ve raporlar buradan beslenir.
+TEST_MODULU_TANIMI = "tests/ altındaki test_*.py (pytest'in topladığı dosyalar)"
+
+
+def tests_tree(entries: list) -> list:
+    """`tests/` ağacındaki TÜM dosyalar (yardımcılar dâhil) — ikinci ölçü."""
+    return [e for e in entries if e["path"].startswith("tests/")]
+
+
+def canonical_test_modules(entries: list) -> list:
+    """KANONİK ÖLÇÜM: `tests/` altındaki, dosya adı `test_` ile başlayan `.py` dosyaları."""
+    return [
+        e
+        for e in tests_tree(entries)
+        if e["path"].endswith(".py") and e["path"].rsplit("/", 1)[-1].startswith("test_")
+    ]
+
+
+class GitError(RuntimeError):
+    """`git` sıfırdan farklı döndü: EKSİK VERİYLE GEÇERLİ GÖRÜNEN SAYFA ÜRETİLMEZ."""
+
+
 def git(*args: str) -> str:
-    return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+    """`git <args>` çalıştırır; **dönüş kodu denetlenir** ve hata AÇIKÇA yükseltilir.
+
+    [DENETİM 2026-10-14] Eskiden yalnız `stdout` okunuyordu: `git` başarısız
+    olduğunda (bozuk kullanıcı adı, eksik nesne, sınırlı ortam) çıktı BOŞ
+    dönüyor ve üretici dosya listesini eksik alıp yine de "geçerli" görünen bir
+    sayfa yazıyordu — yani envanter sessizce küçülebilirdi. Artık hata
+    yükseltilir; `main()` bunu yakalayıp sayfayı HİÇ YAZMADAN döner.
+    """
+    # `core.quotepath=false`: ASCII dışı dosya adları kaçış dizisiyle değil, gerçek
+    # UTF-8 adıyla döner. Ölçüldü (2026-10-14): sayfa, `"UX_Kullan\304\261labilirlik_
+    # Raporu.md"` gibi OKUNMAZ bir adı dosya sanıyordu — yani dosya, gerçek adıyla
+    # hiç listelenmiyordu.
+    proc = subprocess.run(
+        ["git", "-c", "core.quotepath=false", *args], cwd=ROOT, capture_output=True, text=True
+    )
+    if proc.returncode != 0:
+        ayrinti = (proc.stderr or proc.stdout or "").strip().replace("\n", " ")[:300]
+        raise GitError(
+            f"git {' '.join(args)} başarısız (dönüş kodu {proc.returncode}): {ayrinti or '(ayrıntı yok)'}"
+        )
+    return proc.stdout.strip()
 
 
 def area_of(path: str) -> str:
@@ -642,7 +721,7 @@ def row(entry: dict) -> str:
                     " ".join(entry["tests"]), entry["area"]])
     return (f'<tr data-hay="{esc(hay)}" data-flags="{esc(",".join(flags))}">'
             f'<td class="pth"><span class="mono">{esc(entry["path"])}</span>{src}</td>'
-            f'<td class="loc">{entry["loc"] or ""}</td>'
+            f'<td class="loc">{"ikili" if is_binary_path(entry["path"]) else (entry["loc"] or "")}</td>'
             f'<td>{tags}</td>'
             f'<td>{desc}{sym}{tests}</td></tr>')
 
@@ -654,8 +733,8 @@ def table(entries: list, headers=("Dosya", "Satır", "Etiket", "Açıklama")) ->
 
 
 def folder_block(name: str, entries: list) -> str:
-    desc = FOLDER_DESCRIPTIONS.get(name, "")
-    highlight = FOLDER_HIGHLIGHTS.get(name, "")
+    desc = fill_notes(FOLDER_DESCRIPTIONS.get(name, ""))
+    highlight = fill_notes(FOLDER_HIGHLIGHTS.get(name, ""))
     hint = f'<span class="src">{esc(highlight)}</span><br>' if highlight else ""
     rows = table(entries)
     return (f'<details class="folder" open><summary><b>{esc(name)}</b> — {esc(desc[:150])} '
@@ -682,9 +761,20 @@ def build_html(entries: list) -> str:
     cat_a_missing = [e["path"] for e in cat_a if not e["desc"]]
     cat_b_missing = [e["path"] for e in cat_b if not e["desc"]]
     core = [by_path[p] for p in CORE if p in by_path]
-    test_no_doc = len([e for e in entries if e["path"].startswith("tests/") and not e["desc"]])
-    tests = [e for e in entries if e["path"].startswith("tests/")]
+    # ── TEST SAYISI: TEK KAYNAK (tanım yukarıda: canonical_test_modules) ────
+    tests_tree_entries = tests_tree(entries)
+    tests = canonical_test_modules(entries)
+    test_no_doc = len([e for e in tests if not e["desc"]])
     docs = [e for e in entries if e["area"] == "dokümanlar"]
+
+    # Not dosyası yer tutucuları (tek kaynaktan gelen ölçümler)
+    _NOTES_TOKENS.update({
+        "test_modulu": f"{len(tests):,}".replace(",", "."),
+        "tests_agaci": f"{len(tests_tree_entries):,}".replace(",", "."),
+        "izlenen_dosya": f"{len(entries):,}".replace(",", "."),
+        "python_dosyasi": f"{len(py):,}".replace(",", "."),
+        "ayar_sayisi": f"{sum(len(g['items']) for g in env_groups()):,}".replace(",", "."),
+    })
 
     # ── alan alan TEK listeleme: her dosya sayfada TAM BİR KEZ satır olur ──
     # Bölüm sırası VERİDEN gelir (docs/inventory_notes.json → folder_descriptions).
@@ -754,7 +844,7 @@ def build_html(entries: list) -> str:
     <div class="stat"><b>{len(py)}</b><span>Python dosyası</span></div>
     <div class="stat"><b>{py_loc:,}</b><span>Python satırı</span></div>
     <div class="stat"><b>{total_loc:,}</b><span>toplam satır</span></div>
-    <div class="stat"><b>{len(tests)}</b><span>test dosyası</span></div>
+    <div class="stat"><b>{len(tests)}</b><span title="tanım: tests/ altındaki test_*.py — pytest'in topladığı dosyalar. tests/ ağacında toplam {len(tests_tree_entries)} dosya var (conftest.py gibi yardımcılar dâhil).">test modülü</span></div>
     <div class="stat"><b>{len(by_area.get("agent_core · ajanlar", []))}</b><span>ajan modülü</span></div>
     <div class="stat"><b>{len(by_area.get("agent_core · servisler", []))}</b><span>servis modülü</span></div>
     <div class="stat"><b>{sum(len(g["items"]) for g in env_groups())}</b><span>.env ayarı</span></div>
@@ -791,7 +881,7 @@ def build_html(entries: list) -> str:
         <span class="src">{("eksik: " + ", ".join(cat_b_missing)) if cat_b_missing else "doğrulandı: hepsi açıklamalı"}</span></li>
     <li><b>C · klasör envanteri:</b>
         {' · '.join(f"{area}: {len(by_area.get(area, []))}" for area in FOLDER_DESCRIPTIONS if by_area.get(area))}
-        → klasör klasör açıldı; {len(tests)} test, {len(docs)} doküman,
+        → klasör klasör açıldı; {len(tests)} test modülü, {len(docs)} doküman,
         <code>config/*</code> içeriği ve {sum(len(g["items"]) for g in env_groups())} ayarın tek tek anlamı yazıldı.</li>
   </ul>
 </div>
@@ -877,8 +967,15 @@ def main() -> int:
     parser.add_argument("--check", action="store_true", help="bayat mı? (farklıysa 1 döner)")
     args = parser.parse_args()
 
-    entries = build_entries()
-    page = build_html(entries)
+    # [DENETİM 2026-10-14] git hatası sessizce geçmez: eksik dosya listesiyle
+    # "geçerli" görünen sayfa üretmektense hiç üretmemek doğrudur.
+    try:
+        entries = build_entries()
+        page = build_html(entries)
+    except GitError as exc:
+        print(f"HATA: {exc}", file=sys.stderr)
+        print("Envanter ÜRETİLMEDİ (eksik veriyle geçerli görünen sayfa yazılmaz).", file=sys.stderr)
+        return 2
 
     if args.check:
         current = read_text(OUT)
@@ -893,7 +990,8 @@ def main() -> int:
     OUT.write_text(page, encoding="utf-8")
     missing = [e["path"] for e in entries if e["path"].endswith(".py") and not e["desc"]]
     print(f"yazıldı: {OUT} ({len(page)/1024:.0f} KB) · "
-          f"{len(entries)} dosya · açıklamasız py: {len(missing)}")
+          f"{len(entries)} dosya · test modülü: {_NOTES_TOKENS.get('test_modulu', '?')} "
+          f"({TEST_MODULU_TANIMI}) · açıklamasız py: {len(missing)}")
     if missing:
         print("  açıklamasız:", ", ".join(missing[:10]), "…" if len(missing) > 10 else "")
     print("sha256:", hashlib.sha256(page.encode()).hexdigest()[:16], "· ortam:", os.name)

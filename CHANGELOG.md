@@ -48,11 +48,11 @@
   Rust `//!` belgeleri, Markdown başlıkları; **`app.*` dekoratörlerinden sayılan 70 uç** ve
   **`.env.example`'ın 98 ayarı (grup + yorum + örnek değer)**.
 - Çok satırlık klasörler açıklama kazandı: `rust_core/` (48), `android/` (49, parite sınırı
-  etiketli), `frontend/` (47), `functions/` (2), `skills/` (26), `config/` (6), 233 test ve
-  41 tarihli rapor.
+  etiketli), `frontend/` (47), `functions/` (2), `skills/` (26), `config/` (6), 234 test modülü
+  (`tests/` altındaki `test_*.py` — pytest'in topladığı dosyalar) ve 41 tarihli rapor.
 - Determinizm: künye tarihi "şimdi" değil son commit'tir ve sayfa KENDİNİ saymaz — bu yüzden
   `--check` kararlıdır. CI'ya "Verify inventory page committed fresh" adımı eklendi.
-- Test: `tests/unit/test_inventory_page.py` (7 test): bayatlama, A docstring'leri, B görünürlüğü,
+- Test: `tests/unit/test_inventory_page.py` (12 test): bayatlama, A docstring'leri, B görünürlüğü,
   env/uç sayılarının kaynaktan gelmesi, mükerrer satır yasağı, API-BÖLME izi.
 
 
@@ -1505,7 +1505,62 @@ düşürüldü) · CI kapsam kapısı → **%85.04 ≥ %80** (CI aralığı öl�
 
 - `rust_core/` and the Tauri draft are not product-integrated.
 - X scraping and experimental OSINT/code-execution routes remain disabled or explicit opt-ins.
-- A live third-party OpenRouter credential gate remains operator-triggered; the mandatory hermetic E2E uses the actual HTTP/SDK/runtime path against a deterministic local provider and does not claim external-provider availability.## [Unreleased] - 2026-09-04 (routing-hardening)
+- A live third-party OpenRouter credential gate remains operator-triggered; the mandatory hermetic E2E uses the actual HTTP/SDK/runtime path against a deterministic local provider and does not claim external-provider availability.## [CI kırmızı kök nedeni] — 2026-10-14 · envanter sayfası + rapor bayatlığı (bulgu 5 kapandı)
+
+Denetim raporunun 5. maddesi "CI gerçekten doğruluyor mu?" idi. CI BİREBİR yeniden
+üretildi (`requirements.lock` + pytest yığını, tam koşu) ve gerçek tablo ölçüldü:
+**2491 test geçiyor, CI'nın düşme nedeni test değil, bayat üretilmiş dosyalardı.**
+
+- **Kök neden 1 — evren kilidi:** `docs/pineal_envanter.zip` `.gitignore` kapsamındayken
+  üretilen sayfa arşivi LİSTELEMİYORDU; `git add` ile izlenir olunca dosya evrene girdi →
+  sayfa bayatladı → `test_inventory_page.py::test_generator_exists_and_page_is_not_stale`
+  ve CI'daki `--check` adımı kırmızı. Kilit: `test_page_lists_exactly_the_repo_universe`
+  (sayfanın dosya listesi, üretim anındaki evrenle BİREBİR eşit olmalı).
+- **Kök neden 2 — sahte satır sayısı:** arşiv/ikili dosyalar `loc_of` ile "satır"
+  sayılıyordu (4 MB zip → "14.965 satır", `toplam satır` da şişiyordu). Artık
+  `BINARY_SUFFIXES` + `is_binary_path()` var; ikili dosyaların satır hücresi `ikili`
+  yazar. Kilit: `test_binary_files_carry_no_fake_line_count`.
+- **Kök neden 3 — kaçış dizili dosya adı:** `git ls-files` ASCII dışı adı
+  `"UX_Kullan\304\261labilirlik_Raporu.md"` diye döndürüyordu; sayfa dosyayı OKUNMAZ
+  bir adla listeliyordu (gerçek adıyla hiç görünmüyordu). `git()` artık
+  `-c core.quotepath=false` ile çağrılıyor.
+- **Ayrıca:** `reports/audit_regression.json` bu daldaki docstring eklemelerinden
+  sonra bayatlamıştı (satır kaymaları) — CI'da "audit-report-stale" adımı düşerdi;
+  rapor yeniden üretilip depolandı. Kapsam kapısı ölçüldü: **%86 ≥ %80**; yeni
+  `backend/routes/language.py` **%100** kaplı.
+
+## [Denetim düzeltmeleri] — 2026-10-14 · üç bulgu, üçü de doğrulandı ve kapatıldı
+
+Dış denetim raporundaki üç bulgu ÖNCE koddan doğrulandı (iddia değil, ölçüm), sonra düzeltildi:
+
+- **[Yüksek] `/api/language/status` hız sınırsızdı.** (`backend/routes/language.py`) Modül
+  açıklaması "her üç uç da `language:{client_id}` kovasını paylaşır" diyordu; ama `status`
+  hiç `rate_limit` çağırmıyordu — yazılanla koşan ayrışmıştı. Düzeltme: `status` artık
+  `?client_id=` (varsayılan `default`) alır ve `detect`/`translate` ile **aynı kovayı** paylaşır;
+  aşımda aynı gövdeyle 429 döner. Gerekçe: `status` bedava değil (`translation.status()` →
+  `resolve_engine()` PATH taraması `shutil.which`). Kilit: `tests/unit/../language_transport_contract.py`
+  (paylaşım iki yönlü kanıtlanır) + `test_language_api_faz_d.py`.
+- **[Orta] Test sayısı üç yerde üç farklı değerdi: 234 / 235 / 233.** Kök neden: üç ayrı tanım
+  (tests/ ağacındaki tüm dosyalar = 235, tests/ altındaki `.py` = 234, repo geneli `test_*.py`
+  = 235) ve elle yazılmış sayılar. Düzeltme: kanonik tanım üreticide TEK yerde
+  (`generate_inventory_page.canonical_test_modules`); `inventory_notes.json` artık `{test_modulu}`
+  yer tutucusu taşır ve üretici doldurur; sayfa statı tanımını satır içinde gösterir; testler
+  gerçek `git` taramasıyla karşılaştırır (`test_page_test_count_is_the_canonical_measure`,
+  `test_changelog_uses_the_same_definition`). Güncel kanonik ölçü: **234**.
+- **[Orta] Üreticinin `git()` fonksiyonu dönüş kodunu yok sayıyordu.** (`scripts/generate_inventory_page.py`)
+  `git` başarısız olunca çıktı boş dönüyor ve üretici EKSİK dosya listesiyle yine de "geçerli"
+  görünen bir sayfa yazıyordu. Düzeltme: `git()` artık `GitError` yükseltir; `main()` hatayı
+  yakalar, sayfayı HİÇ yazmaz ve çıkış kodu 2 döner. Kilit: `test_git_raises_instead_of_returning_empty_on_failure`,
+  `test_main_returns_2_and_writes_nothing_when_git_fails`.
+
+Ek: `tests/integration/test_language_transport_contract.py` (20 test) üç ucun TAŞIMA sözleşmesini
+kilitler — paylaşılan kova (iki yön), 429 gövdesi, kasa mandalı, `status`'un kasaya bağlı
+OLMAMASI (açık sözleşme: yalnız okuma raporu), yetenek yokken dürüst ret, geçersiz `client_id`'de
+fail-closed davranışı ve gövde sınırları (422).
+Doğrulama: `backend/routes/language.py` + `scripts/generate_inventory_page.py` + 3 test dosyası;
+`pytest` yeşil; `python scripts/generate_inventory_page.py --check` → GÜNCEL.
+
+## [Unreleased] - 2026-09-04 (routing-hardening)
 - O-1: substitution denials now carry structured requested_model/actual_model call-log
   fields in BOTH query() and legacy chat_completion (single-log doctrine kept);
   ModelSubstitutionDeniedError introduced; Aspasia TelemetryReader reads fields first,
