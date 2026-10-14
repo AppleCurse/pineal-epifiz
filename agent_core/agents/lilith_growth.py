@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
+from agent_core.capabilities.egress import open_client
 from agent_core.services.llm_gateway import LLMGateway
 
 logger = logging.getLogger(__name__)
@@ -199,10 +200,8 @@ class FreeTextGateway:
         temperature: float = 0.7,
         response_format: Optional[Dict[str, str]] = None,
     ) -> _ChatResponse:
-        import httpx
-
         payload = {"messages": messages, "jsonMode": True}
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
+        async with open_client(purpose="llm", timeout=self.timeout) as client:
             resp = await client.post(
                 self.TEXT_API_URL,
                 json=payload,
@@ -234,8 +233,6 @@ class OpenAICompatibleGateway:
         temperature: float = 0.7,
         response_format: Optional[Dict[str, str]] = None,
     ) -> _ChatResponse:
-        import httpx
-
         url = f"{self.base_url}/chat/completions"
         headers = {
             "Content-Type": "application/json",
@@ -249,7 +246,7 @@ class OpenAICompatibleGateway:
         if response_format:
             payload["response_format"] = response_format
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
+        async with open_client(purpose="llm", timeout=self.timeout) as client:
             resp = await client.post(url, json=payload, headers=headers)
             resp.raise_for_status()
             data = resp.json()

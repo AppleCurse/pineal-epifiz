@@ -211,8 +211,14 @@ class InstagramGhostScraper:
                     text = ((edges[0] or {}).get("node") or {}).get("text")
                     if isinstance(text, str) and text.strip():
                         return text[:2200]
-            except Exception:
-                pass
+            except Exception as exc:
+                # [AUDIT E-GÖZ1-8] Caption alanı okunamadıysa bu GÖRÜNÜRDÜR:
+                # eksik veri 'başarılı çekim' sayılmaz, iz bırakır.
+                logging.warning(
+                    "_caption_of: edge_media_to_caption okunamadı (%s) — post kısmi kalacak",
+                    type(exc).__name__,
+                    exc_info=True,
+                )
             cap = node.get("caption")
             if isinstance(cap, dict) and isinstance(cap.get("text"), str) and cap["text"].strip():
                 return cap["text"][:2200]

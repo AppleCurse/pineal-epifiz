@@ -26,6 +26,11 @@ class AgentRun(BaseModel):
     warnings: List[str] = []
     error_code: Optional[str] = None
     error_message: Optional[str] = None
+    #: [SORUMLULUK ZİNCİRİ] Koşunun mührü. Doğrulanmış ÇIKTILAR
+    #: evidence_chain'de taşınır; başarısız/düşük-güven koşuların dürüst
+    #: izi (attempted/blockers/next_action) BURADADIR — kanıt zinciri
+    #: uydurma kanıtla doldurulmaz (test_deferred_agent_evidence_gate).
+    responsibility: Optional[Dict[str, Any]] = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -119,6 +124,12 @@ class TaskSnapshot(BaseModel):
     shadow_profile: Optional[Dict[str, Any]] = None
     osint_footprint: Optional[Dict[str, Any]] = None
     telemetry: Optional[Dict[str, Any]] = None
+    #: [DESTEK AKIŞI] Desteğe açılan talepler (pending → resolved).
+    #: Ekleyici JSON alanı: eski istemciler için uyumlu.
+    support_requests: List[Dict[str, Any]] = []
+    #: [RESUME] Her tamamlanan ajanın input_data'ya yuttuğu anahtarlar —
+    #: görev kaldığı yerden devam ederken geri yüklenir.
+    ingested_outputs: Dict[str, Dict[str, Any]] = {}
 
     # Pineal deterministic 7-Pillar outputs
     frequency_map: Optional[Dict[str, Any]] = None

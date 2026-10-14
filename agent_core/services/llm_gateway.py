@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Iterator, List, Mapping, Optional, Type, TypeVar
 
 import httpcore
-import httpx
+from agent_core.capabilities.egress import open_client, httpx
 from httpcore._backends.auto import AutoBackend
 from openai import AsyncOpenAI
 from pydantic import BaseModel, ValidationError
@@ -2033,7 +2033,8 @@ class LLMGateway:
         if client is None:
             http_client = None
             if route.hostname and route.pinned_address:
-                http_client = httpx.AsyncClient(
+                http_client = open_client(
+                    purpose="llm",
                     transport=_PinnedAsyncHTTPTransport(
                         route.hostname,
                         route.pinned_address,

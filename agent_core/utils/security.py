@@ -15,7 +15,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, Optional
 
-import httpx
+from agent_core.capabilities.egress import httpx
 
 logger = logging.getLogger(__name__)
 

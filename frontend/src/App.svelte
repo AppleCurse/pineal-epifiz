@@ -5,12 +5,13 @@
     apiToken, currentApiToken, apiFetch, clientId, wsUrl, logs, taskStatus, API_BASE,
     speechState, lastSpeech, voiceEnabled,
     isProcessing, powerEngaged, recordEngaged, agentStatuses, vaultLocked,
-    activeViewMode, agentStatusSource
+    activeViewMode, agentStatusSource, supportRequests, supportTaskId, refreshSupport
   } from './store';
   import { uplinkState } from './lib/telemetry';
   import AtlasPinealCockpit from './components/AtlasPinealCockpit.svelte';
   import TacticalWarRoom from './components/TacticalWarRoom.svelte';
   import NeuralTelemetryBoard from './components/visualizers/NeuralTelemetryBoard.svelte';
+  import SupportPanel from './components/SupportPanel.svelte';
 
   let ws: WebSocket | null = null;
   let reconnectAttempts = 0;
@@ -118,6 +119,9 @@
       const token = currentApiToken();
       if (token && ws) ws.send(JSON.stringify({ type: 'auth', token }));
       logLine("INFO", "UPLINK KURULDU (FastAPI WebSocket + Agent Rack)");
+      // [B0] Kopma → yeniden bağlanma: açık destek talepleri kalıcı
+      // checkpoint'ten GERİ YÜKLENİR (süreç/kayıp yaşamaz).
+      refreshSupport(get(supportTaskId));
     };
 
     ws.onmessage = (event) => {
@@ -149,6 +153,13 @@
           logs.update(l => [...l, data].slice(-80));
         } else if (data.type === "agent_status_update") {
           handleAgentStatusUpdate(data);
+        } else if (data.event && data.event_type === 'AwaitingHuman') {
+          // [B0] Destek talebi GÖRÜNÜR: kayıt + panel + log. Detay/kimlik
+          // alanları kalıcı checkpoint'ten REST ile tazelenir.
+          const humanEvent = data.event;
+          supportTaskId.set(humanEvent.task_id || null);
+          refreshSupport(humanEvent.task_id);
+          logLine('WARNING', `DESTEK TALEBİ: ${humanEvent.agent_name || ''} — ${String(humanEvent.reason || '').slice(0, 180)}`);
         } else if (data.event && data.event.event_type) {
           if (recording()) {
             const evt = data.event;
@@ -369,6 +380,9 @@
       <NeuralTelemetryBoard telemetry={telemetryData} />
     </div>
   {/if}
+
+  <!-- [B0] Destek & güvenli devam kokpiti — açık talepler görünür ve yanıtlanabilir -->
+  <SupportPanel />
 </main>
 
 <style>

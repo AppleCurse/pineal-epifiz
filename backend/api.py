@@ -608,7 +608,7 @@ from backend.security.principal import (  # noqa: F401  (geriye dönük ihracat)
 # client_id'siyle A'nın görevini listeleyip `DELETE` ile kanıtını diskten
 # kalıcı silebiliyordu. Kalıcı `task_id -> principal` kaydı bu deliği kapatır;
 # semantik oda mührüyle birebir aynıdır (kayıt yoksa ilk erişen sahiplenir).
-from backend.routes.tasks import delete_task, list_visible_tasks
+from backend.routes.tasks import delete_task, list_visible_tasks; from backend.routes.support import register_support_routes  # noqa: E702,E401
 from backend.security.task_ownership import (  # noqa: F401  (geriye dönük ihracat)
     TaskForbiddenError as TaskForbiddenError,
     adopt as _adopt_task,
@@ -2183,6 +2183,7 @@ def broadcast_snapshot(client_id: str, snapshot: Any):
         _enqueue(client_id, ("snapshot", snapshot))
 
 def sync_snapshot(client_id: str, snapshot: Any):
+    (app.state.ckpt_persist(client_id, snapshot) if hasattr(app.state, "ckpt_persist") else None)
     broadcast_snapshot(client_id, snapshot)
 
 @app.websocket("/ws/{client_id}")
@@ -2560,6 +2561,7 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                 "ARAMA MOTORU POLİTİKASI AKTARILAMADI — dar taraf: kasa KİLİTLİ "
                 "(dış arama reddedilecek)", exc_info=True,
             )
+        (app.state.ckpt_input(task_id, payload, (app.state.rooms.get(client_id) or {}).get("_owner")) if hasattr(app.state, "ckpt_input") else None)
         max_attempts = _bounded_env_int("PINEAL_TASK_MAX_ATTEMPTS", 3, 1, 3)
         task_timeout = _bounded_env_int("PINEAL_TASK_TIMEOUT_SECONDS", 300, 1, 1800)
         for attempt in range(1, max_attempts + 1):
@@ -2668,7 +2670,7 @@ def broadcast_result(client_id, res):
         return
     # [BOSS-2] Snapshot nesnesi terminal duruma geçmemişse (ör. iptal/istisna
     # sonrası geç gelen sonuç) oda kaydı burada kapatılır.
-    _close_active_task(room, getattr(res, "task_id", None), getattr(res, "status", None))
+    _close_active_task(room, getattr(res, "task_id", None), getattr(res, "status", None)); (app.state.ckpt_persist(client_id, res) if hasattr(app.state, "ckpt_persist") else None)
 
     def find(chain, name):
         for e in chain:
@@ -3439,6 +3441,12 @@ def _require_vault_open(client_id: str) -> Optional[JSONResponse]:
         )
         return _vault_locked_response(client_id)
     if unlocked:
+        # [E-GÖZ2-3 · YAPRAK HAT] Sınır kapısı açıldı → aynı istek görevi
+        # işaretlenir: egress/holehe/scraper yaprak katmanı bu yetkiyi okur
+        # (üretimde kapı atlanırsa ikinci savunma devrededir).
+        from agent_core.scraper.vault_gate import mark_vault_egress_authorized
+
+        mark_vault_egress_authorized()
         return None
     logger.warning(
         "KASA MANDALI: dış-çıkış isteği reddedildi (client_id=%s, kasa kilitli)",
@@ -4671,6 +4679,7 @@ async def interpreter_execute(req: InterpreterPayload):
 app.get("/api/tasks")(
     list_visible_tasks(get_room=get_room, principal_getter=_get_principal)
 )
+register_support_routes(app, get_room=get_room, principal_getter=_get_principal, require_vault_open=_require_vault_open, require_minor_clearance=_require_minor_clearance, broadcast_log=broadcast_log, broadcast_result=broadcast_result, broadcast_result_error=broadcast_result_error, lifecycle_registry=_lifecycle, rate_limit=rate_limit, rate_identity=_rate_identity)
 
 
 

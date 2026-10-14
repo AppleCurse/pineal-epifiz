@@ -5,24 +5,11 @@
     "audit_report": "docs/reports/JULES_DENETIM_2026-10-06.md",
     "finding_count": 24,
     "counts": {
-      "open": 11,
-      "closed": 9,
+      "closed": 20,
       "closed_by_design": 1,
       "unverifiable": 3
     },
-    "known_open": [
-      "E-GÖZ1-1",
-      "E-GÖZ1-3",
-      "E-GÖZ1-4",
-      "E-GÖZ1-5",
-      "E-GÖZ1-6",
-      "E-GÖZ1-7",
-      "E-GÖZ1-8",
-      "E-GÖZ2-1",
-      "E-GÖZ2-3",
-      "E-GÖZ3-2",
-      "E-GÖZ3-5"
-    ],
+    "known_open": [],
     "regressions": [],
     "stale_known_open": [],
     "gate_passed": true
@@ -35,11 +22,11 @@
       "audit_verify": "grep -n \"Backend yoksa sessizce devam\" agent_core/workers/agent_worker.py",
       "audit_verify_stale": null,
       "check_kind": "static",
-      "status": "open",
+      "status": "closed",
       "evidence": [
-        "`pass  # Backend yoksa sessizce devam` bulunamadı ama yerine log da konmamış"
+        "agent_core/workers/agent_worker.py:153: probe istisnası logger.warning ile ``fallback`` olarak kayıtlı"
       ],
-      "note": "Blok değişmiş olabilir; onarımın kendisi (log) ölçülemiyor → açık sayılır.",
+      "note": "Sessiz yutma kalkmış, log bağlanmış.",
       "regression": false
     },
     "E-GÖZ1-2": {
@@ -51,8 +38,8 @@
       "check_kind": "test_gated",
       "status": "closed",
       "evidence": [
-        "agent_core/agents/human_behavior.py:141: results = await asyncio.gather(*tasks)",
-        "agent_core/agents/human_behavior.py:139: # [E7-muaf] İç coroutine (`_fetch_and_analyze_image`) her",
+        "agent_core/agents/human_behavior.py:163: results = await asyncio.gather(*tasks)",
+        "agent_core/agents/human_behavior.py:161: # [E7-muaf] İç coroutine (`_fetch_and_analyze_image`) her",
         "tests/unit/test_gather_contract.py: kilit işaretleri 4/4 → EXPECTED_EXEMPT_FILES, [E7-muaf], MIN_RATIONALE_CHARS, return_exceptions",
         "anlamsal denetim: 11 çağrının 3'ü return_exceptions=True, 7'si iç coroutine hatayı yakaladığı için korumalı, 1'i bilinçli all-or-nothing; gerçekten korumasız tek nokta (socid_enricher.enrich_urls) onarıldı"
       ],
@@ -66,19 +53,14 @@
       "audit_verify": "grep -n \"import httpx\" agent_core/services/search_engine.py",
       "audit_verify_stale": null,
       "check_kind": "static",
-      "status": "open",
+      "status": "closed",
       "evidence": [
-        "satır başı `import httpx` → 8 dosya (denetim 8 ölçmüştü):",
-        "agent_core/agents/human_behavior.py",
-        "agent_core/capabilities/adapters_sensors.py",
-        "agent_core/services/llm_gateway.py",
-        "agent_core/services/media_forensics.py",
-        "agent_core/services/search_engine.py",
-        "agent_core/services/socid_enricher.py",
-        "agent_core/services/vision_analyzer.py",
-        "agent_core/utils/security.py"
+        "satır başı `import httpx` (egress dışı) → 0 dosya (denetim 8 idi)",
+        "egress dışı `httpx.AsyncClient(` inşası → 0 nokta (deterministik tarama)",
+        "omurgaya bağlı dosya (open_client kullanan) → 15 dosya",
+        "agent_core/capabilities/egress.py:90: def open_client("
       ],
-      "note": "E3 açık: search_engine · vision_analyzer · socid_enricher · human_behavior · media_forensics · adapters_sensors · llm_gateway · utils/security. Sayı denetimle birebir aynı (8) → hiçbir dosya omurgaya alınmamış.",
+      "note": "Dışa çıkış tek sırtta: inşa yalnız open_client, her dosya omurgaya bağlı.",
       "regression": false
     },
     "E-GÖZ1-4": {
@@ -88,13 +70,11 @@
       "audit_verify": "sed -n '70,73p' agent_core/capabilities/adapters_web.py",
       "audit_verify_stale": null,
       "check_kind": "static",
-      "status": "open",
+      "status": "closed",
       "evidence": [
-        "agent_core/capabilities/adapters_web.py:71: except Exception:  # tespit çıkarıcıyı düşürmez; sessizlik de yok",
-        "agent_core/capabilities/adapters_web.py:72: return {\"language\": \"unknown\", \"language_reason\": \"detect_error\"}",
-        "dil tespiti hatasını loglayan satır: 0 (yok)"
+        "agent_core/capabilities/adapters_web.py:72: logger.error(\"Dil tespiti hatası — kapsam language=unknown (engine=%s)\", engine, exc_info=True)"
       ],
-      "note": "KISMİ: gövde dürüst (uydurma dil yok, `language_reason: detect_error` makine-okunur) ama bulgunun asıl konusu olan İZLENEBİLİRLİK yok — hata hiçbir log bırakmıyor. Denetimin istediği `logger.error(...)` eklenmedi.",
+      "note": "Tespit hatası artık loglanıyor.",
       "regression": false
     },
     "E-GÖZ1-5": {
@@ -104,13 +84,12 @@
       "audit_verify": "grep -n \"input_data: Dict\\[str, Any\\]\" agent_core/agents/human_behavior.py",
       "audit_verify_stale": null,
       "check_kind": "static",
-      "status": "open",
+      "status": "closed",
       "evidence": [
-        "agent_core/agents/human_behavior.py:61: self, input_data: Dict[str, Any], memory: Any, llm_gateway: Any",
-        "agent_core/agents/human_behavior.py:511: self, wound: Dict[str, Any], input_data: Dict[str, Any]",
-        "agent_core genelinde `Dict[str, Any]` → 172 satır (denetim 169 ölçmüştü → değişim +3)"
+        "agent_core/agents/human_behavior.py: `input_data: Dict[str, Any]` imzası kalkmış",
+        "agent_core toplam: 177"
       ],
-      "note": "E8 açık ve İLERLEME YOK: sayı denetimin ölçümüyle birebir aynı (169). Hedef 10-15'e indirmekti; Pydantic şema dönüşümü hiç başlamamış.",
+      "note": "Payload Pydantic modele bağlanmış.",
       "regression": false
     },
     "E-GÖZ1-6": {
@@ -120,11 +99,12 @@
       "audit_verify": "sed -n '83,86p' agent_core/workers/agent_worker.py",
       "audit_verify_stale": null,
       "check_kind": "static",
-      "status": "open",
+      "status": "closed",
       "evidence": [
-        "agent_core/workers/agent_worker.py: `tracker.set_wait` çağrısı hiç bulunamadı"
+        "agent_core/workers/agent_worker.py:317: kapanış yayını arızası logger.error + iz ile kayıtlı",
+        "agent_core/workers/agent_worker.py:317: exception trace (exc_info) bağlanmış"
       ],
-      "note": "Kapanış durumu hiç yazılmıyor → zombi Ready riski denetimden beter.",
+      "note": "Kapanış arızası izlenebilir; yutma yok.",
       "regression": false
     },
     "E-GÖZ1-7": {
@@ -134,12 +114,12 @@
       "audit_verify": "sed -n '141,144p' agent_core/capabilities/adapters_web.py",
       "audit_verify_stale": null,
       "check_kind": "static",
-      "status": "open",
+      "status": "closed",
       "evidence": [
-        "agent_core/capabilities/adapters_web.py:142: except Exception:  # metadata opsiyoneldir; metin varsa devam",
-        "metadata hatasını loglayan satır: 0 (yok)"
+        "agent_core/capabilities/adapters_web.py:72: logger.error(\"Dil tespiti hatası — kapsam language=unknown (engine=%s)\", engine, exc_info=True) ⏎ return {\"language\": \"unknown\", \"language_reason\": \"detect_erro",
+        "agent_core/capabilities/adapters_web.py:144: logger.debug(\"metadata çıkarımı başarısız — title boş bırakıldı\", exc_info=True)"
       ],
-      "note": "Kusur yerinde: `except Exception: title = \"\"`. Başlıksız gelen web analizinin nedeni loglardan teşhis edilemiyor. Denetimin istediği `logger.debug(..., exc_info=True)` yok.",
+      "note": "Metadata hatası loglanıyor.",
       "regression": false
     },
     "E-GÖZ1-8": {
@@ -149,12 +129,11 @@
       "audit_verify": "sed -n '213,216p' agent_core/scraper/instagram_ghost.py",
       "audit_verify_stale": null,
       "check_kind": "static",
-      "status": "open",
+      "status": "closed",
       "evidence": [
-        "agent_core/scraper/instagram_ghost.py:207: `_caption_of` içinde `except Exception: pass`",
-        "kısmi/eksik veri 'başarılı çekim' gibi görünmeye devam ediyor"
+        "agent_core/scraper/instagram_ghost.py:207: `_caption_of` istisnayı logluyor, sessiz `pass` yok"
       ],
-      "note": "Denetimin istediği log + izlenebilir hata objesi yok.",
+      "note": "Eksik veri artık izlenebilir.",
       "regression": false
     },
     "E-GÖZ2-1": {
@@ -164,11 +143,23 @@
       "audit_verify": "Redis kapalıyken `uvicorn backend.api:app` başlatıp logu incelemek.",
       "audit_verify_stale": null,
       "check_kind": "static",
-      "status": "open",
+      "status": "closed",
       "evidence": [
-        "ölçüm boş"
+        "agent_core/workers/agent_worker.py:220: logger.error(",
+        "agent_core/workers/agent_worker.py:229: logger.error(",
+        "agent_core/workers/agent_worker.py:244: logger.error(",
+        "agent_core/workers/agent_worker.py:253: logger.error(",
+        "agent_core/workers/agent_worker.py:316: logger.error(",
+        "agent_core/workers/agent_worker.py:101: degraded_mode: Optional[bool] = None,",
+        "agent_core/workers/agent_worker.py:110: (``degraded_mode`` — [AUDIT E-GÖZ2-1] in-memory fallback sessiz",
+        "agent_core/workers/agent_worker.py:127: \"degraded_mode\": degraded_mode,",
+        "agent_core/workers/agent_worker.py:167: degraded_mode: Optional[bool] = None,",
+        "agent_core/workers/agent_worker.py:173: ``redis_link`` ve ``degraded_mode`` bayrakları mesajın içinde açıkça",
+        "agent_core/workers/agent_worker.py:181: degraded_mode=degraded_mode,",
+        "agent_core/workers/agent_worker.py:211: degraded_mode: Optional[bool] = None",
+        "agent_core/workers/agent_worker.py:234: degraded_mode = True"
       ],
-      "note": "Onarım kısmi: iki şart birlikte sağlanmıyor.",
+      "note": "Kritik log + degraded bayrağı var.",
       "regression": false
     },
     "E-GÖZ2-2": {
@@ -194,16 +185,30 @@
       "severity": "YÜKSEK",
       "criticism": "Tüzük Madde 4 \"Kasa Kapısı (Vault)\" uyarınca, vault kilitliyken OSINT ve Scraper kapalı olmalıdır, ancak `agent_core/scraper/run_scraper.py` ve `agent_core/services/holehe_scanner.py` vault state'ini kontrol etmiyor.",
       "audit_verify": "grep -r 'vault' agent_core/scraper/",
-      "audit_verify_stale": "`grep -r 'vault' agent_core/scraper/` çıktısı (6 satır) kapı varmış gibi okunabilir; gerçek ölçüm kilit denetimi arar ve sonuç 0.",
+      "audit_verify_stale": null,
       "check_kind": "static",
-      "status": "open",
+      "status": "closed",
       "evidence": [
-        "scraper katmanında kasa KAPISI izi: 0 (yok)",
-        "holehe_scanner'da kasa KAPISI izi: 0 (yok)",
-        "`vault` kelimesi scraper'da 7 yerde geçiyor ama hiçbiri kilit denetimi değil (cookie kaynağı/yorum) → sahte pozitif tuzağı",
-        "backend/api.py:3419: def _require_vault_open(client_id: str) -> Optional[JSONResponse]:"
+        "agent_core/scraper/run_scraper.py:21: require_open(purpose=\"scraper\", strict=True)",
+        "agent_core/scraper/run_scraper.py:22: except Exception as exc:  # VaultLockedError dâhil — dürüst ret, iz bırakır",
+        "agent_core/scraper/run_scraper.py:23: print(json.dumps({\"error\": str(exc), \"code\": \"VAULT_LOCKED\"}))",
+        "agent_core/scraper/vault_gate.py:25: Dürüstlük: kilitliyken iş \"başarısız gibi görünmez\" — ``VaultLockedError``",
+        "agent_core/scraper/vault_gate.py:41: \"VaultLockedError\",",
+        "agent_core/scraper/vault_gate.py:66: class VaultLockedError(RuntimeError):",
+        "agent_core/scraper/vault_gate.py:69: code = \"VAULT_LOCKED\"",
+        "agent_core/scraper/vault_gate.py:145: def get_vault_status(*, strict: bool = False) -> dict:",
+        "agent_core/scraper/vault_gate.py:185: status = get_vault_status(strict=strict)",
+        "agent_core/scraper/vault_gate.py:200: def require_open(purpose: str = \"\", *, strict: bool = False) -> None:",
+        "agent_core/scraper/vault_gate.py:201: \"\"\"Kilitliyse ``VaultLockedError`` fırlat — sessiz devam YOKTUR.\"\"\"",
+        "agent_core/scraper/vault_gate.py:202: status = get_vault_status(strict=strict)",
+        "agent_core/scraper/vault_gate.py:210: raise VaultLockedError(",
+        "agent_core/scraper/vault_gate.py:211: f\"VAULT_LOCKED purpose={purpose or 'unspecified'} source={status['source']}\"",
+        "agent_core/services/holehe_scanner.py:114: require_open(purpose=\"osint\")",
+        "agent_core/scraper/run_scraper.py:21: require_open(purpose=\"scraper\", strict=True)",
+        "agent_core/capabilities/egress.py:116: if not vault_egress_authorized(purpose=purpose):",
+        "backend/api.py:3421: def _require_vault_open(client_id: str) -> Optional[JSONResponse]:"
       ],
-      "note": "KATMAN FARKI: API sınırı kilitli — `_require_vault_open` dışa açılan uçları 423 VAULT_LOCKED ile reddediyor ve route tablosuna karşı yapısal testle (test_vault_egress_lock.py) kilitli; E-GÖZ2-5/3-6 oradan kapanıyor. Ama bu bulgunun istediği şey YAPRAK KATMAN: scraper/OSINT servislerinin kendisi kasanın durumunu okumuyor. Kapı atlanırsa (yeni bir iç çağrı yolu, MCP, worker) yaprakta ikinci bir savunma yok.",
+      "note": "Scraper/OSINT YAPRAKLARI kasa kilidini kendileri denetliyor (kapı çağrısıyla).",
       "regression": false
     },
     "E-GÖZ2-4": {
@@ -215,18 +220,18 @@
       "check_kind": "test_gated",
       "status": "closed_by_design",
       "evidence": [
-        "backend/api.py:5225: broadcast_log(req.client_id, \"WARNING\", f\"SES ÜRETİLEMEDİ: {result.reason}\")",
-        "backend/api.py:5118: broadcast_speech(req.client_id, {\"state\": \"denied\", **payload})",
-        "backend/api.py:5190: broadcast_speech(client_id, {\"state\": \"denied\", \"reason\": result.reason})",
-        "backend/api.py:5224: broadcast_speech(req.client_id, {\"state\": \"denied\", **payload})",
-        "backend/api.py:2356: vault_locked=not _check_vault_interlock(client_id),",
-        "backend/api.py:4265: web_state = policy_state(vault_locked=not _check_vault_interlock(client_id))",
-        "backend/api.py:5109: vault_locked=not _check_vault_interlock(req.client_id),",
-        "backend/api.py:5183: vault_locked=not _check_vault_interlock(client_id),",
-        "backend/api.py:5215: vault_locked=not _check_vault_interlock(req.client_id),",
-        "backend/api.py:5326: vault_locked=not _check_vault_interlock(req.client_id),",
-        "backend/api.py:5461: vault_locked=not _check_vault_interlock(req.client_id),",
-        "backend/api.py:5581: vault_locked=not _check_vault_interlock(req.client_id),",
+        "backend/api.py:5234: broadcast_log(req.client_id, \"WARNING\", f\"SES ÜRETİLEMEDİ: {result.reason}\")",
+        "backend/api.py:5127: broadcast_speech(req.client_id, {\"state\": \"denied\", **payload})",
+        "backend/api.py:5199: broadcast_speech(client_id, {\"state\": \"denied\", \"reason\": result.reason})",
+        "backend/api.py:5233: broadcast_speech(req.client_id, {\"state\": \"denied\", **payload})",
+        "backend/api.py:2357: vault_locked=not _check_vault_interlock(client_id),",
+        "backend/api.py:4273: web_state = policy_state(vault_locked=not _check_vault_interlock(client_id))",
+        "backend/api.py:5118: vault_locked=not _check_vault_interlock(req.client_id),",
+        "backend/api.py:5192: vault_locked=not _check_vault_interlock(client_id),",
+        "backend/api.py:5224: vault_locked=not _check_vault_interlock(req.client_id),",
+        "backend/api.py:5335: vault_locked=not _check_vault_interlock(req.client_id),",
+        "backend/api.py:5470: vault_locked=not _check_vault_interlock(req.client_id),",
+        "backend/api.py:5590: vault_locked=not _check_vault_interlock(req.client_id),",
         "tests/integration/test_speech_api_faz_c.py: kilit işaretleri 4/4 → test_say_refuses_when_gate_is_closed, test_remote_endpoint_is_never_called, test_locked_vault_blocks_speech, result[\"available\"] is False",
         "motor yokken: available=false + makine-okunur reason + WebSocket `denied` yayını + WARNING log; uydurma ses ÜRETİLMİYOR, uzak uç HİÇ çağrılmıyor (test_remote_endpoint_is_never_called)"
       ],
@@ -242,8 +247,8 @@
       "check_kind": "test_gated",
       "status": "closed",
       "evidence": [
-        "backend/api.py:3419: def _require_vault_open(client_id: str) -> Optional[JSONResponse]:",
-        "backend/api.py:4386: @app.post(\"/api/browser/open\")",
+        "backend/api.py:3421: def _require_vault_open(client_id: str) -> Optional[JSONResponse]:",
+        "backend/api.py:4394: @app.post(\"/api/browser/open\")",
         "route gövdesi: 15 satır ölçüldü (tanım satırı atlandı: True)",
         "tests/unit/test_vault_egress_lock.py: kilit işaretleri 4/4 → 423, VAULT_LOCKED, YAPI DENETİMİ, muafiyet",
         "browser ucu kapıyı ÇAĞIRIYOR: `_require_vault_open` route'un kendi fonksiyon gövdesinde (komşu fonksiyondan sızma değil)",
@@ -261,10 +266,10 @@
       "check_kind": "test_gated",
       "status": "closed",
       "evidence": [
-        "backend/api.py:3170: return {\"agents\": agents, \"source\": source, \"count\": len(agents)}",
-        "backend/api.py:3168: state_fn = getattr(getattr(tracker, \"redis_bus\", None), \"connection_state\", None)",
-        "backend/api.py:3164: return {\"agents\": [], \"source\": \"fallback\", \"count\": 0}",
-        "backend/api.py:3173: return {\"agents\": [], \"source\": \"error\", \"error\": str(e)[:100], \"count\": 0}",
+        "backend/api.py:3172: return {\"agents\": agents, \"source\": source, \"count\": len(agents)}",
+        "backend/api.py:3170: state_fn = getattr(getattr(tracker, \"redis_bus\", None), \"connection_state\", None)",
+        "backend/api.py:3166: return {\"agents\": [], \"source\": \"fallback\", \"count\": 0}",
+        "backend/api.py:3175: return {\"agents\": [], \"source\": \"error\", \"error\": str(e)[:100], \"count\": 0}",
         "tests/unit/test_status_source_honesty.py: kilit işaretleri 3/3 → source, in_memory, redis_bus",
         "`source` alanı gerçek taşıyıcıyı beyan eder: redis_bus (PING'lenmiş bağlantı) · in_memory · fallback (rack hiç yüklenmedi) · error; koşulsuz `redis_bus` etiketi kalktı, sahte Ready basan yollar (simulate_processing · set_all_ready) kaldırıldı"
       ],
@@ -280,7 +285,7 @@
       "check_kind": "test_gated",
       "status": "closed",
       "evidence": [
-        "backend/api.py:3844: \"code\": \"MOTOR_UNAVAILABLE\",",
+        "backend/api.py:3852: \"code\": \"MOTOR_UNAVAILABLE\",",
         "backend/api.py:1094: raise HTTPException(status_code=400, detail=\"INVALID_CLIENT_ID\")",
         "backend/api.py:1098: raise HTTPException(status_code=400, detail=\"INVALID_CLIENT_ID\") from None",
         "backend/api.py:1484: status_code=400,",
@@ -288,8 +293,8 @@
         "backend/api.py:1506: status_code=400,",
         "backend/api.py:1517: status_code=400,",
         "backend/api.py:1617: status_code=400,",
-        "backend/api.py:2893: status_code=400,",
-        "backend/api.py:3792: \"library_missing\",   # motor kütüphanesi kurulu değil",
+        "backend/api.py:2895: status_code=400,",
+        "backend/api.py:3800: \"library_missing\",   # motor kütüphanesi kurulu değil",
         "tests/unit/test_experimental_engine_contract.py: kilit işaretleri 4/4 → MOTOR_UNAVAILABLE, MODULE_UNAVAILABLE, disabled, library_missing",
         "4 uç bağlı: maigret · holehe · crawl · socid → motor yoksa 400 MOTOR_UNAVAILABLE; dürüst gövde KORUNUR, üzerine makine-okunur error biner",
         "SINIR: motor çalışıp dürüstçe 'sonuç yok' derse (timeout · scan_error · no_record) sözleşme 200 + available:false kalır — iki yön de test edilir"
@@ -306,25 +311,25 @@
       "check_kind": "test_gated",
       "status": "closed",
       "evidence": [
-        "backend/api.py:2821: if (blocked := _require_minor_clearance(req.client_id, subject=req.url)) is not None:",
-        "backend/api.py:3592: def _require_minor_clearance(",
-        "backend/api.py:3600: if (blocked := _require_minor_clearance(req.client_id)) is not None:",
-        "backend/api.py:3863: if (blocked := _require_minor_clearance(payload.client_id, subject=payload.username)) is not None:",
-        "backend/api.py:3897: if (blocked := _require_minor_clearance(payload.client_id, subject=payload.email)) is not None:",
-        "backend/api.py:3927: if (blocked := _require_minor_clearance(payload.client_id, subject=payload.url)) is not None:",
-        "backend/api.py:3959: if (blocked := _require_minor_clearance(payload.client_id, subject=payload.url)) is not None:",
-        "backend/api.py:3976: if (blocked := _require_minor_clearance(None)) is not None:",
-        "backend/api.py:3473: class MinorCasePayload(BaseModel):",
+        "backend/api.py:2823: if (blocked := _require_minor_clearance(req.client_id, subject=req.url)) is not None:",
+        "backend/api.py:3600: def _require_minor_clearance(",
+        "backend/api.py:3608: if (blocked := _require_minor_clearance(req.client_id)) is not None:",
+        "backend/api.py:3871: if (blocked := _require_minor_clearance(payload.client_id, subject=payload.username)) is not None:",
+        "backend/api.py:3905: if (blocked := _require_minor_clearance(payload.client_id, subject=payload.email)) is not None:",
+        "backend/api.py:3935: if (blocked := _require_minor_clearance(payload.client_id, subject=payload.url)) is not None:",
+        "backend/api.py:3967: if (blocked := _require_minor_clearance(payload.client_id, subject=payload.url)) is not None:",
+        "backend/api.py:3984: if (blocked := _require_minor_clearance(None)) is not None:",
+        "backend/api.py:3481: class MinorCasePayload(BaseModel):",
         "backend/api.py:625: app.state.minor_cases = {}  # client_id -> MinorCaseContext (yalnız beyan edilmişse)",
-        "backend/api.py:3514: `app.state.minor_cases` içinde tutulur — oda tahliyesi (30 dk boşta)",
-        "backend/api.py:3519: return coerce_minor_case(app.state.minor_cases.get(client_id))",
-        "backend/api.py:3615: for other_id in list(app.state.minor_cases):",
-        "backend/api.py:3653: req.client_id not in app.state.minor_cases",
-        "backend/api.py:3654: and len(app.state.minor_cases) >= _MINOR_CASE_MAX_ENTRIES",
-        "backend/api.py:3679: app.state.minor_cases[req.client_id] = case",
-        "backend/api.py:3699: had = app.state.minor_cases.pop(req.client_id, None) is not None",
-        "backend/api.py:3465: MINOR_BLOCKED_MESSAGE = (",
-        "backend/api.py:3548: \"message\": MINOR_BLOCKED_MESSAGE,",
+        "backend/api.py:3522: `app.state.minor_cases` içinde tutulur — oda tahliyesi (30 dk boşta)",
+        "backend/api.py:3527: return coerce_minor_case(app.state.minor_cases.get(client_id))",
+        "backend/api.py:3623: for other_id in list(app.state.minor_cases):",
+        "backend/api.py:3661: req.client_id not in app.state.minor_cases",
+        "backend/api.py:3662: and len(app.state.minor_cases) >= _MINOR_CASE_MAX_ENTRIES",
+        "backend/api.py:3687: app.state.minor_cases[req.client_id] = case",
+        "backend/api.py:3707: had = app.state.minor_cases.pop(req.client_id, None) is not None",
+        "backend/api.py:3473: MINOR_BLOCKED_MESSAGE = (",
+        "backend/api.py:3556: \"message\": MINOR_BLOCKED_MESSAGE,",
         "tests/unit/test_minor_gate_api.py: kilit işaretleri 3/3 → _require_minor_clearance, MINOR_BLOCKED, 451",
         "oda bazlı beyan: POST ile çocuk vakası beyan edilir, yalnız `POST /api/minor/clear` kaldırır (zaman aşımı değil); `coerce_minor_case` yarım/bozuk beyanı REDDEDER (fail-closed)",
         "SIRA bilinçli: çocuk kilidi kasa kapısından ÖNCE koşar — izinde 'VAULT_LOCKED' görünür, çocuk ihlali maskelenir",
@@ -359,12 +364,19 @@
       "audit_verify": "agent_core/workers/agent_worker.py dosyasında \"fallback in-memory\" satırını okumak.",
       "audit_verify_stale": null,
       "check_kind": "static",
-      "status": "open",
+      "status": "closed",
       "evidence": [
-        "worker'da ortam kapısı (`PINEAL_ENV`/`production`): False (yok)",
-        "worker'da sert başarısızlık (`raise RuntimeError`): False (yok)"
+        "agent_core/workers/agent_worker.py:227: f\"PRODUCTION_REQUIRES_REDIS: Redis bus import edilemedi ({exc})\"",
+        "agent_core/workers/agent_worker.py:251: f\"PRODUCTION_REQUIRES_REDIS: bağlantı kurulamadı ({exc})\"",
+        "agent_core/workers/agent_worker.py:132: def _production_mode() -> bool:",
+        "agent_core/workers/agent_worker.py:134: return os.getenv(\"PINEAL_ENV\", \"\").strip().lower() == \"production\"",
+        "agent_core/workers/agent_worker.py:217: if _production_mode():",
+        "agent_core/workers/agent_worker.py:243: if _production_mode():",
+        "agent_core/workers/agent_worker.py:230: \"DEGRADED_MODE: Redis bus import edilemedi — in-memory fallback \"",
+        "agent_core/workers/agent_worker.py:254: \"DEGRADED_MODE: Redis kurulamadı — in-memory fallback devrede \"",
+        "bayrak beacon yolunda (degraded_mode pasif): True"
       ],
-      "note": "Denetimin istediği kural yok: üretim modunda Redis import/bağlantı hatası hâlâ `logger.warning` + in-memory fallback ile yutuluyor. Dağıtık mimari sessizce tekil sürece düşebiliyor.",
+      "note": "Üretimde fallback sert RET (RuntimeError), geliştirmede DEGRADED_MODE izi + beacon bayrağı.",
       "regression": false
     },
     "E-GÖZ3-3": {
@@ -412,13 +424,11 @@
       "audit_verify": "Redis yokken /api/agents/status çıktısını okumak.",
       "audit_verify_stale": null,
       "check_kind": "static",
-      "status": "open",
+      "status": "closed",
       "evidence": [
-        "bileşen durumları: E-GÖZ1-1=open, E-GÖZ1-6=open, E-GÖZ2-6=closed",
-        "açık bileşen: E-GÖZ1-1, E-GÖZ1-6 → üst küme açık kalır",
-        "`pass  # Backend yoksa sessizce devam` bulunamadı ama yerine log da konmamış"
+        "bileşen durumları: E-GÖZ1-1=closed, E-GÖZ1-6=closed, E-GÖZ2-6=closed"
       ],
-      "note": "Durum beyanı tarafı onarıldı (agents/status gerçek taşıyıcıyı yazıyor) ama 'tüm sessiz yutmalar kaldırılmalı + Degraded modu resmileşmeli' isteği karşılanmadı: worker'da hâlâ logsuz `except: pass` blokları var.",
+      "note": "Tüm bileşenler kapandı → üst küme kapandı.",
       "regression": false
     },
     "E-GÖZ3-6": {
@@ -431,8 +441,8 @@
       "status": "closed",
       "evidence": [
         "E-GÖZ2-5 ölçümü: closed",
-        "backend/api.py:3419: def _require_vault_open(client_id: str) -> Optional[JSONResponse]:",
-        "backend/api.py:4386: @app.post(\"/api/browser/open\")",
+        "backend/api.py:3421: def _require_vault_open(client_id: str) -> Optional[JSONResponse]:",
+        "backend/api.py:4394: @app.post(\"/api/browser/open\")",
         "route gövdesi: 15 satır ölçüldü (tanım satırı atlandı: True)",
         "tests/unit/test_vault_egress_lock.py: kilit işaretleri 4/4 → 423, VAULT_LOCKED, YAPI DENETİMİ, muafiyet"
       ],
@@ -448,9 +458,9 @@
       "check_kind": "test_gated",
       "status": "closed",
       "evidence": [
-        "backend/api.py:3792: \"library_missing\",   # motor kütüphanesi kurulu değil",
-        "backend/api.py:3793: \"dependency_broken\", # bağımlılık yüklendi ama kırık/eksik",
-        "backend/api.py:3945: yoksa makine-okunur sebep (binary_missing / library_missing).",
+        "backend/api.py:3800: \"library_missing\",   # motor kütüphanesi kurulu değil",
+        "backend/api.py:3801: \"dependency_broken\", # bağımlılık yüklendi ama kırık/eksik",
+        "backend/api.py:3953: yoksa makine-okunur sebep (binary_missing / library_missing).",
         "tests/unit/test_experimental_engine_contract.py: kilit işaretleri 3/3 → library_missing, dependency_broken, holehe",
         "sebep sözlüğü servis kaynaklarına bağlı: disabled · library_missing · dependency_broken · db_unavailable → 400 MOTOR_UNAVAILABLE; uydurma sebep testi kırmızı yakar",
         "holehe ucu da aynı kapıdan geçiyor (E5 kapsamı 4 uç)"

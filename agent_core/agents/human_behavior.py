@@ -9,16 +9,33 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 import cv2
 import asyncio
-import httpx
+from agent_core.capabilities.egress import open_client, httpx
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
 from urllib.parse import urlparse
 
 from agent_core.services.upstream_findings import upstream_findings_block
+
+
+class HumanBehaviorPayload(BaseModel):
+    """[AUDIT E-GÖZ1-5] ``execute()`` girdi şeması.
+
+    Bilinen alanlar TİP doğrulamasından geçer; ek alanlar korunur
+    (``extra="allow"`` — executor'ın görev bağlamı silinmez). Doğrulama
+    başarısızlık ÜRETMEDEN ajanı görünür şekilde ``failed`` taşır
+    (``ValidationError`` yukarıya yükselir; sessiz yutma yok).
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    target_profile: Optional[Dict[str, Any]] = None
+    user_profile: Optional[Dict[str, Any]] = None
+    sacred_rules: Optional[str] = ""
+    user_authenticity_score: Optional[float] = None
 
 
 class MicroSignal(BaseModel):
@@ -58,10 +75,14 @@ class HumanBehaviorAnalyzer:
     # Public entrypoint
     # ------------------------------------------------------------------ #
     async def execute(
-        self, input_data: Dict[str, Any], memory: Any, llm_gateway: Any
+        self, input_data: Mapping[str, Any], memory: Any, llm_gateway: Any
     ) -> DigitalColdReading:
+        # [AUDIT E-GÖZ1-5] Şema kapısı: bilinen alanlar doğrulanır, bilinmeyen
+        # alanlar korunur. dict(...) başarısızsa / ValidationError çıkarsa
+        # ajan görünür şekilde failed olur — uydurma varsayılanla devam yok.
+        input_data = HumanBehaviorPayload.model_validate(dict(input_data)).model_dump()
         profile = input_data.get("target_profile") or {}
-        sacred_rules = input_data.get("sacred_rules", "")
+        sacred_rules = input_data.get("sacred_rules") or ""
     # [BOSS-9] Diğer ajanların doğrulanmamış bulguları prompt'a referans olarak girer
     # (tek kaynak: agent_core.services.upstream_findings); boşsa metin boş kalır.
         upstream_block = upstream_findings_block(input_data)
@@ -130,7 +151,8 @@ class HumanBehaviorAnalyzer:
                     await response.aclose()
 
         try:
-            async with httpx.AsyncClient(
+            async with open_client(
+                purpose="media",
                 follow_redirects=False,
                 timeout=httpx.Timeout(10.0, connect=5.0),
             ) as client:
@@ -508,7 +530,7 @@ class HumanBehaviorAnalyzer:
         )
 
     def _calculate_resonance_potential(
-        self, wound: Dict[str, Any], input_data: Dict[str, Any]
+        self, wound: Mapping[str, Any], input_data: Mapping[str, Any]
     ) -> float:
         authenticity = min(
             max(float(input_data.get("user_authenticity_score", 0.5)), 0.0), 1.0

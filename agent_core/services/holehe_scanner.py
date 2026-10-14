@@ -101,7 +101,7 @@ async def _run_library_scan(
     per-modül timeout ile keser ve bunları ayrı hata listesine yazar."""
     from holehe.core import launch_module
 
-    import httpx
+    from agent_core.capabilities.egress import open_client
 
     out: List[Dict[str, Any]] = []
     stalled: List[str] = []
@@ -109,7 +109,10 @@ async def _run_library_scan(
     # [SAĞLAMLAŞTIRMA] Tek istemci gather'dan ÖNCE yaratılır: eşzamanlı
     # _runner'ların "client is None" yarışıyla ikinci bir istemci yaratıp
     # sızdırması engellendi (FAZ 3 kusuru; regresyon testi var).
-    client = httpx.AsyncClient(timeout=timeout)
+    # [E-GÖZ2-3] Kasa kapısı: üretimde yetkisiz OSINT çıkışı burada da ret edilir.
+    from agent_core.scraper.vault_gate import require_open
+    require_open(purpose="osint")
+    client = open_client(purpose="osint", timeout=timeout)
 
     async def _runner(fn: Any) -> None:
         name = getattr(fn, "__name__", "?")

@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import httpx
+from agent_core.capabilities.egress import httpx, open_client  # noqa: F401  (test yamaları httpx adını modulede bekler)
 
 from agent_core.services import net_hygiene
 
@@ -208,7 +208,7 @@ async def fetch_media(source: str, *, timeout: float = 120.0) -> MediaFetch:
         return MediaFetch(available=False, reason="unsupported_extension", source=value)
 
     try:
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        async with open_client(purpose="media", target=str(value)[:200], timeout=timeout, follow_redirects=True) as client:
             async with client.stream("GET", value) as response:
                 if response.status_code != 200:
                     return MediaFetch(
@@ -468,7 +468,7 @@ async def transcribe(path: str, *, timeout: float = 600.0) -> Transcript:
     if engine == "local_endpoint":
         url, _ = _local_transcribe_endpoint()
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            async with open_client(purpose="media", target=str(url)[:200], timeout=timeout) as client:
                 response = await client.post(url, json={"media_path": str(audio)})
             if response.status_code != 200:
                 return Transcript(
