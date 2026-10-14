@@ -74,6 +74,17 @@ Ek olarak **bayat kopya** bulundu ve düzeltildi: katalogdaki
 `openrouter/deepseek/deepseek-v4-flash` $0.0679/$0.168'de kalmıştı; gateway
 kopyası 2026-09-08'de $0.09/$0.18'e düzeltilmişti — katalog geride kalmış.
 
+**Kapsam genişletilince iki sapma DAHA çıktı** (aynı gün, ikinci koşu):
+
+| Model | Depodaki değer | Canlı değer | Sapma |
+|---|---|---|---|
+| `deepseek/deepseek-v4-flash` (TIER_2 varsayılanı) | $0.09/$0.18 | **$0.091/$0.182** | %1,1 eksik sayım |
+| `deepseek/deepseek-v4-pro` | $0.4679/$0.9358 | **$0.386976/$0.773952** | %17,3 fazla sayım |
+
+İkisi de düzeltildi (pin + katalog + harcama tablosu). `anthropic/claude-sonnet-5`
+canlıda $2/$10 ile **eşleşti** → depodaki değer doğru; promonun bittiğine dair
+not OR kataloğu için geçerli değil (bu yüzden önden değiştirilmedi — ölçüm şart).
+
 **Doğrulama kapsamı genişletildi** (inanç → doğrulama): `deepseek-v4-flash`
 (TIER_2 varsayılanı), `deepseek-v4-pro`, `claude-sonnet-5` artık her CI
 koşusunda canlı katalogla karşılaştırılıyor.

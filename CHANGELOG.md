@@ -24,6 +24,12 @@ FAIL: openai/gpt-5.6-sol-pro: live output price 2e-05 != 10.0/1M
   `test_pinned_prices_agree_in_every_copy` (kopyalar ayrışırsa kırmızı) ve
   `test_pinned_live_coverage_includes_the_spend_cap_models` (kapsam sessizce
   daraltılamaz) kilitleri eklendi.
+- **Kapsam genişletilince İKİ sapma daha çıktı:** `deepseek/deepseek-v4-flash`
+  (TIER_2 varsayılanı) depoda $0.09/$0.18 iken canlıda **$0.091/$0.182** (%1,1
+  eksik sayım); `deepseek/deepseek-v4-pro` $0.4679/$0.9358 iken **$0.386976/$0.773952**
+  (%17,3 fazla sayım). İkisi de pin + katalog + harcama tablosunda düzeltildi.
+  `anthropic/claude-sonnet-5` canlıda $2/$10 ile EŞLEŞTİ — depo değeri doğruydu
+  ve önden değiştirilmedi (ölçüm şartı).
 - **Kapsam genişletildi (inanç → doğrulama):** `deepseek/deepseek-v4-flash`
   (TIER_2 varsayılanı), `deepseek/deepseek-v4-pro` ve `anthropic/claude-sonnet-5`
   harcama tablosunda fiyatlıydı ama hiç canlı kontrol edilmiyordu; artık pinli

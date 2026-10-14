@@ -69,8 +69,11 @@ REQUIRED_OPENROUTTER = {
     # Artık CI her koşuda canlı katalogla karşılaştırır: fark çıkarsa DURUM
     # makine-okunur bir `FAIL:` satırıyla bildirilir ve tablolar ona göre
     # güncellenir (tahminle değil, ölçümle).
-    "deepseek/deepseek-v4-flash": (0.09, 0.18),
-    "deepseek/deepseek-v4-pro": (0.4679, 0.9358),
+    # [2026-10-14 · canlı teyit] Genişletilen kapsam İKİ gerçek sapma daha buldu:
+    # depo $0.09/$0.18 ve $0.4679/$0.9358 tutuyordu (2 ondalığa yuvarlanmış/promo
+    # dönemi); canlı katalog $0.091/$0.182 ve $0.386976/$0.773952 okudu.
+    "deepseek/deepseek-v4-flash": (0.091, 0.182),
+    "deepseek/deepseek-v4-pro": (0.386976, 0.773952),
     "anthropic/claude-sonnet-5": (2.0, 10.0),
 }
 

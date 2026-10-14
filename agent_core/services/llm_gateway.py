@@ -530,10 +530,14 @@ class LLMGateway:
         "upstage/solar-pro4": {"in": 0.03, "out": 0.12},
         "inclusionai/ling-3.0-flash": {"in": 0.021, "out": 0.063},
         # 2026-09-08 araştırma düzeltmesi: OR kataloğu deepseek-v4-flash'i
-        # $0.09/$0.18 gösteriyor (eski $0.0679/$0.168 iki tarafla da uyuşmuyordu).
-        "deepseek/deepseek-v4-flash": {"in": 0.09, "out": 0.18},
+        # $0.09/$0.18 gösteriyordu (eski $0.0679/$0.168 iki tarafla da uyuşmuyordu).
+        # [2026-10-14 · canlı teyit] Gerçek fiyat $0.091/$0.182 (2 ondalığa
+        # yuvarlanmış değer sayacı %1,1 eksik sayıyordu).
+        "deepseek/deepseek-v4-flash": {"in": 0.091, "out": 0.182},
         "z-ai/glm-5.2": {"in": 0.3276, "out": 1.03},
-        "deepseek/deepseek-v4-pro": {"in": 0.4679, "out": 0.9358},
+        # [2026-10-14 · canlı teyit] $0.4679/$0.9358 -> $0.386976/$0.773952
+        # (eski tablo maliyeti %17,3 FAZLA sayıyordu; iki yön de yanlıştır).
+        "deepseek/deepseek-v4-pro": {"in": 0.386976, "out": 0.773952},
         "google/gemini-3.7-flash": {"in": 0.75, "out": 3.75},
         # 2026-09-02 karar matrisi: Sonnet 5 $2/$10 (promo), Grok 4.6 $2/$6.
         # 2026-09-08 notu: Sonnet 5 promo'su 31.08.2026'da sona erdi; Anthropic
