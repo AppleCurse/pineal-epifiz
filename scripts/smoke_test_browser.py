@@ -1,3 +1,10 @@
+"""Playwright duman testi — tarayıcı katmanı gerçekten açılıyor mu?
+
+Chromium'u başlatır, ``https://example.com`` sayfasını yükler ve başlığı okur;
+başarı/başarısızlık tek satır olarak basılır ve hata durumunda çıkış kodu 1'dir
+(CI'da kullanılabilir). Analiz yapmaz — yalnız altyapı canlılığını ölçer.
+"""
+
 import asyncio
 from playwright.async_api import async_playwright
 

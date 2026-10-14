@@ -1,3 +1,17 @@
+"""Belirsizlik motoru — veri kalitesini ayrıştırarak puanlar.
+
+``evaluate(result, agent_name)`` her ajan çıktısı için alan alan veri skoru
+üretir (``UncertaintyReport``). Placeholder/boş metin kanıt SAYILMAZ
+(``_is_non_evidence_text``); ``None``/yer tutucu değerler skora katkı vermez
+(``_value_bears_evidence``).
+
+Amaç: "ajan koştu" ile "ajan kanıt üretti" arasındaki farkı ölçülebilir kılmak.
+Eşikler ``config/decision_config.yaml``'dan gelir.
+
+Tüketici: ``task_executor`` + ``decision_engine``.
+Test: ``tests/unit/test_executor_confidence_semantics.py``.
+"""
+
 import json
 import logging
 from typing import Any, Dict, Tuple

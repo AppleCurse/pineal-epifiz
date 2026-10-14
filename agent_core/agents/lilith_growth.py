@@ -1,3 +1,21 @@
+"""LILITH — 360° insan analizini viral içeriğe çeviren büyüme ajanı.
+
+Sunucusuz/hafif hedef: Raspberry Pi'de bile sıfır ek yükle koşacak şekilde
+tasarlanmıştır. Sınıf, hem CLI (``run_lilith.py``) hem de boru hattı
+entegrasyonları için TEK gerçek kaynaktır (prompt, formül, rapor biçimi dahil).
+
+Katmanlar:
+  * Matematiksel güvenlik zırhı (``_safe_float``/``_clamp``): NaN/Inf/str/list
+    girdiler sessizce varsayılana düşer, ASLA exception fırlatmaz.
+  * Nörokimyasal formül → ``NeuroMetrics`` (dopamin/serotonin/kortizol/oksitosin
+    + bilişsel sürtünme; deterministik, LLM'siz).
+  * İki taşıma: ``OpenAICompatibleGateway`` (anahtar varsa) ve
+    ``FreeTextGateway`` (anahtar yokken: uydurma içerik ÜRETİLMEZ, dürüst
+    "gateway yok" yolu). ``from_cli_credentials`` bu seçimi yapar.
+
+Test: ``tests/unit/test_lilith_growth.py``.
+"""
+
 import json
 import logging
 import math

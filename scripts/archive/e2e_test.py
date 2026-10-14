@@ -1,3 +1,12 @@
+"""[DEPO DIŞI · ARŞİV] Uçtan uca canlı LLM akışı — DEBUG loglarla.
+
+``LIVE_LLM_E2E=1`` ve gerçek anahtarla tam boru hattını koşar; her katmanın
+logu açık tutulur, bu yüzden üretimde ASLA koşulmaz (sır sızdırma riski).
+
+Not: ``task_executor`` içe aktarımda örnek yürütücü sunmadığı için bu betik
+kendi örneğini kurar.
+"""
+
 import asyncio
 import sys
 import logging

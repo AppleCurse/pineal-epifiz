@@ -1,5 +1,50 @@
 # Changelog
 
+## Unreleased — 2026-10-14 — Envanter/açıklama tamamlama ve API-BÖLME 2
+
+### 1 · Açıklamasız çekirdek dosyalar (A listesi, 30 dosya)
+- 12 ajan + 10 servis + 8 diğer modüle (aspasia, domain, scraper CLI, shadow, nlp,
+  chat, telemetry) **modül docstring'i** yazıldı; `agent_core/services/llm_gateway.py`
+  (3.210 satır) ve `agent_core/aspasia/aspasia_chief.py` dâhil.
+- Kural: docstring'ler dosyanın GERÇEK davranışını ve dürüstlük sözleşmesini yazar
+  (kanıt yoksa skor uydurulmaz, kullanılamazlık ≠ boş sonuç, hangi test kilitliyor).
+- Test: `tests/unit/test_inventory_page.py::test_every_category_a_file_has_a_module_docstring`.
+
+### 2 · Envanterde hiç görünmeyen dosyalar (B listesi, 31 dosya)
+- Kök girişler (`main.py`), `agent_core` kökü (`task_executor.py`, `config_loader.py`,
+  `version.py` zaten belgeliydi), `backend/` rota-güvenlik katmanı ve `scripts/`
+  (arşiv dâhil) açıklamaları yazıldı + sayfada listelendi.
+- En kritik ikisi: `agent_core/task_executor.py` (orkestra şefi) ve `backend/api.py`.
+
+### 3 · API-BÖLME 2 — `/api/language/*` ayrıldı (tavan çakışması çözümü)
+- Ölçüm: `backend/api.py` **tam 6.000 satırda** (ratchet tavanı) duruyordu; yukarıdaki
+  docstring'i eklemek bile `test_api_monolith_ratchet.py`'yi kırıyordu.
+- Depo kuralı işletildi ("yeni satır yerine MODÜL ÇIKAR"): 3 uç
+  `backend/routes/language.py` modülüne taşındı; uç gövdeleri DEĞİŞMEDİ,
+  bağımlılıklar enjekte edildi, `backend/api.py` payload modellerini yeniden ihraç eder.
+- `backend/api.py`: **6.000 → 5.916 satır**; tavan `MAX_LINES = 5916`'ya DÜŞÜRÜLDÜ.
+- Yeni kilitler: `test_language_split_module_exists_and_is_importable`,
+  `test_api_reexports_language_split_symbols`,
+  `test_language_routes_are_registered_on_the_app`,
+  `test_api_does_not_redefine_language_models`.
+- `docs/reports/API_MONOLITH_SPLIT_PLAN.md` §2.2 + §4 + §5 güncellendi.
+
+### 4 · Envanter sayfası artık KAYNAKTAN üretiliyor
+- Yeni: `scripts/generate_inventory_page.py` → `docs/envanter.html` (tek dosya, çevrimdışı,
+  aranabilir). 680+ dosya (üretildiği andaki ağaç), klasör klasör; her satırda yol · satır · etiket · açıklama ·
+  semboller · (test ise) kilitlediği davranışlar.
+- Kaynak: `git ls-files` + AST docstring'leri, `SKILL.md` front-matter, `config/*._meta.purpose`,
+  Rust `//!` belgeleri, Markdown başlıkları; **`app.*` dekoratörlerinden sayılan 70 uç** ve
+  **`.env.example`'ın 98 ayarı (grup + yorum + örnek değer)**.
+- Çok satırlık klasörler açıklama kazandı: `rust_core/` (48), `android/` (49, parite sınırı
+  etiketli), `frontend/` (47), `functions/` (2), `skills/` (26), `config/` (6), 233 test ve
+  41 tarihli rapor.
+- Determinizm: künye tarihi "şimdi" değil son commit'tir ve sayfa KENDİNİ saymaz — bu yüzden
+  `--check` kararlıdır. CI'ya "Verify inventory page committed fresh" adımı eklendi.
+- Test: `tests/unit/test_inventory_page.py` (7 test): bayatlama, A docstring'leri, B görünürlüğü,
+  env/uç sayılarının kaynaktan gelmesi, mükerrer satır yasağı, API-BÖLME izi.
+
+
 ## Unreleased — 2026-10-07 — Üretim denetimi (audit) düzeltmeleri
 
 Kullanıcı denetim raporunun (2026-10-07) maddelerinin tamamı uygulandı. Her

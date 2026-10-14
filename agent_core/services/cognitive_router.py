@@ -1,3 +1,16 @@
+"""Bilişsel yönlendirici — hangi ajanların koşacağına karar veren beyin.
+
+``analyze(input_data)`` görev girdisini (hedef, kullanıcı, aktif hedefler) okuyup
+koşacak ajan listesini ve gerekçesini (``RoutePlan``) üretir.
+
+Girdi disiplini: ``aspasia_goals`` içindeki YABANCI/UYDURMA isimler planı
+değiştirmez — yalnız tanımlı hedef kümesi planı etkiler; bilinmeyen hedef
+reasoning'e "yok sayıldı" notu olarak yazılır (sessiz yutma yok).
+
+Tüketici: ``agent_core/task_executor.py``.
+Test: ``tests/unit/test_router.py``, ``tests/unit/test_consolidation_faz1_5.py``.
+"""
+
 from pydantic import BaseModel, ConfigDict
 from typing import List, Dict
 

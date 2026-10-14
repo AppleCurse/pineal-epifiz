@@ -1,3 +1,14 @@
+"""Takipçi/kitle denetimi — saf deterministik aritmetik (LLM'siz).
+
+``audit_followers`` takipçi sayısı, takip edilen sayısı ve gönderilerden
+oransal/örüntüsel sinyaller üretir (``FollowerAuditReport``). LLM çağrısı ve
+rastgelelik YOKTUR; aynı girdi her zaman aynı çıktıyı verir, bu yüzden
+mühürlenebilir kanıt sayılır.
+
+Eksik/aykırı girdi "sahte kitle" diye YORUMLANMAZ: yalnız ölçülen oran ve
+güven raporlanır.
+"""
+
 from typing import Dict, List, Any, Optional
 from pydantic import BaseModel, ConfigDict
 

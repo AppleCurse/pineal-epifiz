@@ -1,3 +1,16 @@
+"""P1 + P7 + P8 derinlik ve gerçeklik analisti.
+
+Deterministik 7-sütun motorunun *anlatısal* tamamlayıcısı: yapısal kanıtı
+(``structured_verification`` bağlamı) alıp derinlik bulgularına çevirir. Çıktı
+``DepthReport`` / ``DepthFinding``; her bulgu kanıt referansı taşır.
+
+QuoteGuard ile birlikte koşar: rapordaki alıntılar kaynak korpusa bağlanmadan
+"doğrulandı" sayılmaz (bkz. ``agent_core/services/quote_guard.py``).
+
+Test: ``tests/unit/test_depth_analyst_verification_context.py``,
+``tests/unit/test_depth_failure_wiring.py``, ``tests/unit/test_depth_verification_trace.py``.
+"""
+
 from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, ConfigDict
 import json

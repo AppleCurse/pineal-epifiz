@@ -96,6 +96,10 @@ PINEAL-HERETIC v5.1, operatöre hem derin sinematik sezgi hem de cerrahi şeffaf
 - API ve görev başlatma: `backend/api.py` → `run_mission()` → `agent_core/task_executor.py`
 - Ajan seçimi: `agent_core/services/cognitive_router.py`
 - Ajan envanteri ve altı soruluk kod ayrıntısı: [README_TECHNICAL.md](README_TECHNICAL.md)
+- **Tam depo envanteri (680+ dosya, klasör klasör, aranabilir): [docs/envanter.html](docs/envanter.html)**
+  — üretilen sayfa; `python scripts/generate_inventory_page.py` ile yenilenir,
+  CI `--check` ile bayatlamayı yakalar. `.env.example`'ın 98 ayarı ve `config/*`
+  içeriği tek tek açıklanmıştır.
 - Scraper/görsel/pillar: `agent_core/scraper/`, `agent_core/services/`, `agent_core/engines/`
 - UI: `frontend/src/`
 

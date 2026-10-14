@@ -1,3 +1,15 @@
+"""Kalıp kırma ve mesaj üretimi — kanıta bağlı, uydurmasız.
+
+Analiz çıktılarından EN SPESİFİK gözlemi (mikro sinyal, zamansal sinyal, somut
+ayrıntı) seçer ve senaryo yanıtı + açılış mesajı üretir. Ölçüm yoksa İFADE
+UYDURULMAZ: ``_unavailable(reason)`` dürüst ret döner.
+
+``shadow_executor`` (NLP katmanları) bu ajanın ürettiği temel mesajı
+zenginleştirir; zenginleştirme başarısızsa temel mesaj korunur.
+
+Test: ``tests/unit/test_dark_nlp_and_shadow.py``, ``tests/unit/test_intervention_safety.py``.
+"""
+
 import json
 from typing import Dict, List
 

@@ -1,0 +1,47 @@
+{
+  "_meta": {
+    "purpose": "docs/envanter.html için KÜRASYON VERİSİ: klasör açıklamaları ve bölüm notları. Üretici (scripts/generate_inventory_page.py) bu dosyayı okur; böylece Python ürün yolunda anılmayan adlar (ör. derleme hattı klasörü) yalnız VERİ olarak yaşar ve 'Python ürün yolu Rust'ı anmaz' kontratı bozulmaz (tests/unit/test_rust_runtime_status.py).",
+    "order": "folder_descriptions anahtarlarının sırası sayfadaki bölüm sırasıdır."
+  },
+  "section_notes": {
+    "env": "Aşağıdaki ayarlar .env.example içinden OKUNMUŞTUR (elle yazılmadı). ENABLE_* kapıları varsayılan KAPALI; *_API_KEY'lerin hiçbiri zorunlu değil — anahtar yoksa ilgili yetenek dürüst available:false döner.",
+    "config": "Bu dosyalar kod içine gömülü değerleri DIŞARI taşır: katalog/tier/zincir kararları tek yerden denetlenebilir olsun diye. Her biri bir testle kilitlidir.",
+    "tests": "Test adları davranış sözleşmesidir: adı okuyunca neyin kilitlendiği anlaşılır (ör. pricing_guard_denies_unknown_price)."
+  },
+  "folder_descriptions": {
+    "agent_core · ajanlar": "Boru hattının analiz rolleri: üç kişilik lensi (tutku/sürtünme/biliş), ayna, kalıp kırma, OSINT, derinlik, gerçeklik denetimi, rezonans sentezi, otonom doğrulayıcı ve LILITH büyüme ajanı. Üç lens İNCE kabuktur: işin tamamı ortak target_psyche_profiler omurgasındadır (kopya prompt yasak).",
+    "agent_core · servisler": "Sistemin organları: model ağ geçidi, kanonik bellek, yönlendirme, arama, belirsizlik/karar motorları, kanıt kapıları (quote_guard, claim gate), rapor fabrikası, medya adli bilişimi, dil/ses/çeviri ve kota yönetimi. Ortak kural: KULLANILAMAZLIK ≠ BOŞ SONUÇ — her servis durumunu dürüstçe raporlar.",
+    "agent_core · yetenek omurgası": "Yetenek omurgası: registry (tek defter), politika (kasa/anahtar/rate kapıları), runner (tek koşum yolu), adaptörler (şirket/jüri/dil/medya/osint/rapor/ses/web) ve egress (tek çıkış izi). Doğrudan kütüphane çağrısı yapan ajan omurgayı atlamış sayılır; test bunu yakalar.",
+    "agent_core · motorlar": "LLM'siz deterministik motorlar: 7-sütun (frequency/seismos/void/strata/gravity/pulse/key-matrix) boru hattı ve yardımcı ölçüm motorları. Bu katman saf matematiktir — kanıtı LLM'e sormaz, ölçer.",
+    "agent_core · çekirdek": "Çekirdek: task_executor (orkestra şefi), config_loader (karar eşikleri), version (sürümün tek kaynağı: kökteki VERSION), domain modelleri, scraper/gölge/nlp/chat/aspasia/telemetry katmanları ve utils (maskeleme, kimlik, yol doğrulama).",
+    "backend · API": "FastAPI montajı + ayrıştırılmış katmanlar: api.py (monolit, tek-modül tavanına tabi), routes/ (support, tasks, websocket, language), security/ (principal, task_ownership, task_access), middleware/ (gövde tavanı) ve checkpoint_store (kalıcı destek & güvenli devam deposu).",
+    "tests": "235 test dosyası (unit/integration/e2e/audit). Projenin kuralı: her düzeltme, kusuru GERİ GETİRMEYİ engelleyen bir testle kilitlenir; testler ayrıca doküman gibi okunur.",
+    "frontend": "Svelte + Vite kokpiti: Atlas Epifiz Gözlemevi (AtlasPinealCockpit.svelte) ve Taktik Muharebe Masası (TacticalWarRoom.svelte), Agent Rack, destek paneli, dizel göstergeler, telemetri istemcisi ve Tauri köprüsü. Sürüm tek kaynaktan (src/lib/version.ts) okunur.",
+    "rust_core": "Rust çekirdeği ve masaüstü kabuğu: olay veri yolu, ajan boru hattı, kasa, belirsizlik ölçümü, token sıkıştırma ve Tauri köprüsü. KARAR (Faz 9-B): CI'da derlenir ve test edilir (cargo check/test) ama Python ürününe BAĞLANMAZ — bu yüzden ürün yolu bu adı anmaz; durumu /health ve /api/telemetry'de açıkça 'product_runtime_integrated: false' olarak yayınlanır.",
+    "android": "Android istemcisi (Kotlin + Compose): tek Gemini çağrılı analiz hattı, Room ile yerel kayıt, tamamlayıcı UI ve i18n. PARİTE SINIRI: bu hatta bağımsız doğrulayıcı, jüri, entailment, kanıt-URL denetimi ve SHA-256 mühür YOKTUR; arayüz bunu açıkça etiketler.",
+    "scripts": "Operasyon ve denetim betikleri: denetim regresyon bekçisi (audit_regression), yönlendirme gölgeleri, yetenek paketi ihracı, katalog doğrulayıcı, 9Router ön kontrolü, görev CLI'ı ve arşivdeki tanı betikleri (üretim yolu DEĞİL).",
+    "skills": "Yetenek defteri (26 SKILL.md): her yetenek için ad, açıklama, yetenek kimliği, tür, lisans, kapılar (ENABLE_* + kasa) ve girdi/çıktı şemaları. scripts/export_skills.py bunları CapabilityRegistry'den üretir; elle düzenlenmiş dosya CI'da yakalanır.",
+    "config": "Çalışma zamanı yapılandırması: ajan→tier niyeti, görev→model zincirleri, sağlayıcı kataloğu, karar eşikleri, RTK bypass politikası ve router örneği. Değerler kod içine gömülmez.",
+    "functions": "Cloudflare Pages Functions: /api/* ve /ws/* isteklerini BACKEND_ORIGIN'e taşıyan catch-all proxy. BACKEND_ORIGIN tanımsızsa uydurma davranış yok — 502 + açık hata kodu döner.",
+    "kök / diğer": "Depo kökü: giriş noktaları (main.py, scraper.py, run_lilith.py, live_llm_gate.py), bağımlılık listeleri, sürüm dosyası ve dağıtım yapılandırmaları (Dockerfile, docker-compose.yml, railway.toml, vercel.json, wrangler.toml, .env.example).",
+    "docs · dokümanlar": "Sözleşme ve rapor külliyatı: kök README/RUNBOOK/GO_LIVE/CHANGELOG/ARCHITECTURE, docs/ sözleşmeleri (PINEAL_TUZUK, MEDYA_ADLI, MCP, ZERO_TRUST, KURUM_HEDEFI…) ve docs/reports/ altındaki tarihli denetim/karar raporları. Raporlar karar KAYDIDIR: hangi ölçümün hangi tarihte alındığını yazar."
+  },
+  "folder_highlights": {
+    "agent_core · ajanlar": "12 uzman rol + otonom doğrulayıcı + insan davranışı",
+    "agent_core · servisler": "gateway · bellek · kanıt kapıları · rapor",
+    "backend · API": "uçlar, güvenlik, oda/kasa mandalı",
+    "tests": "kusur geri gelmesin diye kilitli",
+    "frontend": "Atlas kokpiti + Taktik Muharebe Masası",
+    "android": "tek Gemini çağrısı — parite sınırı etiketli",
+    "config": "tier · zincir · katalog · eşik",
+    "scripts": "denetim bekçileri ve operasyon",
+    "skills": "CapabilityRegistry'den üretilir",
+    "functions": "Cloudflare proxy (catch-all)",
+    "docs · dokümanlar": "sözleşmeler + tarihli raporlar",
+    "kök / diğer": "giriş noktaları ve dağıtım",
+    "agent_core · çekirdek": "orkestra şefi ve tipli sözleşmeler",
+    "agent_core · motorlar": "7-sütun saf matematik",
+    "agent_core · yetenek omurgası": "tek koşum yolu + tek çıkış izi",
+    "rust_core": "CI'da doğrulanır, ürüne bağlanmaz"
+  }
+}

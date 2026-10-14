@@ -1,3 +1,16 @@
+"""Rezonans sentezleyici — kullanıcı ile hedef arasındaki sahici köprü.
+
+Kullanıcının profili/değerleri ile hedefin tutkularını, hassasiyetlerini ve
+bilişsel üslubunu TEK bir iletişim stratejisine indirger; 360° zincirinin
+sonunda ``AuthenticBridge`` (önerilen açılış mesajı dahil) üretir.
+
+``_build_user_context`` kullanıcı tarafı için TEK kanıt sözleşmesidir:
+str/list/tuple temizlenir, boş girdi ASLA doldurulmaz (halüsinasyon kapısı).
+
+Tüketici: ``agent_core/task_executor.py``; CLI/API mesajı buradan okur.
+Test: ``tests/integration/test_resonance_executor_signature.py``.
+"""
+
 import logging
 from typing import Dict, Any, Optional
 from agent_core.domain.memory_models import AuthenticBridge

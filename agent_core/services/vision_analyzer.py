@@ -1,3 +1,17 @@
+"""Görsel kanıt analizcisi — çoklu modlu (vision) inceleme, doğrulamalı indirme.
+
+Görseller indirilirken magic-byte imzasıyla gerçek MIME türü doğrulanır
+(``_sniff_image_mime``): HTTP başlığı yalan söyleyebilir. Boyut tavanı
+(``MAX_IMAGE_BYTES``) aşılırsa GÖRSEL YOK sayılır. Çıktı ``VisualEvidence``:
+nesneler, mekânlar, eylemler, estetik.
+
+``_derive_confidence`` güveni PROMPT'TAN veya sağlayıcıdan değil, indirilen
+gerçek kayıtlardan türetir — kanıtlanmayan görsel için güven üretilmez.
+
+Tüketici: ``task_executor`` (``_download_images``), ``authenticity_auditor``.
+Test: ``tests/unit/test_gateway_vision.py``.
+"""
+
 import logging
 import base64
 import hashlib

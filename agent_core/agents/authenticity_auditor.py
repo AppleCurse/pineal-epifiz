@@ -1,3 +1,19 @@
+"""Gerçeklik (özgünlük) denetçisi — beyan ile görsel kanıt arasındaki tutarlılık.
+
+Hedefin bio/post metinlerinde BEYAN ettiği kimlik ile fotoğraflardan çıkarılan
+SOMUT görsel kanıtlar (nesne, mekân, eylem, estetik) karşılaştırılır ve
+"özgünlük boşluğu" ölçülür. Çıktı ``AuthenticityProfile``: authenticity_score,
+visual_text_gaps, supported_claims, confidence.
+
+Dürüstlük sözleşmesi: görsel kanıt ya da beyan yoksa skor UYDURULMAZ; ajan
+``confidence=0.0`` ve ``fallback_reason="insufficient_evidence"`` döner. Diğer
+ajanların doğrulanmamış bulguları prompt'a yalnız
+``agent_core.services.upstream_findings`` bloğu üzerinden girer (tek kaynak).
+
+Tüketici: ``agent_core/task_executor.py`` 360° zinciri.
+Test: ``tests/unit/test_authenticity_auditor.py``.
+"""
+
 import logging
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, ConfigDict

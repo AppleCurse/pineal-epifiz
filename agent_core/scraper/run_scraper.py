@@ -1,3 +1,15 @@
+"""CLI kazıyıcı girişi — kasa kapısı KOMUT SATIRINDA da uygulanır.
+
+``python -m agent_core.scraper.run_scraper <kullanıcı_adı>`` tek bir hedefin
+profilini çeker ve JSON basar. API sınırının dışında kaldığı için ikinci
+savunma buradadır: kasa kilitliyken tarayıcı HİÇ AÇILMAZ
+(``vault_gate.require_open(strict=True)``), ret ``VAULT_LOCKED`` kodu ve
+sıfırdan farklı çıkış koduyla bildirilir.
+
+Kanıt yetersizse (``InsufficientEvidenceError``) hata JSON'u basılır; çıktı
+asla "boş profil" gibi sahte bir başarıya dönüşmez.
+"""
+
 import sys
 import os
 import json

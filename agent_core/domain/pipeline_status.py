@@ -1,3 +1,13 @@
+"""Boru hattı durum kümesi — görev yaşam döngüsünün SÖZLÜĞÜ.
+
+Her değer istemciye/arayüze giden tek gerçek kaynaktır; "başarısız" ile
+"bütçe doldu (TIMED_OUT)" ve "kanıt yetersiz (HALTED_INSUFFICIENT_EVIDENCE)"
+AYRI durumlardır — aynı darboğazı ikinci kez denemek faturayı katlar
+([BOSS-8]).
+
+Durum adları API sözleşmesi sayılır: değiştirmek istemciyi kırar.
+"""
+
 from enum import Enum
 
 class PipelineStatus(str, Enum):

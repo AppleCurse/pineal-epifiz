@@ -1,3 +1,12 @@
+"""[DEPO DIŞI · ARŞİV] Tek bir Instagram hedefini canlı analiz eden tanı betiği.
+
+Playwright ile profili çeker, ``PinealExecutor``'a verir ve tam kanıt zincirini
+JSON olarak döker. İçinde ÖRNEK bir hedef kullanıcı adı gömülüdür.
+
+KVKK/etik: yalnız açık kaynak, herkese görünür veriyi işler; arşivdedir ve
+üretim akışında çağrılmaz.
+"""
+
 import asyncio
 import json
 import os

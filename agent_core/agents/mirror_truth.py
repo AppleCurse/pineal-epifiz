@@ -1,3 +1,17 @@
+"""Ayna (Mirror of Truth) — kullanıcının çekirdek frekansı ile yüzey personası.
+
+Kullanıcının özel ritüelleri, gece listeleri ve gizli imrenmeleri üzerinden
+"çekirdek frekans"ı çıkarır, yüzeydeki persona ile hizalanma skorunu
+(``MirrorReflection``) üretir. Girdi yokluğunda skor uydurulmaz; dürüst
+``fallback_reason`` yazılır.
+
+Yöntem deterministiktir (arama/etiketleme); LLM yalnız anlatıya katkı verir.
+Diğer ajanların doğrulanmamış bulguları prompt'a yalnız
+``agent_core.services.upstream_findings`` üzerinden girer.
+
+Tüketici: ``agent_core/task_executor.py``.
+"""
+
 from typing import Any, Dict, List
 from pydantic import BaseModel, ConfigDict
 import logging

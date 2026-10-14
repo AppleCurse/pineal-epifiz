@@ -1,3 +1,17 @@
+"""Çok kaynaklı arama ve doğrulama motoru (Tavily + SerpAPI + Exa + DuckDuckGo/SearXNG).
+
+``search`` çağrıları paralel yürütülür ve ``SearchOutcome`` döner: kaynak
+KULLANILAMAZLIĞI, meşru BOŞ sonuçtan açıkça ayrılır (boş liste "sonuç yok"
+diye yalan söylemez).
+
+Kasa mandalı tek gerçek kaynaktan (``set_vault_state``) okunur: kasa kilitliyken
+dış arama yapılmaz (``VAULT_LOCKED``). Anahtar yoksa ilgili sağlayıcı sessizce
+atlanmaz, gerekçesi raporlanır.
+
+Tüketici: ``agent_core/agents/*`` (autonomous_verifier, osint), task_executor.
+Test: ``tests/unit/test_alternative_web_research.py``.
+"""
+
 import asyncio
 import logging
 import os

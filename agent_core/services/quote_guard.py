@@ -1,3 +1,18 @@
+"""Alıntı bekçisi — "doğrulandı" statüsünü YALNIZ kod yazar.
+
+Derinlik raporundaki her alıntı, kaynak korpusla normalize edilmiş benzerlik
+skoruyla eşleştirilir (``best_score``/``quote_matches``). Hakem raporundan
+``claim_id → truth_status`` indeksi (``verification_claim_index``) ve yalnız
+KESİN statülü + alıntılı iddiaların çapaları (``verification_quote_anchors``)
+çıkarılır.
+
+``_link_finding_to_claim`` bulguyu iddiaya DETERMİNİSTİK bağlar; LLM'in
+"doğrulandı" demesi yetmez, eşleşme şarttır. ``guard_report`` eşleşmeyen
+alıntıları damgalar/düşürür.
+
+Test: ``tests/unit/test_claim_decision_gate.py``, ``tests/unit/test_quote_guard*.py``.
+"""
+
 import re
 from difflib import SequenceMatcher
 from typing import Dict, List, Tuple, Any, Optional
