@@ -117,7 +117,7 @@
       "status": "closed",
       "evidence": [
         "agent_core/capabilities/adapters_web.py:72: logger.error(\"Dil tespiti hatası — kapsam language=unknown (engine=%s)\", engine, exc_info=True) ⏎ return {\"language\": \"unknown\", \"language_reason\": \"detect_erro",
-        "agent_core/capabilities/adapters_web.py:144: logger.debug(\"metadata çıkarımı başarısız — title boş bırakıldı\", exc_info=True)"
+        "agent_core/capabilities/adapters_web.py:161: logger.debug(\"metadata çıkarımı başarısız — title boş bırakıldı\", exc_info=True)"
       ],
       "note": "Metadata hatası loglanıyor.",
       "regression": false

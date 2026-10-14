@@ -36,6 +36,16 @@ KAPANMAYAN 9 yetenek + 2 kanıt kalemi; her satır ölçümle).
   başlığı, `pineal-*` koridoru dâhil yanıt işleme; kapalı portta dürüst hata.
   Bu, "tel kopuk mu, kimlik mi yok?" ayrımını kesinleştirir.
 
+### 3b · CI'da yakalanan kırık: bayat denetim bekçisi raporu (onarıldı)
+- Bekçinin kanıt dizeleri MUTLAK SATIR NUMARASI gömüyor; trafilatura yaması
+  `adapters_web.py`'de satır kaydırdı → `reports/audit_regression.json` bayat
+  kaldı → CI'ın `git diff` tazelik kapısı backend işini düşürdü ve sonraki 3
+  doğrulama adımı hiç koşmadı. Yerelde görünmüyordu çünkü o kapı yalnız CI'da
+  koşuyor.
+- Onarım: rapor tazelendi + `test_committed_report_matches_fresh_generation`
+  kilidi eklendi (komutlu rapor ↔ taze üretim birebir). Kalan tasarım zayıflığı
+  (satır-no gömülü kanıt gürültüsü) raporda açıkça kayıtlı.
+
 ### 4 · Kapanmayanlar (özet; tam liste raporun §2'sinde)
 9 yetenek: TTS, STT, transcript (whisper), translate-local (`trans`), yerel jüri,
 SearXNG (servis), agent-reach (doğru CLI), theHarvester (**Python ≥3.14 istiyor,

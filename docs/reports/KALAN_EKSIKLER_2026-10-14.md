@@ -32,6 +32,33 @@ Gerçek koşum tablosu (8 yetenek, runner üzerinden): **7/8 çalıştı**; tek
 başarısız `holehe` **uydurmadı**: `scan_unavailable:provider_errors`
 (bu ortam dış ağa çıkamıyor).
 
+### 1b · Bu turda CI'da yakalanan GERÇEK kırık (ve onarımı)
+
+İlk push'ta **backend işi düştü** — hem de testler geçtikten SONRA: adım 7
+("denetim regresyon bekçisi") ve ardından gelen 3 doğrulama adımı hiç koşmadı.
+
+- **Sebep:** bekçinin kanıt dizeleri **mutlak satır numarası** gömüyor
+  (`adapters_web.py:144`). Trafilatura yaması dosyaya satır ekledi → kanıt
+  `:161` oldu → komutlu `reports/audit_regression.json` bayatladı → CI'ın
+  `git diff` tazelik kapısı kırmızı.
+- **Neden yerelde görünmedi:** yerelde bekçi "GEÇTİ" diyordu (bekçi mantığı
+  sağlam); `git diff` kapısı **yalnız CI'da** koşuyordu. Yani "testler geçti"
+  demek "iş bitti" demek DEĞİL — bu turun kanıtı budur.
+- **Onarım:** (a) rapor tazelendi, (b) aynı kapı **yerelde kilitlendi**:
+  `test_committed_report_matches_fresh_generation` komutlu rapor ile taze
+  üretimi birebir karşılaştırır. Bundan sonra bu sınıf CI'ya varmadan kırmızı
+  olur.
+- **Kalan tasarım zayıflığı (açıkça yazıyorum):** kanıt satır numarası
+  gömdüğü sürece, satır kaydıran her masum düzenleme raporun tazelenmesini
+  zorunlu kılar. Bu "sessiz geçme"den iyidir ama gürültülüdür; kalıcı çözüm
+  kanıtı satır-numarasız bağlamaya çevirmektir — bilinçli olarak bu turda
+  yapılmadı (rapor formatına bağlı başka kilitler var), kayda geçirildi.
+
+CI adımlarının **tamamı** bu turda yerelde de koşuldu: ruff ✓ · testler ✓ ·
+bekçi + tazelik ✓ (yeni kilit) · routing shadows ✓ · envanter `--check` ✓ ·
+skills `--check` ✓ (26 dosya) · katalog kontratı ✓ (canlı OpenRouter kontrolü
+anahtar yok → dürüst SKIP).
+
 ---
 
 ## 2 · KAPANMAYANLAR — tam liste (9 yetenek + 2 kanıt kalemi)
