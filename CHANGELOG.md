@@ -29,6 +29,17 @@
   `test_api_does_not_redefine_language_models`.
 - `docs/reports/API_MONOLITH_SPLIT_PLAN.md` §2.2 + §4 + §5 güncellendi.
 
+### 4 · Envanter arşivi depoya alındı + üretim künyesi deterministik yapıldı
+- `docs/pineal_envanter.zip` (4,2 MB, 686 KB'lık sayfanın yanında): 685 dosyanın **satır satır** dökümü
+  (`tam_metin/`), 21 metin dışı dosyanın **bayt düzeyinde** analizi (`ikili/`), 101 klasör JSON'u
+  (12 zorunlu alanlı tam kayıtlar), derin çözümlemeler (`derin/`), çapraz analizler (uç listesi, eşikler,
+  çağrı grafiği, ölü kod, tutarsızlıklar) ve tematik raporlar (test/doküman/ayar/config/altyapı/yetenek).
+  Arşiv yalnız envanter çıktısıdır; ürün kodu okumaz.
+- `scripts/generate_inventory_page.py`: künye artık **git hash/tarih yerine** `VERSION` + üretici imzasını
+  yazar. Gerekçe: sayfa, içine gömüldüğü commit'ten ÖNCE üretildiği için hash tabanlı künye kendine
+  referanslıydı ve CI'daki `--check` bayatlama kapısı her commit'te yanlış alarm verirdi; içerik tabanlı
+  künye commit'ten bağımsızdır (ölçüldü: üretim → `--check` ✅).
+
 ### 4 · Envanter sayfası artık KAYNAKTAN üretiliyor
 - Yeni: `scripts/generate_inventory_page.py` → `docs/envanter.html` (tek dosya, çevrimdışı,
   aranabilir). 680+ dosya (üretildiği andaki ağaç), klasör klasör; her satırda yol · satır · etiket · açıklama ·

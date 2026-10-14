@@ -668,11 +668,14 @@ def build_html(entries: list) -> str:
     py = [e for e in entries if e["path"].endswith(".py")]
     py_loc = sum(e["loc"] for e in py)
     total_loc = sum(e["loc"] for e in entries)
-    commit = git("rev-parse", "--short", "HEAD")
-    branch = git("rev-parse", "--abbrev-ref", "HEAD")
-    # Künye DAMGASI: "şimdi" değil, son commit'in tarihi. Böylece sayfa
-    # deterministiktir ve `--check` (CI bayatlama kapısı) yanlış alarm vermez.
-    now = git("log", "-1", "--format=%cd", "--date=format:%Y-%m-%d %H:%M UTC") or "?"
+    # Künye DAMGASI — KAYNAKTAN türetilir, git durumundan DEĞİL.
+    # Neden: git hash/tarih kendine referanslıdır (sayfa, içine gömüldüğü commit'ten
+    # önce üretilir; commit atılınca hash değişir → CI'daki `--check` her seferinde
+    # yanlış alarm verirdi). Bunun yerine sayfa; sürümü (VERSION) ve ÜRETİCİNİN kendi
+    # içerik imzasını bildirir: ikisi de dosya içeriğinden gelir, commit'ten bağımsızdır.
+    version = (ROOT / "VERSION").read_text(encoding="utf-8").strip() if (ROOT / "VERSION").is_file() else "?"
+    uretici = (ROOT / "scripts" / "generate_inventory_page.py")
+    imza = hashlib.sha256(uretici.read_bytes()).hexdigest()[:12] if uretici.is_file() else "?"
 
     cat_a = [by_path[p] for p in CATEGORY_A if p in by_path]
     cat_b = [by_path[p] for p in CATEGORY_B if p in by_path]
@@ -743,8 +746,9 @@ def build_html(entries: list) -> str:
 <body>
 <header>
   <h1>PINEAL-HERETIC — Depo Envanteri</h1>
-  <div class="sub">Üretim künyesi: <code>{esc(commit)}</code> · dal <code>{esc(branch)}</code> ·
-   {esc(now)} · üretici: <code>scripts/generate_inventory_page.py</code></div>
+  <div class="sub">Üretim künyesi: sürüm <code>{esc(version)}</code> ·
+   üretici imzası <code>{esc(imza)}</code> · kaynak: <code>git ls-files</code> +
+   AST + dosya başı açıklamaları</div>
   <div class="stats">
     <div class="stat"><b>{len(entries)}</b><span>izlenen dosya</span></div>
     <div class="stat"><b>{len(py)}</b><span>Python dosyası</span></div>
