@@ -306,3 +306,28 @@ def test_binary_files_carry_no_fake_line_count():
         assert eslesme.group(1) == "ikili", (
             f"{arsiv} hâlâ sayı gösteriyor: {eslesme.group(1)!r}"
         )
+
+
+def test_entry_order_is_independent_of_tracking_state(monkeypatch):
+    """[DENETİM 2026-10-14 · B16] Sayfa sırası `git add`'e bağlı OLAMAZ.
+
+    Eskiden liste `tracked + untracked` idi: yeni bir dosya commit'lendiği anda
+    alfabetik yerine SONA düşüyor, sayfa yalnız bu yüzden değişiyor ve
+    `--check` "bayat" diyordu (kirli ağaçta üret → temiz ağaçta doğrula =
+    CI kırmızısı). Sıra artık izleme durumundan bağımsız, yalnız yola göre.
+    """
+    module = _load_generator()
+    seen: list[tuple[str, ...]] = []
+
+    def _fake_git(*args: str) -> str:
+        # İkinci çağrı (untracked) bilinçli olarak ters sırada verilir.
+        seen.append(tuple(args))
+        if "--others" in args:
+            return "docs/reports/KAPASITE_ACIGI_RAPORU_2026-10-14.md\n"
+        return "scripts/kapasite_denetimi_probe.py\nbackend/api.py\n"
+
+    monkeypatch.setattr(module, "git", _fake_git)
+    entries = module.build_entries()
+    paths = [e["path"] for e in entries]
+    assert paths == sorted(paths), f"sıra determinist değil: {paths[:5]}"
+    assert seen, "üretici git çağırmadı"

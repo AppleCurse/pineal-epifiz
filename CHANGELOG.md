@@ -32,11 +32,21 @@ kanıtı `reports/kapasite_denetimi.json` ve onu üreten
   `speech` modül durumunu tohumlayıp geri yüklüyor: dosya tek başına veya
   başka dosyalarla çalıştırıldığında aynı sonucu verir (önce `denied` sızıyordu).
 
-### 6 · Kanıt
+### 6 · B16 — envanter sayfası "git add" yüzünden bayatlıyordu (CI kök nedeni)
+- Üretici dosya listesini `tracked + untracked` diye kuruyordu: yeni bir dosya
+  commit'lendiği anda sayfadaki yeri değişiyor, `--check` "bayat" diyor ve CI
+  düşüyordu (sayfa kirli ağaçta üretilip temiz ağaçta doğrulanıyordu). Liste
+  artık `sorted(set(...))` — izleme durumundan bağımsız; ayrıca kilitleyen test
+  (`test_entry_order_is_independent_of_tracking_state`). Aynı sınıftan: envanter
+  testindeki sihirli `98` sayısı kaldırıldı; sayı kaynaktan sayılır ve sayfanın
+  kendi başlığıyla karşılaştırılır.
+
+### 7 · Kanıt
 - `tests/unit/test_capability_spine_faz0.py` **37/37** (B1/B2/B15 kilitleri dâhil),
-  tam takım **2493+** yeşil, `ruff` temiz, `docs/envanter.html` yeniden üretildi
-  (`--check` GÜNCEL). Denetim sonucu: 26 kayıtlı yetenek, varsayılan 3 açık,
-  tüm kapılar açıkken bile 13'ü bağımlılık/ayar nedeniyle kapalı.
+  tam takım CI komutuyla (coverage eşiği dâhil) yerelde yeşil, `ruff` temiz,
+  `docs/envanter.html` + `skills/` paketi yeniden üretildi (`--check` GÜNCEL).
+  Denetim sonucu: 26 kayıtlı yetenek, varsayılan 3 açık, tüm kapılar açıkken
+  bile 13'ü bağımlılık/ayar nedeniyle kapalı.
 
 ## Unreleased — 2026-10-14 — Envanter/açıklama tamamlama ve API-BÖLME 2
 
