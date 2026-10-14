@@ -52,7 +52,7 @@
   (`tests/` altındaki `test_*.py` — pytest'in topladığı dosyalar) ve 41 tarihli rapor.
 - Determinizm: künye tarihi "şimdi" değil son commit'tir ve sayfa KENDİNİ saymaz — bu yüzden
   `--check` kararlıdır. CI'ya "Verify inventory page committed fresh" adımı eklendi.
-- Test: `tests/unit/test_inventory_page.py` (12 test): bayatlama, A docstring'leri, B görünürlüğü,
+- Test: `tests/unit/test_inventory_page.py` (15 test): bayatlama, A docstring'leri, B görünürlüğü,
   env/uç sayılarının kaynaktan gelmesi, mükerrer satır yasağı, API-BÖLME izi.
 
 
