@@ -173,6 +173,31 @@ class TaskLifecycleRegistry:
             run.last_activity = self._clock_now()
             return LifecycleDecision(True, "TRANSITIONED", state=run.state)
 
+    def reopen(self, task_id: str, requested: object) -> LifecycleDecision:
+        """[B0 · DESTEKLE DEVAM] Terminal koşu resume için YENİDEN AÇILIR.
+
+        Durum makinesi DEĞİŞTİRİLMEDİ: terminal durumlar (halted_*/failed/…)
+        mevcut; yalnızca ``resume`` kanıtı olan koşu ``terminal → processing``
+        tek geçişiyle tekrar canlıya alınabilir. Terminal işaretçileri
+        (event/snapshot fingerprint) sıfırlanır, sıra (sequence) ve parmak
+        izleri korunur — böylece eski olaylar yeniden kabul edilmez, yeni
+        olaylar reddedilmez.
+        """
+        requested_state = self.normalize_state(requested)
+        with self._lock:
+            run = self._run(task_id)
+            if run.state not in TERMINAL_STATES:
+                if run.state == requested_state:
+                    return LifecycleDecision(True, "IDEMPOTENT", state=run.state)
+                run.state = requested_state
+                run.last_activity = self._clock_now()
+                return LifecycleDecision(True, "TRANSITIONED", state=run.state)
+            run.state = requested_state
+            run.terminal_event_recorded = False
+            run.terminal_snapshot_fingerprint = None
+            run.last_activity = self._clock_now()
+            return LifecycleDecision(True, "REOPENED", state=run.state)
+
     def accept_snapshot(self, snapshot: object) -> LifecycleDecision:
         task_id = getattr(snapshot, "task_id", "")
         if not task_id:

@@ -2,7 +2,7 @@ import logging
 import base64
 import hashlib
 import asyncio
-import httpx
+from agent_core.capabilities.egress import open_client, httpx
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, ConfigDict
 from agent_core.services.llm_gateway import LLMGateway
@@ -87,7 +87,7 @@ class VisionAnalyzer:
             if client:
                 resp = await safe_get(client, image_url, headers=headers)
             else:
-                async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as new_client:
+                async with open_client(purpose="media", target=image_url, timeout=15.0, follow_redirects=False) as new_client:
                     resp = await safe_get(new_client, image_url, headers=headers)
 
             if resp.status_code != 200:
@@ -180,7 +180,7 @@ class VisionAnalyzer:
             )
 
         # Parallel image download with shared client for connection pooling
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
+        async with open_client(purpose="media", timeout=15.0, follow_redirects=False) as client:
             tasks = [self._download_image_record(url, client=client) for url in valid_urls]
             # [E7-muaf] `_download_image_record` hata yerine KAYIT döner
             # (status/reason alanlarıyla); provenance listesi bu yüzden

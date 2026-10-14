@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 import re
-import httpx
+from agent_core.capabilities.egress import open_client, httpx
 from typing import Callable, List, Optional
 from pydantic import BaseModel, ConfigDict
 
@@ -108,8 +108,7 @@ class SearchEngine:
         # çağrılmaz. Dürüst cevap: aramadık, çünkü kasa kilitli.
         if self.vault_locked():
             logger.warning(
-                "KASA KİLİTLİ: dış arama reddedildi (sağlayıcı isteği oluşturulmadı) query=%r",
-                (query or "")[:64],
+                "KASA KİLİTLİ: dış arama reddedildi (sağlayıcı isteği oluşturulmadı; sorgu kaydı tutulmaz)"
             )
             return SearchOutcome(
                 results=[],
@@ -120,7 +119,7 @@ class SearchEngine:
 
         # One shared client for all providers in this query (pooling);
         # per-provider availability is reported via SearchOutcome.
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with open_client(purpose="search", timeout=10.0) as client:
             tasks = []
             if self.tavily_key:
                 tasks.append(self._search_tavily(query, num_results, client=client))
@@ -234,7 +233,7 @@ class SearchEngine:
             if client is not None:
                 res = await client.post(url, json=payload)
             else:
-                async with httpx.AsyncClient(timeout=10.0) as _client:
+                async with open_client(purpose="search", target=url, timeout=10.0) as _client:
                     res = await _client.post(url, json=payload)
                 res.raise_for_status()
             if res.status_code == 200:
@@ -258,7 +257,7 @@ class SearchEngine:
             if client is not None:
                 res = await client.get(url, params=params)
             else:
-                async with httpx.AsyncClient(timeout=10.0) as _client:
+                async with open_client(purpose="search", target=url, timeout=10.0) as _client:
                     res = await _client.get(url, params=params)
                 res.raise_for_status()
             if res.status_code == 200:
@@ -283,7 +282,7 @@ class SearchEngine:
             if client is not None:
                 res = await client.post(url, headers=headers, json=payload)
             else:
-                async with httpx.AsyncClient(timeout=10.0) as _client:
+                async with open_client(purpose="search", target=url, timeout=10.0) as _client:
                     res = await _client.post(url, headers=headers, json=payload)
                 res.raise_for_status()
             if res.status_code == 200:
@@ -308,7 +307,7 @@ class SearchEngine:
             if client is not None:
                 res = await client.post(url, data=data, headers=headers)
             else:
-                async with httpx.AsyncClient(timeout=10.0) as _client:
+                async with open_client(purpose="search", target=url, timeout=10.0) as _client:
                     res = await _client.post(url, data=data, headers=headers)
                 res.raise_for_status()
             if res.status_code == 200:

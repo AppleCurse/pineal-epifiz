@@ -269,6 +269,32 @@ class OsintInvestigatorAgent:
                 )
             return profile
         else:
+            # [E-GÖZ2-3 · YAPRAK] aiohttp yolu da kasa kapısından geçer:
+            # kilitliyken istek HİÇ OLUŞTURULMAZ, dürüst vault_locked profili
+            # döner (ağ istisnası gibi sönümlenmez).
+            from agent_core.scraper.vault_gate import (
+                VaultLockedError as _VaultLockedError,
+                require_open as _require_open,
+            )
+
+            try:
+                _require_open(purpose="osint")
+            except _VaultLockedError:
+                logger.warning(
+                    "[OSINT] KASA KİLİTLİ: canlı API isteği oluşturulmadı "
+                    "(amaç=osint; kullanıcı/anahtar kaydedilmedi)"
+                )
+                return OsintProfile(
+                    connected_emails=[],
+                    connected_phones=[],
+                    associated_platforms=[],
+                    digital_footprint_score=0.0,
+                    dark_web_hits=0,
+                    confidence=0.0,
+                    data_confidence=False,
+                    fallback_reason="vault_locked",
+                    error_code="VAULT_LOCKED",
+                )
             try:
                 async with aiohttp.ClientSession() as session:
                     headers = self._get_alf_headers()

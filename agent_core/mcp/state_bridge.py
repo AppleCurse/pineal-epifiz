@@ -20,11 +20,14 @@ yerel bir uç, okuma isteğini uzak bir adrese YÖNLENDİREMEZ.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+
+logger = logging.getLogger(__name__)
 from collections import deque
 from typing import Any, Mapping
 
@@ -71,8 +74,12 @@ def api_base_url(env: Mapping[str, str] | None = None) -> tuple[str, str]:
     parsed = urllib.parse.urlparse(raw)
     host = (parsed.hostname or "").lower()
     if host not in LOCAL_API_HOSTS:
+        # [B0 · DENETİM İZİ] Red görünür; HEDEF ADRES loga yazılmaz
+        # ("hedef verisi makineden çıkmaz" sözleşmesi korunur).
+        logger.warning("STATE_BRIDGE RED: uzak API hedefi kabul edilmedi (sebep=%s)", "non_local_api_url")
         return "", "non_local_api_url"
     if parsed.scheme not in {"http", "https"}:
+        logger.warning("STATE_BRIDGE RED: şema kabul edilmedi (sebep=%s)", "bad_api_scheme")
         return "", "bad_api_scheme"
     return raw, ""
 
@@ -104,6 +111,11 @@ def vault_state(
     except urllib.error.HTTPError as exc:
         return True, f"vault_api_status:{exc.code}"
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        # [B0 · DENETİM İZİ] Zaman aşımı/ulaşılamazlık fail-closed + iz.
+        logger.warning(
+            "STATE_BRIDGE: kasa okunamadı — fail-closed KİLİTLİ (sebep=vault_api_unreachable:%s)",
+            type(exc).__name__,
+        )
         return True, f"vault_api_unreachable:{type(exc).__name__}"
     try:
         payload = json.loads(body)

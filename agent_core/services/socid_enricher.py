@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-import httpx
+from agent_core.capabilities.egress import open_client, httpx
 from pydantic import BaseModel, ConfigDict
 
 logger = logging.getLogger(__name__)
@@ -84,7 +84,7 @@ async def extract_profile(url: str, client: Optional[httpx.AsyncClient] = None) 
         if client is not None:
             resp = await safe_get(client, url, headers={"User-Agent": USER_AGENT})
         else:
-            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT, follow_redirects=False) as own:
+            async with open_client(purpose="osint", target=url, timeout=REQUEST_TIMEOUT, follow_redirects=False) as own:
                 resp = await safe_get(own, url, headers={"User-Agent": USER_AGENT})
     except UnsafeURLError:
         return SocidRecord(source_url=url, available=False, reason="ssrf_blocked")
@@ -117,7 +117,7 @@ async def enrich_urls(urls, limit: int = 3):
     targets = [u for u in (urls or []) if isinstance(u, str)][:limit]
     if not targets:
         return []
-    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT, follow_redirects=False) as client:
+    async with open_client(purpose="osint", timeout=REQUEST_TIMEOUT, follow_redirects=False) as client:
         raw = await asyncio.gather(
             *(extract_profile(u, client=client) for u in targets),
             return_exceptions=True,

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
@@ -28,11 +29,13 @@ def _clean_cache():
 class _StubAPI:
     """Yerel API taklidi: verilen gövdeyi döner, istek sayısını tutar."""
 
-    def __init__(self, body: str = '{"locked": false}', status: int = 200, location: str = ""):
+    def __init__(self, body: str = '{"locked": false}', status: int = 200, location: str = "",
+                 delay: float = 0.0):
         self.hits = 0
         self.body = body
         self.status = status
         self.location = location
+        self.delay = delay  # [B0] zaman aşımı senaryosu için yavaş cevap
 
         handler = self._make_handler()
         self.server = HTTPServer(("127.0.0.1", 0), handler)
@@ -45,6 +48,8 @@ class _StubAPI:
     def _make_handler(inner):
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):  # noqa: N802 - http.server sözleşmesi
+                if inner.delay:
+                    time.sleep(inner.delay)
                 inner.hits += 1
                 payload = inner.body.encode("utf-8")
                 self.send_response(inner.status)
@@ -235,3 +240,38 @@ def test_status_snapshot_is_honest(monkeypatch, stub_api):
     assert snapshot["vault_locked"] is True
     assert snapshot["client_id"] == "op"
     assert snapshot["api_reason"] is None
+
+
+class TestAuditTrailAndTimeout:
+    """[B0 §5] state_bridge yerel urllib yolu: hedef sınırı, denetim izi, timeout."""
+
+    def test_rejection_leaves_audit_trace_without_target_leak(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="agent_core.mcp.state_bridge"):
+            url, reason = sb.api_base_url(
+                {"PINEAL_API_URL": "https://uzak-tehlike.example.com"}
+            )
+        assert url == "" and reason == "non_local_api_url"
+        # Denetim izi VAR:
+        assert "STATE_BRIDGE RED" in caplog.text
+        assert "non_local_api_url" in caplog.text
+        # HEDEF ADRES loga SIZMAZ (hedef veri makineden çıkmaz sözleşmesi):
+        assert "uzak-tehlike.example.com" not in caplog.text
+
+    def test_vault_timeout_is_fail_closed_with_audit(self, caplog):
+        import logging
+
+        api = _StubAPI('{"locked": false}', delay=0.8)
+        try:
+            with caplog.at_level(logging.WARNING, logger="agent_core.mcp.state_bridge"):
+                locked, reason = sb.vault_state(
+                    env={"PINEAL_API_URL": api.url}, timeout=0.15
+                )
+            # Timeout → fail-closed KİLİTLİ + makine-okunur sebep:
+            assert locked is True
+            assert reason.startswith("vault_api_unreachable:")
+            # Denetim izi:
+            assert "fail-closed" in caplog.text and "vault_api_unreachable" in caplog.text
+        finally:
+            api.close()

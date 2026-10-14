@@ -142,3 +142,28 @@ export const powerEngaged = writable<boolean>(true);
 // i18n köprüsü
 export { currentLang, type Language } from './i18n';
 
+
+// ── [B0 · DESTEK AKIŞI] Kokpitte açık destek talepleri ─────────────────────
+// Kaynak: kalıcı checkpoint (`GET /api/tasks/{id}/support`). WS kopup
+// yeniden bağlandığında `refreshSupport` bunu REST'ten GERİ YÜKLER — açık
+// talepler bağlantı kopmasıyla kaybolmaz. Hassas alan (input/anahtar/çerez)
+// sunucu zaten döndürmez; burada da tutulmaz.
+export const supportRequests = writable<Array<any>>([]);
+export const supportTaskId = writable<string | null>(null);
+
+export async function refreshSupport(taskId: string | null | undefined): Promise<void> {
+  if (!taskId) return;
+  try {
+    const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}/support`);
+    if (!res.ok) {
+      // 403/404 dürüst: panel boşalır, eski veri bayat gösterilmez.
+      supportRequests.set([]);
+      return;
+    }
+    const data = await res.json();
+    supportTaskId.set(data.task_id || taskId);
+    supportRequests.set(Array.isArray(data.support_requests) ? data.support_requests : []);
+  } catch {
+    supportRequests.set([]);
+  }
+}

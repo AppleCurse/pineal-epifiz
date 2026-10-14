@@ -142,14 +142,21 @@ def test_known_open_matches_the_measured_open_set_exactly(report):
 
 
 def test_gate_bites_when_known_open_is_emptied(report, monkeypatch):
-    """Isırmayan kapı dekorasyondur: liste boşaltılınca her açık bulgu regresyon."""
+    """Isırmayan kapı dekorasyondur: taban boş + bulgu açık → regresyon.
+
+    (2026-10-14: A-yolu 11 bulgu kapanınca eski sürüm "≥10 açık" varsayımı
+    geçersizleşti; kapı, sahte bir açılma BULUNDUĞUNDA ısırıyor mu onu
+    ölçüyoruz — boş taban + açık bulgu = kesin kırmızı.)
+    """
     monkeypatch.setattr(ar, "KNOWN_OPEN", frozenset())
-    rep = ar.build_report(ar.parse_findings(ar.AUDIT_REPORT.read_text(encoding="utf-8")))
-    open_findings = sorted(
-        fid for fid, e in rep["findings"].items() if e["status"] == ar.OPEN
+    victim = "E-GÖZ1-2"
+    monkeypatch.setattr(
+        ar,
+        "CHECKS",
+        {**ar.CHECKS, victim: ar.Check(victim, "static", lambda: ar.CheckResult(ar.OPEN, ("sahte açılma",)))},
     )
-    assert rep["meta"]["regressions"] == open_findings
-    assert len(open_findings) >= 10, "beklenen açık bulgu sayısı düştü — kapı zayıfladı"
+    rep = ar.build_report(ar.parse_findings(ar.AUDIT_REPORT.read_text(encoding="utf-8")))
+    assert rep["meta"]["regressions"] == [victim]
     assert rep["meta"]["gate_passed"] is False
 
 
@@ -167,9 +174,14 @@ def test_gate_flags_a_single_new_regression(monkeypatch):
 
 
 def test_gate_flags_a_stale_baseline_entry(monkeypatch):
-    """Onarılan bulgu listede bırakılırsa 'bayat taban' olarak yakalanır."""
-    victim = "E-GÖZ1-1"  # bugün açık ve listede
-    assert victim in ar.KNOWN_OPEN
+    """Onarılan bulgu listede bırakılırsa 'bayat taban' olarak yakalanır.
+
+    (2026-10-14: taban gerçeğe çekildi — gerçek açık liste BOŞ. Test artık
+    kapının bayat kaydı nasıl yakaladığını sahte kurulumla ölçer: liste +=
+    kapalı bulgu → stale.)
+    """
+    victim = "E-GÖZ1-1"
+    monkeypatch.setattr(ar, "KNOWN_OPEN", frozenset({victim}))
     monkeypatch.setattr(
         ar, "CHECKS", {**ar.CHECKS, victim: ar.Check(victim, "static", lambda: ar.CheckResult(ar.CLOSED, ("onarıldı",)))}
     )
@@ -350,13 +362,22 @@ async def _post(url):
 #: sahte kırmızısı üretti. Bu yüzden onarım programatik ve doğrulanabilir.
 WORKER_FIXED = re.sub(
     r"^([ \t]*)pass  # Backend yoksa sessizce devam$",
-    r'\1logger.warning("Backend REST fallback failed", exc_info=True)',
+    # Revize 1-1: onarım, ölçümün aradığı izi taşır (sonda logu + literal).
+    r'\1logger.warning("[%s] backend sondası başarısız — fallback: '
+    r'backend_link=False: %s", url, exc, exc_info=True)',
     WORKER_DEFECT,
     flags=re.MULTILINE,
 )
+# Revize 1-6: yasaklı set_wait KALDIRILIR; kapanış yayını arızası
+# KAPANIŞ İZİ literali + logger.error(exc_info) ile izlenir.
+WORKER_FIXED = re.sub(
+    r"await tracker\.set_wait\(agent_id\)",
+    "await _publish_close_trace()",
+    WORKER_FIXED,
+)
 WORKER_FIXED = re.sub(
     r"^([ \t]*)except Exception:\n[ \t]*pass$",
-    r'\1except Exception:\n\1    logger.error("set_wait failed on shutdown", exc_info=True)',
+    r'\1except Exception:\n\1    logger.error("KAPANIŞ İZİ YAYINLANAMADI: %s", agent_id, exc_info=True)',
     WORKER_FIXED,
     flags=re.MULTILINE,
 )
@@ -431,20 +452,32 @@ def test_goz3_2_detects_the_production_gate_when_added(fake_worker):
 
     gated = WORKER_DEFECT.replace(
         "import asyncio",
-        'import asyncio\nimport os\n\n_PINEAL_ENV = os.getenv("PINEAL_ENV", "development")',
+        'import asyncio\nimport os\n\n_PINEAL_ENV = os.getenv("PINEAL_ENV", "development")\n'
+        'def _production_mode():\n    return _PINEAL_ENV == "production"',
     ).replace(
         "        pass  # Backend yoksa sessizce devam",
-        '        if _PINEAL_ENV == "production":\n            raise RuntimeError("Redis zorunlu")',
+        '        degraded_mode = True\n        "degraded_mode": degraded_mode\n'
+        '        if _production_mode():\n'
+        '            raise RuntimeError("PRODUCTION_REQUIRES_REDIS: Redis zorunlu")\n'
+        '        logger.error("DEGRADED_MODE: in-memory fallback devrede")',
     )
     fake_worker(gated)
     assert ar.check_goz3_2().status == ar.CLOSED
 
 
 def test_goz1_3_detects_spine_migration(tmp_path, monkeypatch):
-    """8 dosyalık bypass: bir dosya omurgaya alınınca sayı gerçekten düşer."""
+    """8 dosyalık bypass: bir dosya omurgaya alınınca sayı gerçekten düşer.
+
+    Revize ölçüm (E-GÖZ1-3): hem satır başı ``import httpx`` hem de
+    ``httpx.AsyncClient`` İNŞASI sayılır; kapanış ayrıca omurganın (egress)
+    varlığını ve dosyaların ``open_client``a bağlılığını ister.
+    """
     files = {
         f"agent_core/services/svc_{i}.py": "import httpx\n" for i in range(8)
     }
+    files["agent_core/capabilities/egress.py"] = (
+        "import httpx  # noqa: F401\n\ndef open_client(*args, **kwargs):\n    return None\n"
+    )
     _fake_root(tmp_path, files)
     monkeypatch.setattr(ar, "ROOT", tmp_path)
 
@@ -452,9 +485,9 @@ def test_goz1_3_detects_spine_migration(tmp_path, monkeypatch):
     assert result.status == ar.OPEN
     assert "8 dosya" in " ".join(result.evidence)
 
-    # Bir dosya omurgaya alındı (satır başı import kalktı).
+    # Bir dosya omurgaya alındı (satır başı import kalktı, open_client bağlı).
     (tmp_path / "agent_core/services/svc_0.py").write_text(
-        "from agent_core.capabilities.runner import run_capability\n", encoding="utf-8"
+        "from agent_core.capabilities.egress import open_client\n", encoding="utf-8"
     )
     result = ar.check_goz1_3()
     assert result.status == ar.OPEN
@@ -462,13 +495,19 @@ def test_goz1_3_detects_spine_migration(tmp_path, monkeypatch):
 
     for i in range(1, 8):
         (tmp_path / f"agent_core/services/svc_{i}.py").write_text(
-            "from agent_core.capabilities.runner import run_capability\n", encoding="utf-8"
+            "from agent_core.capabilities.egress import open_client\n", encoding="utf-8"
         )
     assert ar.check_goz1_3().status == ar.CLOSED
 
 
 def test_goz2_3_needs_a_real_gate_not_the_word_vault(tmp_path, monkeypatch):
-    """UYDURMA YASAĞI'nın somut hâli: 'vault' kelimesi kapı demek değildir."""
+    """UYDURMA YASAĞI'nın somut hâli: 'vault' kelimesi kapı ÇAĞRISI demek değildir.
+
+    Revize ölçüm: İKİ yaprak (scraper + holehe_scanner) da kapı çağrısını
+    (require_open/get_vault_status/VaultLockedError) içermek ZORUNDA —
+    tek dosyadaki kelime eşleşmesi kapanmaya yetmez (eski kontrolün
+    sahte-pozitif/sahte-negatif tuzağı).
+    """
     naive = (
         "def fetch():\n"
         "    # X scraper.py ile aynı mimari: Playwright, vault'tan cookie\n"
@@ -479,10 +518,24 @@ def test_goz2_3_needs_a_real_gate_not_the_word_vault(tmp_path, monkeypatch):
 
     result = ar.check_goz2_3()
     assert result.status == ar.OPEN, "'vault' geçen dosya kapalı sayıldı — sahte pozitif"
-    assert "sahte pozitif" in " ".join(result.evidence)
+    assert "KAPI çağrısı izi: 0" in " ".join(result.evidence)
 
-    gated = naive + "\ndef _preflight():\n    if get_vault_status()['locked']:\n        raise VaultLockedError()\n"
-    (tmp_path / "agent_core/scraper/ghost.py").write_text(gated, encoding="utf-8")
+    gate = (
+        "\ndef _preflight():\n"
+        "    if get_vault_status()['locked']:\n"
+        "        raise VaultLockedError()\n"
+    )
+    (tmp_path / "agent_core/scraper/ghost.py").write_text(naive + gate, encoding="utf-8")
+    # Yaprak yarısı hâlâ kapı taşımıyor → tek başına scraper kapalı DEĞİL.
+    assert ar.check_goz2_3().status == ar.OPEN
+
+    # İKİ yaprak da kapıya bağlanınca bulgu kapanır.
+    (tmp_path / "agent_core/services").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "agent_core/services/holehe_scanner.py").write_text(
+            "from agent_core.scraper.vault_gate import require_open\n"
+            "def scan_email():\n    require_open(purpose='osint')\n",
+            encoding="utf-8",
+        )
     assert ar.check_goz2_3().status == ar.CLOSED
 
 

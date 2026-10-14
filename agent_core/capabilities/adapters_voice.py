@@ -255,7 +255,7 @@ class LocalTTSCapability(BaseCapability):
         if not url:
             return b"", reason
         try:
-            import httpx
+            from agent_core.capabilities.egress import open_client
         except ImportError:
             return b"", "dependency_missing:httpx"
 
@@ -263,7 +263,7 @@ class LocalTTSCapability(BaseCapability):
         if voice:
             payload["voice"] = voice
         try:
-            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            async with open_client(purpose="voice", target=str(url), timeout=self.timeout_seconds) as client:
                 response = await client.post(url, json=payload)
         except Exception as exc:  # ağ hatası gizlenmez, sınıflandırılır
             return b"", f"endpoint_error:{type(exc).__name__}"
@@ -441,11 +441,11 @@ class LocalSTTCapability(BaseCapability):
         if not url:
             return "", reason
         try:
-            import httpx
+            from agent_core.capabilities.egress import open_client
         except ImportError:
             return "", "dependency_missing:httpx"
         try:
-            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            async with open_client(purpose="voice", target=str(url), timeout=self.timeout_seconds) as client:
                 response = await client.post(
                     url, files={"file": (audio_path.name, audio_path.read_bytes())}
                 )

@@ -387,11 +387,11 @@ async def evaluate(
         return LocalJuryVerdict(available=False, reason="empty_evidence")
 
     try:
-        import httpx
+        from agent_core.capabilities.egress import open_client
     except ImportError:
         return LocalJuryVerdict(available=False, reason="dependency_missing:httpx")
 
-    async with httpx.AsyncClient() as client:
+    async with open_client(purpose="llm") as client:
         # [E7-muaf] `_ask_seat` ağ/JSON/şekil hatalarını yakalayıp
         # SeatVote(error=...) döner — düşen koltuk jüriyi düşürmez, karar
         # `quorum`/hata sayımıyla dürüstçe raporlanır.

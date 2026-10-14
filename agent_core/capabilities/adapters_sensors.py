@@ -25,7 +25,7 @@ import os
 import shutil
 from typing import Any
 
-import httpx
+from agent_core.capabilities.egress import httpx, open_client  # noqa: F401  (test yamaları httpx adını modulede bekler)
 
 from agent_core.capabilities.adapters_osint import _flag, _module_available
 from agent_core.capabilities.base import (
@@ -410,7 +410,7 @@ class SearXNGCapability(BaseCapability):
         limit = int(ctx.params.get("limit") or 10)
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            async with open_client(purpose="sensor", target=base, timeout=self.timeout_seconds) as client:
                 response = await client.get(
                     f"{base}/search",
                     params={"q": query, "format": "json", "safesearch": "0"},
