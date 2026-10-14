@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased — 2026-10-14 — Canlı kanıt: uçlar ve motor gerçekten çalışıyor mu?
+
+Rapor: `docs/reports/CANLI_KANIT_RAPORU_2026-10-14.md` · sonda:
+`scripts/canli_calisirlik_probe.py` (`sunucu` / `kanit` modları) · kanıt:
+`reports/canli_calisirlik_sunucu.json`, `reports/canli_calisirlik_kanit.json`.
+
+- **Gerçek sunucu**: `uvicorn backend.api:app` ayağa kaldırıldı; üretim
+  duruşunda token yokken açılış REDDEDİLDİ (`PRODUCTION_AUTH_REQUIRED` —
+  fail-closed güvenlik kanıtı), geliştirme duruşunda `/health` 200 "ready".
+- **58 canlı HTTP isteği**: 24×200 · 32×422 (gövdesiz çağrı → sözleşme denetimi)
+  · 1×423 (kasa kilitli) · 1×400 · **0×500**. "37 uç ön yüzde yok" = bozuk değil,
+  arayüz düğmesi yok (ürün kararı; rapor §6.1/B9).
+- **Gerçek üretim koşumu**: kapılar açık + kasa mandalı (repo'nun onayladığı
+  desen; sahte anahtar YAZILMADI) → 4/5 yetenek gerçek çıktı üretti:
+  gerçek PDF (1.821 B) + PNG şema (4.549 B) + sha256'lı manifest, GitHub
+  sayfasından 8.000 bayt gerçek metin (crawl4ai, 1.8 sn), dil tespiti `tr/0.77`.
+  `holehe` uydurmadı: `scan_unavailable:provider_errors`.
+- **Dürüstlük sınavı**: rapora şema dışı iki kanıt satırı gönderildi; sistem
+  onları kabul etmedi, "reddedilen: 2" diye rapora YAZDI ve içerik uydurmadı.
+  LLM kimlik bilgisi yokken `REAL_LLM_CALL_NOT_EXECUTED` ile açıkça reddetti
+  (sahte yanıt üretmedi) — "beyin çalışıyor mu" sorusu ancak operatör anahtarıyla
+  sınanabilir; komut raporda (§3).
+- `.gitignore`: rapor fabrikasının ürettiği `memory/reports/` paketleri
+  (çalışma-zamanı çıktısı) artık izlenmez; kanıt JSON'unda yol + sha256 olarak
+  kayıtlıdır.
+
 ## Unreleased — 2026-10-14 — Kapasite denetimi: omurga kapı tek kaynağı
 
 Denetim raporu: `docs/reports/KAPASITE_ACIGI_RAPORU_2026-10-14.md`; her sayının
