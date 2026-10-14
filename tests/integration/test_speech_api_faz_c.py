@@ -17,6 +17,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import pytest
 from fastapi.testclient import TestClient
 
+from agent_core.services import speech
 from backend import api
 
 
@@ -47,12 +48,20 @@ def _open_vault(client):
 
     DİKKAT: oda ÖNCEDEN (portal döngüsünde) kurulmalı; aksi hâlde WebSocket
     gönderici görevi yaratılmaz ve çerçeveler hiç ulaşmaz.
+
+    SIRA BAĞIMSIZLIĞI: `speech` durumu süreç-global (`_STATE`). Kapı kapalı
+    senaryoları çalıştıran başka testler buraya `denied` bırakabilir; test
+    kendi başlangıç durumunu tohumlar, sonunda eski durumu geri koyar.
     """
+    onceki = dict(speech._STATE)
+    speech.set_state(speech.STATE_IDLE)
     client.get("/api/telemetry?client_id=spx")
     room = api.get_room("spx")
     room["vault"]["or_key"] = True
     yield
     room["vault"].pop("or_key", None)
+    speech._STATE.clear()
+    speech._STATE.update(onceki)
 
 
 @pytest.fixture()

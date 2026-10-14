@@ -10,7 +10,7 @@ JS'li/ağır sayfalar için tarayıcılı kazıma (ikinci kademe).
 - **Yetenek kimliği:** `extractor.web.crawl4ai`
 - **Tür:** `extractor`
 - **Lisans:** Apache-2.0
-- **Kapılar:** vault
+- **Kapılar:** ENABLE_CRAWL4AI, vault
 
 ## Girdi şeması
 

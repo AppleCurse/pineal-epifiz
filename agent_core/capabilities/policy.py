@@ -9,7 +9,9 @@ Kapı sözlüğü:
     (hedef rızası diye bir kapı YOKTUR — karar mercii operatördür)
     ``budget``   — görev bütçesi aşılmamış olmalı
     ``rate``     — hız durumu biliniyor ve izin veriyor olmalı (bilinmiyorsa RET)
-    ``ENABLE_*`` — env anahtarı açık olmalı (örn. ``ENABLE_MAIGRET``)
+    ``ENABLE_*`` — env anahtarı açık olmalı (örn. ``ENABLE_MAIGRET``); anahtar
+                   ``MANAGED_GATE_FLAGS`` listesinde DEĞİLSE ``unknown_gate``
+                   (fail-closed): yazım hatası "sadece kapalı" gibi görünemez
 
 Bu modül harici bağımlılık içermez ve hiçbir ortam değişkenini kendisi
 okumaz: durum dışarıdan ``PolicyState`` ile verilir (test edilebilirlik +
@@ -21,11 +23,46 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
-__all__ = ["PolicyDecision", "PolicyState", "PolicyKernel", "BUILTIN_GATES"]
+__all__ = ["PolicyDecision", "PolicyState", "PolicyKernel", "BUILTIN_GATES", "MANAGED_GATE_FLAGS"]
 
 
-#: Çekirdeğin bildiği kapılar. Bunun dışındaki her şey fail-closed reddedilir.
+#: Çekirdeğin bildiği yapısal kapılar. Bunun dışındaki her şey fail-closed reddedilir.
 BUILTIN_GATES = frozenset({"vault", "budget", "rate"})
+
+#: YÖNETİLEN env kapıları — TEK KAYNAK BURASIDIR (denetim 2026-10-14, bulgu B1/B2).
+#: ``agent_core.capabilities.state`` bu listeyi yeniden ihraç eder; ikinci bir liste
+#: tutmak "kapı koda yazıldı ama duruma hiç girmedi" kusurunu doğuruyordu:
+#: ``ENABLE_LOCAL_TTS``/``ENABLE_LOCAL_STT`` adaptörlerde kapı olarak vardı ama
+#: listede olmadığı için üretim durumu onları HİÇ taşımıyordu → yetenek
+#: ``availability()=True`` derken ``PolicyKernel`` kalıcı ``gate_disabled``
+#: veriyordu (iki farklı gerçek). Yeni bir ``ENABLE_*`` kapısı kullanan yetenek
+#: eklenirse ADI BURAYA da yazılır; yazılmazsa çekirdek onu ``unknown_gate`` ile
+#: reddeder — sessizce "kapalı" gibi görünmez.
+MANAGED_GATE_FLAGS: tuple[str, ...] = (
+    "ENABLE_MAIGRET",
+    "ENABLE_HOLEHE",
+    "ENABLE_CRAWL4AI",
+    "ENABLE_SCRAPLING",
+    "ENABLE_X_SENSOR",
+    "ENABLE_IG_SECONDARY",
+    "ENABLE_AGENT_REACH",
+    "ENABLE_SEARXNG",
+    # [FAZ D · D4] Çeviri yerel motora bağlıdır; varsayılan KAPALI.
+    "ENABLE_LOCAL_TRANSLATE",
+    # [FAZ D · D2] Yerel jüri: yerel modeller hazır olana kadar varsayılan KAPALI.
+    "ENABLE_LOCAL_JURY",
+    # [FAZ D · D6] Kurum hedefi: theHarvester/ağ koşusu; varsayılan KAPALI.
+    "ENABLE_COMPANY_TARGETING",
+    # [FAZ D · D5] Rapor fabrikası: kanıt dışa aktarımı; varsayılan KAPALI.
+    "ENABLE_REPORT_FACTORY",
+    # [FAZ D · D3] Medya adli hattı: indirme/kare/transkript; varsayılan KAPALI.
+    "ENABLE_MEDIA_FORENSICS",
+    # [DENETİM 2026-10-14 · B1] Ses kapıları adaptörlerde vardı, listede YOKTU:
+    # `/api/speech/*` kendi durumunu elle kurduğu için çalışıyordu ama MCP ve
+    # `policy_state()` çağıran her yol bu yetenekleri KALICI kapalı görüyordu.
+    "ENABLE_LOCAL_TTS",
+    "ENABLE_LOCAL_STT",
+)
 
 
 @dataclass(frozen=True)
@@ -63,6 +100,8 @@ class PolicyKernel:
     """Yetenek kapılarını değerlendirir (durumsuz, deterministik)."""
 
     KNOWN_GATES = BUILTIN_GATES
+    #: Yönetilen env bayrakları (state.py ile AYNI kaynak: MANAGED_GATE_FLAGS).
+    KNOWN_GATE_FLAGS = frozenset(MANAGED_GATE_FLAGS)
 
     #: Kapı değerlendirme ÖNCELİĞİ (alfabetik DEĞİL — güvenlik sırası):
     #: bilinmeyen kapı (en gürültülü, fail-closed) → kasa → bütçe →
@@ -74,7 +113,9 @@ class PolicyKernel:
     @classmethod
     def _gate_rank(cls, gate: str) -> int:
         if gate.startswith("ENABLE_"):
-            return 5
+            # Yönetilmeyen bir ENABLE_* adı en önce reddedilir (yazım hatası,
+            # "sadece kapalı" gibi görünmesin): bilinmeyen kapıyla aynı sıra.
+            return 5 if gate in cls.KNOWN_GATE_FLAGS else 0
         if gate not in cls.KNOWN_GATES:
             return 0  # bilinmeyen kapı en önce reddedilir
         return cls._GATE_ORDER[gate]
@@ -83,6 +124,12 @@ class PolicyKernel:
         """Kapıları **öncelik** sırasında değerlendirir; ilk ret kararı kesindir."""
         for gate in sorted(gates or (), key=self._gate_rank):
             if gate.startswith("ENABLE_"):
+                # [DENETİM 2026-10-14 · B2] ÖNCE "bu bayrak yönetiliyor mu?" —
+                # eskiden bu denetim yoktu ve uydurma/yanlış yazılmış bir bayrak
+                # adı bile `gate_disabled` dönüyordu: operatör onu açmaya
+                # çalışıp başarısız olur, denetim izi de yanlış sınıflanırdı.
+                if gate not in self.KNOWN_GATE_FLAGS:
+                    return PolicyDecision.deny(gate, "unknown_gate")
                 if not bool(state.enabled_flags.get(gate, False)):
                     return PolicyDecision.deny(gate, "gate_disabled")
                 continue

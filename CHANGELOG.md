@@ -1,5 +1,43 @@
 # Changelog
 
+## Unreleased — 2026-10-14 — Kapasite denetimi: omurga kapı tek kaynağı
+
+Denetim raporu: `docs/reports/KAPASITE_ACIGI_RAPORU_2026-10-14.md`; her sayının
+kanıtı `reports/kapasite_denetimi.json` ve onu üreten
+`scripts/kapasite_denetimi_probe.py` (tekrar çalıştırılabilir).
+
+### 1 · B1 — SES kapıları omurga dışıydı (UI ile çekirdek çelişiyordu)
+- `MANAGED_GATE_FLAGS` artık `agent_core/capabilities/policy.py` içinde TEK
+  kaynak (15 bayrak; `ENABLE_LOCAL_TTS`, `ENABLE_LOCAL_STT`, `ENABLE_CRAWL4AI`
+  dâhil) ve `state.py` onu yeniden ihraç eder. Önceden ikisi ayrı liste
+  tutuyordu: `ENABLE_LOCAL_TTS=true` iken yetenek "hazır" derken çekirdek
+  `gate_disabled` dönüyordu.
+
+### 2 · B2 — yazım hatalı/uydurma bayrak artık "kapalı" değil "tanınmıyor"
+- Yönetilmeyen bir `ENABLE_*` adı `gate_disabled` gibi görünüyordu; operatör onu
+  açmaya çalışıp başarısız oluyordu. Artık `unknown_gate` (fail-closed, kapı
+  önceliğinde en başta). Kapalı ama YÖNETİLEN bayrak da `gate_disabled` kalır.
+
+### 3 · B12 — `.env.example` ile omurga arasında fark kapandı
+- 15/15 yönetilen kapı örnekte belgeli; ölçüm: `managed_missing_from_example: []`
+  ve üretimde okunup belgesiz `ENABLE_*` yok (`read_but_undocumented: []`).
+
+### 4 · B15 — crawl4ai bayrağı servis üzerinden okunuyordu, omurgada beyansızdı
+- `Crawl4AICapability.gates` artık `{ENABLE_CRAWL4AI, vault}`; ayrıca yapısal
+  kilit testi: kaynakta `gate_disabled:ENABLE_X` diyen her adaptör sınıfı X'i
+  `gates`'te beyan etmek zorunda.
+
+### 5 · Test sırası bağımlılığı (ses durumu sızıntısı)
+- `tests/integration/test_speech_api_faz_c.py` oda mandalı fixture'ı artık
+  `speech` modül durumunu tohumlayıp geri yüklüyor: dosya tek başına veya
+  başka dosyalarla çalıştırıldığında aynı sonucu verir (önce `denied` sızıyordu).
+
+### 6 · Kanıt
+- `tests/unit/test_capability_spine_faz0.py` **37/37** (B1/B2/B15 kilitleri dâhil),
+  tam takım **2493+** yeşil, `ruff` temiz, `docs/envanter.html` yeniden üretildi
+  (`--check` GÜNCEL). Denetim sonucu: 26 kayıtlı yetenek, varsayılan 3 açık,
+  tüm kapılar açıkken bile 13'ü bağımlılık/ayar nedeniyle kapalı.
+
 ## Unreleased — 2026-10-14 — Envanter/açıklama tamamlama ve API-BÖLME 2
 
 ### 1 · Açıklamasız çekirdek dosyalar (A listesi, 30 dosya)

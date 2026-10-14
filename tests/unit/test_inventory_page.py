@@ -102,11 +102,17 @@ def test_env_settings_are_counted_from_the_file_not_by_hand():
         for line in ENV_EXAMPLE.read_text(encoding="utf-8").splitlines()
         if re.match(r"^[A-Z][A-Z0-9_]*=", line)
     ]
-    assert len(settings) == 98, (
-        f".env.example ayar sayısı {len(settings)}; sayfa/başlık metinleri 98 diyor — "
-        "ayar eklerken sayfayı da üret"
-    )
     page = PAGE.read_text(encoding="utf-8")
+    #: [DENETİM 2026-10-14 · B12] Sihirli sayı (eskiden 98) KALDIRILDI: sayı
+    #: kaynaktan sayılır ve sayfanın KENDİ başlığındaki sayıyla karşılaştırılır.
+    #: Böylece `.env.example`'a ayar eklemek testi elle güncellemeyi gerektirmez;
+    #: sayfa bayatlarsa yine kırmızıya döner (uydurma sayı yasağı korunur).
+    stated = {int(s) for s in re.findall(r"(\d+)\s*ayarın tek tek anlamı", page)}
+    assert stated, "sayfa başlığında ayar sayısı yazmıyor (üretici metni değişmiş olabilir)"
+    assert stated == {len(settings)}, (
+        f"sayfa {sorted(stated)} diyor, kaynakta {len(settings)} ayar var — "
+        "ayar eklerken sayfayı da üret: python scripts/generate_inventory_page.py"
+    )
     rows = re.findall(r'data-flags="env"', page)
     assert len(rows) == len(settings), (
         f"sayfada {len(rows)} ayar satırı var, dosyada {len(settings)} ayar"

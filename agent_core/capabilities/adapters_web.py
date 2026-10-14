@@ -200,7 +200,12 @@ class Crawl4AICapability(BaseCapability):
     id = "extractor.web.crawl4ai"
     kind = CapabilityKind.EXTRACTOR
     license = "Apache-2.0"
-    gates = frozenset({"vault"})
+    #: [DENETİM 2026-10-14 · B15] Bayrak BEYAN EDİLİR: `availability()` kapıyı
+    #: servis üzerinden (`crawl_enricher.is_enabled()`) okuyordu ama omurga
+    #: kapı kümesinde yazmıyordu → çekirdek "izinli" derken yetenek "kapalı"
+    #: diyordu (çelişki). Artık kernel de aynı bayrağı görür: kapalıysa
+    #: `gate_disabled:ENABLE_CRAWL4AI`, açıksa availability kararı verir.
+    gates = frozenset({"ENABLE_CRAWL4AI", "vault"})
     timeout_seconds = 60.0
     description = "JS'li/ağır sayfalar için tarayıcılı kazıma (ikinci kademe)."
 
