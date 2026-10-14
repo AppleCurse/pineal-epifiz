@@ -187,8 +187,8 @@
       "tools"
      ],
      "pricing": {
-      "input_per_million_usd": 0.0679,
-      "output_per_million_usd": 0.168
+      "input_per_million_usd": 0.091,
+      "output_per_million_usd": 0.182
      }
     },
     {
@@ -213,8 +213,8 @@
       "tools"
      ],
      "pricing": {
-      "input_per_million_usd": 0.4679,
-      "output_per_million_usd": 0.9358
+      "input_per_million_usd": 0.386976,
+      "output_per_million_usd": 0.773952
      }
     },
     {
@@ -241,8 +241,8 @@
       "tools"
      ],
      "pricing": {
-      "input_per_million_usd": 2.0,
-      "output_per_million_usd": 10.0
+      "input_per_million_usd": 4.0,
+      "output_per_million_usd": 20.0
      }
     },
     {

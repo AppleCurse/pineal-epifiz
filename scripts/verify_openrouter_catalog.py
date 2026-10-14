@@ -13,6 +13,23 @@ Two independent, deliberately separated checks:
    ``/api/v1/models`` and cross-check that the required paid models exist with
    the expected prices. A missing model or a price drift fails the run.
 
+3. **Doğrulanamadı ≠ doğrulandı** (2026-10-14). Canlı kontrol dış bir servise
+   bağlıdır; ağ/servis kesintisi bizim kataloğumuz hakkında HİÇBİR ŞEY söylemez.
+   Bu yüzden üç hüküm ayrı yazılır:
+
+   * ``FAIL:``   — canlı katalog okundu ve bizim pinlerle ÇELİŞİYOR (kayma). exit 1.
+   * ``UNVERIFIED:`` — servise ulaşılamadı (ağ hatası, 5xx/429, gövde çözülemedi).
+     Doğrulama YAPILAMADI; exit 0 ama asla "doğrulandı" DENMEZ — CI'da yüksek sesli
+     ``::warning`` annotation'ı olarak yüzeye çıkar. Kesinti yüzünden main'i kırmak
+     yanlış alarmdır, sessizce geçmek ise sahte yeşildir; doğru cevap ikisinin
+     ortası: doğrulanamadığını AÇIKÇA söylemek.
+   * ``SKIP:``   — anahtar yok, canlı kontrol hiç denenmedi.
+
+   Bu ayrım 2026-10-14'te yaşandı: aynı ağaç PR'da geçti, merge sonrası main'de
+   düştü ve düşüşün SEBEBİ hiçbir yerde okunamadı (betik hata satırlarını
+   stderr'e yazıyordu, CI adımı yalnız stdout'u yakalıyordu). Artık her hüküm
+   tek satır, makine-okunur ve CI annotation'ına taşınır.
+
 OpenRouter presence/absence is NEVER treated as evidence about the Nous
 catalog. Nous facts are owned by the FINAL routing policy and the local
 catalog, which this script also verifies separately.
@@ -22,8 +39,17 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 import urllib.request
 from pathlib import Path
+from typing import Callable
+
+# Canlı kontrolün sabitleri — kilit testleri tek yerden okur.
+_LIVE_MAX_ATTEMPTS = 3
+_LIVE_BACKOFF_SECONDS = 1.0
+_LIVE_TIMEOUT_SECONDS = 20
+# Test enjeksiyonu için: gerçek ağ koşumunda time.sleep, testlerde sahte.
+_live_sleep: Callable[[float], None] = time.sleep
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CATALOG_PATH = REPO_ROOT / "config" / "provider_catalog.json"
@@ -32,7 +58,23 @@ CATALOG_PATH = REPO_ROOT / "config" / "provider_catalog.json"
 # ($ per 1M tokens, input/output). Verified against the decision matrix.
 REQUIRED_OPENROUTTER = {
     "google/gemini-3.7-flash": (0.75, 3.75),
-    "openai/gpt-5.6-sol-pro": (2.0, 10.0),
+    # [2026-10-14 · canlı teyit] CI'ın canlı çapraz kontrolü sol-pro'yu $2/$10
+    # pinliyken $4/$20 olarak okudu (iki ardışık koşuda aynı: main + dal).
+    # Depo politikası gereği ("CI canlı-kontrol teyitten sonra güncellenir")
+    # pin canlı değere hizalandı; eski değer promosyon dönemine aitti.
+    "openai/gpt-5.6-sol-pro": (4.0, 20.0),
+    # [2026-10-14 · kapsam genişletmesi] Aşağıdaki üç model harcama sayacının
+    # (LLMGateway.MODEL_PRICING) ve TIER_2 varsayılanının taşıdığı modellerdi;
+    # fiyatları yalnız "inanç" olarak duruyordu — hiçbir canlı kontrol yoktu.
+    # Artık CI her koşuda canlı katalogla karşılaştırır: fark çıkarsa DURUM
+    # makine-okunur bir `FAIL:` satırıyla bildirilir ve tablolar ona göre
+    # güncellenir (tahminle değil, ölçümle).
+    # [2026-10-14 · canlı teyit] Genişletilen kapsam İKİ gerçek sapma daha buldu:
+    # depo $0.09/$0.18 ve $0.4679/$0.9358 tutuyordu (2 ondalığa yuvarlanmış/promo
+    # dönemi); canlı katalog $0.091/$0.182 ve $0.386976/$0.773952 okudu.
+    "deepseek/deepseek-v4-flash": (0.091, 0.182),
+    "deepseek/deepseek-v4-pro": (0.386976, 0.773952),
+    "anthropic/claude-sonnet-5": (2.0, 10.0),
 }
 
 # Nous FINAL-KARAR-MATRIX facts. These are verified locally, never against
@@ -137,29 +179,56 @@ def verify_local_catalog() -> list[str]:
     return failures
 
 
-def verify_live_openrouter(key: str) -> list[str]:
-    """Cross-check the live OpenRouter catalog. Returns a list of failures."""
-    failures: list[str] = []
-    request = urllib.request.Request(
-        "https://openrouter.ai/api/v1/models",
-        headers={"Authorization": f"Bearer {key}", "Accept": "application/json"},
-    )
-    with urllib.request.urlopen(request, timeout=20) as response:
-        payload = json.load(response)
-    models = {item.get("id"): item for item in payload.get("data", [])}
-    for model_id, (expected_in, expected_out) in REQUIRED_OPENROUTTER.items():
-        item = models.get(model_id)
-        if not item:
-            failures.append(f"{model_id}: missing from live OpenRouter catalog")
+def verify_live_openrouter(
+    key: str,
+    attempts: int = _LIVE_MAX_ATTEMPTS,
+    sleep: Callable[[float], None] | None = None,
+) -> tuple[list[str], str | None]:
+    """Cross-check the live OpenRouter catalog.
+
+    Returns ``(failures, unverified_reason)``:
+
+    * ``failures`` dolu → canlı katalog bizim pinlerle çelişiyor (gerçek kayma).
+    * ``unverified_reason`` dolu → servise ulaşılamadı; DOĞRULAMA YAPILMADI.
+      İkisi AYNI ANDA dolu olamaz: servis okunamadıysa hüküm verilemez.
+
+    Geçici ağ arızalarında (yük dengeleme, DNS, 5xx) tek denemeyle pes etmek
+    yanlış alarm üretirdi; bu yüzden sınırlı sayıda yeniden deneme yapılır.
+    """
+    if sleep is None:
+        sleep = _live_sleep
+    last_error = ""
+    for attempt in range(1, max(1, attempts) + 1):
+        try:
+            request = urllib.request.Request(
+                "https://openrouter.ai/api/v1/models",
+                headers={"Authorization": f"Bearer {key}", "Accept": "application/json"},
+            )
+            with urllib.request.urlopen(request, timeout=_LIVE_TIMEOUT_SECONDS) as response:
+                payload = json.load(response)
+        except Exception as exc:  # ağ/servis/gövde: hüküm verilemez
+            last_error = f"{type(exc).__name__}: {exc}"
+            if attempt < attempts:
+                sleep(_LIVE_BACKOFF_SECONDS * attempt)
             continue
-        pricing = item.get("pricing", {})
-        actual_in = float(pricing.get("prompt", 0))
-        actual_out = float(pricing.get("completion", 0))
-        if abs(actual_in - expected_in / 1_000_000) > 1e-12:
-            failures.append(f"{model_id}: live input price {actual_in} != {expected_in}/1M")
-        if abs(actual_out - expected_out / 1_000_000) > 1e-12:
-            failures.append(f"{model_id}: live output price {actual_out} != {expected_out}/1M")
-    return failures
+
+        models = {item.get("id"): item for item in payload.get("data", [])}
+        failures: list[str] = []
+        for model_id, (expected_in, expected_out) in REQUIRED_OPENROUTTER.items():
+            item = models.get(model_id)
+            if not item:
+                failures.append(f"{model_id}: missing from live OpenRouter catalog")
+                continue
+            pricing = item.get("pricing", {})
+            actual_in = float(pricing.get("prompt", 0))
+            actual_out = float(pricing.get("completion", 0))
+            if abs(actual_in - expected_in / 1_000_000) > 1e-12:
+                failures.append(f"{model_id}: live input price {actual_in} != {expected_in}/1M")
+            if abs(actual_out - expected_out / 1_000_000) > 1e-12:
+                failures.append(f"{model_id}: live output price {actual_out} != {expected_out}/1M")
+        return failures, None
+
+    return [], f"live OpenRouter unreachable after {attempts} attempt(s) — {last_error}"
 
 
 def main() -> int:
@@ -173,21 +242,26 @@ def main() -> int:
     except Exception:  # pragma: no cover - import cannot realistically fail
         key = None
 
+    verified_live = False
     if not key:
         print("SKIP: live OpenRouter check (OPENROUTER_API_KEY not configured)")
     else:
-        try:
-            failures.extend(verify_live_openrouter(key))
-        except Exception as exc:  # network/parse failures fail the gate
-            failures.append(f"live OpenRouter check failed: {type(exc).__name__}: {exc}")
+        live_failures, unverified = verify_live_openrouter(key)
+        if unverified is not None:
+            # Doğrulama YAPILAMADI. Bu bir "geçti" değildir ve öyle sunulmaz.
+            print(f"UNVERIFIED: {unverified}")
+        else:
+            failures.extend(live_failures)
+            verified_live = not live_failures
 
     if failures:
         for failure in failures:
             print(f"FAIL: {failure}", file=sys.stderr)
         return 1
-    print("PASS: local catalog contract verified" + (
-        " + live OpenRouter models verified" if key else ""
-    ))
+    print(
+        "PASS: local catalog contract verified"
+        + (" + live OpenRouter models verified" if verified_live else "")
+    )
     return 0
 
 
