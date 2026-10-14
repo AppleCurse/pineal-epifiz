@@ -490,3 +490,87 @@ async def test_vault_lock_blocks_whole_retina_stack():
         )
         assert result.denied_by == "vault", f"{cap.id} kasa kilidini atladı"
         assert result.items == ()
+
+
+# ------------------------------- A3 · trafilatura indirme tavanı (canlı bulgu)
+@pytest.mark.asyncio
+async def test_trafilatura_download_timeout_stays_under_capability_budget(monkeypatch):
+    """[2026-10-14 · CANLI KANIT] İndirme tavanı, yeteneğin KENDİ bütçesinin altında olmalı.
+
+    Ölçüm: trafilatura'nın varsayılan `DOWNLOAD_TIMEOUT`'u 30 sn; yetenek bütçesi
+    de 30 sn olduğu için indirme dış `wait_for` ile yarışıyor ve yavaş sayfada
+    yetenek "timeout" dönüyordu (oysa indirme 6,5 sn'de başarıyordu). Bu test
+    yarışın geri gelmesini engeller: yeteneğin geçtiği config'in tavanı,
+    yeteneğin bütçesinden KÜÇÜK olmalı ve 5 sn tabanının altına inmemeli.
+    """
+    import sys
+    import types
+
+    seen: dict[str, object] = {}
+
+    class _FakeConfig:
+        def __init__(self) -> None:
+            self.values: dict[str, str] = {"DOWNLOAD_TIMEOUT": "30"}
+
+        def set(self, section: str, key: str, value: str) -> None:
+            assert section == "DEFAULT"
+            self.values[key] = value
+
+        def getint(self, section: str, key: str) -> int:
+            return int(self.values[key])
+
+    class _FakeSettings(types.ModuleType):
+        def __init__(self) -> None:
+            super().__init__("trafilatura.settings")
+            self.DEFAULT_CONFIG = _FakeConfig()
+
+    fake = types.ModuleType("trafilatura")
+
+    def _fetch_url(url, *args, **kwargs):
+        seen["config"] = kwargs.get("config")
+        return None  # gövde yok: ağa çıkılmaz, yalnız çağrı imzası ölçülür
+
+    fake.fetch_url = _fetch_url
+    fake.extract = lambda *a, **k: ""
+    fake.extract_metadata = lambda *a, **k: None
+    fake.settings = _FakeSettings()
+    monkeypatch.setitem(sys.modules, "trafilatura", fake)
+    monkeypatch.setitem(sys.modules, "trafilatura.settings", fake.settings)
+
+    cap = TrafilaturaCapability()
+    await cap.run(CapabilityContext(subject="https://example.com/makale"))
+
+    config = seen.get("config")
+    assert config is not None, "yetenek indirme tavanını GEÇMİYOR (varsayılan 30 sn yarışa girer)"
+    tavan = config.getint("DEFAULT", "DOWNLOAD_TIMEOUT")
+    assert tavan < int(cap.timeout_seconds), (tavan, cap.timeout_seconds)
+    assert tavan >= 5, tavan
+
+
+# ------------------------- A4 · agent-reach komut çözümü (canlı bulgu: ad karışıklığı)
+def test_agent_reach_command_prefers_explicit_env_and_never_guesses(monkeypatch):
+    """[2026-10-14 · CANLI KANIT] RUNBOOK'taki `npm i -g agent-reach` artık AYNI ADLI
+    BAŞKA bir projeyi kuruyor (Nostr ajan ağı; ölçülen sürüm 0.3.4). Bu yüzden
+    operatör gerçek CLI'ı `PINEAL_AGENT_REACH_CMD` ile işaret edebilmeli; var
+    olmayan yol "hazır" SAYILMAMALI ve bozuk tırnak PATH'e DÜŞMEMELİ.
+    """
+    from agent_core.capabilities.adapters_sensors import agent_reach_command
+
+    monkeypatch.delenv("PINEAL_AGENT_REACH_CMD", raising=False)
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    assert agent_reach_command() is None  # PATH'te yoksa ret
+
+    monkeypatch.setenv("PINEAL_AGENT_REACH_CMD", "/tmp/gercekten-yok/agent-reach")
+    assert agent_reach_command() is None  # var olmayan mutlak yol "hazır" sayılmaz
+
+    monkeypatch.setenv("PINEAL_AGENT_REACH_CMD", "'bozuk tırnak")
+    assert agent_reach_command() is None  # bozuk tırnak → PATH'e düşmez
+
+    monkeypatch.setenv("PINEAL_AGENT_REACH_CMD", "/bin/echo --json")
+    assert agent_reach_command() == ["/bin/echo", "--json"]
+
+    monkeypatch.undo()  # which yaması VE önceki env değerleri kalkar
+    monkeypatch.setenv("PINEAL_AGENT_REACH_CMD", "python3")
+    #: Depo kalıbı (PINEAL_HARVESTER_CMD ile aynı): PATH'te bulunan komut ADI
+    #: olduğu gibi döner — alt süreç onu kendi PATH'iyle çözer.
+    assert agent_reach_command() == ["python3"]

@@ -123,9 +123,9 @@ def _ozet(rows: list[dict]) -> dict:
 # ------------------------------------------------------------------- B · kanıt
 def mod_kanit() -> dict:
     # Kapılar: motoru gerçekten koşturmak için açılır (operatör senaryosu).
-    for flag in ("ENABLE_CRAWL4AI", "ENABLE_REPORT_FACTORY", "ENABLE_MEDIA_FORENSICS",
-                 "ENABLE_COMPANY_TARGETING", "ENABLE_LOCAL_TTS", "ENABLE_LOCAL_STT",
-                 "ENABLE_MAIGRET", "ENABLE_HOLEHE"):
+    from agent_core.capabilities.policy import MANAGED_GATE_FLAGS
+
+    for flag in MANAGED_GATE_FLAGS:  # yönetilen TÜM kapılar açık (operatör senaryosu)
         os.environ[flag] = "true"
     os.environ.setdefault("CRAWL4AI_RENDERER", "http")
 
@@ -265,6 +265,34 @@ def mod_kanit() -> dict:
 
         step("gercek_yetenek_kosumlari", _gercek)
 
+        # 9b · SES uçtan uca: gerçek WAV say → gerçek dosya servis et → dinle
+        srv_ses, port_ses, kayit_ses, wav_ses = _taklit_tts_stt()
+
+        def _ses_say():
+            r = client.post("/api/speech/say",
+                            json={"text": "Mösyö, kanıt cümlesi.", "client_id": CLIENT_ID})
+            body = r.json()
+            ses = client.get(body.get("url") or "/api/speech/audio/yok")
+            return {"durum": r.status_code, "available": body.get("available"),
+                    "reason": body.get("reason"), "url": body.get("url"),
+                    "audio_durum": ses.status_code, "audio_bayt": len(ses.content),
+                    "riff_mi": ses.content[:4] == b"RIFF",
+                    "sha256": hashlib.sha256(ses.content).hexdigest()[:16]}
+
+        step("ses_uctan_uca_say", _ses_say)
+
+        def _ses_dinle():
+            r = client.post("/api/speech/listen?client_id=" + CLIENT_ID,
+                            files={"file": ("kanit.wav", wav_ses, "audio/wav")})
+            body = r.json()
+            return {"durum": r.status_code, "available": body.get("available"),
+                    "transcript": body.get("transcript"), "engine": body.get("engine"),
+                    "reason": body.get("reason")}
+
+        step("ses_uctan_uca_dinle", _ses_dinle)
+        srv_ses.shutdown()
+        out["yerel_uc_kayitlari"] = {"port": port_ses, "istekler": kayit_ses}
+
     # 8 · LLM ağ geçidi: kimlik bilgisi YOKKEN ne diyor? (dürüstlük sınavı)
     def _beyin():
         import asyncio
@@ -307,6 +335,10 @@ async def _gercek_kosumlar(client) -> dict:
                                      "evidence": []}),
         ("extractor.web.crawl4ai", {"url": "https://github.com/AppleCurse/pineal-epifiz"}),
         ("extractor.text.language", {"text": "Bu cümle Türkçe yazılmıştır."}),
+        ("extractor.web.trafilatura", {"url": "https://github.com/AppleCurse/pineal-epifiz"}),
+        ("extractor.web.scrapling", {"url": "https://github.com/AppleCurse/pineal-epifiz"}),
+        ("renderer.report.video", {"title": "Gerçek koşum", "subject": "kanıt",
+                                   "evidence": []}),
         ("sensor.identity.holehe", {"email": "test@example.com"}),
     ]
     rows = []
@@ -338,14 +370,179 @@ async def _gercek_kosumlar(client) -> dict:
             "kayitli_toplam": len(rows)}
 
 
+
+# ------------------------------------------------- 10 · istek yolu (yerel taklit)
+def mod_taklit() -> dict:
+    """LLM İSTEK YOLU kanıtı — yerel TAKLİT sağlayıcı (bulut DEĞİL, ücret YOK).
+
+    Amaç: "tel kopuk mu, kimlik mi yok?" ayrımını yapmak. Yerel bir
+    OpenAI-uyumlu sahte sunucu ayağa kaldırılır; ağ geçidi ona yönlendirilir ve
+    GERÇEK HTTP isteği atılır. İstek gövdesi, yetkilendirme başlığı ve yanıt
+    işleme hattı uçtan uca sınanır. **Bu bir bulut sağlayıcı kanıtı DEĞİLDİR**;
+    kanıtladığı şey: istek yolu eksiksiz, eksik olan yalnız gerçek sağlayıcı.
+    """
+    import http.server
+    import socketserver
+    import threading
+
+    istekler: list[dict] = []
+
+    class _Sunucu(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *a):  # sessiz
+            return
+
+        def _gonder(self, obj, code=200):
+            data = json.dumps(obj).encode("utf-8")
+            self.send_response(code)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def do_GET(self):
+            if "models" in self.path:
+                self._gonder({"object": "list", "data": [{"id": "taklit-model", "object": "model"}]})
+            else:
+                self._gonder({"error": "not found"}, 404)
+
+        def do_POST(self):
+            n = int(self.headers.get("content-length") or 0)
+            raw = self.rfile.read(n).decode("utf-8", "replace")
+            istekler.append({
+                "yol": self.path,
+                "yetki_basligi_var": bool(self.headers.get("authorization")),
+                "govde_ilk_160": raw[:160],
+            })
+            try:
+                payload = json.loads(raw or "{}")
+            except Exception:
+                payload = {}
+            self._gonder({
+                "id": "chatcmpl-taklit-1", "object": "chat.completion", "created": 0,
+                "model": payload.get("model", "bilinmez"),
+                "choices": [{"index": 0, "finish_reason": "stop",
+                             "message": {"role": "assistant",
+                                         "content": "TAKLIT-YANIT: istek yolu tamam"}}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            })
+
+    srv = socketserver.ThreadingTCPServer(("127.0.0.1", 0), _Sunucu)
+    srv.daemon_threads = True
+    port = srv.server_address[1]
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+
+    #: Canlı çağrı kilidi AÇILIR ama hedef YEREL taklittir: dış ağa çıkılmaz.
+    os.environ["LIVE_LLM_E2E"] = "1"
+    os.environ["NINEROUTER_BASE_URL"] = f"http://127.0.0.1:{port}/v1"
+    os.environ["NINEROUTER_API_KEY"] = "taklit-anahtar"
+    os.environ["PINEAL_ALLOW_UNPRICED_MODELS"] = "1"
+
+    from agent_core.services.llm_gateway import LLMGateway
+
+    out: dict[str, Any] = {"mod": "taklit", "taklit_port": port,
+                           "uyari": ("Bu bir BULUT sağlayıcı kanıtı değildir; yerel "
+                                     "taklit sunucuya giden İSTEK YOLU kanıtıdır.")}
+    gw = LLMGateway()
+
+    def _cagir(etiket: str, **kwargs):
+        try:
+            yanit = asyncio.run(gw.query("kanıt amaçlı tek satır yanıt ver", **kwargs))
+            out[etiket] = {"yanit": str(yanit)[:200], "basarili": True}
+        except Exception as exc:
+            out[etiket] = {"hata": f"{type(exc).__name__}: {str(exc)[:200]}", "basarili": False}
+
+    _cagir("duz_cagri", agent_name="shadow_executor")
+    _cagir("pineal_rota", model="pineal-general-reasoning")
+
+    #: 3 · Kapalı porta yönlendir: DÜRÜST hata vermeli (sahte başarı YOK).
+    os.environ["NINEROUTER_BASE_URL"] = "http://127.0.0.1:1/v1"
+    gw2 = LLMGateway()
+    try:
+        asyncio.run(gw2.query("ping", agent_name="shadow_executor"))
+        out["kapali_port"] = {"basarili": True, "uyari": "BEKLENMEDİK: kapalı port yanıt verdi"}
+    except Exception as exc:
+        out["kapali_port"] = {"basarili": False, "hata": f"{type(exc).__name__}: {str(exc)[:200]}"}
+
+    srv.shutdown()
+    out["taklit_sunucuya_ulasan_istek"] = istekler
+    out["ozet"] = {
+        "taklit_istek_sayisi": len(istekler),
+        "duz_cagri_ok": out["duz_cagri"]["basarili"],
+        "pineal_rota_ok": out["pineal_rota"]["basarili"],
+        "kapali_port_durust_ret": not out["kapali_port"]["basarili"],
+    }
+    return out
+
+def _taklit_tts_stt():
+    """Yerel taklit TTS/STT uçları: sözleşme (istek gövdesi/yanıt) GERÇEK olarak sınanır.
+
+    TTS ucu gerçek bir sinüs WAV döndürür; STT ucu multipart dosyayı alıp
+    JSON metin döndürür. Amaç: "motor yok" ile "zincir kopuk" ayrımı.
+    """
+    import http.server
+    import math
+    import socketserver
+    import struct
+    import threading
+
+    rate, saniye = 8000, 0.4
+    samples = int(rate * saniye)
+    data = b"".join(struct.pack("<h", int(12000 * math.sin(2 * math.pi * 220 * i / rate)))
+                    for i in range(samples))
+    wav = (b"RIFF" + struct.pack("<I", 36 + len(data)) + b"WAVEfmt "
+           + struct.pack("<IHHIIHH", 16, 1, 1, rate, rate * 2, 2, 16)
+           + b"data" + struct.pack("<I", len(data)) + data)
+
+    kayit: list[dict] = []
+
+    class _H(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            return
+
+        def _gonder(self, govde: bytes, tip: str, code=200):
+            self.send_response(code)
+            self.send_header("content-type", tip)
+            self.send_header("content-length", str(len(govde)))
+            self.end_headers()
+            self.wfile.write(govde)
+
+        def do_POST(self):
+            n = int(self.headers.get("content-length") or 0)
+            raw = self.rfile.read(n)
+            if self.path.startswith("/tts"):
+                kayit.append({"uc": "tts", "govde_ilk": raw[:120].decode("utf-8", "replace")})
+                self._gonder(wav, "audio/wav")
+            else:
+                kayit.append({"uc": "stt", "govde_bayt": len(raw),
+                              "multipart": b"--" in raw[:200]})
+                self._gonder(json.dumps({"text": "taklit transkript: ses yerelde çözüldü"}).encode(),
+                             "application/json")
+
+    srv = socketserver.ThreadingTCPServer(("127.0.0.1", 0), _H)
+    srv.daemon_threads = True
+    port = srv.server_address[1]
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+
+    os.environ["ENABLE_LOCAL_TTS"] = "true"
+    os.environ["ENABLE_LOCAL_STT"] = "true"
+    os.environ["PINEAL_TTS_URL"] = f"http://127.0.0.1:{port}/tts"
+    os.environ["PINEAL_STT_URL"] = f"http://127.0.0.1:{port}/stt"
+    return srv, port, kayit, wav
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("mod", choices=["sunucu", "kanit"])
+    ap.add_argument("mod", choices=["sunucu", "kanit", "taklit"])
     ap.add_argument("--base-url", default="http://127.0.0.1:8000")
     ap.add_argument("--out", default="")
     args = ap.parse_args()
 
-    data = mod_sunucu(args.base_url) if args.mod == "sunucu" else mod_kanit()
+    if args.mod == "sunucu":
+        data = mod_sunucu(args.base_url)
+    elif args.mod == "taklit":
+        data = mod_taklit()
+    else:
+        data = mod_kanit()
     name = args.out or f"reports/canli_calisirlik_{args.mod}.json"
     path = REPO / name
     path.parent.mkdir(parents=True, exist_ok=True)

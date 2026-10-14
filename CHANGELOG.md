@@ -1,5 +1,48 @@
 # Changelog
 
+## Unreleased — 2026-10-14 — Kalan eksikler turu: yetenekler gerçekten koşturuldu
+
+Mutlak liste: `docs/reports/KALAN_EKSIKLER_2026-10-14.md` (kapananlar +
+KAPANMAYAN 9 yetenek + 2 kanıt kalemi; her satır ölçümle).
+
+### 1 · Kapatılan gerçek kusurlar (kod)
+- `extractor.web.trafilatura`: indirme tavanı (`DOWNLOAD_TIMEOUT`) yeteneğin
+  KENDİ bütçesiyle yarışıyordu → yavaş sayfada "timeout" dönüyordu (ölçüm:
+  indirme 6,5 sn'de başarıyordu). Tavan artık bütçenin altında; kilit testi
+  `test_trafilatura_download_timeout_stays_under_capability_budget`.
+- `sensor.web.agent_reach`: komut çözümü `PINEAL_AGENT_REACH_CMD` ile operatöre
+  açıldı. **Neden:** `npm i -g agent-reach` artık AYNI ADLI BAŞKA bir projeyi
+  kuruyor (ölçüm: npm agent-reach@0.3.4 = Nostr ajan ağı); PyPI'de de ilgisiz
+  bir `agent-reach` var. Kör PATH araması yanlış aracı "hazır" sayabilirdi.
+  Kilit testi `test_agent_reach_command_prefers_explicit_env_and_never_guesses`.
+- `requirements-retina.txt`: `browserforge` açıkça beyan edildi (scrapling 0.4.x
+  zorunlu kullanır ama metadata'sında yazmaz → yetenek `extract_error`
+  dönüyordu). RUNBOOK'a iki yanlış-paket uyarısı işlendi (agent-reach, searxng).
+
+### 2 · Kurulunca kapanan yetenekler (ölçüm, bu ortam)
+- `trafilatura` → gerçek metin (kanıt=1) · `scrapling` → **19.351 bayt** gerçek
+  metin · `twscrape` kurulu · `instagrapi` artık yalnız kimlik bekliyor ·
+  `renderer.report.video` → **gerçek video** (ffmpeg statik binary ile, kanıt=2).
+- Tüm-kapılar-açık senaryo: **13 açık / 13 kapalı → 17 açık / 9 kapalı**
+  (`reports/kapasite_opsiyonel_kurulu.json`).
+- Gerçek koşum listesi (runner üzerinden): **7/8**; tek başarısız `holehe`
+  uydurmadı (`scan_unavailable:provider_errors`).
+
+### 3 · Ses ve istek yolu — uçtan uca kanıt
+- **Ses:** yerel uç taklidiyle `/api/speech/say` → gerçek WAV (6.444 bayt, RIFF)
+  servis edildi; `/api/speech/listen` → metne çevrildi. Zincir tamam; eksik olan
+  gerçek motor (§KALAN-1/2).
+- **İstek yolu:** yerel taklit sağlayıcıya gerçek HTTP — doğru gövde, yetki
+  başlığı, `pineal-*` koridoru dâhil yanıt işleme; kapalı portta dürüst hata.
+  Bu, "tel kopuk mu, kimlik mi yok?" ayrımını kesinleştirir.
+
+### 4 · Kapanmayanlar (özet; tam liste raporun §2'sinde)
+9 yetenek: TTS, STT, transcript (whisper), translate-local (`trans`), yerel jüri,
+SearXNG (servis), agent-reach (doğru CLI), theHarvester (**Python ≥3.14 istiyor,
+proje 3.11**), Instagram kimliği. + Canlı LLM doğrulaması (anahtar yok) ve dış
+platform taramaları (ortam dış ağa çıkamıyor). **Kod hatası nedeniyle kapalı
+yetenek: 0.**
+
 ## Unreleased — 2026-10-14 — Canlı kanıt: uçlar ve motor gerçekten çalışıyor mu?
 
 Rapor: `docs/reports/CANLI_KANIT_RAPORU_2026-10-14.md` · sonda:

@@ -22,6 +22,7 @@ import asyncio
 import json
 import logging
 import os
+import shlex
 import shutil
 from typing import Any
 
@@ -296,6 +297,32 @@ class InstagrapiCapability(BaseCapability):
         )
 
 
+def agent_reach_command() -> list[str] | None:
+    """agent-reach CLI'ını çözer: önce ``PINEAL_AGENT_REACH_CMD``, sonra PATH.
+
+    [2026-10-14 · CANLI KANIT] Neden env gerekli: RUNBOOK'taki
+    ``npm i -g agent-reach`` komutu artık AYNI ADLI BAŞKA bir projeyi kuruyor
+    (Nostr ajan ağı; ölçüldü: npm agent-reach@0.3.4). Kör
+    ``shutil.which("agent-reach")`` yanlış aracı "hazır" sayabilir. Operatör
+    gerçek CLI'ın yolunu açıkça işaret eder; eski davranış (PATH araması)
+    korunur — tıpkı ``PINEAL_HARVESTER_CMD`` / ``PINEAL_TRANSCRIBE_CMD`` gibi.
+    """
+    raw = os.getenv("PINEAL_AGENT_REACH_CMD", "").strip()
+    if raw:
+        try:
+            parts = shlex.split(raw)
+        except ValueError:
+            return None  # bozuk tırnak: PATH'e düşmeyiz
+        if not parts:
+            return None
+        head = parts[0]
+        if os.path.isabs(head) or "/" in head or "\\" in head:
+            return parts if os.path.exists(head) else None
+        return parts if shutil.which(head) else None
+    found = shutil.which("agent-reach")
+    return [found] if found else None
+
+
 # ----------------------------------------------------------- Agent-Reach
 class AgentReachCapability(BaseCapability):
     """Agent-Reach (MIT) — Twitter/Reddit/YouTube/GitHub/Bilibili okuma, ücretsiz.
@@ -314,7 +341,7 @@ class AgentReachCapability(BaseCapability):
     def availability(self) -> Availability:
         if not _flag("ENABLE_AGENT_REACH"):
             return Availability.unavailable("gate_disabled:ENABLE_AGENT_REACH")
-        if shutil.which("agent-reach") is None:
+        if agent_reach_command() is None:
             return Availability.unavailable("dependency_missing:agent-reach")
         return Availability.ok()
 
