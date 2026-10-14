@@ -41,8 +41,8 @@ python scripts/kapasite_denetimi_probe.py      # → reports/kapasite_denetimi.j
 - 23 kapalının 19'u yalnız `gate_disabled` (bayrak kapalı). 4'ü bayraktan
   bağımsız: `trafilatura` (paket yok), yerel jüri (yerel model yok), TTS/STT
   (yerel uç yok).
-- Bu raporun çıkardığı **15 bulgudan 4'ü bu turda düzeltildi** (B1, B2, B12,
-  B15). Kalan 11'i §8'de karar sırasına dizildi.
+- Bu raporun çıkardığı **16 bulgudan 5'i bu turda düzeltildi** (B1, B2, B12,
+  B15, B16). Kalan 11'i §8'de karar sırasına dizildi.
 - Sağlayıcı tarafı: **28 rota / 7 sağlayıcı** fiilen yolda; **7 sağlayıcı yalnız
   tanı ekranında** (taşıyıcısı yok), **10 sağlayıcı** anahtarı olsa da rota
   doğurmuyor (operatör beyanı bekliyor) — hiçbiri sessizce yutulmuyor.
@@ -70,6 +70,7 @@ python scripts/kapasite_denetimi_probe.py      # → reports/kapasite_denetimi.j
 | **B13** | Öksüz ajan yok: 13 ajan rostosu, varsayılan rotada 9'u | **Kabul** | Aksiyon yok |
 | **B14** | Anlık görüntüde 3 "tier ihlali" (`heavy_without_frontier`: cognitive_profiler, human_behavior, shadow_executor) | **Anahtar artefaktı** | Bulut anahtarı yokken beklenen sonuç; kural ihlali değil "anahtar bekliyor" — anahtar gelince kapanır |
 | **B15** | `extractor.web.crawl4ai` bayrağı **servis üzerinden** okuyordu (`crawl_enricher.is_enabled()` → `ENABLE_CRAWL4AI`) ama `gates` kümesinde beyan etmiyordu: çekirdek "izinli" derken yetenek "kapalı" diyordu | **DÜZELTİLDİ** | `gates = {ENABLE_CRAWL4AI, vault}`; ayrıca yapısal kilit testi: "kaynakta `gate_disabled:ENABLE_X` diyen her sınıf X'i `gates`'te beyan etmek zorunda" |
+| **B16** | Envanter sayfası "bayat" diyordu ve CI backend işi düşüyordu: üretici listeyi `tracked + untracked` kurduğu için yeni bir dosyanın **commit'lenmesi** sayfadaki sırayı değiştiriyordu (kirli ağaçta üret → temiz ağaçta doğrula = kırmızı) | **DÜZELTİLDİ** | Liste `sorted(set(...))` = izleme durumundan bağımsız; kilit testi eklendi. Ek ders: sayfa **toplam satır** sayısı taşıdığı için her metin düzenlemesinden SONRA üretilmeli |
 
 ---
 
@@ -299,6 +300,7 @@ curl -s -o /dev/null -w '%{http_code}\n' http://localhost:20128/v1/models   # ye
 | A8 | B11: `PLAYWRIGHT_DOWNLOAD_HOST` ölü ayarını sil veya nota bağla | kod | SIRADA |
 | A9 | B8: `route_diagnostics()`'i operatöre aç (yolsuz/tanı sağlayıcıları tek ekranda) | kod | SIRADA |
 | A10 | B15: crawl4ai bayrağı omurgada beyanlı + "beyansız bayrak" yapısal kilidi | kod | **YAPILDI** |
+| A11 | B16: envanter üreticisi determinist sıralama + kilit testi; sayfa her metin düzenlemesinden sonra üretilir | kod | **YAPILDI** |
 
 ---
 
@@ -319,3 +321,10 @@ python -m pytest -q
 
 Bu rapor, kanıt JSON'u ve sonda betiği **depoda** yaşar; sonda raporun dışına
 düşerse sayılar yeniden üretilebilir (`reports/kapasite_denetimi.json`).
+
+**Not (B16):** envanter sayfası ağacın toplam satır sayısını taşır; bu raporu
+veya herhangi bir metni düzenledikten sonra sayfayı yeniden üretin:
+
+```bash
+python scripts/generate_inventory_page.py && python scripts/generate_inventory_page.py --check
+```
