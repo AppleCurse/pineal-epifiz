@@ -79,11 +79,30 @@ jobs:
         # defterde olmayan bir yetenek dosyası sessizce geçemez (exit 3 = bayat).
         run: python scripts/export_skills.py --check
       - name: Verify provider catalog contract (OpenRouter + Nous)
+        # [SESSİZ-ÇÖKME-YOK · 2026-10-14] Bu adım iki kez kör kaldı:
+        #  1) Betik hata satırlarını stderr'e yazıyordu, adım yalnız stdout'u
+        #     yakalıyordu → düşüşün SEBEBİ hiçbir yerde görünmüyordu.
+        #  2) Actions logları Azure blob'da; api.github.com'dan okunamıyor.
+        # Artık: `2>&1` ile birleşik yakalama + SEBEP ayrıca workflow
+        # ANNOTATION'ı olarak yayınlanır (audit adımındaki desenin aynısı).
         run: |
-          OUT="$(python scripts/verify_openrouter_catalog.py)"; RC=$?
-          echo "$OUT"
+          set +e
+          OUT="$(python scripts/verify_openrouter_catalog.py 2>&1)"
+          RC=$?
+          printf '%s\n' "$OUT"
           if printf '%s' "$OUT" | grep -q "SKIP: live OpenRouter check"; then
             echo "::warning title=catalog-live::Live OpenRouter cross-check SKIPPED — OPENROUTER_API_KEY secret tanımlı değil; yerel katalog kontratı koştu (model var/yok doğrulaması canlı katalog olmadan yapılamaz)."
+          fi
+          if printf '%s' "$OUT" | grep -q "^UNVERIFIED:"; then
+            reason=$(printf '%s' "$OUT" | grep -m1 "^UNVERIFIED:" | sed 's/%/%25/g')
+            echo "::warning title=catalog-unverified::${reason}%0A(Doğrulama YAPILAMADI — 'geçti' sayılmaz; ağ/servis kesintisi katalog kayması kanıtı değildir.)"
+          fi
+          if [ "$RC" -ne 0 ]; then
+            blob=$(printf '%s' "$OUT" | grep '^FAIL:' | head -20 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            if [ -z "$blob" ]; then
+              blob=$(printf '%s' "$OUT" | tail -20 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            fi
+            echo "::error title=catalog-contract::Canlı/yerel katalog kontratı KIRILDI. Sebep:%0A${blob}"
           fi
           exit $RC
         env:

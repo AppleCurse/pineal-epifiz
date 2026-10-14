@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased — 2026-10-14 — Merge sonrası main kırmızısı: katalog adımı kör kaldı
+
+Kök neden ve onarım — "testler geçti" demek "iş bitti" değil, üçüncü kanıt:
+
+- **Olay:** PR #128 merge edildi; PR koşusunda backend yeşildi, merge sonrası
+  `main` koşusunda **adım 7–10 geçti, adım 11 ("Verify provider catalog
+  contract") düştü**. Aynı ağaç (`7f2c634…`), aynı adımlar, 15 dakika arayla
+  farklı sonuç → sebep kod değil dış bağımlılık. Ama sebep **hiçbir yerde
+  okunamadı**.
+- **Körlük (gerçek kusur 1):** betik hata satırlarını **stderr**'e yazıyordu
+  (`print(..., file=sys.stderr)`), CI adımı ise yalnız **stdout**'u yakalıyordu
+  (`OUT="$(python …)"`). Üstelik Actions logları Azure blob'da ve bu ortamdan
+  okunamıyor → "exit 1" dışında hiçbir iz yoktu. Düzeltme: adım `2>&1` ile
+  birleşik yakalar ve kırılma SEBEBİNİ `::error title=catalog-contract`
+  annotation'ı olarak yayınlar (denetim adımındaki desenin aynısı).
+- **Yanlış alarm (gerçek kusur 2):** dış servis kesintisi (ağ/5xx/429) bizim
+  kataloğumuz hakkında hiçbir şey söylemez, ama adım onu "FAIL" sayıp main'i
+  kırmızıya boyuyordu. Artık üç hüküm ayrı: `FAIL:` (canlı katalog okundu ve
+  pinlerle çelişiyor → exit 1) · `UNVERIFIED:` (ulaşılamadı → doğrulama
+  YAPILMADI, exit 0 + yüksek sesli `::warning`; asla "doğrulandı" denmez) ·
+  `SKIP:` (anahtar yok). Ayrıca tek DNS sarsıntısı için sınırlı yeniden deneme
+  (3 deneme, artan bekleme).
+- **Testsiz bekçi (gerçek kusur 3):** bu betiğin **hiç testi yoktu** — yalnız
+  CI'da koşuyordu, kırılınca yerelde kimse görmedi. Yeni kilit:
+  `tests/unit/test_openrouter_catalog_contract.py` (13 test): yerel kontrat
+  ısırıyor mu (fiyat kayması / model düşmesi / `:free` rotası $0'dan farklı /
+  yasaklı ölü kayıt), üç hüküm ayrı mı, geçici arıza yeniden deneniyor mu,
+  CI adımı sebebi yayınlıyor mu. Mutasyonla doğrulandı: eski davranış geri
+  konunca 3 test + workflow testi kırmızı oldu.
+- **Kalan zayıflık (açıkça):** canlı çapraz kontrol anahtara ve dış servise
+  bağlıdır; kesintide katalog kayması TESPİT EDİLEMEZ — "doğrulanamadı" bunu
+  gizlemez ama kapatmaz. Kalıcı çözüm canlı katalogun CI dışında düzenli
+  toplanıp commit edilmesidir (depo dışı artefakt); bu turda yapılmadı.
+- Envanter: yeni test dosyası kanonik ölçüyü 234 → **235 test modülü** yaptı
+  (CHANGELOG deyimi ve `docs/envanter.html` güncellendi).
+
 ## Unreleased — 2026-10-14 — Kalan eksikler turu: yetenekler gerçekten koşturuldu
 
 Mutlak liste: `docs/reports/KALAN_EKSIKLER_2026-10-14.md` (kapananlar +
@@ -175,7 +211,7 @@ kanıtı `reports/kapasite_denetimi.json` ve onu üreten
   Rust `//!` belgeleri, Markdown başlıkları; **`app.*` dekoratörlerinden sayılan 70 uç** ve
   **`.env.example`'ın 98 ayarı (grup + yorum + örnek değer)**.
 - Çok satırlık klasörler açıklama kazandı: `rust_core/` (48), `android/` (49, parite sınırı
-  etiketli), `frontend/` (47), `functions/` (2), `skills/` (26), `config/` (6), 234 test modülü
+  etiketli), `frontend/` (47), `functions/` (2), `skills/` (26), `config/` (6), 235 test modülü
   (`tests/` altındaki `test_*.py` — pytest'in topladığı dosyalar) ve 41 tarihli rapor.
 - Determinizm: künye tarihi "şimdi" değil son commit'tir ve sayfa KENDİNİ saymaz — bu yüzden
   `--check` kararlıdır. CI'ya "Verify inventory page committed fresh" adımı eklendi.
