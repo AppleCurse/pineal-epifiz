@@ -27,10 +27,12 @@
   satıra düşerek 5.916 satırlık ratchet sınırının altındadır.
 - Canlı fiyat sapması: PR CI [38787820334](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38787820334)
   `GET /api/v1/models` yanıtında `deepseek-v4-pro` için $0.395328/$0.790656,
-  `glm-5.2` için $0.65/$10.00 per 1M ölçtü; önceki pinlerle çeliştiği için
-  gateway muhasebesi, OpenRouter katalog snapshot'ı ve canlı doğrulama bekçisi
-  bu ölçüme hizalandı. Bu zaman damgalı katalog sorgusu inference/hesap
-  erişimini veya sonraki fiyat kararlılığını kanıtlamaz.
+  `glm-5.2` için $0.65/$10.00 per 1M ölçtü. Bir sonraki live-check run'ı
+  [38789947274](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38789947274)
+  deepseek fiyatını yeniden $0.392022/$0.784044 ölçtü; gateway, katalog ve
+  verifier son ölçüme hizalandı. Bu kısa aralıklı fark, fiyat snapshot'ının
+  oynaklığını gösterir; katalog sorgusu inference/hesap erişimini veya sonraki
+  fiyat kararlılığını kanıtlamaz.
 - **Doğrulama:** Python **2.626 geçti, 6 atlandı, 0 başarısız**; frontend
   `svelte-check` 0 hata/uyarı ve Vite production build başarılı. Envanter,
   skill paketi ve audit raporu tazelik testleri ile `git diff --check` geçti.

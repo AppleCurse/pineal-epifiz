@@ -551,9 +551,9 @@ class LLMGateway:
         "z-ai/glm-5.2": {"in": 0.65, "out": 10.0},
         # [2026-10-14..15] Ölçülen geçmiş: $0.4679/$0.9358 ->
         # $0.386976/$0.773952 -> $0.95526/$1.91052.
-        # [2026-10-15 · PR CI 38787820334] Son canlı /models: $0.395328/$0.790656
-        # per 1M. Oynak fiyat; bu pin yalnız son ölçümü, canlı fatura garantisini değil.
-        "deepseek/deepseek-v4-pro": {"in": 0.395328, "out": 0.790656},
+        # [2026-10-15 · PR CI 38787820334] $0.395328/$0.790656; sonraki
+        # [38789947274] ölçümü $0.392022/$0.784044. Oynak; yalnız son snapshot.
+        "deepseek/deepseek-v4-pro": {"in": 0.392022, "out": 0.784044},
         "google/gemini-3.7-flash": {"in": 0.75, "out": 3.75},
         # 2026-09-02 karar matrisi: Sonnet 5 $2/$10 (promo), Grok 4.6 $2/$6.
         # 2026-09-08 notu: Sonnet 5 promo'su 31.08.2026'da sona erdi; Anthropic
