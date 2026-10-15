@@ -23,9 +23,13 @@ snapshot as a live-health result.
 `ProviderProtocol` declares `openai_chat`, `openai_responses`,
 `anthropic_messages`, `gemini_generate`, `cohere_chat`, and `aws_bedrock` as
 possible protocol values. At repository inspection on 2026-10-15, the checked-in
-catalog contains 27 provider descriptors (metadata timestamp 2026-09-02): 22
-`openai_chat`, 3 `openai_responses`, 1 `anthropic_messages`, and 1 `cohere_chat`.
-All 27 are marked `catalog_only`. The router runtime is narrower:
+catalog contains 27 provider descriptors (catalog snapshot timestamp
+2026-10-15): 22 `openai_chat`, 3 `openai_responses`, 1 `anthropic_messages`,
+and 1 `cohere_chat`. All 27 are marked `catalog_only`. The timestamp was
+advanced after the PR CI live catalog check detected price changes for two
+OpenRouter entries; that check is a time-bound public catalog observation, not
+proof of inference access or of the remaining descriptors' live capabilities.
+The router runtime is narrower:
 
 - `RoutedChatExecutor._connection_from_mapping()` accepts only `api_key` and
   `local` connection types and rejects non-`openai_chat` providers.

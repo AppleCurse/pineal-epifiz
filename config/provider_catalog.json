@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "catalog_updated_at": "2026-09-02",
+ "catalog_updated_at": "2026-10-15",
  "scope": "Authorized official APIs, operator-owned compatible endpoints, and local inference only. Catalog entries are not claims of live verification.",
  "providers": [
   {
@@ -200,8 +200,8 @@
       "tools"
      ],
      "pricing": {
-      "input_per_million_usd": 0.037,
-      "output_per_million_usd": 7.0
+      "input_per_million_usd": 0.65,
+      "output_per_million_usd": 10.0
      }
     },
     {
@@ -213,8 +213,8 @@
       "tools"
      ],
      "pricing": {
-      "input_per_million_usd": 0.95526,
-      "output_per_million_usd": 1.91052
+      "input_per_million_usd": 0.395328,
+      "output_per_million_usd": 0.790656
      }
     },
     {
