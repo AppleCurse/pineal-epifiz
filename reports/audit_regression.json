@@ -1,6 +1,6 @@
 {
   "meta": {
-    "source_stamp": "sha256:6a8099f5041ff5a4",
+    "source_stamp": "sha256:883a6a31e81fc54e",
     "source_stamp_meaning": "denetim raporunun içerik mühürü (sha256) — 'ne zaman koştum' değil, 'hangi kaynaktan ölçtüm'. Deterministik: git derinliği, saat dilimi ve dosya mtime'ı damgayı değiştiremez; CI'daki `git diff --exit-code` tazelik kapısı ancak böyle anlamlı (anlık damga adımı her koşuda kırmızıya boyar, gerçek regresyon gürültüye boğulur).",
     "audit_report": "docs/reports/JULES_DENETIM_2026-10-06.md",
     "finding_count": 24,

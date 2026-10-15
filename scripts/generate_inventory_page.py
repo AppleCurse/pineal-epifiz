@@ -43,6 +43,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "docs" / "envanter.html"
 
@@ -443,7 +450,11 @@ def git(*args: str) -> str:
     # Raporu.md"` gibi OKUNMAZ bir adı dosya sanıyordu — yani dosya, gerçek adıyla
     # hiç listelenmiyordu.
     proc = subprocess.run(
-        ["git", "-c", "core.quotepath=false", *args], cwd=ROOT, capture_output=True, text=True
+        ["git", "-c", "core.quotepath=false", *args],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
     )
     if proc.returncode != 0:
         ayrinti = (proc.stderr or proc.stdout or "").strip().replace("\n", " ")[:300]
@@ -1006,7 +1017,7 @@ def main() -> int:
         return 0
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(page, encoding="utf-8")
+    OUT.write_text(page, encoding="utf-8", newline="\n")
     missing = [e["path"] for e in entries if e["path"].endswith(".py") and not e["desc"]]
     print(f"yazıldı: {OUT} ({len(page)/1024:.0f} KB) · "
           f"{len(entries)} dosya · test modülü: {_NOTES_TOKENS.get('test_modulu', '?')} "
