@@ -7,6 +7,26 @@ import pytest
 from agent_core.services.llm_gateway import LLMGateway, SpendCapExceeded
 
 
+# ── FİYATLAR TEK KAYNAKTAN TÜRETİLİR ────────────────────────────────────────
+# Bu dosya rezervasyon/atomiklik MEKANİZMASINI sınar, fiyat sabitlerini değil.
+# 2026-10-14'te solar-pro4'nun fiyatı canlı ölçümle $0.03/$0.12 -> $0.09/$0.36
+# olunca, buraya gömülü cap ve maliyet sayıları testleri kırmıştı. Artık her
+# beklenen değer MODEL_PRICING'ten hesaplanır: fiyat değişince yalnız tablo
+# güncellenir, mekanizma testleri kendiliğinden doğru kalır.
+_RATES = LLMGateway.MODEL_PRICING["upstage/solar-pro4"]
+_PROMPT_TOKENS = len(b"prompt") + 64   # _estimate_input_cost: bayt + 64 çerçeve
+_MAX_OUTPUT_TOKENS = 1000              # OPENROUTER_MAX_OUTPUT_TOKENS
+_RESERVATION = (
+    _PROMPT_TOKENS * _RATES["in"] + _MAX_OUTPUT_TOKENS * _RATES["out"]
+) / 1_000_000.0
+_OBSERVED_COST = (1_000 * _RATES["in"] + 500 * _RATES["out"]) / 1_000_000.0
+
+
+def _cap(multiple: float) -> str:
+    """n× rezervasyon: tam olarak n eşzamanlı çağrı sığar (semantik korunur)."""
+    return f"{_RESERVATION * multiple:.9f}"
+
+
 class _Usage:
     prompt_tokens = 1_000
     completion_tokens = 500
@@ -59,9 +79,9 @@ class _Client:
         self.chat = type("Chat", (), {"completions": completions})()
 
 
-def _paid_gateway(monkeypatch, completions, *, cap="0.00031") -> LLMGateway:
+def _paid_gateway(monkeypatch, completions, *, cap: str | None = None) -> LLMGateway:
     monkeypatch.setenv("LIVE_LLM_E2E", "1")
-    monkeypatch.setenv("OPENROUTER_MAX_SPEND_USD", cap)
+    monkeypatch.setenv("OPENROUTER_MAX_SPEND_USD", cap if cap is not None else _cap(2.5))
     monkeypatch.setenv("OPENROUTER_MAX_OUTPUT_TOKENS", "1000")
     monkeypatch.delenv("USE_LOCAL_LLM", raising=False)
     gateway = LLMGateway()
@@ -85,8 +105,9 @@ async def test_concurrent_reservations_never_overbook_cap(monkeypatch, paralleli
 
     results = await asyncio.gather(*(invoke(index) for index in range(parallelism)))
 
-    # Reservation is ~$0.000122/call, so a $0.00031 cap admits at most two
-    # simultaneous calls. Their observed total is $0.00018.
+    # Rezervasyon çağrı başına _RESERVATION; cap 2,5× olduğu için en fazla İKİ
+    # eşzamanlı çağrı sığar (3. rezervasyon cap'i aşar). Gözlenen toplam
+    # 2 × _OBSERVED_COST.
     assert results.count("ok") == 2
     assert results.count("rejected") == parallelism - 2
     assert completions.calls == 2
@@ -103,7 +124,7 @@ async def test_concurrent_reservations_never_overbook_cap(monkeypatch, paralleli
 
 @pytest.mark.asyncio
 async def test_failed_call_releases_reservation(monkeypatch):
-    gateway = _paid_gateway(monkeypatch, _FailingCompletions(), cap="0.00013")
+    gateway = _paid_gateway(monkeypatch, _FailingCompletions(), cap=_cap(1.5))
 
     with pytest.raises(ValueError, match="400"):
         await gateway.query("prompt", model="upstage/solar-pro4")
@@ -124,14 +145,14 @@ async def test_malformed_paid_response_is_settled_before_bounded_retry(monkeypat
 
     monkeypatch.setattr(asyncio, "sleep", no_wait)
     completions = _MalformedThenValidCompletions()
-    gateway = _paid_gateway(monkeypatch, completions, cap="0.001")
+    gateway = _paid_gateway(monkeypatch, completions, cap=_cap(2.5))
     gateway._is_retryable_error = lambda _exc: True
 
     assert await gateway.query("prompt", model="upstage/solar-pro4") == "ok"
 
     assert completions.calls == 2
-    assert gateway.spend_usd == pytest.approx(0.00018)
-    assert gateway.call_log[-1]["cost_usd"] == pytest.approx(0.00018)
+    assert gateway.spend_usd == pytest.approx(2 * _OBSERVED_COST)
+    assert gateway.call_log[-1]["cost_usd"] == pytest.approx(2 * _OBSERVED_COST)
     assert gateway.call_log[-1]["attempt"] == 2
     assert gateway._reserved_spend_usd == 0.0
     assert gateway._budget_reservations == {}
@@ -140,7 +161,7 @@ async def test_malformed_paid_response_is_settled_before_bounded_retry(monkeypat
 @pytest.mark.asyncio
 async def test_cancelled_call_releases_reservation_and_logs_error(monkeypatch):
     completions = _BlockingCompletions()
-    gateway = _paid_gateway(monkeypatch, completions, cap="0.00013")
+    gateway = _paid_gateway(monkeypatch, completions, cap=_cap(1.5))
 
     task = asyncio.create_task(gateway.query("prompt", model="upstage/solar-pro4"))
     await completions.started.wait()
@@ -165,7 +186,7 @@ async def test_cancel_during_retry_backoff_releases_reservation(monkeypatch):
         await backoff_release.wait()
 
     monkeypatch.setattr(asyncio, "sleep", blocking_sleep)
-    gateway = _paid_gateway(monkeypatch, _FailingCompletions(), cap="0.00013")
+    gateway = _paid_gateway(monkeypatch, _FailingCompletions(), cap=_cap(1.5))
     # Make the synthetic error retryable so query enters the backoff await.
     gateway.client = _Client(type(
         "RetryingCompletions",
