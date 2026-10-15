@@ -59,6 +59,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 ROOT = Path(__file__).resolve().parents[1]
 AUDIT_REPORT = ROOT / "docs" / "reports" / "JULES_DENETIM_2026-10-06.md"
 REPORT_OUT = ROOT / "reports" / "audit_regression.json"

@@ -453,10 +453,23 @@ def test_nightly_workflow_shell_requires_live_verification(
     """
     import os
     import subprocess
+    import sys
 
     import yaml
 
-    workflow = yaml.safe_load((ROOT / ".github/workflows/catalog-drift.yml").read_text())
+    if sys.platform == "win32":
+        try:
+            check_bash = subprocess.run(
+                ["bash", "-c", "echo ok"], capture_output=True, text=True, timeout=2
+            )
+            if check_bash.returncode != 0 or "ok" not in check_bash.stdout:
+                pytest.skip("Functional bash not available on Windows (e.g. WSL distro missing)")
+        except Exception:
+            pytest.skip("Functional bash not available on Windows")
+
+    workflow = yaml.safe_load(
+        (ROOT / ".github/workflows/catalog-drift.yml").read_text(encoding="utf-8")
+    )
     shell = workflow["jobs"]["drift"]["steps"][-1]["run"]
     fake_python = tmp_path / "python"
     fake_python.write_text('#!/bin/sh\nprintf "%s\\n" "$PROBE_OUTPUT"\nexit "$PROBE_RC"\n')

@@ -256,7 +256,12 @@ def test_main_exit_code_is_one_on_regression(monkeypatch, tmp_path):
         encoding="utf-8",
     )
     proc = subprocess.run(
-        [sys.executable, str(driver)], cwd=tmp_path, capture_output=True, text=True, timeout=300
+        [sys.executable, str(driver)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=300,
     )
     assert proc.returncode == 1, (
         f"beklenen 1 (regresyon), gelen {proc.returncode}\n"
@@ -741,6 +746,7 @@ def test_written_report_is_valid_and_matches_stdout_gate(tmp_path):
         cwd=ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=300,
     )
     assert out.returncode == 0, out.stdout[-3_000:] + out.stderr[-3_000:]

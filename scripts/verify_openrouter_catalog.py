@@ -76,8 +76,8 @@ REQUIRED_OPENROUTTER = {
     # [2026-10-14 · ikinci ölçüm] $0.95526/$1.91052 okundu; önceki değer
     # $0.386976/$0.773952 idi. Fiyat OYNAK: her koşu ölçer.
     # [2026-10-15 · PR CI 38787820334] $0.395328/$0.790656;
-    # [PR CI 38789947274] sonraki ölçüm $0.392022/$0.784044.
-    "deepseek/deepseek-v4-pro": (0.392022, 0.784044),
+    # [PR CI 38789947274] $0.392022/$0.784044; [38794722007] $0.386976/$0.773952.
+    "deepseek/deepseek-v4-pro": (0.386976, 0.773952),
     "anthropic/claude-sonnet-5": (2.0, 10.0),
     # [2026-10-14 · kapsam turu 2] Katalogun `openrouter` bölümünde beyan edilmiş
     # ama hiç canlı kontrol edilmemiş dört kayıt daha: katalog bunların OR fiyatı
