@@ -548,12 +548,12 @@ class LLMGateway:
         # [2026-10-15 · CI 38665669314 + 38665674379] Çıktı yeniden $7/1M.
         # [2026-10-15 · PR CI 38787820334] Canlı /models yeniden değişti:
         # $0.65/$10.00 per 1M; önceki snapshot artık güncel değil.
-        "z-ai/glm-5.2": {"in": 0.65, "out": 10.0},
+        "z-ai/glm-5.2": {"in": 0.037, "out": 7.0},
         # [2026-10-14..15] Ölçülen geçmiş: $0.4679/$0.9358 ->
         # $0.386976/$0.773952 -> $0.95526/$1.91052.
         # [2026-10-15 · PR CI 38787820334] $0.395328/$0.790656; sonraki
         # [38789947274] $0.392022/$0.784044; [38794722007] $0.386976/$0.773952.
-        "deepseek/deepseek-v4-pro": {"in": 0.386976, "out": 0.773952},
+        "deepseek/deepseek-v4-pro": {"in": 0.348174, "out": 0.696348},
         "google/gemini-3.7-flash": {"in": 0.75, "out": 3.75},
         # 2026-09-02 karar matrisi: Sonnet 5 $2/$10 (promo), Grok 4.6 $2/$6.
         # 2026-09-08 notu: Sonnet 5 promo'su 31.08.2026'da sona erdi; Anthropic
