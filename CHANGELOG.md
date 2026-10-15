@@ -23,6 +23,9 @@
   tetikleme. Anahtar yokluğu ve erişim kesintisi bu workflow'da başarısızdır;
   kesinti "fiyat kayması" diye sunulmaz. Zamanlama main'e birleşince etkinleşir.
   Shell davranışı başarı/anahtar yok/kesinti/kayma/beklenmeyen hata ile sınandı.
+  PR #130 birleşti (`5547cd2`). Elle tetikleme 403 (integration yetkisi yok)
+  döndü; aynı job artık fiyat dosyası değişikliklerinde push ile de çalışır.
+  Gecelik tetiklemenin gelecekteki sonucu ve elle başlatma yetkisi kanıtlanmadı.
 - **Açık:** `openai/gpt-5.6-luna` ve `openai/gpt-oss-120b` ücretli legacy
   muhasebesinde var, OR katalog/pin kapsamı dışında. İsimleri kilit testiyle
   sabitlendi; canlı fiyatları doğrulanmış değildir.

@@ -117,8 +117,11 @@ Son girdi kanıtı: [38664381599](https://github.com/AppleCurse/pineal-epifiz/ac
 ve adsız ücretli muhasebe kaydı testle reddedilir. API'nin token başına
 fiyatı hata mesajında /1M'ye dönüştürülür. Maliyet/rezervasyon testleri fiyatı
 tablodan türetir. Gecelik workflow 06:17 İstanbul'da çalışacak; anahtar yokluğu
-ve erişim kesintisi yeşil sayılmaz. Zamanlanmış/elle workflow'un gerçek
-GitHub koşusu ayrıca kontrol edilmelidir; yerel shell testi bunun yerine geçmez.
+ve erişim kesintisi yeşil sayılmaz. PR #130 `5547cd2` ile birleşti. Elle çalıştırma denemesi GitHub tarafından
+`403 Resource not accessible by integration` ile reddedildi; çalışmış sayılmaz.
+Aynı job fiyat dosyaları değiştiğinde push ile de tetiklenir; gerçek GitHub
+sonucu ayrıca kontrol edilir. Gecelik zamanlamanın ileride fiilen tetiklenmesi
+ve elle tetikleme yetkisi ayrı açıklardır; yerel shell testi canlı kanıt değildir.
 
 **Bu bölümün açıkları:**
 

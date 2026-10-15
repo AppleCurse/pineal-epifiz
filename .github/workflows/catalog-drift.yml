@@ -5,6 +5,15 @@ name: Catalog Drift (canlı fiyat bekçisi)
 # sağlayıcı seçiminden mi kaynaklandığı katalog yanıtından kanıtlanamaz.
 # 03:17 UTC = 06:17 Europe/Istanbul. Zamanlanmış koşu main'e birleşince etkinleşir.
 on:
+  push:
+    branches:
+      - main
+      - arena/006946d1-pineal-epifiz
+    paths:
+      - .github/workflows/catalog-drift.yml
+      - scripts/verify_openrouter_catalog.py
+      - config/provider_catalog.json
+      - agent_core/services/llm_gateway.py
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:
