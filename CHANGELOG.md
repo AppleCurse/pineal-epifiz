@@ -10,7 +10,12 @@
   [38662205946](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38662205946)
   GLM çıktısını **$4.40/1M** okudu; ardından CI
   [38664381599](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38664381599)
-  girdiyi **$0.037/1M** okudu; son kayıt **$0.037/$4.40**.
+  girdiyi **$0.037/1M** okudu; ardından iki koşu
+  [38665669314](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38665669314)
+  ve [38665674379](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38665674379)
+  çıktıyı yeniden **$7/1M** okudu; son kayıt **$0.037/$7.00**.
+  Statik tablo, ölçümler arasındaki fiyat değişimini gerçek zamanlı izlemiyor;
+  her çağrının gerçek faturasıyla eşleştiği bu bekçiyle kanıtlanamaz.
   Pin, OpenRouter katalog kaydı ve gateway harcama tablosu hizalandı.
   Bu ölçümler fiyat farklılığını kanıtlar; kampanyanın bittiğini veya fiyatın
   neden değiştiğini tek başına kanıtlamaz. Önceki açıklamalardaki nedensellik

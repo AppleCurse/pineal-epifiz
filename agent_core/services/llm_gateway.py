@@ -541,7 +541,8 @@ class LLMGateway:
         # ucuzladı, çıktı 6,8× pahalandı: eski tablo her iki yönde de yanlıştı.
         # [2026-10-15 · CI 38662205946] Son çıktı ölçümü $4.40/1M.
         # [2026-10-15 · CI 38664381599] Son girdi ölçümü $0.037/1M.
-        "z-ai/glm-5.2": {"in": 0.037, "out": 4.4},
+        # [2026-10-15 · CI 38665669314 + 38665674379] Çıktı yeniden $7/1M.
+        "z-ai/glm-5.2": {"in": 0.037, "out": 7.0},
         # [2026-10-14 · canlı teyit] $0.4679/$0.9358 -> $0.386976/$0.773952 ->
         # $0.95526/$1.91052. Son ölçüm aynı gün ikinci koşuda alındı; fiyat oynak,
         # tablo her canlı ölçümden sonra güncellenir (tahminle değil).
