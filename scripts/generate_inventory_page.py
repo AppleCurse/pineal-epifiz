@@ -777,7 +777,11 @@ def build_html(entries: list) -> str:
     # içerik imzasını bildirir: ikisi de dosya içeriğinden gelir, commit'ten bağımsızdır.
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip() if (ROOT / "VERSION").is_file() else "?"
     uretici = (ROOT / "scripts" / "generate_inventory_page.py")
-    imza = hashlib.sha256(uretici.read_bytes()).hexdigest()[:12] if uretici.is_file() else "?"
+    imza = (
+        hashlib.sha256(uretici.read_bytes().replace(b"\r\n", b"\n")).hexdigest()[:12]
+        if uretici.is_file()
+        else "?"
+    )
 
     cat_a = [by_path[p] for p in CATEGORY_A if p in by_path]
     cat_b = [by_path[p] for p in CATEGORY_B if p in by_path]
