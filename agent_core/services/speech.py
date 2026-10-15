@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import time
+import uuid
 from typing import Any, Callable, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -64,6 +65,8 @@ class SpeechResult(BaseModel):
     state: str = STATE_IDLE
     engine: str = ""
     voice: str = ""
+    rate: float = 1.0
+    playback_id: str = ""
     name: str = ""
     url: str = ""
     bytes: int = 0
@@ -102,6 +105,15 @@ def set_state(state: str, **extra: Any) -> None:
     if "last" in extra:
         _STATE["last"] = extra["last"]
     _STATE.update({k: v for k, v in extra.items() if k != "last"})
+
+
+def finish_playback(playback_id: str) -> bool:
+    """Finish only the currently active playback; stale client events are no-ops."""
+    last = _STATE.get("last") if isinstance(_STATE.get("last"), dict) else {}
+    if _STATE.get("state") != STATE_SPEAKING or last.get("playback_id") != playback_id:
+        return False
+    set_state(STATE_IDLE)
+    return True
 
 
 async def read_report(
@@ -233,6 +245,7 @@ async def speak(
     text: str,
     *,
     voice: Optional[str] = None,
+    rate: float = 1.0,
     vault_locked: bool = True,
     emit: Optional[Callable[[Dict[str, Any]], None]] = None,
 ) -> SpeechResult:
@@ -258,7 +271,7 @@ async def speak(
         CAPABILITY_ID,
         CapabilityContext(
             subject="",
-            params={"text": text, "voice": voice or ""},
+            params={"text": text, "voice": voice or "", "rate": rate},
         ),
         state=state,
     )
@@ -280,11 +293,14 @@ async def speak(
         )
 
     name = str(payload.get("name") or "")
+    playback_id = uuid.uuid4().hex
     spoken = SpeechResult(
         available=True,
         state=STATE_SPEAKING,
         engine=str(payload.get("engine") or ""),
         voice=str(payload.get("voice") or ""),
+        rate=float(payload.get("rate") or 1.0),
+        playback_id=playback_id,
         name=name,
         url=f"/api/speech/audio/{name}" if name else "",
         bytes=int(payload.get("bytes") or 0),
@@ -296,6 +312,7 @@ async def speak(
             f"{payload.get('duration_ms') or '?'} ms · {payload.get('chars')} karakter seslendirildi"
         ),
     )
+    clear_interrupt()
     set_state(STATE_SPEAKING, last=spoken.model_dump())
     return spoken
 

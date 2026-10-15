@@ -42,6 +42,7 @@ def _mirror_with_padded_strings(char_budget: int) -> MirrorReflection:
         alignment_score=0.8,
         authentic_anchors=["capa bir", "capa iki", "capa uc"],
         confidence=0.9,
+        data_confidence=True,
     )
 
 
@@ -105,6 +106,7 @@ def test_short_valid_mirror_answer_does_not_halt():
         alignment_score=0.8,
         authentic_anchors=["estetik", "mekan", "yuruyus"],
         confidence=0.9,
+        data_confidence=True,
     )
     report = engine.evaluate(result, "mirror_truth")
     assert not report.is_suspicious, report.reason
@@ -134,8 +136,8 @@ def test_list_score_is_constant_not_length_based():
 
 
 @pytest.mark.asyncio
-async def test_mirror_of_truth_sets_confidence_when_grounded():
-    """MirrorOfTruth valid LLM sonucunda confidence >= 0.70 ve data_confidence=True donmeli."""
+async def test_mirror_of_truth_preserves_zero_model_confidence():
+    """A model confidence of zero is not raised to a fabricated floor."""
     from unittest.mock import AsyncMock
     from agent_core.agents.mirror_truth import MirrorOfTruth, MirrorReflection
 
@@ -157,12 +159,12 @@ async def test_mirror_of_truth_sets_confidence_when_grounded():
         }
     })
 
-    assert res.confidence >= 0.70
-    assert res.data_confidence is True
-    assert res.fallback_reason is None
+    assert res.confidence == 0.0
+    assert res.data_confidence is False
+    assert res.fallback_reason == "model_confidence_zero"
 
     engine = UncertaintyEngine()
     report = engine.evaluate(res, "mirror_truth")
-    assert not report.is_suspicious
-    assert report.confidence >= 0.70
+    assert report.is_suspicious
+    assert report.confidence == 0.0
 

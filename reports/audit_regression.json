@@ -38,8 +38,8 @@
       "check_kind": "test_gated",
       "status": "closed",
       "evidence": [
-        "agent_core/agents/human_behavior.py:163: results = await asyncio.gather(*tasks)",
-        "agent_core/agents/human_behavior.py:161: # [E7-muaf] İç coroutine (`_fetch_and_analyze_image`) her",
+        "agent_core/agents/human_behavior.py:164: results = await asyncio.gather(*tasks)",
+        "agent_core/agents/human_behavior.py:162: # [E7-muaf] İç coroutine (`_fetch_and_analyze_image`) her",
         "tests/unit/test_gather_contract.py: kilit işaretleri 4/4 → EXPECTED_EXEMPT_FILES, [E7-muaf], MIN_RATIONALE_CHARS, return_exceptions",
         "anlamsal denetim: 11 çağrının 3'ü return_exceptions=True, 7'si iç coroutine hatayı yakaladığı için korumalı, 1'i bilinçli all-or-nothing; gerçekten korumasız tek nokta (socid_enricher.enrich_urls) onarıldı"
       ],
@@ -57,8 +57,8 @@
       "evidence": [
         "satır başı `import httpx` (egress dışı) → 0 dosya (denetim 8 idi)",
         "egress dışı `httpx.AsyncClient(` inşası → 0 nokta (deterministik tarama)",
-        "omurgaya bağlı dosya (open_client kullanan) → 15 dosya",
-        "agent_core/capabilities/egress.py:90: def open_client("
+        "omurgaya bağlı dosya (open_client kullanan) → 16 dosya",
+        "agent_core/capabilities/egress.py:123: def open_client("
       ],
       "note": "Dışa çıkış tek sırtta: inşa yalnız open_client, her dosya omurgaya bağlı.",
       "regression": false
@@ -72,7 +72,7 @@
       "check_kind": "static",
       "status": "closed",
       "evidence": [
-        "agent_core/capabilities/adapters_web.py:72: logger.error(\"Dil tespiti hatası — kapsam language=unknown (engine=%s)\", engine, exc_info=True)"
+        "agent_core/capabilities/adapters_web.py:74: logger.error(\"Dil tespiti hatası — kapsam language=unknown (engine=%s)\", engine, exc_info=True)"
       ],
       "note": "Tespit hatası artık loglanıyor.",
       "regression": false
@@ -87,7 +87,7 @@
       "status": "closed",
       "evidence": [
         "agent_core/agents/human_behavior.py: `input_data: Dict[str, Any]` imzası kalkmış",
-        "agent_core toplam: 177"
+        "agent_core toplam: 178"
       ],
       "note": "Payload Pydantic modele bağlanmış.",
       "regression": false
@@ -116,8 +116,8 @@
       "check_kind": "static",
       "status": "closed",
       "evidence": [
-        "agent_core/capabilities/adapters_web.py:72: logger.error(\"Dil tespiti hatası — kapsam language=unknown (engine=%s)\", engine, exc_info=True) ⏎ return {\"language\": \"unknown\", \"language_reason\": \"detect_erro",
-        "agent_core/capabilities/adapters_web.py:161: logger.debug(\"metadata çıkarımı başarısız — title boş bırakıldı\", exc_info=True)"
+        "agent_core/capabilities/adapters_web.py:74: logger.error(\"Dil tespiti hatası — kapsam language=unknown (engine=%s)\", engine, exc_info=True) ⏎ return {\"language\": \"unknown\", \"language_reason\": \"detect_erro",
+        "agent_core/capabilities/adapters_web.py:195: logger.debug(\"metadata çıkarımı başarısız — title boş bırakıldı\", exc_info=True)"
       ],
       "note": "Metadata hatası loglanıyor.",
       "regression": false
@@ -171,9 +171,9 @@
       "check_kind": "test_gated",
       "status": "closed",
       "evidence": [
-        "backend/api.py:1405: @app.get(\"/v1/models\")",
-        "backend/api.py:1414: for model_id in routed.executable_models(gateway)",
-        "backend/api.py:1431: \"owned_by\": owner,",
+        "backend/api.py:1432: @app.get(\"/v1/models\")",
+        "backend/api.py:1441: for model_id in routed.executable_models(gateway)",
+        "backend/api.py:1458: \"owned_by\": owner,",
         "tests/e2e/test_openai_compatibility.py: kilit işaretleri 2/2 → /v1/models, data",
         "envanter sabit `[]` değil: unified modda router'ın executable_models'ı, bulut açıksa MODEL_PRICING, yerel motor varsa local_model — hepsi OpenAI Model nesnesi biçiminde (id/object/created/owned_by)"
       ],
@@ -208,8 +208,8 @@
         "agent_core/services/holehe_scanner.py:114: require_open(purpose=\"osint\")",
         "agent_core/scraper/run_scraper.py:6: (``vault_gate.require_open(strict=True)``), ret ``VAULT_LOCKED`` kodu ve",
         "agent_core/scraper/run_scraper.py:33: require_open(purpose=\"scraper\", strict=True)",
-        "agent_core/capabilities/egress.py:116: if not vault_egress_authorized(purpose=purpose):",
-        "backend/api.py:3457: def _require_vault_open(client_id: str) -> Optional[JSONResponse]:"
+        "agent_core/capabilities/egress.py:149: if not vault_egress_authorized(purpose=purpose):",
+        "backend/api.py:3575: def _require_vault_open(client_id: str) -> Optional[JSONResponse]:"
       ],
       "note": "Scraper/OSINT YAPRAKLARI kasa kilidini kendileri denetliyor (kapı çağrısıyla).",
       "regression": false
@@ -223,18 +223,13 @@
       "check_kind": "test_gated",
       "status": "closed_by_design",
       "evidence": [
-        "backend/api.py:5270: broadcast_log(req.client_id, \"WARNING\", f\"SES ÜRETİLEMEDİ: {result.reason}\")",
-        "backend/api.py:5163: broadcast_speech(req.client_id, {\"state\": \"denied\", **payload})",
-        "backend/api.py:5235: broadcast_speech(client_id, {\"state\": \"denied\", \"reason\": result.reason})",
-        "backend/api.py:5269: broadcast_speech(req.client_id, {\"state\": \"denied\", **payload})",
-        "backend/api.py:2393: vault_locked=not _check_vault_interlock(client_id),",
-        "backend/api.py:4309: web_state = policy_state(vault_locked=not _check_vault_interlock(client_id))",
-        "backend/api.py:5154: vault_locked=not _check_vault_interlock(req.client_id),",
-        "backend/api.py:5228: vault_locked=not _check_vault_interlock(client_id),",
-        "backend/api.py:5260: vault_locked=not _check_vault_interlock(req.client_id),",
-        "backend/api.py:5371: vault_locked=not _check_vault_interlock(req.client_id),",
-        "backend/api.py:5506: vault_locked=not _check_vault_interlock(req.client_id),",
-        "backend/api.py:5626: vault_locked=not _check_vault_interlock(req.client_id),",
+        "backend/routes/speech.py:205: broadcast_log(req.client_id, \"WARNING\", f\"SES ÜRETİLEMEDİ: {result.reason}\")",
+        "backend/routes/speech.py:97: broadcast_speech(req.client_id, {\"state\": \"denied\", **payload})",
+        "backend/routes/speech.py:174: broadcast_speech(client_id, {\"state\": \"denied\", \"reason\": result.reason})",
+        "backend/routes/speech.py:204: broadcast_speech(req.client_id, {\"state\": \"denied\", **payload})",
+        "backend/routes/speech.py:86: vault_locked=not check_vault_interlock(req.client_id),",
+        "backend/routes/speech.py:167: vault_locked=not check_vault_interlock(client_id),",
+        "backend/routes/speech.py:193: vault_locked=not check_vault_interlock(req.client_id),",
         "tests/integration/test_speech_api_faz_c.py: kilit işaretleri 4/4 → test_say_refuses_when_gate_is_closed, test_remote_endpoint_is_never_called, test_locked_vault_blocks_speech, result[\"available\"] is False",
         "motor yokken: available=false + makine-okunur reason + WebSocket `denied` yayını + WARNING log; uydurma ses ÜRETİLMİYOR, uzak uç HİÇ çağrılmıyor (test_remote_endpoint_is_never_called)"
       ],
@@ -250,8 +245,8 @@
       "check_kind": "test_gated",
       "status": "closed",
       "evidence": [
-        "backend/api.py:3457: def _require_vault_open(client_id: str) -> Optional[JSONResponse]:",
-        "backend/api.py:4430: @app.post(\"/api/browser/open\")",
+        "backend/api.py:3575: def _require_vault_open(client_id: str) -> Optional[JSONResponse]:",
+        "backend/api.py:4618: @app.post(\"/api/browser/open\")",
         "route gövdesi: 15 satır ölçüldü (tanım satırı atlandı: True)",
         "tests/unit/test_vault_egress_lock.py: kilit işaretleri 4/4 → 423, VAULT_LOCKED, YAPI DENETİMİ, muafiyet",
         "browser ucu kapıyı ÇAĞIRIYOR: `_require_vault_open` route'un kendi fonksiyon gövdesinde (komşu fonksiyondan sızma değil)",
@@ -269,10 +264,10 @@
       "check_kind": "test_gated",
       "status": "closed",
       "evidence": [
-        "backend/api.py:3208: return {\"agents\": agents, \"source\": source, \"count\": len(agents)}",
-        "backend/api.py:3206: state_fn = getattr(getattr(tracker, \"redis_bus\", None), \"connection_state\", None)",
-        "backend/api.py:3202: return {\"agents\": [], \"source\": \"fallback\", \"count\": 0}",
-        "backend/api.py:3211: return {\"agents\": [], \"source\": \"error\", \"error\": str(e)[:100], \"count\": 0}",
+        "backend/api.py:3315: return {\"agents\": agents, \"source\": source, \"count\": len(agents)}",
+        "backend/api.py:3313: state_fn = getattr(getattr(tracker, \"redis_bus\", None), \"connection_state\", None)",
+        "backend/api.py:3309: return {\"agents\": [], \"source\": \"fallback\", \"count\": 0}",
+        "backend/api.py:3318: return {\"agents\": [], \"source\": \"error\", \"error\": str(e)[:100], \"count\": 0}",
         "tests/unit/test_status_source_honesty.py: kilit işaretleri 3/3 → source, in_memory, redis_bus",
         "`source` alanı gerçek taşıyıcıyı beyan eder: redis_bus (PING'lenmiş bağlantı) · in_memory · fallback (rack hiç yüklenmedi) · error; koşulsuz `redis_bus` etiketi kalktı, sahte Ready basan yollar (simulate_processing · set_all_ready) kaldırıldı"
       ],
@@ -288,16 +283,16 @@
       "check_kind": "test_gated",
       "status": "closed",
       "evidence": [
-        "backend/api.py:3888: \"code\": \"MOTOR_UNAVAILABLE\",",
-        "backend/api.py:1130: raise HTTPException(status_code=400, detail=\"INVALID_CLIENT_ID\")",
-        "backend/api.py:1134: raise HTTPException(status_code=400, detail=\"INVALID_CLIENT_ID\") from None",
-        "backend/api.py:1520: status_code=400,",
-        "backend/api.py:1530: status_code=400,",
-        "backend/api.py:1542: status_code=400,",
-        "backend/api.py:1553: status_code=400,",
-        "backend/api.py:1653: status_code=400,",
-        "backend/api.py:2931: status_code=400,",
-        "backend/api.py:3836: \"library_missing\",   # motor kütüphanesi kurulu değil",
+        "backend/api.py:4027: \"code\": \"MOTOR_UNAVAILABLE\",",
+        "backend/api.py:1157: raise HTTPException(status_code=400, detail=\"INVALID_CLIENT_ID\")",
+        "backend/api.py:1161: raise HTTPException(status_code=400, detail=\"INVALID_CLIENT_ID\") from None",
+        "backend/api.py:1547: status_code=400,",
+        "backend/api.py:1557: status_code=400,",
+        "backend/api.py:1569: status_code=400,",
+        "backend/api.py:1580: status_code=400,",
+        "backend/api.py:1680: status_code=400,",
+        "backend/api.py:3038: status_code=400,",
+        "backend/api.py:3975: \"library_missing\",   # motor kütüphanesi kurulu değil",
         "tests/unit/test_experimental_engine_contract.py: kilit işaretleri 4/4 → MOTOR_UNAVAILABLE, MODULE_UNAVAILABLE, disabled, library_missing",
         "4 uç bağlı: maigret · holehe · crawl · socid → motor yoksa 400 MOTOR_UNAVAILABLE; dürüst gövde KORUNUR, üzerine makine-okunur error biner",
         "SINIR: motor çalışıp dürüstçe 'sonuç yok' derse (timeout · scan_error · no_record) sözleşme 200 + available:false kalır — iki yön de test edilir"
@@ -314,25 +309,25 @@
       "check_kind": "test_gated",
       "status": "closed",
       "evidence": [
-        "backend/api.py:2859: if (blocked := _require_minor_clearance(req.client_id, subject=req.url)) is not None:",
-        "backend/api.py:3636: def _require_minor_clearance(",
-        "backend/api.py:3644: if (blocked := _require_minor_clearance(req.client_id)) is not None:",
-        "backend/api.py:3907: if (blocked := _require_minor_clearance(payload.client_id, subject=payload.username)) is not None:",
-        "backend/api.py:3941: if (blocked := _require_minor_clearance(payload.client_id, subject=payload.email)) is not None:",
-        "backend/api.py:3971: if (blocked := _require_minor_clearance(payload.client_id, subject=payload.url)) is not None:",
-        "backend/api.py:4003: if (blocked := _require_minor_clearance(payload.client_id, subject=payload.url)) is not None:",
-        "backend/api.py:4020: if (blocked := _require_minor_clearance(None)) is not None:",
-        "backend/api.py:3517: class MinorCasePayload(BaseModel):",
-        "backend/api.py:661: app.state.minor_cases = {}  # client_id -> MinorCaseContext (yalnız beyan edilmişse)",
-        "backend/api.py:3558: `app.state.minor_cases` içinde tutulur — oda tahliyesi (30 dk boşta)",
-        "backend/api.py:3563: return coerce_minor_case(app.state.minor_cases.get(client_id))",
-        "backend/api.py:3659: for other_id in list(app.state.minor_cases):",
-        "backend/api.py:3697: req.client_id not in app.state.minor_cases",
-        "backend/api.py:3698: and len(app.state.minor_cases) >= _MINOR_CASE_MAX_ENTRIES",
-        "backend/api.py:3723: app.state.minor_cases[req.client_id] = case",
-        "backend/api.py:3743: had = app.state.minor_cases.pop(req.client_id, None) is not None",
-        "backend/api.py:3509: MINOR_BLOCKED_MESSAGE = (",
-        "backend/api.py:3592: \"message\": MINOR_BLOCKED_MESSAGE,",
+        "backend/api.py:2966: if (blocked := _require_minor_clearance(req.client_id, subject=req.url)) is not None:",
+        "backend/api.py:3754: def _require_minor_clearance(",
+        "backend/api.py:3762: if (blocked := _require_minor_clearance(req.client_id)) is not None:",
+        "backend/api.py:4046: if (blocked := _require_minor_clearance(payload.client_id, subject=payload.username)) is not None:",
+        "backend/api.py:4080: if (blocked := _require_minor_clearance(payload.client_id, subject=payload.email)) is not None:",
+        "backend/api.py:4110: if (blocked := _require_minor_clearance(payload.client_id, subject=payload.url)) is not None:",
+        "backend/api.py:4142: if (blocked := _require_minor_clearance(payload.client_id, subject=payload.url)) is not None:",
+        "backend/api.py:4159: if (blocked := _require_minor_clearance(None)) is not None:",
+        "backend/api.py:3635: class MinorCasePayload(BaseModel):",
+        "backend/api.py:688: app.state.minor_cases = {}  # client_id -> MinorCaseContext (yalnız beyan edilmişse)",
+        "backend/api.py:3676: `app.state.minor_cases` içinde tutulur — oda tahliyesi (30 dk boşta)",
+        "backend/api.py:3681: return coerce_minor_case(app.state.minor_cases.get(client_id))",
+        "backend/api.py:3777: for other_id in list(app.state.minor_cases):",
+        "backend/api.py:3815: req.client_id not in app.state.minor_cases",
+        "backend/api.py:3816: and len(app.state.minor_cases) >= _MINOR_CASE_MAX_ENTRIES",
+        "backend/api.py:3841: app.state.minor_cases[req.client_id] = case",
+        "backend/api.py:3861: had = app.state.minor_cases.pop(req.client_id, None) is not None",
+        "backend/api.py:3627: MINOR_BLOCKED_MESSAGE = (",
+        "backend/api.py:3710: \"message\": MINOR_BLOCKED_MESSAGE,",
         "tests/unit/test_minor_gate_api.py: kilit işaretleri 3/3 → _require_minor_clearance, MINOR_BLOCKED, 451",
         "oda bazlı beyan: POST ile çocuk vakası beyan edilir, yalnız `POST /api/minor/clear` kaldırır (zaman aşımı değil); `coerce_minor_case` yarım/bozuk beyanı REDDEDER (fail-closed)",
         "SIRA bilinçli: çocuk kilidi kasa kapısından ÖNCE koşar — izinde 'VAULT_LOCKED' görünür, çocuk ihlali maskelenir",
@@ -444,8 +439,8 @@
       "status": "closed",
       "evidence": [
         "E-GÖZ2-5 ölçümü: closed",
-        "backend/api.py:3457: def _require_vault_open(client_id: str) -> Optional[JSONResponse]:",
-        "backend/api.py:4430: @app.post(\"/api/browser/open\")",
+        "backend/api.py:3575: def _require_vault_open(client_id: str) -> Optional[JSONResponse]:",
+        "backend/api.py:4618: @app.post(\"/api/browser/open\")",
         "route gövdesi: 15 satır ölçüldü (tanım satırı atlandı: True)",
         "tests/unit/test_vault_egress_lock.py: kilit işaretleri 4/4 → 423, VAULT_LOCKED, YAPI DENETİMİ, muafiyet"
       ],
@@ -461,9 +456,9 @@
       "check_kind": "test_gated",
       "status": "closed",
       "evidence": [
-        "backend/api.py:3836: \"library_missing\",   # motor kütüphanesi kurulu değil",
-        "backend/api.py:3837: \"dependency_broken\", # bağımlılık yüklendi ama kırık/eksik",
-        "backend/api.py:3989: yoksa makine-okunur sebep (binary_missing / library_missing).",
+        "backend/api.py:3975: \"library_missing\",   # motor kütüphanesi kurulu değil",
+        "backend/api.py:3976: \"dependency_broken\", # bağımlılık yüklendi ama kırık/eksik",
+        "backend/api.py:4128: yoksa makine-okunur sebep (binary_missing / library_missing).",
         "tests/unit/test_experimental_engine_contract.py: kilit işaretleri 3/3 → library_missing, dependency_broken, holehe",
         "sebep sözlüğü servis kaynaklarına bağlı: disabled · library_missing · dependency_broken · db_unavailable → 400 MOTOR_UNAVAILABLE; uydurma sebep testi kırmızı yakar",
         "holehe ucu da aynı kapıdan geçiyor (E5 kapsamı 4 uç)"

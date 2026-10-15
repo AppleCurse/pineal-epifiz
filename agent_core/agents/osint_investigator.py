@@ -18,7 +18,7 @@ import asyncio
 import aiohttp
 import os
 from typing import Dict, Any, Optional
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from agent_core.services.llm_gateway import LLMGateway
 
 logger = logging.getLogger(__name__)
@@ -29,9 +29,9 @@ class OsintProfile(BaseModel):
     associated_platforms: list[str] = []
     digital_footprint_score: float = 0.0  # 0.0 (hayalet) - 1.0 (çok aktif)
     dark_web_hits: int = 0
-    confidence: float = 1.0
-    data_confidence: bool = True          # False → LLM kullanılamadı veya API yoktu
-    fallback_reason: Optional[str] = None
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    data_confidence: bool = False
+    fallback_reason: Optional[str] = "unavailable"
     error_code: Optional[str] = None
 
     model_config = ConfigDict(extra="allow")
@@ -244,8 +244,11 @@ class OsintInvestigatorAgent:
         return headers
 
     async def execute(self, payload: Dict[str, Any]) -> OsintProfile:
-        target = payload.get("target_profile", {})
-        username = target.get("username", "")
+        payload = payload if isinstance(payload, dict) else {}
+        raw_target = payload.get("target_profile")
+        target = raw_target if isinstance(raw_target, dict) else {}
+        raw_username = target.get("username", "")
+        username = raw_username.strip() if isinstance(raw_username, str) else ""
 
         if not username:
             return OsintProfile(
@@ -327,6 +330,7 @@ class OsintInvestigatorAgent:
                                 # Coverage, not an invented provider-trust score.
                                 confidence=round(observed_fields / 3, 3),
                                 data_confidence=True,
+                                fallback_reason=None,
                             )
                         logger.warning(f"[OSINT] Canlı API hatası: HTTP {resp.status} - {await resp.text()}")
                         error_code = "AUTH_FAILED" if resp.status in (401, 403) else "RATE_LIMITED" if resp.status == 429 else "PROVIDER_ERROR"

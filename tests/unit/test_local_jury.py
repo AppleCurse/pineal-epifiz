@@ -288,6 +288,19 @@ class TestInputs:
         verdict = _run(local_jury.evaluate(CLAIM, "  "))
         assert verdict.available is False and verdict.reason == "empty_evidence"
 
+    @pytest.mark.parametrize("confidence", [1.01, float("nan"), True, 10**400])
+    def test_invalid_model_confidence_is_not_clamped(self, confidence, stubs, monkeypatch):
+        stub = _LocalLLM({"m1": {
+            "vote": VOTE_VERIFIED,
+            "confidence": confidence,
+            "reason": "test",
+        }})
+        stubs.append(stub)
+        _configure(monkeypatch, stub, "m1")
+        verdict = _run(local_jury.evaluate(CLAIM, EVIDENCE))
+        assert verdict.votes[0].vote == VOTE_VERIFIED
+        assert verdict.votes[0].confidence is None
+
     def test_confidences_average_into_no_single_truth(self, stubs, monkeypatch):
         stub = _LocalLLM(
             {

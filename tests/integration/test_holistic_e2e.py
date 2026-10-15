@@ -129,7 +129,10 @@ async def test_holistic_360_e2e_pipeline():
         },
         "user_profile": {
             "bio": "Şehir plancısı ve tasarımcı.",
-            "posts": ["Mekanların insan psikolojisine etkisi."]
+            "posts": ["Mekanların insan psikolojisine etkisi."],
+            "private_rituals": ["gece mimari fotoğraf yürüyüşleri"],
+            "late_night_playlist": ["ambient müzik"],
+            "secret_envies": ["sahici görsel diyalog"],
         },
         "sacred_rules": "Ucuz manipülasyondan kaçın, sahici rezonans kur."
     }

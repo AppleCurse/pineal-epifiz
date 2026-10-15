@@ -109,6 +109,33 @@ def test_streaming_body_oversized_returns_413(client):
     assert "BODY_TOO_LARGE" in str(data)
 
 
+def test_speech_listen_has_its_own_bounded_multipart_limit(monkeypatch):
+    """STT'nin 8 MiB dosya sözleşmesi, genel 1 MiB JSON tavanıyla çakışmaz."""
+    from fastapi import FastAPI
+
+    monkeypatch.delenv("PINEAL_MAX_SPEECH_BODY_BYTES", raising=False)
+    probe = FastAPI()
+    probe.add_middleware(BodySizeLimitMiddleware, max_bytes=1024)
+
+    @probe.post("/api/speech/listen")
+    async def listen_probe():
+        return {"ok": True}
+
+    @probe.post("/api/other")
+    async def other_probe():
+        return {"ok": True}
+
+    test_client = TestClient(probe)
+    audio_sized_body = b"A" * (1024 * 1024 + 1024)
+    assert test_client.post("/api/speech/listen", content=audio_sized_body).status_code == 200
+    assert test_client.post("/api/other", content=audio_sized_body).status_code == 413
+
+    monkeypatch.setenv("PINEAL_MAX_SPEECH_BODY_BYTES", "500")
+    too_large = test_client.post("/api/speech/listen", content=b"A" * 501)
+    assert too_large.status_code == 413
+    assert too_large.json()["max_bytes"] == 500
+
+
 def test_custom_env_override(client, monkeypatch):
     """PINEAL_MAX_BODY_BYTES ortam değişkeni ile tavan özelleştirilebilir."""
     monkeypatch.setenv("PINEAL_MAX_BODY_BYTES", "500")

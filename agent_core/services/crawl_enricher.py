@@ -1,31 +1,19 @@
-"""Crawl4AI entegrasyonu — public-web sayfadan LLM-dostu metin (FAZ 4).
+"""Crawl4AI markdown extraction over the pinned, bounded web transport.
 
-Sözleşme (projenin dürüstlük ilkeleriyle hizalı):
-- Kapalı / kütüphane yok / tarayıcı binary'si yok / ağ yok / zaman aşımı:
-  `available=False` + makine-okunur sebep. ASLA uydurma içerik üretmez.
-- Tüm URL'ler `agent_core.utils.security.is_safe_url` SSRF guard'ından geçer
-  (socid_enricher ile aynı kural).
-- Metin yalnız gerçek çekilen sayfadan gelir; uzunluk env ile sınırlıdır.
-
-Lisans: crawl4ai Apache-2.0 (PyPI metadata doğrulandı). Renderer:
-- `http` (default): AsyncHTTPCrawlerStrategy — tarayıcı binary'si GEREKMEZ,
-  düz HTTP sayfaları için yeterli (sandbox'ta da çalışabilir).
-- `browser`: Playwright stratejisi — JS-heavy sayfalar; binary yoksa dürüst
-  `browser_missing` döner (binary indirme bu ortamda CDN kısıtı nedeniyle
-  denenmez).
-
-psutil notu: crawl4ai `psutil>=6.1.1` beyan eder; open-interpreter
-`psutil<6.0.0` beyan eder. Gerçek kullanım (kaynak okuması + çalışma zamanı
-kanıtı, psutil 5.9.8): crawl4ai `Process()/process_iter()`, open-interpreter
-`virtual_memory()/disk_usage()` — hepsi stabil API, 5.9.8 ile sorunsuz.
-Bu yüzden `psutil<6` sabitlenir (open-interpreter'ın beyanına saygı).
+The crawler's own HTTP/browser network stack is deliberately not used here:
+preflight `is_safe_url()` alone cannot pin the address used by a second client.
+HTML is fetched through `safe_get()` (DNS pinning + redirect validation), then
+Crawl4AI's MarkdownGenerator parses the already-downloaded document locally.
+Browser/JavaScript rendering is unavailable until its network can be constrained
+with the same guarantees.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
 import os
-from typing import Optional, Tuple
+from html.parser import HTMLParser
+from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -35,15 +23,9 @@ DEFAULT_MAX_CHARS = 8000
 MAX_MAX_CHARS = 50000
 DEFAULT_TIMEOUT = 20
 MAX_TIMEOUT = 120
+DEFAULT_MAX_BYTES = 4_000_000
 DEFAULT_RESEARCH_LIMIT = 2
 MAX_RESEARCH_LIMIT = 5
-
-_BROWSER_MISSING_MARKERS = (
-    "executable doesn't exist",
-    "playwright install",
-    "looks like playwright",
-    "browserType.launch",
-)
 
 
 class CrawlFetchResult(BaseModel):
@@ -51,12 +33,31 @@ class CrawlFetchResult(BaseModel):
     available: bool = False
     provider: str = "crawl4ai"
     reason: Optional[str] = None
-    url: str = ""                       # crawler'ın raporladığı nihai URL
+    url: str = ""                       # safe fetch'in raporladığı nihai URL
     title: str = ""
     markdown: str = ""                  # LLM-dostu metin (env ile kırpılır)
     status_code: Optional[int] = None
-    error_detail: Optional[str] = None  # insan-notu; makine sebep `reason`
+    error_detail: Optional[str] = None
     model_config = ConfigDict(extra="forbid")
+
+
+class _TitleParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.in_title = False
+        self.parts: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() == "title":
+            self.in_title = True
+
+    def handle_endtag(self, tag):
+        if tag.lower() == "title":
+            self.in_title = False
+
+    def handle_data(self, data):
+        if self.in_title:
+            self.parts.append(data)
 
 
 def _env_int(name: str, default: int, maximum: int) -> int:
@@ -79,84 +80,110 @@ def research_limit() -> int:
 
 def _classify_error(message: str) -> str:
     low = (message or "").lower()
-    if any(marker in low for marker in _BROWSER_MISSING_MARKERS):
+    if any(
+        marker in low
+        for marker in (
+            "executable doesn't exist",
+            "playwright install",
+            "looks like playwright",
+            "browsertype.launch",
+        )
+    ):
         return "browser_missing"
     return "fetch_error"
 
 
-async def _crawl_once(url: str, renderer: str, timeout: int) -> Tuple[bool, str, str, str, Optional[int], str]:
-    """crawl4ai ile tek URL çeker. Döner: (success, url, title, markdown, status_code, error_message).
+def _parse_html(html: str, base_url: str) -> tuple[str, str]:
+    from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 
-    Test dikişi: bu fonksiyon monkeypatch ile değiştirilebilir; servisin geri
-    kalanı sözleşmeyi buradan bağımsız doğrular.
-    """
-    from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
-
-    run_cfg = CrawlerRunConfig(
-        cache_mode=CacheMode.BYPASS,       # dürüst taze çekim; önbellek yanılsaması yok
-        page_timeout=timeout * 1000,
-        verbose=False,
+    generated = DefaultMarkdownGenerator().generate_markdown(
+        input_html=html,
+        base_url=base_url,
+        citations=False,
     )
-    if renderer == "browser":
-        strategy = None  # default Playwright stratejisi (binary ister)
-        browser_cfg = BrowserConfig(headless=True)
-        crawler_cm = AsyncWebCrawler(config=browser_cfg)
-    else:
-        from crawl4ai.async_crawler_strategy import AsyncHTTPCrawlerStrategy
-        strategy = AsyncHTTPCrawlerStrategy()
-        crawler_cm = AsyncWebCrawler(crawler_strategy=strategy)
-
-    async with crawler_cm as crawler:
-        result = await crawler.arun(url=url, config=run_cfg)
-
-    md = getattr(result, "markdown", "")
-    text = getattr(md, "raw_markdown", None) or (md if isinstance(md, str) else "")
-    title = ""
-    meta = getattr(result, "metadata", None)
-    if isinstance(meta, dict):
-        title = str(meta.get("title") or "")
-    return (
-        bool(getattr(result, "success", False)),
-        str(getattr(result, "url", "") or ""),
-        title,
-        text or "",
-        getattr(result, "status_code", None),
-        str(getattr(result, "error_message", "") or ""),
-    )
+    markdown = getattr(generated, "raw_markdown", "") or ""
+    if markdown.startswith("Error converting HTML to markdown:"):
+        raise ValueError("MARKDOWN_CONVERSION_FAILED")
+    title_parser = _TitleParser()
+    title_parser.feed(html)
+    title = " ".join(" ".join(title_parser.parts).split())
+    return markdown, title
 
 
 async def fetch_readable(url: str) -> CrawlFetchResult:
-    """Public-web sayfasını çekip LLM-dostu (kırpılmış) metne çevirir.
-
-    Dürüst sonuç: kapalıysa 'disabled', URL kötüyse 'invalid_url',
-    SSRF engelse 'ssrf_blocked', kütüphane yoksa 'library_missing',
-    tarayıcı binary'si yoksa 'browser_missing', zaman aşımında 'timeout'.
-    """
+    """Fetch public HTML safely, then convert it to markdown locally."""
     if not is_enabled():
         return CrawlFetchResult(requested_url=url, available=False, reason="disabled")
 
     clean = (url or "").strip()
     if not clean.startswith(("http://", "https://")):
         return CrawlFetchResult(requested_url=url, available=False, reason="invalid_url")
+    from agent_core.capabilities.egress import httpx
+    from agent_core.scraper.vault_gate import VaultLockedError
+    from agent_core.services.safe_web_fetch import SafeWebFetchError, fetch_safe_html
+    from agent_core.utils.security import UnsafeURLError, is_safe_url
 
-    from agent_core.utils.security import is_safe_url
+    # A quick rejection improves feedback; fetch_safe_html resolves again and
+    # pins the actual connection, so this check is never treated as the control.
     if not is_safe_url(clean):
         return CrawlFetchResult(requested_url=clean, available=False, reason="ssrf_blocked")
+    try:
+        import importlib.util
+
+        if importlib.util.find_spec("crawl4ai.markdown_generation_strategy") is None:
+            return CrawlFetchResult(
+                requested_url=clean, available=False, reason="library_missing"
+            )
+    except (ImportError, ModuleNotFoundError, ValueError):
+        return CrawlFetchResult(requested_url=clean, available=False, reason="library_missing")
 
     renderer = os.getenv("CRAWL4AI_RENDERER", "http").lower()
     if renderer not in ("http", "browser"):
         renderer = "http"
-    max_chars = _env_int("CRAWL4AI_MAX_CHARS", DEFAULT_MAX_CHARS, MAX_MAX_CHARS)
-    timeout = _env_int("CRAWL4AI_TIMEOUT", DEFAULT_TIMEOUT, MAX_TIMEOUT)
+    if renderer == "browser":
+        return CrawlFetchResult(
+            requested_url=clean,
+            available=False,
+            reason="browser_renderer_disabled_safe_transport_unavailable",
+        )
 
+    timeout = _env_int("CRAWL4AI_TIMEOUT", DEFAULT_TIMEOUT, MAX_TIMEOUT)
+    max_chars = _env_int("CRAWL4AI_MAX_CHARS", DEFAULT_MAX_CHARS, MAX_MAX_CHARS)
     try:
-        success, final_url, title, text, status_code, error_message = (
-            await asyncio.wait_for(
-                _crawl_once(clean, renderer, timeout), timeout=timeout + 15.0
-            )
+        fetched = await asyncio.wait_for(
+            fetch_safe_html(clean, timeout_seconds=timeout, max_bytes=DEFAULT_MAX_BYTES),
+            timeout=timeout + 2,
+        )
+        markdown, title = await asyncio.wait_for(
+            asyncio.to_thread(_parse_html, fetched.html, fetched.final_url),
+            timeout=max(1, timeout),
         )
     except asyncio.TimeoutError:
         return CrawlFetchResult(requested_url=clean, available=False, reason="timeout")
+    except UnsafeURLError:
+        return CrawlFetchResult(requested_url=clean, available=False, reason="ssrf_blocked")
+    except VaultLockedError:
+        return CrawlFetchResult(requested_url=clean, available=False, reason="vault_locked")
+    except SafeWebFetchError as exc:
+        return CrawlFetchResult(
+            requested_url=clean, available=False, reason=exc.code.lower()
+        )
+    except httpx.TimeoutException:
+        return CrawlFetchResult(requested_url=clean, available=False, reason="timeout")
+    except httpx.HTTPStatusError as exc:
+        return CrawlFetchResult(
+            requested_url=clean,
+            available=False,
+            reason="http_error",
+            status_code=exc.response.status_code,
+        )
+    except httpx.RequestError as exc:
+        return CrawlFetchResult(
+            requested_url=clean,
+            available=False,
+            reason="network_error",
+            error_detail=type(exc).__name__,
+        )
     except ModuleNotFoundError as exc:
         if exc.name and exc.name.split(".")[0] == "crawl4ai":
             return CrawlFetchResult(requested_url=clean, available=False,
@@ -176,22 +203,34 @@ async def fetch_readable(url: str) -> CrawlFetchResult:
         )
     except Exception as exc:
         reason = _classify_error(str(exc))
-        return CrawlFetchResult(requested_url=clean, available=False, reason=reason,
-                                error_detail=f"{type(exc).__name__}: {str(exc)[:180]}")
-
-    if not success:
         return CrawlFetchResult(
-            requested_url=clean, available=False,
-            reason=_classify_error(error_message),
-            url=final_url, status_code=status_code,
-            error_detail=(error_message or "")[:180] or None,
+            requested_url=clean,
+            available=False,
+            reason=reason,
+            error_detail=f"{type(exc).__name__}: {str(exc)[:180]}",
         )
 
+    markdown = (markdown or "").strip()
+    if not markdown:
+        return CrawlFetchResult(
+            requested_url=clean,
+            available=False,
+            reason="empty_text",
+            url=fetched.final_url,
+            status_code=fetched.status_code,
+        )
+    if len(markdown) > max_chars:
+        marker = " …[kırpıldı]"
+        if max_chars <= len(marker):
+            markdown = markdown[:max_chars]
+        else:
+            markdown = markdown[:max_chars - len(marker)].rstrip() + marker
     return CrawlFetchResult(
         requested_url=clean,
         available=True,
-        url=final_url or clean,
+        reason=None,
+        url=fetched.final_url,
         title=title,
-        markdown=(text or "")[:max_chars],
-        status_code=status_code,
+        markdown=markdown,
+        status_code=fetched.status_code,
     )

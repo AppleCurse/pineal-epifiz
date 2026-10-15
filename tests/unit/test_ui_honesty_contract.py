@@ -185,6 +185,16 @@ def test_cockpit_does_not_fabricate_zero_metrics():
     assert "function hasEvidence(" in code
 
 
+def test_shadow_ui_requires_explicit_trait_score_measurement():
+    atlas = Path("frontend/src/components/AtlasPinealCockpit.svelte").read_text(encoding="utf-8")
+    compact = Path("frontend/src/components/UnifiedCompactPanel.svelte").read_text(encoding="utf-8")
+    for source in (atlas, compact):
+        assert "trait_scores_measured === true" in source
+        assert "dark_profile?.narcissism" in source
+    assert "followerAudit.follower_count ?? 0" not in compact
+    assert "followerAudit.follower_count != null" in compact
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # [AUDIT 2026-10-07 · Madde 3] "12 özerk düğüm" iddiası
 #

@@ -57,14 +57,19 @@ def _as_str_list(value: Any) -> List[str]:
     return [v for v in value if isinstance(v, str)]
 
 
-def _clamp01(value: Any) -> float:
+def _finite_number(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
     try:
-        num = float(value)
-    except (TypeError, ValueError):
-        return 0.0
-    if num != num:  # NaN
-        return 0.0
-    return min(1.0, max(0.0, num))
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _clamp01(value: Any) -> float:
+    num = _finite_number(value)
+    return min(1.0, max(0.0, num)) if num is not None else 0.0
 
 
 def _norm_entropy(dist: Dict[str, int]) -> float:
@@ -164,8 +169,7 @@ def _analyze_depth_inner(data: Dict[str, Any]) -> Dict[str, Any]:
     # ---- Ch3 ritim ----
     samples = timing.get("samples")
     n_samples = samples if isinstance(samples, int) and samples > 0 else 0
-    night_share = timing.get("night_share")
-    night_share = float(night_share) if isinstance(night_share, (int, float)) else None
+    night_share = _finite_number(timing.get("night_share"))
     traj = _as_dict(timing.get("trajectory"))
     # [BUGFIX] `ruptures` yoksa (trajectory çıkarılamadı) bu blok TypeError
     # fırlatıyordu ve analyze_depth'in savunma hattı onu yutup TÜM raporu
@@ -194,16 +198,18 @@ def _analyze_depth_inner(data: Dict[str, Any]) -> Dict[str, Any]:
             "span_hours": traj.get("span_hours")}
 
     # ---- Ch4 sosyal ----
-    er = audit.get("engagement_rate")
-    er_val = float(er) if isinstance(er, (int, float)) else None
+    er_val = _finite_number(audit.get("engagement_rate"))
     c4 = _clamp01(audit.get("data_completeness")) if audit else 0.0
     if c4 > 0 and er_val is not None:
-        i4 = round(min(1.0, er_val / 0.1), 3)  # v1: %10 ER = tam siddet
+        # FollowerAuditReport emits engagement_rate as percentage points
+        # (e.g. 5.0 means 5%), so 10.0 is the documented full-intensity mark.
+        i4 = round(min(1.0, max(0.0, er_val) / 10.0), 3)
     else:
         i4 = 0.0
     coh4 = c4  # olcum butunlugu = tutarlilik olcusu
-    sig4 = {"followers": audit.get("followers"),
-            "following": audit.get("following"),
+    sig4 = {
+            "followers": audit.get("follower_count", audit.get("followers")),
+            "following": audit.get("following_count", audit.get("following")),
             "engagement_rate": er_val, "verdict": audit.get("verdict"),
             "data_completeness": c4 if audit else None}
 

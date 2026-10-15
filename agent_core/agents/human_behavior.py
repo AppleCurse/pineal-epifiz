@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from urllib.parse import urlparse
 
 from agent_core.services.upstream_findings import upstream_findings_block
+from agent_core.services.confidence import normalize_confidence
 
 
 class HumanBehaviorPayload(BaseModel):
@@ -56,7 +57,7 @@ class DigitalColdReading(BaseModel):
     micro_signals: List[MicroSignal]
     achilles_score: float = Field(ge=0.0, le=100.0)
     resonance_potential: float = Field(ge=0.0, le=1.0)
-    data_confidence: bool = True
+    data_confidence: bool = False
     fallback_reason: Optional[str] = None
 
     model_config = ConfigDict(extra="forbid")
@@ -246,13 +247,19 @@ class HumanBehaviorAnalyzer:
         # [059] fix: data_confidence körü körüne True yapılmaz. Gerçek gözlem
         # veya biyografi verisi varsa True olur, yoksa fail-closed kalır.
         has_real_evidence = bool(all_signals or contradictions or (bio and bio.strip()))
-        raw_conf = float(getattr(result, "confidence", 0.0) or 0.0)
-        conf = max(raw_conf, 0.75) if has_real_evidence else raw_conf
+        # Presence of observations does not calibrate or raise model confidence.
+        conf, confidence_valid = normalize_confidence(getattr(result, "confidence", None))
+        has_valid_evidence = has_real_evidence and confidence_valid
+        reason = (
+            None if has_valid_evidence
+            else "invalid_model_confidence" if not confidence_valid
+            else "insufficient_behavioral_evidence"
+        )
         return result.model_copy(update={
-            "confidence": conf,
+            "confidence": conf if has_valid_evidence else 0.0,
             "achilles_score": min(max(float(final_achilles), 0.0), 100.0),
-            "data_confidence": has_real_evidence,
-            "fallback_reason": None if has_real_evidence else "insufficient_behavioral_evidence"
+            "data_confidence": has_valid_evidence,
+            "fallback_reason": reason,
         })
 
     # ------------------------------------------------------------------ #

@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { get } from 'svelte/store';
   import {
-    apiToken, currentApiToken, apiFetch, clientId, wsUrl, logs, taskStatus, API_BASE,
+    apiToken, currentApiToken, apiFetch, clientId, wsUrl, logs, taskStatus,
     speechState, lastSpeech, voiceEnabled,
     isProcessing, powerEngaged, recordEngaged, agentStatuses, vaultLocked,
     activeViewMode, agentStatusSource, supportRequests, supportTaskId, refreshSupport
@@ -20,6 +20,74 @@
   let lastToken = currentApiToken();
   let telemetryData: any = null;
   let telemetryPoll: any = null;
+  let activeSpeechAudio: HTMLAudioElement | null = null;
+  let activeSpeechObjectUrl: string | null = null;
+  let speechPlaybackRequest: AbortController | null = null;
+  let speechPlaybackGeneration = 0;
+
+  function stopActiveSpeechAudio() {
+    speechPlaybackGeneration += 1;
+    speechPlaybackRequest?.abort();
+    speechPlaybackRequest = null;
+    const audio = activeSpeechAudio;
+    activeSpeechAudio = null;
+    if (audio) {
+      audio.onended = null;
+      audio.onerror = null;
+      audio.pause();
+      try { audio.currentTime = 0; } catch {}
+    }
+    if (activeSpeechObjectUrl) {
+      URL.revokeObjectURL(activeSpeechObjectUrl);
+      activeSpeechObjectUrl = null;
+    }
+  }
+
+  function reportSpeechPlaybackFinished(playbackId: string) {
+    if (!/^[0-9a-f]{32}$/.test(playbackId)) return;
+    void apiFetch('/api/speech/finished', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_id: get(clientId) || 'default', playback_id: playbackId }),
+    }).catch(() => {});
+  }
+
+  async function playSpeechUrl(path: string, playbackId: string) {
+    stopActiveSpeechAudio();
+    const generation = speechPlaybackGeneration;
+    const controller = new AbortController();
+    speechPlaybackRequest = controller;
+    try {
+      // Use apiFetch so protected deployments send X-API-Key without putting
+      // credentials in the audio URL (HTMLAudioElement cannot set that header).
+      const response = await apiFetch(path, { signal: controller.signal });
+      if (!response.ok) throw new Error(`speech_audio_http_${response.status}`);
+      const blob = await response.blob();
+      if (generation !== speechPlaybackGeneration || !get(voiceEnabled)) return;
+
+      const objectUrl = URL.createObjectURL(blob);
+      activeSpeechObjectUrl = objectUrl;
+      const audio = new Audio(objectUrl);
+      activeSpeechAudio = audio;
+      speechPlaybackRequest = null;
+      const finish = () => {
+        if (activeSpeechAudio !== audio) return;
+        stopActiveSpeechAudio();
+        speechState.set("idle");
+        reportSpeechPlaybackFinished(playbackId);
+      };
+      audio.onended = finish;
+      audio.onerror = finish;
+      await audio.play();
+    } catch (_error) {
+      if (generation === speechPlaybackGeneration) {
+        stopActiveSpeechAudio();
+        speechState.set("idle");
+        reportSpeechPlaybackFinished(playbackId);
+      }
+    }
+  }
+
   // [AUDIT 2026-10-07 · Madde 6] Telemetri panosu GÖRÜNÜR olsun.
   // Eskiden bileşen `display: none` içinde basılıyordu: DOM'da vardı
   // ama kullanıcı HİÇ göremiyordu (gözlemlenebilirlik fiilen sıfır).
@@ -132,21 +200,22 @@
           // arayüz kendi kendine "konuşuyorum" uydurmaz.
           lastSpeech.set(data);
           if (data.state === "speaking") {
+            stopActiveSpeechAudio();
             speechState.set("speaking");
             if (get(voiceEnabled) && data.url) {
-              try {
-                const audio = new Audio(`${API_BASE}${data.url}`);
-                audio.onended = () => speechState.set("idle");
-                audio.onerror = () => speechState.set("idle");
-                void audio.play().catch(() => speechState.set("idle"));
-              } catch (_e) {
-                speechState.set("idle");
-              }
+              void playSpeechUrl(data.url, String(data.playback_id || ''));
             }
-          } else if (data.state === "denied") {
-            speechState.set("denied");
           } else {
-            speechState.set("idle");
+            stopActiveSpeechAudio();
+            if (data.state === "denied") {
+              speechState.set("denied");
+            } else if (data.state === "interrupted") {
+              speechState.set("interrupted");
+            } else if (data.state === "listening") {
+              speechState.set("listening");
+            } else {
+              speechState.set("idle");
+            }
           }
         } else if (data.type === "log") {
           if (!recording()) return;
@@ -268,6 +337,16 @@
   onMount(() => {
     connect();
     setupTauriListeners();
+    const unsubVoice = voiceEnabled.subscribe((enabled) => {
+      if (!enabled) {
+        stopActiveSpeechAudio();
+        if (get(speechState) === "speaking") {
+          void apiFetch(`/api/speech/stop?client_id=${encodeURIComponent(get(clientId))}`, {
+            method: "POST",
+          }).catch(() => {});
+        }
+      }
+    });
 
     // Telemetri panosu canlı beslenir
     fetchTelemetry();
@@ -339,6 +418,8 @@
       clearInterval(agentPoll);
       unsubToken();
       unsubPower();
+      unsubVoice();
+      stopActiveSpeechAudio();
       tauriUnlisteners.forEach(fn => { try { fn(); } catch {} });
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (ws) {

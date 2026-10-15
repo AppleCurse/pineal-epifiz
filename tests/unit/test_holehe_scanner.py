@@ -251,7 +251,8 @@ class TestAgentMerge:
         profile = await OsintInvestigatorAgent()._apply_email_scan(
             self._profile(), "victim@example.com", self.POLICY)
         assert profile.associated_platforms == []
-        assert profile.data_confidence is True
+        assert profile.data_confidence is False
+        assert profile.confidence == 0.0
         # Omurga reddi: kapı kapalı -> makine-okunur sebep, site UYDURULMAZ.
         assert "gate_disabled" in profile.email_scan["reason"]
 
@@ -295,7 +296,7 @@ class TestAgentMerge:
             merged = await OsintInvestigatorAgent()._apply_email_scan(
                 self._profile(), "victim@example.com", self.POLICY)
         assert merged.associated_platforms == []
-        assert merged.fallback_reason is None
+        assert merged.fallback_reason == "unavailable"
         assert merged.email_scan["reason"] == "provider_errors"
 
 

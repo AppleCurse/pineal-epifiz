@@ -89,7 +89,7 @@ async def test_shadow_with_observed_traits_still_synthesizes(monkeypatch):
     assert result.data_confidence is True
     assert isinstance(result.message, str) and len(result.message) > 0
     assert result.strategy == "mirroring"
-    assert len(result.nlp_sequence) == 3
+    assert result.nlp_sequence == []  # duyusal anahtar bulunmadığından sekans üretilmez
 
 
 def test_unavailable_shadow_run_is_not_pipeline_evidence():
@@ -121,3 +121,21 @@ def test_unavailable_shadow_run_is_not_pipeline_evidence():
         ),
     })
     assert result == PipelineStatus.HALTED_INSUFFICIENT_EVIDENCE
+
+
+@pytest.mark.asyncio
+async def test_experimental_shadow_api_preserves_unmeasured_trait_nulls(monkeypatch):
+    """The experimental endpoint wrapper must not turn legacy zeros into scores."""
+    from backend import api
+
+    monkeypatch.setattr(api, "shadow_executor", ShadowExecutor())
+    monkeypatch.setattr(api.app.state, "minor_cases", {}, raising=False)
+
+    result = await api.shadow_generate({"target_profile": {}})
+
+    assert result["data_confidence"] is False
+    assert result["trait_scores_measured"] is False
+    assert result["dark_profile"]["narcissism"] is None
+    assert result["dark_profile"]["machiavellianism"] is None
+    assert result["dark_profile"]["psychopathy"] is None
+    assert result["message"] == ""

@@ -399,7 +399,11 @@ def test_f3_agents_bound_with_identity():
     seen = _gw_recorder(gw)
     run(HumanBehaviorAnalyzer().execute({"target_profile": {"bio": "b", "posts": []}}, None, gw))
     assert seen[-1]["agent_name"] == "human_behavior"
-    run(MirrorOfTruth(gw).execute({"user_profile": {"a": 1}, "user_context": {}, "sacred_rules": ""}))
+    run(MirrorOfTruth(gw).execute({
+        "user_profile": {"private_rituals": ["gece okuması"]},
+        "user_context": {},
+        "sacred_rules": "",
+    }))
     assert seen[-1]["agent_name"] == "mirror_truth"
     run(PatternInterrupt().execute(
         {

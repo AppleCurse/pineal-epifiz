@@ -46,7 +46,7 @@ class LanguageFinding(BaseModel):
     """Bir metnin ölçülmüş dil bulgusu (uydurma alan yok)."""
 
     language: str = "unknown"
-    confidence: float = 0.0
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     script: str = ""
     reason: Optional[str] = None
     signals: Dict[str, float] = Field(default_factory=dict)

@@ -131,6 +131,37 @@ def test_ig_mapping_following_none_is_explicit_not_zero():
     assert update["following"] is None  # [024] ölçülmedi
 
 
+def test_missing_follower_count_stays_unmeasured_through_audit_producer():
+    profile = InstagramProfile(
+        username="hedef",
+        biography=None,
+        is_private=False,
+        follower_count=None,
+        following_count=None,
+        posts=[
+            InstagramPost(
+                shortcode="C10",
+                display_url="https://scontent.cdn.example/x.jpg",
+                like_count=10,
+                comment_count=1,
+            )
+        ],
+    )
+    update = _ig_target_profile_update(profile)
+    assert update["followers"] is None
+    report = audit_followers(update["followers"], update["following"], update["posts_meta"])
+    assert report.follower_count is None
+    assert report.engagement_rate is None
+    assert report.verdict_code == "insufficient"
+
+
+def test_zero_follower_count_remains_a_measured_zero():
+    report = audit_followers(0, None, [])
+    assert report.follower_count == 0
+    assert report.verdict_code == "insufficient"
+    assert "ölçülmedi" not in report.evidence[0]
+
+
 def test_ig_mapping_captionless_profile_yields_empty_strings_not_fake_posts():
     profile = InstagramProfile(
         username="hedef", biography=None, is_private=False, follower_count=10,
@@ -341,7 +372,11 @@ async def test_shadow_mirror_receives_payload_contract_user_fields():
     shadow.pattern = types.SimpleNamespace(execute=failing_pattern)
     shadow.dark_triad = types.SimpleNamespace(
         analyze=lambda p: types.SimpleNamespace(
-            model_dump=lambda: {}, exploitability=0.5
+            model_dump=lambda: {},
+            machiavellianism=0.0,
+            narcissism=0.8,
+            psychopathy=0.0,
+            exploitability=0.5,
         ),
         generate_strategy=lambda d: {"vector": "mirroring", "tactic": "x"},
     )
@@ -356,7 +391,9 @@ async def test_shadow_mirror_receives_payload_contract_user_fields():
         "user_context": {"rituals": "gece koşusu", "playlist": "neşet ertaş", "envies": "bağ"},
     })
 
-    assert result.data_confidence is not False or result.message != ""
+    assert result.data_confidence is True
+    assert result.confidence == 0.8
+    assert result.trait_scores_measured is True
     assert captured.get("user_profile", {}).get("private_rituals") == ["gece koşusu"], (
         "[031] kullanıcı ritüelleri mirror'a ulaşmıyor"
     )
@@ -402,3 +439,64 @@ async def test_temp_images_removed_on_crash():
     with pytest.raises(RuntimeError):
         await executor.execute_task(input_data, "fx_tmp_crash")
     assert not os.path.exists(tmp.name), "[035] crash yolunda görsel temp'te kaldı"
+
+
+@pytest.mark.asyncio
+async def test_api_x_sensor_profile_is_merged_without_search_dossier_fallback():
+    """The direct x_profile producer reaches execute_task with unknown metrics intact."""
+    from types import SimpleNamespace
+
+    x_profile = {
+        "username": "@target",
+        "name": "target",
+        "bio": "",
+        "posts": ["Observed X post"],
+        "post_times": ["2026-10-01T22:30:00+00:00"],
+        "posts_meta": [{"like_count": 3}],
+        "post_types": ["text"],
+        "images": [],
+        "followers": None,
+        "following": 0,
+        "is_private": None,
+        "platform": "x",
+    }
+    seen = {}
+
+    async def _execute(payload, task_id):
+        seen["payload"] = payload
+        seen["task_id"] = task_id
+        return SimpleNamespace(status="completed", task_id=task_id)
+
+    search = SimpleNamespace(
+        set_policy=MagicMock(),
+        search=AsyncMock(side_effect=AssertionError("successful X sensor must not use web fallback")),
+    )
+    executor = SimpleNamespace(search_engine=search, execute_task=_execute)
+    results, errors = [], []
+    with patch("backend.api.get_executor", return_value=executor), \
+         patch("backend.api.get_vault", return_value={}), \
+         patch("backend.api.scrape_x", new=AsyncMock(return_value=x_profile)) as scrape, \
+         patch("backend.api._check_vault_interlock", return_value=True), \
+         patch("backend.api.broadcast_log"), \
+         patch("backend.api.broadcast_result", side_effect=lambda *a: results.append(a)), \
+         patch("backend.api.broadcast_result_error", side_effect=lambda *a: errors.append(a)):
+        await run_mission(InitiatePayload(
+            client_id="fx_x_profile",
+            url="https://x.com/target",
+            rituals="",
+            playlist="",
+            envies="",
+            scraper_type="x",
+        ), task_id="op_x_contract")
+
+    scrape.assert_awaited_once()
+    search.search.assert_not_awaited()
+    profile = seen["payload"]["target_profile"]
+    assert profile["platform"] == "x"
+    assert profile["posts"] == ["Observed X post"]
+    assert profile["post_times"] == ["2026-10-01T22:30:00+00:00"]
+    assert profile["followers"] is None
+    assert profile["following"] == 0
+    assert profile["bio"] == ""
+    assert len(results) == 1
+    assert errors == []

@@ -1,11 +1,11 @@
 ---
 name: extractor_web_crawl4ai
-description: JS'li/ağır sayfalar için tarayıcılı kazıma (ikinci kademe).
+description: Güvenli indirilen HTML'i Crawl4AI markdown'a dönüştürür (ikinci kademe).
 ---
 
 # extractor_web_crawl4ai
 
-JS'li/ağır sayfalar için tarayıcılı kazıma (ikinci kademe).
+Güvenli indirilen HTML'i Crawl4AI markdown'a dönüştürür (ikinci kademe).
 
 - **Yetenek kimliği:** `extractor.web.crawl4ai`
 - **Tür:** `extractor`

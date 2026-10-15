@@ -126,6 +126,93 @@ def test_chat_completions_preserves_messages_tools_accounting_and_call_identity(
     assert response.headers["x-pineal-optimization-lossy"] == "false"
 
 
+def test_empty_upstream_choices_return_bad_gateway_not_success_or_client_error(monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl-empty",
+                "object": "chat.completion",
+                "created": 1_800_000_000,
+                "model": "upstage/solar-pro4",
+                "choices": [],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 1, "total_tokens": 11},
+            },
+        )
+
+    gateway = _gateway(handler)
+    monkeypatch.setattr(api_module, "_openai_gateway", lambda: gateway)
+    monkeypatch.delenv("PINEAL_TOKEN", raising=False)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "solar_pro4",
+                "messages": [{"role": "user", "content": "hello"}],
+            },
+        )
+
+    assert response.status_code == 502
+    assert response.json()["error"]["type"] == "server_error"
+    assert response.json()["error"]["code"] == "upstream_provider_error"
+    assert gateway.spend_usd > 0
+    assert gateway.budget_status()["active_reservations"] == 0
+    assert gateway.call_log[-1]["error"] == "ProviderEmptyResponseError"
+
+
+def test_upstream_auth_failure_is_not_misreported_as_client_authentication(monkeypatch):
+    gateway = _gateway(
+        lambda request: httpx.Response(
+            401,
+            json={"error": {"message": "provider API key is invalid"}},
+        )
+    )
+    monkeypatch.setattr(api_module, "_openai_gateway", lambda: gateway)
+    monkeypatch.delenv("PINEAL_TOKEN", raising=False)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "solar_pro4",
+                "messages": [{"role": "user", "content": "hello"}],
+            },
+        )
+
+    assert response.status_code == 502
+    assert response.json()["error"]["type"] == "server_error"
+    assert response.json()["error"]["code"] == "upstream_authentication_error"
+
+
+def test_provider_value_error_is_reported_as_upstream_bad_gateway(monkeypatch):
+    gateway = _gateway(lambda request: _completion_response())
+
+    class Completions:
+        async def create(self, **kwargs):
+            raise ValueError("upstream response decoder failure")
+
+    gateway.client = SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
+    monkeypatch.setattr(api_module, "_openai_gateway", lambda: gateway)
+    monkeypatch.delenv("PINEAL_TOKEN", raising=False)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "solar_pro4",
+                "messages": [{"role": "user", "content": "hello"}],
+            },
+        )
+
+    assert response.status_code == 502
+    assert response.json()["error"]["type"] == "server_error"
+    assert response.json()["error"]["code"] == "upstream_provider_error"
+    assert gateway.spend_usd > 0
+    assert gateway.budget_status()["active_reservations"] == 0
+    assert gateway.call_log[-1]["error"] == "ProviderResponseError"
+
+
 def test_safe_tool_optimization_is_exactly_reported_and_preserves_non_tool_fields(monkeypatch):
     captured: dict = {}
 
@@ -415,7 +502,7 @@ async def test_gateway_retries_only_known_transient_errors():
 
 
 @pytest.mark.asyncio
-async def test_chat_cancellation_releases_spend_reservation():
+async def test_chat_cancellation_retains_conservative_spend_reservation():
     gateway = LLMGateway()
     gateway.set_key("provider-test-key", unlock_live=True)
     gateway.spend_cap_usd = 1.0
@@ -436,7 +523,59 @@ async def test_chat_cancellation_releases_spend_reservation():
 
     assert gateway.budget_status()["active_reservations"] == 0
     assert gateway.budget_status()["reserved_usd"] == 0
+    assert gateway.spend_usd > 0, "the provider may have accepted the cancelled request"
+    assert gateway.call_log[-1]["cost_usd"] == gateway.spend_usd
     assert gateway.call_log[-1]["error"] == "CANCELLED"
+
+
+@pytest.mark.asyncio
+async def test_chat_retry_accounts_each_ambiguous_paid_attempt(monkeypatch):
+    monkeypatch.delenv("USE_LOCAL_LLM", raising=False)
+
+    async def no_wait(_delay):
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", no_wait)
+    gateway = LLMGateway()
+    gateway.set_key("provider-test-key", unlock_live=True)
+    gateway.spend_cap_usd = 1.0
+
+    class ServiceUnavailable(Exception):
+        status_code = 503
+
+    class Completions:
+        calls = 0
+
+        async def create(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                raise ServiceUnavailable("upstream unavailable")
+            return SimpleNamespace(
+                model=kwargs["model"],
+                usage=SimpleNamespace(prompt_tokens=100, completion_tokens=50),
+                choices=[
+                    SimpleNamespace(message=SimpleNamespace(content="retry succeeded"))
+                ],
+            )
+
+    completions = Completions()
+    gateway.client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    result = await gateway.chat_completion(
+        model="upstage/solar-pro4",
+        messages=[{"role": "user", "content": "retry accounting"}],
+        max_tokens=50,
+    )
+
+    observed_cost = gateway._usage_cost(
+        "upstage/solar-pro4",
+        SimpleNamespace(prompt_tokens=100, completion_tokens=50),
+    )
+    assert result.response.choices[0].message.content == "retry succeeded"
+    assert completions.calls == 2
+    assert gateway.spend_usd > observed_cost, "the first ambiguous 503 attempt must be retained"
+    assert gateway.call_log[-1]["cost_usd"] == gateway.spend_usd
+    assert gateway.budget_status()["active_reservations"] == 0
+    assert gateway.budget_status()["reserved_usd"] == 0
 
 
 @pytest.mark.asyncio
@@ -466,7 +605,9 @@ async def test_concurrent_chat_requests_cannot_overbook_spend_cap():
             entered.set()
             await release.wait()
             usage = SimpleNamespace(prompt_tokens=10, completion_tokens=10)
-            return SimpleNamespace(usage=usage)
+            message = SimpleNamespace(content="ok")
+            choice = SimpleNamespace(message=message)
+            return SimpleNamespace(model=kwargs["model"], usage=usage, choices=[choice])
 
     completions = Completions()
     gateway.client = SimpleNamespace(

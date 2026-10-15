@@ -18,7 +18,7 @@ import hashlib
 import asyncio
 from agent_core.capabilities.egress import open_client, httpx
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from agent_core.services.llm_gateway import LLMGateway
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,7 @@ class VisualEvidence(BaseModel):
     # [011] fix: fail-closed defaults. Model doğrudan kurulursa (hiç analiz
     # yapılmadan) 'tam güvenilir' sayılmaz; confidence/data_confidence yalnızca
     # gerçek üretim yolunda yerel olarak türetilir ([015]).
-    confidence: float = 0.0
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     data_confidence: bool = False
     fallback_reason: str = "not_analyzed"
     # [014] fix: her görsel için indirme provenance'ı (URL başarı/durum/sha/mime).

@@ -363,9 +363,11 @@ async def test_searxng_path_is_live_when_vault_open(monkeypatch):
 
     monkeypatch.setattr(SearchEngine, "_search_duckduckgo", _no_dd)
     outcome = await engine.search("hedef", num_results=3)
-    # Yetenek koştu ama servis yok -> dürüst "yok", uydurma bulgu değil.
+    # Servis hatası boş arama sonucu gibi raporlanmamalı.
     assert outcome.results == []
-    assert outcome.status == "NO_RESULTS"
+    assert outcome.status == "UNAVAILABLE"
+    assert outcome.available is False
+    assert "SEARXNG_SERVICE_UNREACHABLE" in (outcome.error or "")
 
 
 # ==================== A7 · Scrapling: kırılganlık kademesi ====================

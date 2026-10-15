@@ -4,7 +4,7 @@
   import {
     clientId, apiFetch, apiToken, setApiToken, currentApiToken,
     isAuthFailure, isProcessing, logs, taskStatus, telemetryEvents,
-    armEngaged, sigintEngaged, recordEngaged, keyUnlocked, powerEngaged
+    armEngaged, sigintEngaged, recordEngaged, keyUnlocked, powerEngaged, voiceEnabled
   } from '../store';
   import { currentLang, t } from '../i18n';
   import { playClick, playRunning, playHalt, playToggle, setSoundEnabled } from '../lib/consoleAudio';
@@ -385,13 +385,43 @@
       const resTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       messages = [...messages, { sender: 'ASPASIA', text: reply, time: resTime }];
 
-      // Ses + yazı birlikte (Kullanıcının verdiği TTS kodu)
-      if (typeof window !== 'undefined' && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-        const u = new SpeechSynthesisUtterance(reply);
-        u.lang = $currentLang === 'tr' ? 'tr-TR' : 'en-US';
-        u.rate = get(ttsRate);
-        window.speechSynthesis.speak(u);
+      // Chat TTS tek yerel yetenek geçidini kullanır. Tarayıcı speechSynthesis
+      // kasa/kapı/telemetri denetimini atlayabildiğinden burada çağrılmaz.
+      if (get(voiceEnabled)) {
+        try {
+          const speechRes = await apiFetch('/api/speech/say', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              client_id: $clientId,
+              text: reply,
+              rate: get(ttsRate),
+            }),
+          });
+          if (!speechRes.ok) {
+            logs.update(l => [...l, {
+              ts: new Date().toLocaleTimeString(),
+              level: 'WARNING',
+              msg: `SES: yerel TTS isteği başarısız (HTTP ${speechRes.status})`,
+            }]);
+          } else {
+            const speechResult = await speechRes.json();
+            if (!speechResult.available) {
+              logs.update(l => [...l, {
+                ts: new Date().toLocaleTimeString(),
+                level: 'WARNING',
+                msg: `SES: ses üretilemedi — ${speechResult.reason || 'motor yok'}`,
+              }]);
+            }
+          }
+        } catch (_speechError) {
+          // Metin yanıtı tamamdır; isteğe bağlı ses arızası sohbeti geri almaz.
+          logs.update(l => [...l, {
+            ts: new Date().toLocaleTimeString(),
+            level: 'WARNING',
+            msg: 'SES: yerel TTS servisine ulaşılamadı',
+          }]);
+        }
       }
     } catch (error: any) {
       messages = [...messages, { sender: 'SİSTEM', text: `SİSTEM UYARISI: ${error.message}`, time: nowTime }];
@@ -874,7 +904,7 @@
               <h4>Takipçi & Kitle Denetimi</h4>
               <!-- W2: UI Türkce metin eslemek yerine makine-okunur verdict_code'u okur -->
               <p>Hüküm: {followerAudit.verdict || 'BİLİNMİYOR'} <span style="opacity:0.7;">({followerAudit.verdict_code || 'unknown'})</span></p>
-              <p>Takipçi: {followerAudit.follower_count ?? 0} · Takip: {followerAudit.following_count ?? 'ölçülmedi'} · Gönderi: {followerAudit.post_count ?? 0}</p>
+              <p>Takipçi: {#if followerAudit.follower_count != null}{followerAudit.follower_count}{:else}<span class="report-warn">ölçülmedi</span>{/if} · Takip: {followerAudit.following_count ?? 'ölçülmedi'} · Gönderi: {followerAudit.post_count ?? 0}</p>
               <p>Etkileşim: {followerAudit.engagement_rate ?? '—'} (beklenen: {followerAudit.expected_rate_range || 'N/A'})</p>
               <p>Veri Tamamlık: %{((followerAudit.data_completeness ?? 0) * 100).toFixed(0)}</p>
             </div>
@@ -915,7 +945,7 @@
           {:else if activeForensicModal === 'shadow' && shadowProfile}
             <div class="report-box">
               <h4>Gölge Profili (Karanlık Üçlü)</h4>
-              <p>Narsisizm: {shadowProfile.dark_profile?.narcissism ?? 0}</p>
+              <p>Narsisizm: {#if shadowProfile.trait_scores_measured === true && shadowProfile.dark_profile?.narcissism != null}{shadowProfile.dark_profile?.narcissism}{:else}<span class="report-warn">ÖLÇÜM YOK</span>{/if}</p>
               <p>Strateji: {shadowProfile.strategy || '—'}</p>
               {#if shadowProfile.data_confidence === false}
                 <p class="report-warn">GÖLGE KATMANI VERİSİZ: {shadowProfile.fallback_reason || 'veri yok'}</p>

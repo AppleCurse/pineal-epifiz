@@ -16,6 +16,7 @@ from typing import Dict, Any, Optional, Tuple
 from agent_core.domain.memory_models import PassionProfile, FrictionProfile, CognitiveStyle
 from agent_core.services.llm_gateway import LLMGateway
 from agent_core.services.upstream_findings import upstream_findings_block
+from agent_core.services.confidence import normalize_confidence
 
 logger = logging.getLogger(__name__)
 
@@ -36,14 +37,28 @@ class TargetPsycheProfiler:
         self.llm_gateway = llm_gateway or LLMGateway()
 
     @staticmethod
-    def _extract_target_context(payload: Dict[str, Any]) -> Tuple[str, str, Dict[str, Any], str, str]:
-        """Tüm lensler için paylaşılan hedef bağlamını ve görsel delilleri ayrıştırır."""
-        target = payload.get("target_profile", {})
-        bio = target.get("bio", "")
-        posts = target.get("posts", [])
-        visual_evidence = payload.get("visual_evidence", {})
+    def _extract_target_context(payload: Dict[str, Any]) -> Tuple[str, str, Dict[str, Any], str, Dict[str, Any]]:
+        """Tüm lensler için tipli hedef bağlamını ve görsel delilleri ayrıştırır."""
+        payload = payload if isinstance(payload, dict) else {}
+        raw_target = payload.get("target_profile")
+        target = raw_target if isinstance(raw_target, dict) else {}
+        raw_bio = target.get("bio")
+        bio = raw_bio.strip() if isinstance(raw_bio, str) else ""
+        raw_posts = target.get("posts", [])
+        if isinstance(raw_posts, str):
+            raw_posts = [raw_posts]
+        posts = (
+            [post.strip() for post in raw_posts if isinstance(post, str) and post.strip()]
+            if isinstance(raw_posts, (list, tuple))
+            else []
+        )
+        raw_visual = payload.get("visual_evidence")
+        visual_evidence = raw_visual if isinstance(raw_visual, dict) else {}
 
-        posts_text = "\n".join([f"- {p}" for p in posts[:10]]) if posts else "Gönderi metni bulunamadı."
+        posts_text = (
+            "\n".join(f"- {post}" for post in posts[:10])
+            if posts else "Gönderi metni bulunamadı."
+        )
         upstream_block = upstream_findings_block(payload)
         return bio, posts_text, visual_evidence, upstream_block, target
 
@@ -113,13 +128,18 @@ Aşağıdaki JSON şemasına birebir uygun yanıt ver:
             has_passions = bool(
                 result.core_passions or result.energizing_topics or result.evidence_quotes
             )
-            raw_conf = float(getattr(result, "confidence", 0.0) or 0.0)
-            conf = max(raw_conf, 0.75) if has_passions else raw_conf
-            has_valid_evidence = has_passions and (conf > 0.0)
+            conf, confidence_valid = normalize_confidence(getattr(result, "confidence", None))
+            has_valid_evidence = has_passions and confidence_valid and conf > 0.0
+            reason = (
+                None if has_valid_evidence
+                else "invalid_model_confidence" if not confidence_valid
+                else "insufficient_grounded_evidence" if not has_passions
+                else "model_confidence_zero"
+            )
             return result.model_copy(update={
-                "confidence": conf,
+                "confidence": conf if has_valid_evidence else 0.0,
                 "data_confidence": has_valid_evidence,
-                "fallback_reason": None if has_valid_evidence else "insufficient_grounded_evidence"
+                "fallback_reason": reason,
             })
         except Exception as e:
             logger.warning(f"TargetPsycheProfiler (Passions) LLM hatası: {e}")
@@ -198,18 +218,20 @@ Aşağıdaki JSON şemasına birebir uygun yanıt ver:
             has_frictions = bool(
                 result.sensitivities or result.stress_triggers or result.boundary_signals or result.evidence_quotes
             )
-            if not has_frictions and (bio or posts_text != "Gönderi metni bulunamadı."):
-                result = result.model_copy(update={
-                    "boundary_signals": ["Mahremiyet ve düşük dijital maruziyet tercihi", "Yüzeysel veya izinsiz temaslara karşı mesafeli duruş"]
-                })
-                has_frictions = True
-            raw_conf = float(getattr(result, "confidence", 0.0) or 0.0)
-            conf = max(raw_conf, 0.75) if has_frictions else 0.75
-            has_valid_evidence = has_frictions and (conf > 0.0)
+            # Empty model findings are not replaced with generic personality
+            # claims or a confidence baseline.
+            conf, confidence_valid = normalize_confidence(getattr(result, "confidence", None))
+            has_valid_evidence = has_frictions and confidence_valid and conf > 0.0
+            reason = (
+                None if has_valid_evidence
+                else "invalid_model_confidence" if not confidence_valid
+                else "insufficient_grounded_evidence" if not has_frictions
+                else "model_confidence_zero"
+            )
             return result.model_copy(update={
-                "confidence": conf,
+                "confidence": conf if has_valid_evidence else 0.0,
                 "data_confidence": has_valid_evidence,
-                "fallback_reason": None if has_valid_evidence else "insufficient_grounded_evidence"
+                "fallback_reason": reason,
             })
         except Exception as e:
             logger.warning(f"TargetPsycheProfiler (Frictions) LLM hatası: {e}")
@@ -279,13 +301,18 @@ Aşağıdaki JSON şemasına birebir uygun yanıt ver:
             has_style = bool(
                 result.communication_tone and result.communication_tone != "unknown"
             )
-            raw_conf = float(getattr(result, "confidence", 0.0) or 0.0)
-            conf = max(raw_conf, 0.75) if has_style else raw_conf
-            has_valid_evidence = has_style and (conf > 0.0)
+            conf, confidence_valid = normalize_confidence(getattr(result, "confidence", None))
+            has_valid_evidence = has_style and confidence_valid and conf > 0.0
+            reason = (
+                None if has_valid_evidence
+                else "invalid_model_confidence" if not confidence_valid
+                else "insufficient_grounded_evidence" if not has_style
+                else "model_confidence_zero"
+            )
             return result.model_copy(update={
-                "confidence": conf,
+                "confidence": conf if has_valid_evidence else 0.0,
                 "data_confidence": has_valid_evidence,
-                "fallback_reason": None if has_valid_evidence else "insufficient_grounded_evidence"
+                "fallback_reason": reason,
             })
         except Exception as e:
             logger.warning(f"TargetPsycheProfiler (Cognitive) LLM hatası: {e}")

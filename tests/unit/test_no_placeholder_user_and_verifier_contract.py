@@ -161,7 +161,11 @@ class _FailingGateway:
 async def test_mirror_llm_fallback_never_measures_alignment_half():
     mirror = MirrorOfTruth(_FailingGateway())
     result = await mirror.execute({
-        "user_profile": {"rituals": ["kahve"], "music": "klasik", "envies": "bağ"},
+        "user_profile": {
+            "private_rituals": ["kahve"],
+            "late_night_playlist": "klasik",
+            "secret_envies": "bağ",
+        },
     })
 
     assert result.data_confidence is False

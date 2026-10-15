@@ -21,6 +21,7 @@ from agent_core.services.timing_forensics import (
     analyze_trajectory,
 )
 from agent_core.services.psychodynamic_depth import analyze_depth
+from agent_core.services.follower_audit import audit_followers
 from agent_core.psychology.dark_triad import DarkTriadAnalyzer, DarkTriadProfile
 
 
@@ -183,10 +184,11 @@ def _full_input():
                 "span_hours": 100.0,
             },
         },
-        "follower_audit": {
-            "followers": 1000, "following": 100, "engagement_rate": 0.05,
-            "verdict": "saglikli", "data_completeness": 1.0,
-        },
+        "follower_audit": audit_followers(
+            1000,
+            100,
+            [{"like_count": 50, "comment_count": 0}],
+        ).model_dump(),
     }
 
 
@@ -211,6 +213,23 @@ def test_depth_full_report_shape_and_tension_math():
     assert 0.0 <= rep["reaction_formation_index"] <= 1.0
     assert rep["reaction_formation_index"] == matrix[0][1]
     assert rep["channels"]["declaration"]["signals"]["n_texts"] == 3
+    social = rep["channels"]["social"]["signals"]
+    assert social["engagement_rate"] == 5.0  # producer emits percentage points
+    assert social["followers"] == 1000
+    assert social["following"] == 100
+    assert rep["channels"]["social"]["intensity"] == 0.5  # 5% of the 10% reference
+
+
+def test_depth_nonfinite_social_metrics_are_not_counted_as_evidence():
+    data = _full_input()
+    data["follower_audit"]["data_completeness"] = float("nan")
+    data["follower_audit"]["engagement_rate"] = float("inf")
+    report = analyze_depth(data)
+    social = report["channels"]["social"]
+    assert report["verdict"] == "ok"
+    assert social["completeness"] == 0.0
+    assert social["intensity"] == 0.0
+    assert social["signals"]["engagement_rate"] is None
 
 
 def test_depth_saturation_is_locked_null():

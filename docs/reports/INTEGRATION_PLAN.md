@@ -131,12 +131,11 @@ değerlendirilebilir. Karar: red, kanıtlarıyla belgeli.
 ## 6. FAZ 4 uygulaması (bu commit) — Crawl4AI
 
 - `agent_core/services/crawl_enricher.py`: public-web sayfa → LLM-dostu
-  metin. Kapı `ENABLE_CRAWL4AI` (default kapalı); `CRAWL4AI_RENDERER`
-  (`http` default — AsyncHTTPCrawlerStrategy, tarayıcı binary'si GEREKMEZ;
-  `browser` — Playwright, binary yoksa dürüst `browser_missing`),
-  `CRAWL4AI_MAX_CHARS` (8000, max 50000), `CRAWL4AI_TIMEOUT` (20s),
-  `CRAWL4AI_RESEARCH_LIMIT` (2, max 5). SSRF guard: socid ile aynı
-  `is_safe_url`. Önbellek `CacheMode.BYPASS` (taze çekim, yanılsama yok).
+  metin. Kapı `ENABLE_CRAWL4AI` (default kapalı); HTML `safe_get` ile DNS
+  pinlenerek indirilir, Crawl4AI yalnız yerel Markdown parser olarak çalışır.
+  `CRAWL4AI_RENDERER=browser` (Playwright/JS) ağ adresi sabitlenebilir olana
+  dek fail-closed kapalıdır. `CRAWL4AI_MAX_CHARS` (8000, max 50000),
+  `CRAWL4AI_TIMEOUT` (20s), `CRAWL4AI_RESEARCH_LIMIT` (2, max 5).
 - `POST /api/experimental/crawl/fetch` — deneysel uç.
 - `_run_public_web_research` zenginleştirmesi: kapı açıkken eşleşen ilk
   N sonuç `fetch_readable` ile çekilir; **yalnız available=True** sonuçlara

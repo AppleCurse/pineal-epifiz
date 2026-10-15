@@ -37,6 +37,7 @@ GENERATOR = REPO_ROOT / "scripts" / "generate_inventory_page.py"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 API = REPO_ROOT / "backend" / "api.py"
 LANGUAGE_ROUTES = REPO_ROOT / "backend" / "routes" / "language.py"
+SPEECH_AUDIO_ROUTES = REPO_ROOT / "backend" / "routes" / "speech_audio.py"
 
 
 def _load_generator():
@@ -127,6 +128,9 @@ def test_endpoint_rows_match_real_decorators():
     decorators += re.findall(
         r'^\s*@app\.(?:get|post|put|delete|patch)\("', LANGUAGE_ROUTES.read_text(encoding="utf-8"), re.M
     )
+    decorators += re.findall(
+        r'^\s*@router\.(?:get|post|put|delete|patch)\("', SPEECH_AUDIO_ROUTES.read_text(encoding="utf-8"), re.M
+    )
     page = PAGE.read_text(encoding="utf-8")
     rows = re.findall(r'data-flags="endpoint"', page)
     assert len(rows) == len(decorators), (
@@ -147,6 +151,9 @@ def test_page_documents_the_api_split_it_triggered():
     page = PAGE.read_text(encoding="utf-8")
     assert "backend/routes/language.py" in page
     assert "API-BÖLME 2" in page
+    assert "backend/routes/speech_audio.py" in page
+    assert "API-BÖLME 3" in page
+    assert "1 saat TTL" in page
     assert "5.916" in page, "tavana düşürme kararı sayfada yazılı olmalı"
 
 

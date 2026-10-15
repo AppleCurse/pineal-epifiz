@@ -1,5 +1,39 @@
 # Changelog
 
+## Unreleased — 2026-10-15 — Geniş kaynak/test sözleşmesi denetimi
+
+- Güven skorları: ortak `normalize_confidence` sözleşmesi yalnız sonlu `[0,1]`
+  sayıları kabul eder; bool, aralık dışı ve bozuk değerler kırpılmaz.
+  Kanıt yokluğu, gerçek ölçüm ve modelden gelen iddia ayrı tutulur.
+- Ajanlar/motorlar/araçlar: upstream bulgular prompt'a doğrulama kökeniyle
+  taşınır; Shadow ölçülmemiş depth/trade sinyallerinde fail-closed kalır.
+  X profil verisi `posts`/`post_times` hizasını korur; takipçi alias'ları
+  açık `0` ölçümünü koruyup eksik değerde fallback yapar. Sensör, arama,
+  crawl, URL güvenliği, UI oturumu ve diyalog saklama sözleşmeleri için
+  deterministik testler eklendi/güncellendi.
+- Sağlayıcı/yürütme: `docs/PROVIDER_EXECUTION_BOUNDARIES.md` katalog,
+  yapılandırma ve yürütmeyi ayırır. 27 katalog girdisinin tamamı
+  `catalog_only`; runtime yalnız `openai_chat` + `api_key`/`local` yolunu
+  yürütür. Normal tool çağrıları taşınır ve yanıtı döner, fakat Pineal tool'u
+  çalıştırmaz; Fusion/Pipeline/Context Relay tool kabul etmez. JSON/audio
+  route kapıları request şeklinden türetilir. SDK iç tekrarları kapalıdır;
+  gateway sınıflandırılmamış ValueError'ı yeniden ücretli çağrıya çevirmeden
+  ve rezervi koruyarak sonuçlandırır.
+- Ses: `speak()` eski kesinti izini temizler; STT ham sesi/Whisper yan
+  dosyasını işlem sonunda siler ve yalnız SHA-256 referansı tutar. TTS cache
+  TTL/boyut sınırı, crash artığı temizliği ve yalnız tamamlanmış WAV sunan
+  ses rotası tanımlı. Speech API `backend/routes/speech.py` ve audio route
+  `backend/routes/speech_audio.py` modüllerindedir; `backend/api.py` 5.874
+  satıra düşerek 5.916 satırlık ratchet sınırının altındadır.
+- **Doğrulama:** Python **2.626 geçti, 6 atlandı, 0 başarısız**; frontend
+  `svelte-check` 0 hata/uyarı ve Vite production build başarılı. Envanter,
+  skill paketi ve audit raporu tazelik testleri ile `git diff --check` geçti.
+  Audit regresyon özeti: 20 kapalı, 1 kapalı-tasarım, 0 açık, 3 doğrulanamaz.
+- **Kanıt sınırı:** kaynak ve mock/yerel testler canlı çalışma kanıtı değildir.
+  Gerçek LLM sağlayıcısı, X, SearXNG/uzak crawl, Piper/Whisper ve tarayıcıda
+  ses oynatma bu turda çalıştırılmadı. Bu sandbox'ta `cargo`/`rustc` yok;
+  Rust'a ilişkin üç audit bulgusu bu nedenle “doğrulanamaz” kalır.
+
 ## Unreleased — 2026-10-15 — Fiyat doğrulaması: kapsam, son ölçüm ve açıklar
 
 - OpenRouter katalog bölümündeki **9 fiyatlı modelin tamamı** pinli. Önceki
@@ -121,8 +155,8 @@ Kök neden ve onarım — "testler geçti" demek "iş bitti" değil, üçüncü 
   bağlıdır; kesintide katalog kayması TESPİT EDİLEMEZ — "doğrulanamadı" bunu
   gizlemez ama kapatmaz. Kalıcı çözüm canlı katalogun CI dışında düzenli
   toplanıp commit edilmesidir (depo dışı artefakt); bu turda yapılmadı.
-- Envanter: yeni test dosyası kanonik ölçüyü 234 → **235 test modülü** yaptı
-  (CHANGELOG deyimi ve `docs/envanter.html` güncellendi).
+- Envanter: o tarihteki tüm dosya evreni ölçümü yeni test dosyasıyla 234 → **235 test modülü** oldu
+  (CHANGELOG deyimi ve `docs/envanter.html` o sürüm için güncellendi).
 
 ## Unreleased — 2026-10-14 — Kalan eksikler turu: yetenekler gerçekten koşturuldu
 
@@ -300,7 +334,7 @@ kanıtı `reports/kapasite_denetimi.json` ve onu üreten
   **`.env.example`'ın 98 ayarı (grup + yorum + örnek değer)**.
 - Çok satırlık klasörler açıklama kazandı: `rust_core/` (48), `android/` (49, parite sınırı
   etiketli), `frontend/` (47), `functions/` (2), `skills/` (26), `config/` (6), 235 test modülü
-  (`tests/` altındaki `test_*.py` — pytest'in topladığı dosyalar) ve 41 tarihli rapor.
+  (`tests/` altındaki `test_*.py` — 2026-10-14 tarihli tüm dosya evreni ölçümü) ve 41 tarihli rapor.
 - Determinizm: künye tarihi "şimdi" değil son commit'tir ve sayfa KENDİNİ saymaz — bu yüzden
   `--check` kararlıdır. CI'ya "Verify inventory page committed fresh" adımı eklendi.
 - Test: `tests/unit/test_inventory_page.py` (15 test): bayatlama, A docstring'leri, B görünürlüğü,

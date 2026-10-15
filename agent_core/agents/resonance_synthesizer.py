@@ -16,6 +16,7 @@ from typing import Dict, Any, Optional
 from agent_core.domain.memory_models import AuthenticBridge
 from agent_core.services.llm_gateway import LLMGateway
 from agent_core.services.upstream_findings import upstream_findings_block
+from agent_core.services.confidence import normalize_confidence
 
 logger = logging.getLogger(__name__)
 
@@ -145,13 +146,18 @@ Aşağıdaki JSON formatında yanıt ver:
             has_bridge = bool(
                 result.shared_passions or result.suggested_opening_message
             )
-            raw_conf = float(getattr(result, "confidence", 0.0) or 0.0)
-            conf = max(raw_conf, 0.75) if has_bridge else raw_conf
-            has_valid_evidence = has_bridge and (conf > 0.0)
+            conf, confidence_valid = normalize_confidence(getattr(result, "confidence", None))
+            has_valid_evidence = has_bridge and confidence_valid and conf > 0.0
+            reason = (
+                None if has_valid_evidence
+                else "invalid_model_confidence" if not confidence_valid
+                else "insufficient_grounded_evidence" if not has_bridge
+                else "model_confidence_zero"
+            )
             return result.model_copy(update={
                 "confidence": conf,
                 "data_confidence": has_valid_evidence,
-                "fallback_reason": None if has_valid_evidence else "insufficient_grounded_evidence"
+                "fallback_reason": reason,
             })
         except Exception as e:
             logger.warning(f"ResonanceSynthesizer LLM hatası: {e}")
