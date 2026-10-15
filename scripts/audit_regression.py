@@ -59,6 +59,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 ROOT = Path(__file__).resolve().parents[1]
 AUDIT_REPORT = ROOT / "docs" / "reports" / "JULES_DENETIM_2026-10-06.md"
 REPORT_OUT = ROOT / "reports" / "audit_regression.json"
@@ -1395,7 +1402,8 @@ def _source_stamp() -> str:
     import hashlib
 
     try:
-        digest = hashlib.sha256(AUDIT_REPORT.read_bytes()).hexdigest()[:16]
+        content = AUDIT_REPORT.read_bytes().replace(b"\r\n", b"\n")
+        digest = hashlib.sha256(content).hexdigest()[:16]
     except OSError as exc:
         # Kaynak okunamıyorsa damga UYDURULMAZ; rapor yine de üretilir ama
         # mühürsüz olduğu açıkça görünür (sessiz sahte değer yok).
@@ -1546,7 +1554,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not args.no_write:
         REPORT_OUT.parent.mkdir(parents=True, exist_ok=True)
         REPORT_OUT.write_text(
-            json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+            json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n"
         )
 
     if args.json:

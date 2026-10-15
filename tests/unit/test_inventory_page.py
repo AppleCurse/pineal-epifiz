@@ -56,6 +56,7 @@ def test_generator_exists_and_page_is_not_stale():
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
     )
     assert proc.returncode == 0, (
         "docs/envanter.html kaynakla uyuşmuyor (bayat). "
@@ -175,6 +176,7 @@ def _gercek_tarama() -> list[str]:
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             check=True,
         )
         return proc.stdout.splitlines()
