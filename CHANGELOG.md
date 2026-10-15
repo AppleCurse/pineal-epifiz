@@ -8,7 +8,9 @@
   deepseek-v4-pro **$0.95526/$1.91052**, solar-pro4 **$0.09/$0.36**,
   glm-5.2 **$0.04/$7.00** okudu. CI
   [38662205946](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38662205946)
-  GLM çıktısını **$4.40/1M** okudu; son kayıt **$0.04/$4.40**.
+  GLM çıktısını **$4.40/1M** okudu; ardından CI
+  [38664381599](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38664381599)
+  girdiyi **$0.037/1M** okudu; son kayıt **$0.037/$4.40**.
   Pin, OpenRouter katalog kaydı ve gateway harcama tablosu hizalandı.
   Bu ölçümler fiyat farklılığını kanıtlar; kampanyanın bittiğini veya fiyatın
   neden değiştiğini tek başına kanıtlamaz. Önceki açıklamalardaki nedensellik

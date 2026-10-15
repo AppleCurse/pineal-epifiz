@@ -104,10 +104,11 @@ kilit ayrışmayı yakalar ama tek kaynaktan TÜRETMEZ (kalıcı çözüm: fiyat
 |---|---|---|---|
 | deepseek/deepseek-v4-pro | 0.386976 / 0.773952 | **0.95526 / 1.91052** | CI 38660006254 |
 | upstage/solar-pro4 (OpenRouter) | 0.03 / 0.12 | **0.09 / 0.36** | CI 38660006254 |
-| z-ai/glm-5.2 | 0.3276 / 1.03 → 0.04 / 7.00 | **0.04 / 4.40** | CI 38662205946 |
+| z-ai/glm-5.2 | 0.3276 / 1.03 → 0.04 / 7.00 | **0.037 / 4.40** | CI 38664381599 (girdi), 38662205946 (çıktı) |
 
 Kanıt bağlantıları: [38660006254](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38660006254),
 [38662205946](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38662205946).
+Son girdi kanıtı: [38664381599](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38664381599).
 Üç kopya güncellendi: pin, OpenRouter katalog bölümü, gateway harcama tablosu.
 Ölçüm kaymayı gösterir; nedenini (kampanya/sağlayıcı değişimi) göstermez.
 Önceki "promo bitti" ifadeleri bu turda ayrıca kanıtlanmış değildir.
