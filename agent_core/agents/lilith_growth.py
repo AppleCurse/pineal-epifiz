@@ -22,9 +22,10 @@ import math
 import urllib.parse
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from agent_core.capabilities.egress import open_client
+from agent_core.services.confidence import normalize_confidence
 from agent_core.services.llm_gateway import LLMGateway
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ def _safe_float(value: Any, default: float) -> float:
     """
     try:
         f = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return default
     if not math.isfinite(f):
         return default
@@ -144,6 +145,28 @@ class NeuroMetrics(BaseModel):
         return candidate if candidate in allowed else "dopamine"
 
 
+class LilithGenerationResponse(BaseModel):
+    """LLM response contract. Empty content is allowed by the schema so the
+    caller can reject it explicitly instead of turning defaults into success.
+    """
+
+    hook: str = ""
+    psychological_angle: str = ""
+    content_body: str = ""
+    call_to_action: str = ""
+    pollinations_image_prompt: str = ""
+    dopamine: Optional[float] = None
+    serotonin: Optional[float] = None
+    cortisol: Optional[float] = None
+    oxytocin: Optional[float] = None
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    subconscious_trigger: str = ""
+    retention_loop_strategy: str = ""
+    formula_breakdown: str = ""
+
+    model_config = ConfigDict(extra="ignore")
+
+
 class LilithContentPackage(BaseModel):
     """Lilith tarafından üretilen viral ve nörobilişsel içerik paketi."""
     platform: str = "x_twitter"
@@ -153,8 +176,11 @@ class LilithContentPackage(BaseModel):
     call_to_action: str
     pollinations_image_prompt: str
     pollinations_image_url: str
-    confidence: float = 0.0
+    # URL construction is not proof that the remote service generated an image.
+    image_generation_status: str = "not_requested"
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     data_confidence: bool = False
+    confidence_reason: Optional[str] = None
     fallback_reason: Optional[str] = None
 
     neurochemical_profile: Optional[NeurochemicalProfile] = None
@@ -164,11 +190,6 @@ class LilithContentPackage(BaseModel):
     formula_breakdown: Optional[str] = None
 
     model_config = ConfigDict(extra="allow")
-
-    @field_validator("confidence", mode="before")
-    @classmethod
-    def _clamp_confidence(cls, v: Any) -> float:
-        return _clamp(_safe_float(v, 0.5), 0.0, 1.0)
 
 
 # --------------------------------------------------------------------------- #
@@ -380,8 +401,81 @@ class LilithGrowthAgent:
     ) -> str:
         """Pollinations.ai üzerinden 0-token, API key'siz anında görsel URL'i oluşturur."""
         clean_prompt = (prompt or "").strip().replace("\n", " ")
+        if not clean_prompt:
+            return ""
         encoded = urllib.parse.quote(clean_prompt)
         return f"https://image.pollinations.ai/prompt/{encoded}?width={width}&height={height}&model={model}&nologo=true"
+
+    async def _request_generation(self, prompt: str) -> Any:
+        """Call either the gateway's structured chain or an explicit chat adapter.
+
+        The production ``LLMGateway`` exposes ``query_json_chain`` rather than
+        ``chat``. CLI/test adapters may implement the small OpenAI-chat surface.
+        Keeping the two contracts explicit prevents a mock-only ``.chat`` method
+        from masking a broken default integration.
+        """
+        gateway = self.llm_gateway
+        chat = getattr(gateway, "chat", None)
+        if callable(chat):
+            return await chat(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7,
+                response_format={"type": "json_object"},
+            )
+
+        query_json_chain = getattr(gateway, "query_json_chain", None)
+        if callable(query_json_chain):
+            return await query_json_chain(
+                prompt=prompt,
+                schema=LilithGenerationResponse,
+                task="dialogue",
+                temperature=0.7,
+                agent_name="lilith_growth",
+            )
+
+        query_json = getattr(gateway, "query_json", None)
+        if callable(query_json):
+            return await query_json(
+                prompt=prompt,
+                schema=LilithGenerationResponse,
+                temperature=0.7,
+                task="dialogue",
+                agent_name="lilith_growth",
+            )
+
+        raise TypeError("unsupported_llm_gateway_contract")
+
+    @staticmethod
+    def _response_data(response: Any) -> Dict[str, Any]:
+        """Normalize typed gateway and OpenAI-style responses to a JSON object."""
+        if isinstance(response, LilithGenerationResponse):
+            return response.model_dump()
+        if isinstance(response, BaseModel):
+            return response.model_dump()
+        if isinstance(response, dict):
+            return response
+
+        if isinstance(response, str):
+            content = response
+        else:
+            choices = getattr(response, "choices", None)
+            if not (isinstance(choices, (list, tuple)) and choices):
+                # LLMGateway.chat_completion wraps the provider response in a
+                # value object; adapters that already return `choices` need no
+                # wrapper handling.
+                response = getattr(response, "response", response)
+                choices = getattr(response, "choices", None)
+            if not (isinstance(choices, (list, tuple)) and choices):
+                raise ValueError("empty_model_response")
+            message = getattr(choices[0], "message", None)
+            content = getattr(message, "content", None)
+
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("empty_model_content")
+        parsed = json.loads(_strip_code_fences(content))
+        if not isinstance(parsed, dict):
+            raise ValueError("model_response_must_be_json_object")
+        return parsed
 
     @staticmethod
     def render_console_report(package: "LilithContentPackage") -> str:
@@ -389,9 +483,13 @@ class LilithGrowthAgent:
         `LilithContentPackage`'ı okunabilir bir konsol raporuna dönüştürür.
         Başarı ve fallback durumları için TEK ortak formatlayıcı (kod tekrarı yok).
         """
-        metrics = package.neuro_metrics or LilithGrowthAgent.compute_neuro_formula()
-        chem = package.neurochemical_profile or NeurochemicalProfile()
-        mode_label = "NÖRAL BASELINE (Fallback)" if package.fallback_reason else "CANLI ANALİZ"
+        metrics = package.neuro_metrics
+        chem = package.neurochemical_profile
+        mode_label = (
+            "MODEL ÇAĞRISI BAŞARISIZ — FALLBACK"
+            if package.fallback_reason
+            else "MODEL ÇIKTISI — BAĞIMSIZ OLARAK DOĞRULANMADI"
+        )
 
         lines = [
             "=" * 65,
@@ -403,17 +501,30 @@ class LilithGrowthAgent:
             f"\n📝 [İÇERİK GÖVDESİ (ZEİGARNİK RİTMİ)]:\n{package.content_body}",
             f"\n⚡ [EYLEME ÇAĞRI (CTA)]:\n{package.call_to_action}",
             "\n" + "-" * 65,
-            "📊 NÖROKİMYASAL MATRİS & FORMÜL SKORLARI (D.O.S.E.):",
-            f"  • Dopamin (Merak & Ödül Hatası δ) : %{round(chem.dopamine_potential * 100)}",
-            f"  • Serotonin (Statü Sermayesi)     : %{round(chem.serotonin_status_currency * 100)}",
-            f"  • Kortizol (Amigdala / Kayıp)     : %{round(chem.cortisol_urgency * 100)}",
-            f"  • Oksitosin (Kabile Bağı)         : %{round(chem.oxytocin_affinity * 100)}",
-            f"  • 🎯 Baskın Nörotransmitter        : {metrics.dominant_neurotransmitter} → {metrics.target_brain_region}",
-            f"  • 🚀 BİLEŞİK VİRAL KATSAYI (Vc)   : {metrics.viral_coefficient_score} / 10.0",
+            "📊 HEURİSTİK FORMÜL ÇIKTILARI (biyolojik/klinik ölçüm değildir):",
+            (
+                f"  • Dopamin girdisi  : %{round(chem.dopamine_potential * 100)}\n"
+                f"  • Serotonin girdisi: %{round(chem.serotonin_status_currency * 100)}\n"
+                f"  • Kortizol girdisi : %{round(chem.cortisol_urgency * 100)}\n"
+                f"  • Oksitosin girdisi: %{round(chem.oxytocin_affinity * 100)}\n"
+                f"  • Formül etiketi   : {metrics.dominant_neurotransmitter}"
+                if chem is not None and metrics is not None
+                else "  • Hesaplanmadı — model çıktısı yok."
+            ),
+            (
+                f"  • BİLEŞİK VİRAL KATSAYI (heuristik): {metrics.viral_coefficient_score} / 10.0"
+                if metrics is not None
+                else ""
+            ),
             "-" * 65,
             f"\n🎨 [GÖRSEL PROMPTU]:\n{package.pollinations_image_prompt}",
-            f"\n🔗 [POLLINATIONS GÖRSEL LİNKİ]:\n{package.pollinations_image_url}",
+            f"\n🔗 [POLLINATIONS İSTEK URL'İ — ÜRETİM DOĞRULANMADI]:\n{package.pollinations_image_url or '-'}",
+            f"Görsel durumu: {package.image_generation_status}",
+            f"Profil bağlamı mevcut: {'evet' if package.data_confidence else 'hayır / doğrulanmadı'}",
+            f"Model güven alanı: {package.confidence:.2f} (kalibre edildiği anlamına gelmez)",
         ]
+        if package.confidence_reason:
+            lines.append(f"Güven/veri durumu: {package.confidence_reason}")
         if package.fallback_reason:
             lines.append(f"\n⚠️ [FALLBACK NEDENİ]: {package.fallback_reason}")
         lines.append("=" * 65 + "\n")
@@ -423,30 +534,56 @@ class LilithGrowthAgent:
         """
         Aspasia profilini veya doğrudan konuyu alıp nörobilişsel viral içerik üretir.
         """
-        topic = payload.get("topic", "")
-        platform = payload.get("platform", "x_twitter")
+        topic = str(payload.get("topic") or "").strip()
+        platform = str(payload.get("platform") or "x_twitter").strip()
 
         target_profile = payload.get("target_profile", {})
         friction = payload.get("friction_profile", {})
         passion = payload.get("passion_profile", {})
         cognitive = payload.get("cognitive_style", {})
 
+        target_profile = target_profile if isinstance(target_profile, dict) else {}
+        friction = friction if isinstance(friction, dict) else {}
+        passion = passion if isinstance(passion, dict) else {}
+        cognitive = cognitive if isinstance(cognitive, dict) else {}
+
+        def _items(value: Any) -> List[str]:
+            if isinstance(value, str):
+                return [value.strip()] if value.strip() else []
+            if isinstance(value, (list, tuple)):
+                return [str(item).strip() for item in value if str(item).strip()]
+            return []
+
         frictions_text = ", ".join(
-            friction.get("sensitivities", []) + friction.get("stress_triggers", [])
+            _items(friction.get("sensitivities")) + _items(friction.get("stress_triggers"))
         )
         passions_text = ", ".join(
-            passion.get("core_passions", []) + passion.get("energizing_topics", [])
+            _items(passion.get("core_passions")) + _items(passion.get("energizing_topics"))
         )
-        tone_pref = cognitive.get("communication_tone", "doğrudan")
+        tone_pref = str(cognitive.get("communication_tone") or "").strip()
 
-        has_profile = bool(frictions_text or passions_text or target_profile)
+        # Only explicitly supplied public text is copied into this prompt. The
+        # original implementation counted target_profile's mere truthiness as
+        # evidence while never using its contents.
+        target_bio = target_profile.get("bio")
+        target_bio = target_bio.strip() if isinstance(target_bio, str) else ""
+        target_posts = _items(target_profile.get("posts"))[:10]
+        profile_lines = []
+        if target_bio:
+            profile_lines.append(f"Biyografi: {target_bio}")
+        if target_posts:
+            profile_lines.append("Paylaşımlar: " + " | ".join(target_posts))
+        target_profile_text = "\n".join(profile_lines)
+
+        has_profile = bool(target_profile_text or frictions_text or passions_text or tone_pref)
 
         context_block = f"""
 Hedef Kitle / Konu: {topic or 'Belirtilmedi'}
 Platform: {platform}
-Tercih Edilen Üslup: {tone_pref}
-Hassasiyetler & Sürtünme Noktaları (Aspasia): {frictions_text or 'Statü tehdidi, bilişsel uyumsuzluk, belirsizlik'}
-Tutku & Enerji Alanları (Aspasia): {passions_text or 'Yüksek merak, güç asimetrisi, derin içgörü'}
+Hedef Profili (sağlanan metin): {target_profile_text or 'veri yok'}
+Tercih Edilen Üslup (sağlandıysa): {tone_pref or 'veri yok'}
+Hassasiyetler & Sürtünme Noktaları (sağlanan): {frictions_text or 'veri yok'}
+Tutku & Enerji Alanları (sağlanan): {passions_text or 'veri yok'}
 """
 
         prompt = f"""{LILITH_SYSTEM_PROMPT}
@@ -485,88 +622,115 @@ Aşağıdaki JSON şemasına BİREBİR uygun yanıt ver:
 """
 
         try:
-            res = await self.llm_gateway.chat(
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.7,
-                response_format={"type": "json_object"},
-            )
-            raw = res.choices[0].message.content or "{}"
-            data = json.loads(raw)
+            response = await self._request_generation(prompt)
+            data = self._response_data(response)
 
-            img_prompt = data.get(
-                "pollinations_image_prompt", f"cinematic dark aesthetic photography of {topic}"
+            required_fields = (
+                "hook",
+                "psychological_angle",
+                "content_body",
+                "call_to_action",
             )
+            for field_name in required_fields:
+                value = data.get(field_name)
+                if not isinstance(value, str) or not value.strip():
+                    raise ValueError(f"missing_required_content:{field_name}")
+
+            img_prompt = data.get("pollinations_image_prompt")
+            img_prompt = img_prompt.strip() if isinstance(img_prompt, str) else ""
             img_url = self.build_pollinations_url(img_prompt)
 
-            # Tek tek alanlarda bozuk veri, TÜM üretimi çökertmesin diye _safe_float kullanılır.
-            dopamine = _safe_float(data.get("dopamine"), 0.88)
-            serotonin = _safe_float(data.get("serotonin"), 0.82)
-            cortisol = _safe_float(data.get("cortisol"), 0.62)
-            oxytocin = _safe_float(data.get("oxytocin"), 0.70)
-
-            neuro_chem = NeurochemicalProfile(
-                dopamine_potential=dopamine,
-                serotonin_status_currency=serotonin,
-                cortisol_urgency=cortisol,
-                oxytocin_affinity=oxytocin,
+            # These are heuristic inputs, not physiological measurements. If
+            # any model field is missing/invalid, do not synthesize a baseline.
+            raw_metrics = {
+                name: _safe_float(data.get(name), float("nan"))
+                for name in ("dopamine", "serotonin", "cortisol", "oxytocin")
+            }
+            has_numeric_inputs = all(math.isfinite(value) for value in raw_metrics.values())
+            neuro_chem = None
+            metrics = None
+            cognitive_friction = _safe_float(
+                payload.get("cognitive_friction", friction.get("cognitive_friction", 0.25)),
+                0.25,
             )
+            if has_numeric_inputs:
+                neuro_chem = NeurochemicalProfile(
+                    dopamine_potential=raw_metrics["dopamine"],
+                    serotonin_status_currency=raw_metrics["serotonin"],
+                    cortisol_urgency=raw_metrics["cortisol"],
+                    oxytocin_affinity=raw_metrics["oxytocin"],
+                )
+                metrics = self.compute_neuro_formula(
+                    dopamine=raw_metrics["dopamine"],
+                    serotonin=raw_metrics["serotonin"],
+                    cortisol=raw_metrics["cortisol"],
+                    oxytocin=raw_metrics["oxytocin"],
+                    cognitive_friction=cognitive_friction,
+                )
 
-            metrics = self.compute_neuro_formula(
-                dopamine=dopamine,
-                serotonin=serotonin,
-                cortisol=cortisol,
-                oxytocin=oxytocin,
+            model_confidence, confidence_valid = normalize_confidence(data.get("confidence"))
+            data_confidence = bool(has_profile and confidence_valid and model_confidence > 0.0)
+            confidence_reason = (
+                None if data_confidence
+                else "invalid_model_confidence" if not confidence_valid
+                else "no_profile_evidence" if not has_profile
+                else "model_confidence_zero"
             )
+            model_confidence = model_confidence if data_confidence else 0.0
+            formula_breakdown = str(data.get("formula_breakdown") or "")
+            if not formula_breakdown and metrics is not None:
+                formula_breakdown = (
+                    f"Vc={metrics.viral_coefficient_score} "
+                    f"[D={raw_metrics['dopamine']:.2f}, S={raw_metrics['serotonin']:.2f}, "
+                    f"C={raw_metrics['cortisol']:.2f}, O={raw_metrics['oxytocin']:.2f}, "
+                    f"F={cognitive_friction:.2f}]"
+                )
 
             return LilithContentPackage(
                 platform=platform,
-                hook=data.get("hook", ""),
-                psychological_angle=data.get("psychological_angle", ""),
-                content_body=data.get("content_body", ""),
-                call_to_action=data.get("call_to_action", ""),
+                hook=data["hook"],
+                psychological_angle=data["psychological_angle"],
+                content_body=data["content_body"],
+                call_to_action=data["call_to_action"],
                 pollinations_image_prompt=img_prompt,
                 pollinations_image_url=img_url,
-                confidence=_safe_float(data.get("confidence"), 0.9),
-                data_confidence=has_profile,
+                image_generation_status=(
+                    "request_url_created_unverified" if img_url else "not_requested"
+                ),
+                confidence=model_confidence,
+                data_confidence=data_confidence,
+                confidence_reason=confidence_reason,
                 fallback_reason=None,
                 neurochemical_profile=neuro_chem,
                 neuro_metrics=metrics,
-                subconscious_trigger=data.get(
-                    "subconscious_trigger", "Statü Hiyerarşisi ve Bilişsel Dissonans"
-                ),
-                retention_loop_strategy=data.get(
-                    "retention_loop_strategy",
-                    "Zeigarnik Açık Döngü: Çelişkiyi son satıra kadar çözmeme",
-                ),
-                formula_breakdown=data.get(
-                    "formula_breakdown",
-                    f"Vc={metrics.viral_coefficient_score} "
-                    f"[D={dopamine:.2f}, S={serotonin:.2f}, C={cortisol:.2f}, PIR={metrics.pattern_interrupt_index:.2f}]",
-                ),
+                subconscious_trigger=str(data.get("subconscious_trigger") or ""),
+                retention_loop_strategy=str(data.get("retention_loop_strategy") or ""),
+                formula_breakdown=formula_breakdown,
             )
         except Exception as e:
-            logger.error(f"Lilith içerik üretimi sırasında hata: {e}")
-            fallback_prompt = f"minimalist dark aesthetic concept art of {topic or 'insight'}"
-            fallback_metrics = self.compute_neuro_formula(0.80, 0.75, 0.60, 0.65)
+            logger.warning("Lilith içerik üretilemedi (%s)", type(e).__name__)
+            reason = (
+                "invalid_model_response"
+                if isinstance(e, (json.JSONDecodeError, ValueError, TypeError, KeyError))
+                else "llm_unavailable"
+            )
+            # No template is presented as generated content and no baseline
+            # neurochemical scores are invented on the error path.
             return LilithContentPackage(
                 platform=platform,
-                hook=f"Çoğu insanın göremediği gerçek: {topic or 'başarı'} hakkında bildiklerinizi unutun.",
-                psychological_angle="Bilişsel çelişki (Festinger) ve kayıptan kaçınma (Kahneman)",
-                content_body="Gürültünün ortasında sinyali yakalamak için önce neye neden tepki verdiğinizi anlamanız gerekir.",
-                call_to_action="Sizce en büyük nörolojik yanılgı nerede?",
-                pollinations_image_prompt=fallback_prompt,
-                pollinations_image_url=self.build_pollinations_url(fallback_prompt),
-                confidence=0.5,
+                hook="",
+                psychological_angle="",
+                content_body="",
+                call_to_action="",
+                pollinations_image_prompt="",
+                pollinations_image_url="",
+                image_generation_status="not_requested",
+                confidence=0.0,
                 data_confidence=False,
-                fallback_reason=f"error: {str(e)}",
-                neurochemical_profile=NeurochemicalProfile(
-                    dopamine_potential=0.80,
-                    serotonin_status_currency=0.75,
-                    cortisol_urgency=0.60,
-                    oxytocin_affinity=0.65,
-                ),
-                neuro_metrics=fallback_metrics,
-                subconscious_trigger="Bilişsel Uyumsuzluk ve Kayıp Korkusu",
-                retention_loop_strategy="Zeigarnik Beklenti Boşluğu",
-                formula_breakdown=f"Vc={fallback_metrics.viral_coefficient_score} (Fallback baseline)",
+                fallback_reason=reason,
+                neurochemical_profile=None,
+                neuro_metrics=None,
+                subconscious_trigger="",
+                retention_loop_strategy="",
+                formula_breakdown="",
             )

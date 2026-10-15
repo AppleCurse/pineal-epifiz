@@ -329,6 +329,20 @@ def test_provider_empty_response_is_not_valueerror():
     assert not issubclass(ProviderEmptyResponseError, ValueError)
 
 
+def test_query_json_does_not_repair_a_value_error_from_the_provider_call():
+    gw = LLMGateway()
+    calls = []
+
+    async def fake_query(*args, **kwargs):
+        calls.append(1)
+        raise ValueError("provider request construction failed")
+
+    gw.query = fake_query
+    with pytest.raises(ValueError, match="provider request construction failed"):
+        asyncio.run(gw.query_json("test prompt", PassionProfile, task="depth"))
+    assert len(calls) == 1, "provider-call failure must not become a paid JSON repair"
+
+
 # ---------------------------------------------------------------------------
 # 6 — Upstream bulgu bütçesi + çekirdek (item 3)
 # ---------------------------------------------------------------------------

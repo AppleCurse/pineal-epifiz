@@ -32,7 +32,7 @@ WIRED_MODULES = {
 }
 
 
-def _shadow_with_strategy(vector: str = "direct") -> ShadowExecutor:
+def _shadow_with_strategy(vector: str = "mirroring") -> ShadowExecutor:
     shadow = ShadowExecutor(llm_gateway=MagicMock())
     shadow.dark_triad = MagicMock()
     shadow.dark_triad.analyze.return_value = MagicMock(
@@ -55,7 +55,15 @@ def _shadow_with_strategy(vector: str = "direct") -> ShadowExecutor:
 def _shadow_input(**extra) -> dict:
     payload = {
         "target_profile": {"bio": "Kahve ve mimari.", "posts": ["Sabah ışığı."]},
-        "psychodynamic_depth": {"verdict": "ok"},
+        "psychodynamic_depth": {
+            "verdict": "ok",
+            "confidence": 0.8,
+            "reaction_formation_index": 0.65,
+            "channels": {
+                "declaration": {"completeness": 0.8},
+                "staging": {"completeness": 0.8},
+            },
+        },
         "sacred_rules": "",
     }
     payload.update(extra)

@@ -34,11 +34,11 @@ MAX_CALL_CHARS = 2_000
 #: Bilinçli olarak korumasız bırakılan noktaların gerekçeleri (dosya → asgari
 #: gerekçe uzunluğu denetimi ayrıca yapılır). Liste SABİTTİR: yeni bir muafiyet
 #: eklemek bilinçli bir karar olmalı, sessiz bir kayma değil.
-# NOT: `agent_core/capabilities/adapters_sensors.py` bu listede DEĞİL —
-# oradaki `gather` twscrape'in KENDİ fonksiyonudur (asyncio değil) ve zaten
-# try/except ile dürüst CapabilityResult'a bağlanmıştır. Tarama yalnız
-# `asyncio.gather` çağrılarını görür; bu ayrım testin kendisiyle kanıtlandı.
+# `adapters_sensors.py` exception'ı süreç sınırına taşır: output-limit hatası
+# özel olarak yakalanır ve süreç/reader görevleri kapatılır. `return_exceptions`
+# burada ancak exception'ı açıkça yeniden yükselttikten sonra eşdeğer olur.
 EXPECTED_EXEMPT_FILES = {
+    "agent_core/capabilities/adapters_sensors.py",
     "agent_core/agents/human_behavior.py",
     "agent_core/engines/pillar_orchestrator.py",
     "agent_core/services/holehe_scanner.py",

@@ -146,14 +146,26 @@ class TestWebExtractorStamping:
 
         extracted = f"{TR_TEXT}\n\n{TR_TEXT}"
         fake_trafilatura = types.SimpleNamespace(
-            fetch_url=lambda url: "<html>...</html>",
             extract=lambda *a, **k: extracted,
             extract_metadata=lambda downloaded: None,
         )
         monkeypatch.setitem(sys.modules, "trafilatura", fake_trafilatura)
         monkeypatch.setattr(adapters_web, "_module_available", lambda _n: True)
-        monkeypatch.setattr(adapters_web, "is_safe_url", lambda _u: True)  # hedef: damga, guard değil
+        monkeypatch.setattr(adapters_web, "is_safe_url", lambda _u: True)
 
+        from agent_core.services.safe_web_fetch import SafeHTML
+
+        async def _fake_fetch(url, capability_id, timeout_seconds):
+            return SafeHTML(
+                requested_url=url,
+                final_url=url,
+                html="<html>...</html>",
+                content_type="text/html",
+                status_code=200,
+                bytes_read=14,
+            ), None
+
+        monkeypatch.setattr(adapters_web, "_fetch_html", _fake_fetch)
         result = await TrafilaturaCapability().run(
             CapabilityContext(subject="https://ornek.example/makale")
         )
@@ -209,22 +221,32 @@ class TestWebExtractorStamping:
 
         monkeypatch.setenv("ENABLE_SCRAPLING", "true")
 
-        class _Page:
-            text = DE_TEXT
+        class _Selector:
+            def __init__(self, html, url="", adaptive=False):
+                self.html = html
+                self.url = url
+                self.adaptive = adaptive
 
-        class _Fetcher:
-            @staticmethod
-            def get(url):
-                return _Page()
+            def get_all_text(self, separator=" ", strip=False):
+                return DE_TEXT
 
-        fake_fetchers = types.SimpleNamespace(Fetcher=_Fetcher)
-        monkeypatch.setitem(
-            sys.modules, "scrapling", types.SimpleNamespace(fetchers=fake_fetchers)
-        )
-        monkeypatch.setitem(sys.modules, "scrapling.fetchers", fake_fetchers)
+        monkeypatch.setitem(sys.modules, "scrapling", types.SimpleNamespace(Selector=_Selector))
         monkeypatch.setattr(adapters_web, "_module_available", lambda _n: True)
         monkeypatch.setattr(adapters_web, "is_safe_url", lambda _u: True)
 
+        from agent_core.services.safe_web_fetch import SafeHTML
+
+        async def _fake_fetch(url, capability_id, timeout_seconds):
+            return SafeHTML(
+                requested_url=url,
+                final_url=url,
+                html="<html>...</html>",
+                content_type="text/html",
+                status_code=200,
+                bytes_read=14,
+            ), None
+
+        monkeypatch.setattr(adapters_web, "_fetch_html", _fake_fetch)
         result = await ScraplingCapability().run(
             CapabilityContext(subject="https://beispiel.example/artikel")
         )

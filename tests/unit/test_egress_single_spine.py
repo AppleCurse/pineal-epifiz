@@ -103,11 +103,20 @@ async def test_open_client_records_attempt_and_drain_clears() -> None:
     attempts = egress.egress_attempts()
     assert attempts, "açık deneme kaydı bırakmalı"
     assert attempts[-1].purpose == "llm"
-    assert attempts[-1].target == "https://llm.local/v1"
+    assert attempts[-1].target == "https://llm.local/…"
     drained = egress.drain_egress_attempts()
     assert len(drained) == len(attempts)
     assert drained[-1]["purpose"] == "llm"
     assert egress.egress_attempts() == ()
+
+
+async def test_egress_target_records_destination_without_url_secrets() -> None:
+    secret_url = "https://user:password@llm.local/v1/chat?api_key=top-secret#fragment"
+    async with egress.open_client(purpose="llm", target=secret_url) as c:
+        assert c is not None
+    target = egress.egress_attempts()[-1].target
+    assert target == "https://llm.local/…"
+    assert all(secret not in target for secret in ("user", "password", "top-secret", "fragment"))
 
 
 async def test_production_locked_vault_refuses_osint_without_record(

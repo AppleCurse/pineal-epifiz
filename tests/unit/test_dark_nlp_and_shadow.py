@@ -41,12 +41,14 @@ def test_embedded_command_engine_auditory_and_kinesthetic_defaults():
     seq_aud = engine.generate_sequence(auditory_profile, desired_action="odaklan")
     assert "auditory" in seq_aud[0]["text"] or "kinesthetic" in seq_aud[0]["text"]
     
-    # Boş / Eşleşmeyen -> Tüm puanlar 0 iken ilk anahtar (visual) seçilir
+    # Boş/eşleşmeyen metin bir duyusal sistem veya kişilik özelliği atfetmez.
     empty_profile = {"bio": "", "posts": []}
-    seq_empty = engine.generate_sequence(empty_profile, desired_action="derinleş")
-    assert seq_empty[0]["phase"] == "pace"
-    assert "visual" in seq_empty[0]["text"]
-    assert "gördüğünde" in seq_empty[1]["text"]
+    assert engine.generate_sequence(empty_profile, desired_action="derinleş") == []
+    assert engine.generate_sequence(
+        {"bio": "Bugün yeni bir kitap yayımlandı.", "posts": []},
+        desired_action="derinleş",
+    ) == []
+    assert engine.generate_sequence(auditory_profile, desired_action="") == []
 
 
 def test_presupposition_engine_chain_generation():
@@ -117,7 +119,7 @@ async def test_shadow_executor_deterministic_synthesis(monkeypatch):
     assert len(res.message) > 0
     assert isinstance(res.dark_profile, dict)
     assert isinstance(res.strategy, str)
-    assert len(res.nlp_sequence) == 3
+    assert res.nlp_sequence == []  # profilde duyusal anahtar yok; temsil sistemi atfedilmez
     assert 0.0 <= res.confidence <= 1.0
     
     # Mesajın sentezlenmiş yapıda presupposition ve nlp_command içerdiğini doğrula

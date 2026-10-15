@@ -73,9 +73,11 @@ REQUIRED_OPENROUTTER = {
     # depo $0.09/$0.18 ve $0.4679/$0.9358 tutuyordu (2 ondalığa yuvarlanmış/promo
     # dönemi); canlı katalog $0.091/$0.182 ve $0.386976/$0.773952 okudu.
     "deepseek/deepseek-v4-flash": (0.091, 0.182),
-    # [2026-10-14 · ikinci ölçüm] Dün $0.386976/$0.773952 okunmuştu; aynı gün
-    # ikinci koşuda $0.95526/$1.91052 (≈2,47×). Fiyat OYNAK: her koşu ölçer.
-    "deepseek/deepseek-v4-pro": (0.95526, 1.91052),
+    # [2026-10-14 · ikinci ölçüm] $0.95526/$1.91052 okundu; önceki değer
+    # $0.386976/$0.773952 idi. Fiyat OYNAK: her koşu ölçer.
+    # [2026-10-15 · PR CI 38787820334] $0.395328/$0.790656;
+    # [PR CI 38789947274] sonraki ölçüm $0.392022/$0.784044.
+    "deepseek/deepseek-v4-pro": (0.392022, 0.784044),
     "anthropic/claude-sonnet-5": (2.0, 10.0),
     # [2026-10-14 · kapsam turu 2] Katalogun `openrouter` bölümünde beyan edilmiş
     # ama hiç canlı kontrol edilmemiş dört kayıt daha: katalog bunların OR fiyatı
@@ -94,7 +96,8 @@ REQUIRED_OPENROUTTER = {
     # [2026-10-15 · CI 38662205946] Çıktı son ölçümde $4.40/1M (önceki $7.00).
     # [2026-10-15 · CI 38664381599] Girdi son ölçümde $0.037/1M.
     # [2026-10-15 · CI 38665669314 + 38665674379] Çıktı yeniden $7/1M.
-    "z-ai/glm-5.2": (0.037, 7.0),
+    # [2026-10-15 · PR CI 38787820334] Yeni canlı fiyat $0.65/$10.00 per 1M.
+    "z-ai/glm-5.2": (0.65, 10.0),
     "x-ai/grok-4.6": (2.0, 6.0),
 }
 

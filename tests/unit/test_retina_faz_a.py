@@ -423,7 +423,7 @@ async def test_searxng_is_called_over_http_only(monkeypatch):
 
     class _Client:
         def __init__(self, **kw):
-            pass
+            seen["client_options"] = kw
 
         async def __aenter__(self):
             return self
@@ -448,6 +448,8 @@ async def test_searxng_is_called_over_http_only(monkeypatch):
     assert seen["params"]["q"] == "hedef kişi"
     assert seen["params"]["format"] == "json"
     assert result.items[0].provenance_refs == ["https://kaynak.test/a"]
+    assert seen["client_options"]["trust_env"] is False
+    assert seen["client_options"]["follow_redirects"] is False
 
 
 @pytest.mark.asyncio
@@ -492,59 +494,49 @@ async def test_vault_lock_blocks_whole_retina_stack():
         assert result.items == ()
 
 
-# ------------------------------- A3 · trafilatura indirme tavanı (canlı bulgu)
+# --------------------------- A3 · trafilatura yalnız pinned HTML'i ayrıştırır
 @pytest.mark.asyncio
-async def test_trafilatura_download_timeout_stays_under_capability_budget(monkeypatch):
-    """[2026-10-14 · CANLI KANIT] İndirme tavanı, yeteneğin KENDİ bütçesinin altında olmalı.
-
-    Ölçüm: trafilatura'nın varsayılan `DOWNLOAD_TIMEOUT`'u 30 sn; yetenek bütçesi
-    de 30 sn olduğu için indirme dış `wait_for` ile yarışıyor ve yavaş sayfada
-    yetenek "timeout" dönüyordu (oysa indirme 6,5 sn'de başarıyordu). Bu test
-    yarışın geri gelmesini engeller: yeteneğin geçtiği config'in tavanı,
-    yeteneğin bütçesinden KÜÇÜK olmalı ve 5 sn tabanının altına inmemeli.
-    """
+async def test_trafilatura_parses_safe_fetch_without_opening_its_own_network(monkeypatch):
+    """Extractor transport oluşturamaz; yalnız egress kapısından gelen HTML'i işler."""
     import sys
     import types
 
-    seen: dict[str, object] = {}
+    from agent_core.capabilities import adapters_web
+    from agent_core.services.safe_web_fetch import SafeHTML
 
-    class _FakeConfig:
-        def __init__(self) -> None:
-            self.values: dict[str, str] = {"DOWNLOAD_TIMEOUT": "30"}
-
-        def set(self, section: str, key: str, value: str) -> None:
-            assert section == "DEFAULT"
-            self.values[key] = value
-
-        def getint(self, section: str, key: str) -> int:
-            return int(self.values[key])
-
-    class _FakeSettings(types.ModuleType):
-        def __init__(self) -> None:
-            super().__init__("trafilatura.settings")
-            self.DEFAULT_CONFIG = _FakeConfig()
-
+    seen: dict[str, str] = {}
     fake = types.ModuleType("trafilatura")
 
-    def _fetch_url(url, *args, **kwargs):
-        seen["config"] = kwargs.get("config")
-        return None  # gövde yok: ağa çıkılmaz, yalnız çağrı imzası ölçülür
+    def _forbidden_fetch(*_args, **_kwargs):
+        raise AssertionError("trafilatura must not perform network I/O")
 
-    fake.fetch_url = _fetch_url
-    fake.extract = lambda *a, **k: ""
-    fake.extract_metadata = lambda *a, **k: None
-    fake.settings = _FakeSettings()
+    def _extract(html, **_kwargs):
+        seen["html"] = html
+        return "Bu içerik güvenli taşıma ile alınmış gerçek HTML'den çıktı."
+
+    fake.fetch_url = _forbidden_fetch
+    fake.extract = _extract
+    fake.extract_metadata = lambda html: None
     monkeypatch.setitem(sys.modules, "trafilatura", fake)
-    monkeypatch.setitem(sys.modules, "trafilatura.settings", fake.settings)
+    monkeypatch.setattr(adapters_web, "is_safe_url", lambda _url: True)
 
-    cap = TrafilaturaCapability()
-    await cap.run(CapabilityContext(subject="https://example.com/makale"))
+    async def _fetch(url, capability_id, timeout_seconds):
+        return SafeHTML(
+            requested_url=url,
+            final_url=url,
+            html="<html><p>safe fetched body</p></html>",
+            content_type="text/html",
+            status_code=200,
+            bytes_read=34,
+        ), None
 
-    config = seen.get("config")
-    assert config is not None, "yetenek indirme tavanını GEÇMİYOR (varsayılan 30 sn yarışa girer)"
-    tavan = config.getint("DEFAULT", "DOWNLOAD_TIMEOUT")
-    assert tavan < int(cap.timeout_seconds), (tavan, cap.timeout_seconds)
-    assert tavan >= 5, tavan
+    monkeypatch.setattr(adapters_web, "_fetch_html", _fetch)
+    result = await TrafilaturaCapability().run(
+        CapabilityContext(subject="https://example.com/makale")
+    )
+
+    assert result.ok is True
+    assert seen["html"] == "<html><p>safe fetched body</p></html>"
 
 
 # ------------------------- A4 · agent-reach komut çözümü (canlı bulgu: ad karışıklığı)

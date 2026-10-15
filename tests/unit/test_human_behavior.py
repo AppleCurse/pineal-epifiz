@@ -147,7 +147,7 @@ async def test_execute():
         possible_interpretations=["Test hipotezi"],
         alternative_interpretations=[],
             unsupported_claims=[],
-            confidence=0.8,
+            confidence=0.2,
         micro_signals=[],
         achilles_score=10.0,
         resonance_potential=0.5,
@@ -156,6 +156,7 @@ async def test_execute():
     res = await analyzer.execute(input_data, None, mock_llm)
     assert isinstance(res, DigitalColdReading)
     assert res.data_confidence is True
+    assert res.confidence == 0.2  # gözlem varlığı model güvenini tabana yükseltmez
     assert res.fallback_reason is None
     mock_llm.query_json_chain.assert_called_once()
 

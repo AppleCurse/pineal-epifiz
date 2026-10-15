@@ -2,7 +2,8 @@
 
 This module is deliberately independent from :mod:`llm_gateway`.  It provides
 an incremental compatibility boundary for the unified router without changing
-the production LLM call path.
+the production LLM call path. Protocol/connection/execution boundaries are
+recorded in ``docs/PROVIDER_EXECUTION_BOUNDARIES.md``.
 
 The catalog describes what Pineal knows.  A tenant connection describes what a
 specific operator configured.  Runtime verification describes what was actually

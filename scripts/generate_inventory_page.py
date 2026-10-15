@@ -52,6 +52,7 @@ OUT = ROOT / "docs" / "envanter.html"
 
 NEW_FILES = {
     "backend/routes/language.py": "API-BÖLME 2 ile doğdu (açıklamasız bloğun taşındığı modül).",
+    "backend/routes/speech_audio.py": "API-BÖLME 3: gizli TTS sesini TTL/boyut sınırıyla sunan dar HTTP yüzeyi.",
 }
 
 CORE = {
@@ -77,6 +78,10 @@ CORE = {
     "backend/routes/language.py": (
         "YENİ (API-BÖLME 2): `/api/language/status|detect|translate`. Tavanda duran "
         "`backend/api.py`'den çıkarıldı; uç gövdeleri değişmedi, bağımlılıklar enjekte edilir."
+    ),
+    "backend/routes/speech_audio.py": (
+        "YENİ (API-BÖLME 3): TTS wav indirme ucu; yalnız içerik-hash'li dosya, "
+        "private/no-store, TTL ve disk tavanı; geçici STT/Piper dosyaları sunulmaz."
     ),
 }
 
@@ -131,6 +136,7 @@ CATEGORY_B = [
 
 API_SPLIT = {
     "backend/routes/language.py": "taşındı",
+    "backend/routes/speech_audio.py": "taşındı (TTS gizli dosya TTL/boyut sınırı)",
     "backend/routes/support.py": "taşındı (B0)",
     "backend/routes/tasks.py": "taşındı",
     "backend/routes/websocket.py": "taşındı",
@@ -796,6 +802,8 @@ def build_html(entries: list) -> str:
     endpoints = re.findall(r'@app\.(get|post|put|delete|patch|websocket)\("([^"]+)"', api_src)
     lang_src = read_text(ROOT / "backend/routes/language.py")
     endpoints += re.findall(r'^\s*@app\.(get|post|patch|delete)\("([^"]+)"', lang_src, re.M)
+    speech_audio_src = read_text(ROOT / "backend/routes/speech_audio.py")
+    endpoints += re.findall(r'^\s*@router\.(get|post|patch|delete)\("([^"]+)"', speech_audio_src, re.M)
     ep_table = "".join(
         f'<tr data-hay="{esc(m + " " + p + " endpoint")}" data-flags="endpoint">'
         f'<td class="mono">{esc(m.upper())}</td><td class="pth mono">{esc(p)}</td></tr>'
@@ -919,7 +927,7 @@ kaldığı yer burasıydı; artık hepsi açıklamalı, tek tek ve aşağıdaki 
 <details><summary><b>B · envanterde hiç yoktu ({len(cat_b)} dosya)</b>
   <span class="pill">aşağıdaki listelerde “B” etiketiyle işaretli</span></summary>
   <div class="inner"><ul class="tight">{path_list([e["path"] for e in cat_b])}</ul></div></details>
-<details><summary><b>Bu turda eklenen modül</b> <span class="pill">API-BÖLME 2</span></summary>
+<details><summary><b>Bu turda eklenen modüller</b> <span class="pill">API-BÖLME 2/3</span></summary>
   <div class="inner">
     <p><b>API-BÖLME 2</b> · <span class="mono">backend/routes/language.py</span> —
     {esc(NEW_FILES["backend/routes/language.py"])}</p>
@@ -929,6 +937,11 @@ kaldığı yer burasıydı; artık hepsi açıklamalı, tek tek ve aşağıdaki 
     ayrı modüle taşındı: <b>6.000 → 5.916 satır</b>, tavan da 5.916'ya DÜŞÜRÜLDÜ
     (<span class="mono">tests/unit/test_api_monolith_ratchet.py</span>). Uç gövdeleri değişmedi;
     <span class="mono">backend/api.py</span> payload modellerini yeniden ihraç eder.</p>
+    <p><b>API-BÖLME 3</b> · <span class="mono">backend/routes/speech_audio.py</span> —
+    TTS indirme ucunun ayrı modülü. Sadece içerik-hash'li tamamlanmış WAV'lar sunulur;
+    <span class="mono">private, no-store</span> başlığı, varsayılan 1 saat TTL, 64 MiB önbellek
+    tavanı ve periyodik temizleyici vardır. STT ham sesleri normal işlemde hemen, crash artıkları
+    beş dakika sonra silinir.</p>
   </div></details>
 
 <h2 id="c">C · Klasör klasör tam envanter</h2>
@@ -939,7 +952,7 @@ kaldığı yer burasıydı; artık hepsi açıklamalı, tek tek ve aşağıdaki 
 {blocks}
 
 <h2 id="endpoints">Uç noktalar (dekoratörlerden sayıldı)</h2>
-<div class="note">Gerçek <span class="mono">@app.*</span> dekoratörlerinden sayılmıştır — elle
+<div class="note">Gerçek <span class="mono">@app.*</span> / <span class="mono">@router.*</span> dekoratörlerinden sayılmıştır — elle
 yazılmadı. Toplam <b>{len(endpoints)}</b> uç.</div>
 <details open><summary><b>HTTP + WS uçları</b> <span class="pill">{len(endpoints)} uç</span></summary>
 <div class="inner"><table><thead><tr><th>Yöntem</th><th>Yol</th></tr></thead>

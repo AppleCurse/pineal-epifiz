@@ -101,6 +101,19 @@ def test_connection_requires_openai_chat_protocol():
         RoutedChatExecutor.from_mapping(config)
 
 
+def test_oauth_connection_type_is_declared_but_not_executable_in_routed_runtime():
+    config = _base_config()
+    config["connections"][0] = {
+        "id": "or-oauth",
+        "provider_id": "openrouter",
+        "connection_type": "oauth_subscription",
+        "credential_env": "OPENROUTER_OAUTH_TOKEN",
+        "enabled": True,
+    }
+    with pytest.raises(RoutingRuntimeError, match="api_key and local"):
+        RoutedChatExecutor.from_mapping(config)
+
+
 def test_connection_credential_env_must_be_uppercase():
     config = _base_config()
     config["connections"][0]["credential_env"] = "openrouter_api_key"
@@ -267,4 +280,79 @@ def test_streaming_with_multi_provider_modes_rejected(strategy):
     import asyncio
 
     with pytest.raises(RoutingRuntimeError, match="streaming"):
+        asyncio.run(_run())
+
+
+@pytest.mark.parametrize(
+    ("messages", "response_format"),
+    [
+        (
+            [{"role": "user", "content": [{"type": "input_audio", "input_audio": {"data": "...", "format": "wav"}}]}],
+            None,
+        ),
+        (
+            [{"role": "user", "content": [{"type": "audio_url", "audio_url": {"url": "https://example.invalid/audio.wav"}}]}],
+            None,
+        ),
+        ([{"role": "user", "content": "Return JSON."}], {"type": "json_object"}),
+        (
+            [{"role": "user", "content": "Return schema JSON."}],
+            {"type": "json_schema", "json_schema": {"name": "result", "schema": {"type": "object"}}},
+        ),
+    ],
+)
+def test_undeclared_audio_and_json_capabilities_fail_closed_before_gateway(
+    messages, response_format
+):
+    """Catalog metadata with no declaration must not route these request modes."""
+    import asyncio
+
+    executor = _executor()
+
+    async def _run():
+        from types import SimpleNamespace
+
+        await executor.chat_completion(
+            SimpleNamespace(max_output_tokens=4096),
+            messages=messages,
+            model="fast",
+            response_format=response_format,
+        )
+
+    with pytest.raises(RuntimeError, match="ROUTE_UNAVAILABLE"):
+        asyncio.run(_run())
+
+
+def test_streaming_json_mode_is_also_gated_by_declared_capability():
+    import asyncio
+    from types import SimpleNamespace
+
+    executor = _executor()
+
+    async def _run():
+        await executor.start_chat_stream(
+            SimpleNamespace(max_output_tokens=4096),
+            messages=[{"role": "user", "content": "Return JSON."}],
+            model="fast",
+            response_format={"type": "json_object"},
+        )
+
+    with pytest.raises(RuntimeError, match="ROUTE_UNAVAILABLE"):
+        asyncio.run(_run())
+
+
+def test_unknown_response_format_is_rejected_before_routing():
+    import asyncio
+
+    executor = _executor()
+
+    async def _run():
+        await executor.chat_completion(
+            None,
+            messages=[{"role": "user", "content": "hi"}],
+            model="fast",
+            response_format={"type": "xml_object"},
+        )
+
+    with pytest.raises(RoutingRuntimeError, match="response_format.type"):
         asyncio.run(_run())

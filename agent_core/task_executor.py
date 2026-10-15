@@ -1193,9 +1193,15 @@ class PinealExecutor:
             from agent_core.services.follower_audit import audit_followers
             from agent_core.services.timing_forensics import analyze_timing
             tp_info = input_data.get("target_profile", {})
-            fol_cnt = tp_info.get("followers", 0)
+            # Canonical platform payload uses followers/following; accept the
+            # scraper model spellings too. Missing counts remain None (never 0).
+            fol_cnt = tp_info.get("followers")
+            if fol_cnt is None:
+                fol_cnt = tp_info.get("follower_count")
             # [024] fix: following=None "ölçülmedi" demektir; 0'a çevrilmez.
             fing_cnt = tp_info.get("following")
+            if fing_cnt is None:
+                fing_cnt = tp_info.get("following_count")
             # [027] fix: sahte 1-post sentinel'i kaldırıldı. Boş posts_meta
             # olduğu gibi iletilir; audit "İncelenen Post: 0" der, 1 demez.
             posts_meta = tp_info.get("posts_meta") or []
@@ -2630,12 +2636,17 @@ class PinealExecutor:
 
     @staticmethod
     def _holistic_confidence(agent_runs: Dict[str, AgentRun]) -> float:
-        """Aggregate only measured confidence values; absence is not neutral confidence."""
+        """Aggregate finite [0,1] model scores; absence is not neutral confidence."""
+        from agent_core.services.confidence import normalize_confidence
+
         profile_agents = ("passion_mapper", "friction_detector", "cognitive_profiler", "resonance_synthesizer")
-        values = [
-            run.confidence for name, run in agent_runs.items()
-            if name in profile_agents and run.status == "completed" and isinstance(run.confidence, (int, float))
-        ]
+        values = []
+        for name, run in agent_runs.items():
+            if name not in profile_agents or run.status != "completed":
+                continue
+            score, valid = normalize_confidence(run.confidence)
+            if valid:
+                values.append(score)
         return round(sum(values) / len(values), 3) if values else 0.0
 
     async def _calculate_authentic_vector(self, data_dict: dict) -> dict | None:

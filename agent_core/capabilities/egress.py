@@ -32,6 +32,7 @@ from contextvars import ContextVar
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlsplit
 
 # agent_core'daki TEK satır başı httpx importu (E-GÖZ1-3 beyanı).
 import httpx  # noqa: F401  (yeniden ihracat: tip/istisna erişimi)
@@ -70,6 +71,38 @@ class EgressAttempt:
 _attempts: ContextVar[tuple[EgressAttempt, ...]] = ContextVar(
     "pineal_egress_attempts", default=()
 )
+
+
+def _safe_target(target: Any) -> str:
+    """Return a useful destination label without retaining URL secrets.
+
+    Egress records are copied into task evidence and application logs. Raw URLs
+    can contain credentials, signed paths, API keys in query parameters, or
+    fragments. Preserve the scheme/host/port and only indicate whether a path
+    exists; this is enough to identify the destination without persisting its
+    request-specific secret material.
+    """
+    raw = str(target or "").strip()
+    if not raw:
+        return ""
+    has_scheme = "://" in raw
+    candidate = raw if has_scheme else f"//{raw}"
+    try:
+        parsed = urlsplit(candidate)
+        hostname = parsed.hostname
+        port = parsed.port
+    except ValueError:
+        # Malformed URL: don't echo a possible credential-bearing raw value.
+        return "<invalid-url>" if has_scheme else "<redacted>"
+    if not hostname:
+        return raw[:200] if not has_scheme and "@" not in raw else "<redacted>"
+    host = hostname.rstrip(".").lower()
+    if ":" in host:
+        host = f"[{host}]"
+    scheme = f"{parsed.scheme.lower()}://" if parsed.scheme else ""
+    authority = f"{host}:{port}" if port is not None else host
+    suffix = "/…" if parsed.path not in {"", "/"} else ""
+    return f"{scheme}{authority}{suffix}"[:200]
 
 
 def egress_attempts() -> tuple[EgressAttempt, ...]:
@@ -117,17 +150,17 @@ def open_client(
             logger.warning(
                 "EGRESS RET (kasa): purpose=%s target=%s — istemci kurulmadı",
                 purpose,
-                (target or "")[:120],
+                _safe_target(target),
             )
             raise VaultLockedError(f"VAULT_LOCKED purpose={purpose}")
 
     attempt = EgressAttempt(
         purpose=purpose,
-        target=str(target or "")[:200],
+        target=_safe_target(target),
         timestamp=datetime.now(timezone.utc).isoformat(),
     )
     _attempts.set(_attempts.get() + (attempt,))
-    logger.debug("EGRESS open purpose=%s target=%s", purpose, (target or "")[:120])
+    logger.debug("EGRESS open purpose=%s target=%s", purpose, attempt.target[:120])
     return httpx.AsyncClient(*args, **kwargs)
 
 

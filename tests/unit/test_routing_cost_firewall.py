@@ -154,6 +154,41 @@ async def test_provider_default_substitution_is_denied(monkeypatch):
 # Fallback semantics + telemetry fallback_reason
 # --------------------------------------------------------------------------- #
 @pytest.mark.asyncio
+async def test_empty_choices_fail_over_to_next_route_without_same_route_retry(monkeypatch):
+    monkeypatch.delenv("PINEAL_ALLOW_PAID_ESCALATION", raising=False)
+    executor = _nous_executor((
+        "code_expert",
+        [
+            "nous-research/poolside/laguna-s-2.1:free",
+            "nous-research/poolside/laguna-xs-2.1:free",
+        ],
+    ))
+    seen: list[str] = []
+
+    def handler(kwargs):
+        seen.append(kwargs["model"])
+        if len(seen) == 1:
+            return SimpleNamespace(model=kwargs["model"], usage=None, choices=[])
+        return _ok(kwargs["model"])
+
+    gateway, state = _fake_gateway(monkeypatch, handler)
+    result = await executor.chat_completion(
+        gateway,
+        messages=[{"role": "user", "content": "hi"}],
+        model="code_expert",
+    )
+
+    assert state["calls"] == 2
+    assert seen == ["poolside/laguna-s-2.1:free", "poolside/laguna-xs-2.1:free"]
+    failed = [record for record in gateway.call_log if record.get("error")][0]
+    success = [record for record in gateway.call_log if record.get("error") is None][0]
+    assert failed["error"] == "ProviderEmptyResponseError"
+    assert failed["cost_usd"] >= 0.0
+    assert success["fallback_reason"] == "SERVER_ERROR"
+    assert result.result.response.model == "poolside/laguna-xs-2.1:free"
+
+
+@pytest.mark.asyncio
 async def test_fallback_reason_is_recorded_on_actual_model(monkeypatch):
     monkeypatch.delenv("PINEAL_ALLOW_PAID_ESCALATION", raising=False)
     executor = _nous_executor((

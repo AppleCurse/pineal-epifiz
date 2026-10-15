@@ -32,6 +32,7 @@ Test: ``tests/unit/test_llm_gateway.py``, ``tests/unit/test_gateway_cost_and_ret
 
 import contextvars
 import hashlib
+import inspect
 import json
 import os
 import threading
@@ -292,16 +293,17 @@ class SpendCapExceeded(RuntimeError):
     """P2-MALİYET: canlı harcama üst limiti aşıldı — daha fazla çağrı reddedilir."""
 
 
-class ProviderEmptyResponseError(RuntimeError):
-    """Sağlayıcı 200 döndürdü ama `choices` BOŞTU — transport/semantic hata.
+class ProviderResponseError(RuntimeError):
+    """An upstream response/transport failed without a safe client-side fix."""
 
-    [FIX #10] Ayrı bir istisna tipi: query_json'un parse-tamir bloğu
-    ``except ValueError`` ile bu hatayı "bozuk JSON" sanıp ikinci bir
-    ÜCRETLİ repair çağrısı tetikliyordu (modülün kendi sözleşmesi: "Repair
-    is scoped to parse/schema failures only"). RuntimeError tabanlı olduğu
-    için parse-tamir bloğu onu yakalayamaz; hata doğrudan yükselir.
-    Yeniden denenebilirlik değişmedi: _is_retryable_error bilinmeyen
-    tiplerde default (True) koluna düşer, ValueError ile aynı davranış.
+    status_code = 502
+
+
+class ProviderEmptyResponseError(ProviderResponseError):
+    """Provider returned HTTP success but violated the chat choices contract.
+
+    Chain/router failover may try another provider, but the same transport is
+    not retried; query_json must not treat this as a JSON parse/repair failure.
     """
 
 
@@ -452,6 +454,8 @@ def _is_fallback_allowed(
     err = str(exc).lower()
     if isinstance(exc, SpendCapExceeded):
         return False
+    if isinstance(exc, ProviderResponseError):
+        return True
     if "in_flight" in err or "in-flight" in err:
         return True
     if any(marker in err for marker in _FALLBACK_GUARD_MARKERS):
@@ -542,11 +546,14 @@ class LLMGateway:
         # [2026-10-15 · CI 38662205946] Son çıktı ölçümü $4.40/1M.
         # [2026-10-15 · CI 38664381599] Son girdi ölçümü $0.037/1M.
         # [2026-10-15 · CI 38665669314 + 38665674379] Çıktı yeniden $7/1M.
-        "z-ai/glm-5.2": {"in": 0.037, "out": 7.0},
-        # [2026-10-14 · canlı teyit] $0.4679/$0.9358 -> $0.386976/$0.773952 ->
-        # $0.95526/$1.91052. Son ölçüm aynı gün ikinci koşuda alındı; fiyat oynak,
-        # tablo her canlı ölçümden sonra güncellenir (tahminle değil).
-        "deepseek/deepseek-v4-pro": {"in": 0.95526, "out": 1.91052},
+        # [2026-10-15 · PR CI 38787820334] Canlı /models yeniden değişti:
+        # $0.65/$10.00 per 1M; önceki snapshot artık güncel değil.
+        "z-ai/glm-5.2": {"in": 0.65, "out": 10.0},
+        # [2026-10-14..15] Ölçülen geçmiş: $0.4679/$0.9358 ->
+        # $0.386976/$0.773952 -> $0.95526/$1.91052.
+        # [2026-10-15 · PR CI 38787820334] $0.395328/$0.790656; sonraki
+        # [38789947274] ölçümü $0.392022/$0.784044. Oynak; yalnız son snapshot.
+        "deepseek/deepseek-v4-pro": {"in": 0.392022, "out": 0.784044},
         "google/gemini-3.7-flash": {"in": 0.75, "out": 3.75},
         # 2026-09-02 karar matrisi: Sonnet 5 $2/$10 (promo), Grok 4.6 $2/$6.
         # 2026-09-08 notu: Sonnet 5 promo'su 31.08.2026'da sona erdi; Anthropic
@@ -1081,8 +1088,12 @@ class LLMGateway:
         if usage is None:
             return None
         missing = object()
-        prompt_tokens = getattr(usage, "prompt_tokens", missing)
-        completion_tokens = getattr(usage, "completion_tokens", missing)
+        if isinstance(usage, Mapping):
+            prompt_tokens = usage.get("prompt_tokens", missing)
+            completion_tokens = usage.get("completion_tokens", missing)
+        else:
+            prompt_tokens = getattr(usage, "prompt_tokens", missing)
+            completion_tokens = getattr(usage, "completion_tokens", missing)
         if (
             prompt_tokens is missing
             or completion_tokens is missing
@@ -1094,7 +1105,11 @@ class LLMGateway:
             return None
         if prompt_tokens < 0 or completion_tokens < 0:
             return None
-        total_tokens = getattr(usage, "total_tokens", missing)
+        total_tokens = (
+            usage.get("total_tokens", missing)
+            if isinstance(usage, Mapping)
+            else getattr(usage, "total_tokens", missing)
+        )
         if total_tokens is not missing:
             fields_set = getattr(usage, "model_fields_set", None)
             total_was_explicit = fields_set is None or "total_tokens" in fields_set
@@ -1282,16 +1297,32 @@ class LLMGateway:
         raise RuntimeError(msg)
 
     @staticmethod
+    def _nested_value_error(exc: BaseException) -> Optional[ValueError]:
+        """Find an unexpected ValueError wrapped by an SDK/transport exception."""
+        current: Optional[BaseException] = exc
+        seen: set[int] = set()
+        while current is not None and id(current) not in seen:
+            seen.add(id(current))
+            if isinstance(current, ValueError):
+                return current
+            current = current.__cause__ or current.__context__
+        return None
+
+    @staticmethod
     def _is_retryable_error(exc: Exception) -> bool:
         """[018] fix: retry yalnızca GEÇİCİ hata sınıflarına uygulanır.
 
         Retryable:   timeout, bağlantı hatası/reset, 408, 429, 5xx
         Non-retryable: 400/401/403/404/422, geçersiz istek, model yok,
-                     bağlam limiti, spend cap (ayrı ele alınır)
-        Bilinmeyen durumlar mevcut davranışı (retry) korur.
+                     bağlam limiti, spend cap ve sınıflandırılmamış hatalar.
+        Belirsiz hata türlerinde ikinci ücretli çağrı üretmemek için retry yapılmaz.
         """
+        if isinstance(exc, ProviderResponseError):
+            return False
         try:
             from openai import APIConnectionError, APITimeoutError
+            if isinstance(exc, APIConnectionError) and LLMGateway._nested_value_error(exc):
+                return False
             if isinstance(exc, (APITimeoutError, APIConnectionError)):
                 return True
         except Exception:
@@ -1316,14 +1347,32 @@ class LLMGateway:
             "model_not_found", "context_length", "unauthorized", "invalid_api_key",
         )):
             return False
-        return True
+        return False
+
+    @staticmethod
+    def _definitely_unbilled_error(exc: Exception) -> bool:
+        """Return true only for explicit client/auth/quota rejections.
+
+        Timeouts, cancellations, connection failures and server errors are
+        ambiguous: the provider may have accepted and billed the request even
+        when the client did not receive a usable response.
+        """
+        status = getattr(exc, "status_code", None)
+        response = getattr(exc, "response", None)
+        if not isinstance(status, int) and response is not None:
+            status = getattr(response, "status_code", None)
+        return isinstance(status, int) and status in {400, 401, 403, 404, 413, 415, 422, 429}
 
     @staticmethod
     def _is_strict_retryable_error(exc: Exception) -> bool:
         """Retry only errors known to be transient on new gateway surfaces."""
+        if isinstance(exc, ProviderResponseError):
+            return False
         try:
             from openai import APIConnectionError, APITimeoutError
 
+            if isinstance(exc, APIConnectionError) and LLMGateway._nested_value_error(exc):
+                return False
             if isinstance(exc, (APITimeoutError, APIConnectionError)):
                 return True
         except Exception:
@@ -2206,6 +2255,19 @@ class LLMGateway:
                         if extras is not None else route_extras),
             )
 
+        def settle_failed_request(exc: BaseException) -> float:
+            nonlocal budget_reserved, logical_cost_usd
+            if not budget_reserved:
+                return 0.0
+            if self._definitely_unbilled_error(exc):
+                self._release_budget(call_id)
+                cost = 0.0
+            else:
+                cost = self._settle_budget(call_id, selected_model, None, pricing)
+                logical_cost_usd += cost
+            budget_reserved = False
+            return cost
+
         # Routed attempts use provider-scoped state; the legacy circuit guards
         # only the single-transport compatibility path (mirrors chat_completion).
         if route is None and self.circuit_open:
@@ -2350,10 +2412,21 @@ class LLMGateway:
                 # FINAL-SPEC #27: sessiz ikame firewall'u TUM tasmalarda
                 # gecerli — provider (OpenRouter dahil) istenen model yerine
                 # baska bir model dondurduyse bu asla kabul edilmez.
-                actual_model = getattr(response, "model", None)
+                actual_model = (
+                    response.get("model")
+                    if isinstance(response, Mapping)
+                    else getattr(response, "model", None)
+                )
                 if actual_model and not self._model_substitution_allowed(
                     selected_model, str(actual_model)
                 ):
+                    if not is_local_request and budget_reserved:
+                        logical_cost_usd += self._settle_budget(
+                            call_id, selected_model, None, pricing
+                        )
+                        budget_reserved = False
+                    # A completed response may be billable even when its model
+                    # substitution is rejected; retain the conservative reserve.
                     # Tek log: except blogindeki non-retryable dal yazacak;
                     # buradan sadece marka'lı hata yukseltilir.
                     raise ModelSubstitutionDeniedError(
@@ -2366,7 +2439,11 @@ class LLMGateway:
                     self._record_route_attempt(route, response, success=True)
                 else:
                     self.failure_count = 0
-                usage = getattr(response, "usage", None)
+                usage = (
+                    response.get("usage")
+                    if isinstance(response, Mapping)
+                    else getattr(response, "usage", None)
+                )
                 cost_usd = 0.0
                 if not is_local_request:
                     # Settle observed provider usage before parsing the body.
@@ -2375,14 +2452,32 @@ class LLMGateway:
                     cost_usd = self._settle_budget(call_id, selected_model, usage, pricing)
                     logical_cost_usd += cost_usd
                     budget_reserved = False
-                choices = getattr(response, "choices", None) or []
-                if not choices or not getattr(choices[0], "message", None):
-                    # [FIX #10] Transport hatası: query_json bunu parse
-                    # hatası sanıp ücretli repair'a girmesin.
+                choices = (
+                    response.get("choices")
+                    if isinstance(response, Mapping)
+                    else getattr(response, "choices", None)
+                ) or []
+                first_choice = choices[0] if choices else None
+                message = (
+                    first_choice.get("message")
+                    if isinstance(first_choice, Mapping)
+                    else getattr(first_choice, "message", None)
+                )
+                if message is None:
+                    # Empty choices are an upstream contract error, not a JSON
+                    # parse failure that should trigger a paid repair request.
                     raise ProviderEmptyResponseError(
                         f"Provider returned empty choices from model '{selected_model}'"
                     )
-                content = getattr(choices[0].message, "content", "") or ""
+                content = (
+                    message.get("content")
+                    if isinstance(message, Mapping)
+                    else getattr(message, "content", None)
+                )
+                if not isinstance(content, str) or not content.strip():
+                    raise ProviderEmptyResponseError(
+                        f"Provider returned no textual content from model '{selected_model}'"
+                    )
 
                 if cache_key and content:
                     try:
@@ -2397,14 +2492,11 @@ class LLMGateway:
                     if resolved_model_str and "/" in resolved_model_str
                     else None
                 )
+                usage_tokens = self._usage_tokens(usage)
                 log_call(
                     attempt=attempt,
-                    prompt_tokens=(
-                        int(getattr(usage, "prompt_tokens", 0) or 0) if usage is not None else None
-                    ),
-                    completion_tokens=(
-                        int(getattr(usage, "completion_tokens", 0) or 0) if usage is not None else None
-                    ),
+                    prompt_tokens=usage_tokens[0] if usage_tokens is not None else None,
+                    completion_tokens=usage_tokens[1] if usage_tokens is not None else None,
                     cost_usd=(
                         None
                         if "20128" in self.openrouter_base_url
@@ -2423,10 +2515,8 @@ class LLMGateway:
                     },
                 )
                 return content
-            except asyncio.CancelledError:
-                if budget_reserved:
-                    self._release_budget(call_id)
-                    budget_reserved = False
+            except asyncio.CancelledError as exc:
+                settle_failed_request(exc)
                 log_call(error="CANCELLED", attempt=attempt)
                 raise
             except SpendCapExceeded:
@@ -2488,11 +2578,9 @@ class LLMGateway:
                     raise RuntimeError(f"LLM API Key rejected: {exc}") from exc
 
                 if "model_substitution_denied" in error_text:
-                    # FINAL-SPEC #27: ikame reddi ic retry de zincir fallback'i
-                    # de tetiklemez; rezervasyon iade, kayit tek, hata yukselir.
-                    if budget_reserved:
-                        self._release_budget(call_id)
-                        budget_reserved = False
+                    # A completed but rejected response may still be billable;
+                    # settle conservatively rather than refunding its reserve.
+                    settle_failed_request(exc)
                     # #34: kayit, hangi modelin hangisiyle ikame edilmek
                     # istendigini tek basina aciklayabilmeli (detay kaybolmasin).
                     # ROUTING-HARDENING: provider'in dondurdugu model ayrica
@@ -2507,10 +2595,20 @@ class LLMGateway:
                     )
                     raise
 
+                settle_failed_request(exc)
+                if self._nested_value_error(exc) is not None and not self._definitely_unbilled_error(exc):
+                    provider_error = ProviderResponseError(
+                        "Provider call failed with an unclassified ValueError"
+                    )
+                    log_call(
+                        error=type(provider_error).__name__,
+                        attempt=attempt,
+                        extras={
+                            "upstream_error_type": type(self._nested_value_error(exc)).__name__,
+                        },
+                    )
+                    raise provider_error from exc
                 if not self._is_retryable_error(exc):
-                    if budget_reserved:
-                        self._release_budget(call_id)
-                        budget_reserved = False
                     logging.error("LLM Gateway non-retryable error (%s): %s", type(exc).__name__, exc)
                     log_call(error=f"NON_RETRYABLE::{type(exc).__name__}", attempt=attempt)
                     raise
@@ -2527,16 +2625,10 @@ class LLMGateway:
                     try:
                         await asyncio.sleep(backoff)
                     except asyncio.CancelledError:
-                        if budget_reserved:
-                            self._release_budget(call_id)
-                            budget_reserved = False
                         log_call(error="CANCELLED", attempt=attempt)
                         raise
                     continue
 
-                if budget_reserved:
-                    self._release_budget(call_id)
-                    budget_reserved = False
                 self.failure_count += 1
                 if self.failure_count > 5:
                     self.circuit_open = True
@@ -2654,6 +2746,19 @@ class LLMGateway:
                 extras=extras,
             )
 
+        def settle_failed_request(exc: BaseException) -> float:
+            nonlocal budget_reserved, logical_cost_usd
+            if not budget_reserved:
+                return 0.0
+            if self._definitely_unbilled_error(exc):
+                self._release_budget(call_id)
+                cost = 0.0
+            else:
+                cost = self._settle_budget(call_id, selected_model, None, pricing)
+                logical_cost_usd += cost
+            budget_reserved = False
+            return cost
+
         # Routed calls use provider-scoped circuits in UnifiedRouter. The legacy
         # gateway circuit remains only for the single-provider compatibility path.
         if route is None and self.circuit_open:
@@ -2722,6 +2827,19 @@ class LLMGateway:
         for attempt_index in range(max_retries):
             attempt = attempt_index + 1
             try:
+                if (
+                    not is_local_request
+                    and (pricing is not None or selected_model in self.MODEL_PRICING)
+                    and not budget_reserved
+                ):
+                    reservation = self._maximum_chat_cost(
+                        selected_model,
+                        request_payload,
+                        effective_max_tokens,
+                        pricing,
+                    )
+                    self._reserve_budget(call_id, reservation)
+                    budget_reserved = True
                 response = await target_client.chat.completions.create(
                     **request_payload,
                     timeout=self.request_timeout_seconds,
@@ -2729,12 +2847,18 @@ class LLMGateway:
                 # Provider default-model override firewall: the provider must
                 # never silently substitute a different model than requested.
                 if route is not None:
-                    actual_model = getattr(response, "model", None)
+                    actual_model = (
+                        response.get("model")
+                        if isinstance(response, Mapping)
+                        else getattr(response, "model", None)
+                    )
                     if actual_model and not self._model_substitution_allowed(
                         selected_model, str(actual_model)
                     ):
-                        if budget_reserved:
-                            self._release_budget(call_id)
+                        if not is_local_request and budget_reserved:
+                            logical_cost_usd += self._settle_budget(
+                                call_id, selected_model, None, pricing
+                            )
                             budget_reserved = False
                         error = (
                             f"MODEL_SUBSTITUTION_DENIED: requested "
@@ -2748,15 +2872,34 @@ class LLMGateway:
                         )
                 if route is None:
                     self.failure_count = 0
-                usage = getattr(response, "usage", None)
+                usage = (
+                    response.get("usage")
+                    if isinstance(response, Mapping)
+                    else getattr(response, "usage", None)
+                )
                 if not is_local_request:
-                    logical_cost_usd = self._settle_budget(
+                    logical_cost_usd += self._settle_budget(
                         call_id,
                         selected_model,
                         usage,
                         pricing,
                     )
                     budget_reserved = False
+                choices = (
+                    response.get("choices")
+                    if isinstance(response, Mapping)
+                    else getattr(response, "choices", None)
+                )
+                first_choice = choices[0] if isinstance(choices, (list, tuple)) and choices else None
+                message = (
+                    first_choice.get("message")
+                    if isinstance(first_choice, Mapping)
+                    else getattr(first_choice, "message", None)
+                )
+                if message is None:
+                    raise ProviderEmptyResponseError(
+                        f"Provider returned empty choices from model '{selected_model}'"
+                    )
                 usage_tokens = self._usage_tokens(usage)
                 prompt_tokens = usage_tokens[0] if usage_tokens is not None else None
                 completion_tokens = usage_tokens[1] if usage_tokens is not None else None
@@ -2767,30 +2910,35 @@ class LLMGateway:
                     cost_usd=logical_cost_usd,
                 )
                 return LLMChatResult(call_id=call_id, response=response)
-            except asyncio.CancelledError:
-                if budget_reserved:
-                    self._release_budget(call_id)
+            except asyncio.CancelledError as exc:
+                settle_failed_request(exc)
                 log_call(error="CANCELLED", attempt=attempt)
                 raise
             except SpendCapExceeded:
-                if budget_reserved:
-                    self._release_budget(call_id)
                 log_call(error="OPENROUTER_SPEND_CAP_EXCEEDED", attempt=attempt)
                 raise
             except Exception as exc:
+                settle_failed_request(exc)
+                if self._nested_value_error(exc) is not None and not self._definitely_unbilled_error(exc):
+                    provider_error = ProviderResponseError(
+                        "Provider call failed with an unclassified ValueError"
+                    )
+                    log_call(
+                        error=type(provider_error).__name__,
+                        attempt=attempt,
+                        extras={
+                            "upstream_error_type": type(self._nested_value_error(exc)).__name__,
+                        },
+                    )
+                    raise provider_error from exc
                 retryable = self._is_strict_retryable_error(exc)
                 if retryable and attempt_index < max_retries - 1:
                     try:
                         await asyncio.sleep(2**attempt_index)
                     except asyncio.CancelledError:
-                        if budget_reserved:
-                            self._release_budget(call_id)
                         log_call(error="CANCELLED", attempt=attempt)
                         raise
                     continue
-                if budget_reserved:
-                    self._release_budget(call_id)
-                    budget_reserved = False
                 if retryable and route is None:
                     self.failure_count += 1
                     if self.failure_count > 5:
@@ -2887,6 +3035,7 @@ class LLMGateway:
             error: Optional[str] = None,
             usage: Any = None,
             cost_usd: float = 0.0,
+            extras: Optional[dict[str, Any]] = None,
         ) -> None:
             usage_tokens = self._usage_tokens(usage)
             self._log_call(
@@ -2903,7 +3052,30 @@ class LLMGateway:
                 error=error,
                 requested_model=model,
                 captured_scope=captured_scope,
+                extras=extras,
             )
+
+        def settle_failed_reservation(
+            exc: BaseException,
+            *,
+            response_was_opened: bool,
+        ) -> float:
+            nonlocal budget_reserved
+            if not budget_reserved:
+                return 0.0
+            if response_was_opened or not self._definitely_unbilled_error(exc):
+                cost = self._settle_budget(call_id, selected_model, None, pricing)
+            else:
+                self._release_budget(call_id)
+                cost = 0.0
+            budget_reserved = False
+            return cost
+
+        try:
+            target_client = self._client_for_route(route)
+        except Exception as exc:
+            log_call(error=f"CLIENT_INIT::{type(exc).__name__}")
+            raise
 
         if not route.local:
             try:
@@ -2932,23 +3104,71 @@ class LLMGateway:
                 log_call(error="UNKNOWN_PRICING_FOR_SPEND_CAP")
                 raise RuntimeError("UNKNOWN_PRICING_FOR_SPEND_CAP")
 
-        target_client = self._client_for_route(route)
         try:
             upstream = await target_client.chat.completions.create(
                 **request_payload,
                 timeout=self.request_timeout_seconds,
             )
-            first_chunk = await anext(upstream)
-        except asyncio.CancelledError:
-            if budget_reserved:
-                self._release_budget(call_id)
-            log_call(error="CANCELLED")
+        except asyncio.CancelledError as exc:
+            cost = settle_failed_reservation(exc, response_was_opened=False)
+            log_call(error="CANCELLED", cost_usd=cost)
             raise
         except Exception as exc:
-            if budget_reserved:
-                self._release_budget(call_id)
-            log_call(error=type(exc).__name__)
+            cost = settle_failed_reservation(exc, response_was_opened=False)
+            log_call(error=type(exc).__name__, cost_usd=cost)
             raise
+
+        async def close_upstream() -> None:
+            close = getattr(upstream, "aclose", None) or getattr(upstream, "close", None)
+            if close is None:
+                return
+            outcome = close()
+            if inspect.isawaitable(outcome):
+                await outcome
+
+        try:
+            first_chunk = await anext(upstream)
+        except asyncio.CancelledError as exc:
+            cost = settle_failed_reservation(exc, response_was_opened=True)
+            try:
+                await close_upstream()
+            except Exception:
+                pass
+            log_call(error="CANCELLED", cost_usd=cost)
+            raise
+        except Exception as exc:
+            cost = settle_failed_reservation(exc, response_was_opened=True)
+            try:
+                await close_upstream()
+            except Exception:
+                pass
+            log_call(error=type(exc).__name__, cost_usd=cost)
+            raise
+
+        actual_model = getattr(first_chunk, "model", None)
+        if actual_model and not self._model_substitution_allowed(
+            selected_model, str(actual_model)
+        ):
+            error = ModelSubstitutionDeniedError(
+                f"MODEL_SUBSTITUTION_DENIED: requested '{selected_model}' "
+                f"but provider returned '{actual_model}'",
+                requested=selected_model,
+                actual=str(actual_model),
+            )
+            cost = settle_failed_reservation(error, response_was_opened=True)
+            try:
+                await close_upstream()
+            except Exception:
+                pass
+            log_call(
+                error=f"MODEL_SUBSTITUTION_DENIED::{str(error)[:200]}",
+                cost_usd=cost,
+                extras={
+                    "actual_model": str(actual_model),
+                    "requested_model": selected_model,
+                },
+            )
+            raise error
 
         async def chunks() -> AsyncIterator[Any]:
             settled = False
@@ -2959,8 +3179,21 @@ class LLMGateway:
                 usage = getattr(chunk, "usage", None)
                 if usage is not None:
                     observed_usage = usage
+                actual_model = getattr(chunk, "model", None)
+                if actual_model and not self._model_substitution_allowed(
+                    selected_model, str(actual_model)
+                ):
+                    raise ModelSubstitutionDeniedError(
+                        f"MODEL_SUBSTITUTION_DENIED: requested '{selected_model}' "
+                        f"but provider returned '{actual_model}'",
+                        requested=selected_model,
+                        actual=str(actual_model),
+                    )
 
-            def finalize(error: Optional[str]) -> None:
+            def finalize(
+                error: Optional[str],
+                extras: Optional[dict[str, Any]] = None,
+            ) -> None:
                 nonlocal settled
                 if settled:
                     return
@@ -2973,7 +3206,7 @@ class LLMGateway:
                         observed_usage,
                         pricing,
                     )
-                log_call(error=error, usage=observed_usage, cost_usd=cost)
+                log_call(error=error, usage=observed_usage, cost_usd=cost, extras=extras)
 
             try:
                 observe(first_chunk)
@@ -2985,11 +3218,26 @@ class LLMGateway:
                 finalize("CANCELLED")
                 raise
             except Exception as exc:
-                finalize(f"STREAM_INTERRUPTED::{type(exc).__name__}")
+                if isinstance(exc, ModelSubstitutionDeniedError):
+                    finalize(
+                        f"MODEL_SUBSTITUTION_DENIED::{str(exc)[:200]}",
+                        extras={
+                            "requested_model": getattr(exc, "requested", selected_model),
+                            "actual_model": getattr(exc, "actual", None),
+                        },
+                    )
+                else:
+                    finalize(f"STREAM_INTERRUPTED::{type(exc).__name__}")
                 raise
             else:
                 finalize(None)
             finally:
+                try:
+                    await close_upstream()
+                except BaseException:
+                    # Preserve the stream's original error/cancellation while
+                    # still making a best-effort attempt to release transport.
+                    pass
                 finalize("STREAM_CLOSED")
 
         return LLMChatStream(call_id=call_id, chunks=chunks())
@@ -3095,9 +3343,17 @@ class LLMGateway:
         )
         
         selected_model = model or (self.TIER_1_MODEL if tier == 1 else self.TIER_2_MODEL)
-        response_text = ""
+        response_text = await self.query(
+            full_prompt,
+            temperature,
+            tier=tier,
+            model=selected_model,
+            images=images,
+            route=route,
+            task=task,
+            agent_name=agent_name,
+        )
         try:
-            response_text = await self.query(full_prompt, temperature, tier=tier, model=selected_model, images=images, route=route, task=task, agent_name=agent_name)
             parsed_data = self.extract_json(response_text)
             return self._coerce_to_schema(parsed_data, schema)
         except (ValueError, ValidationError, TypeError, KeyError, json.JSONDecodeError) as err:
@@ -3108,9 +3364,18 @@ class LLMGateway:
                 f"DİKKAT: Eksik veri varsa uydurma kelimeler veya sahte skorlar YAZMA. Sadece var olanları yerleştir.\n"
                 f"Eklediğin bozuk çıktı şuydu:\n{response_text[:200]}"
             )
-            repair_text = await self.query(repair_prompt, temperature, tier=tier, model=selected_model, images=images, route=route, task=task, agent_name=agent_name)
-            parsed_data = self.extract_json(repair_text)
-            return self._coerce_to_schema(parsed_data, schema)
+        repair_text = await self.query(
+            repair_prompt,
+            temperature,
+            tier=tier,
+            model=selected_model,
+            images=images,
+            route=route,
+            task=task,
+            agent_name=agent_name,
+        )
+        parsed_data = self.extract_json(repair_text)
+        return self._coerce_to_schema(parsed_data, schema)
 
     async def query_chain(
         self,

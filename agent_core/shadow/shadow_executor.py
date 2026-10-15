@@ -20,6 +20,7 @@ from agent_core.psychology.dark_triad import DarkTriadAnalyzer, DarkTriadProfile
 from agent_core.agents.pattern_interrupt import PatternInterrupt
 from agent_core.agents.mirror_truth import MirrorOfTruth
 from agent_core.services.llm_gateway import LLMGateway
+from agent_core.services.confidence import normalize_confidence
 
 class ShadowResult(BaseModel):
     message: str
@@ -27,8 +28,9 @@ class ShadowResult(BaseModel):
     strategy: str
     nlp_sequence: list
     confidence: float
-    data_confidence: bool = True          # False → LLM kullanılamadı, NLP deterministik
-    fallback_reason: Optional[str] = None
+    data_confidence: bool = False  # Strategy basis is grounded in validated input.
+    fallback_reason: Optional[str] = "unavailable"
+    trait_scores_measured: bool = False  # Dark-triad scores are not depth strategy scores.
 
     model_config = ConfigDict(extra="forbid")
 
@@ -61,6 +63,91 @@ class ShadowExecutor:
             or target.get("images")
         )
 
+    @staticmethod
+    def _dark_profile_payload(dark: DarkTriadProfile) -> tuple[Dict, bool, list[float]]:
+        """Represent unmeasured legacy trait defaults as null in the API output.
+
+        The depth strategy is not a narcissism/machiavellianism/psychopathy
+        score. The current DarkTriadAnalyzer deliberately emits zero defaults
+        after lexical scoring was removed, so those defaults must not be shown
+        as measured zeros.
+        """
+        payload = dark.model_dump()
+        trait_scores: list[float] = []
+        for trait in ("machiavellianism", "narcissism", "psychopathy"):
+            score, valid = normalize_confidence(getattr(dark, trait, None))
+            if valid and score > 0.0:
+                payload[trait] = score
+                trait_scores.append(score)
+            else:
+                payload[trait] = None
+        exploitability, valid_exploitability = normalize_confidence(
+            getattr(dark, "exploitability", None)
+        )
+        payload["exploitability"] = (
+            exploitability if valid_exploitability and exploitability > 0.0 else None
+        )
+        return payload, bool(trait_scores), trait_scores
+
+    @staticmethod
+    def _depth_strategy_confidence(depth: Dict, strategy: Dict) -> tuple[float, Optional[str]]:
+        """Validate the selected depth signal and derive confidence from its source channels.
+
+        This deliberately does not inspect the legacy dark-triad feature scores.
+        A depth strategy is grounded only when its trigger is finite/in-range
+        and the channel(s) used to derive it report non-zero completeness.
+        """
+        global_confidence, valid_confidence = normalize_confidence(depth.get("confidence"))
+        if not valid_confidence or global_confidence <= 0.0:
+            return 0.0, "invalid_depth_confidence"
+
+        channels = depth.get("channels")
+        if not isinstance(channels, dict):
+            return 0.0, "invalid_depth_channels"
+
+        def channel_completeness(name: str) -> Optional[float]:
+            channel = channels.get(name)
+            if not isinstance(channel, dict):
+                return None
+            completeness, valid = normalize_confidence(channel.get("completeness"))
+            return completeness if valid and completeness > 0.0 else None
+
+        vector = strategy.get("vector")
+        required_channels: list[str]
+        if vector == "mirroring":
+            reaction, valid_reaction = normalize_confidence(depth.get("reaction_formation_index"))
+            if not valid_reaction or reaction < 0.40:
+                return 0.0, "invalid_depth_strategy_signal"
+            required_channels = ["declaration", "staging"]
+        elif vector == "alliance":
+            declaration = channels.get("declaration")
+            signals = declaration.get("signals") if isinstance(declaration, dict) else None
+            repetition, valid_repetition = normalize_confidence(
+                signals.get("repetition_score") if isinstance(signals, dict) else None
+            )
+            if not valid_repetition or repetition < 0.40:
+                return 0.0, "invalid_depth_strategy_signal"
+            required_channels = ["declaration"]
+        elif vector == "thrill":
+            rhythm = channels.get("rhythm")
+            signals = rhythm.get("signals") if isinstance(rhythm, dict) else None
+            signals = signals if isinstance(signals, dict) else {}
+            ruptures = signals.get("n_ruptures")
+            kinds = signals.get("rupture_kinds")
+            has_rupture = (
+                isinstance(ruptures, int) and not isinstance(ruptures, bool) and ruptures >= 1
+            ) or (isinstance(kinds, list) and "entropy_jump" in kinds)
+            if not has_rupture:
+                return 0.0, "invalid_depth_strategy_signal"
+            required_channels = ["rhythm"]
+        else:
+            return 0.0, "strategy_source_unavailable"
+
+        completeness = [channel_completeness(name) for name in required_channels]
+        if any(value is None for value in completeness):
+            return 0.0, "depth_channel_incomplete"
+        return min([global_confidence, *(value for value in completeness if value is not None)]), None
+
     async def execute(self, task_input: Dict) -> ShadowResult:
         import logging
         log = logging.getLogger(__name__)
@@ -70,22 +157,28 @@ class ShadowExecutor:
                 "ShadowExecutor: hedef kanıtı yok; shadow profili üretilmedi "
                 "(sahte strateji/mesaj yasak)."
             )
+            empty_profile, trait_scores_measured, _ = self._dark_profile_payload(DarkTriadProfile())
             return ShadowResult(
                 message="",
-                dark_profile=DarkTriadProfile().model_dump(),
+                dark_profile=empty_profile,
                 strategy="unavailable",
                 nlp_sequence=[],
                 confidence=0.0,
                 data_confidence=False,
                 fallback_reason="target_evidence_unavailable",
+                trait_scores_measured=trait_scores_measured,
             )
 
         # 1. Strateji kaynagı (GÖREV 2 artıgı): psychodynamic_depth verdict
         # ok ise BIRINCIL kaynaktır (yapısal indeksler); yoksa/bozuksa legacy
         # eşik yolu denenir (analyze() sıfırları -> 'unavailable').
         dark = self.dark_triad.analyze(task_input.get('target_profile', {}))
+        dark_profile_payload, trait_scores_measured, measured_trait_scores = (
+            self._dark_profile_payload(dark)
+        )
         _depth = task_input.get("psychodynamic_depth")
-        if isinstance(_depth, dict) and _depth.get("verdict") == "ok":
+        using_depth = isinstance(_depth, dict) and _depth.get("verdict") == "ok"
+        if using_depth:
             strategy = self.dark_triad.strategy_from_depth(_depth)
         else:
             strategy = self.dark_triad.generate_strategy(dark)
@@ -96,35 +189,81 @@ class ShadowExecutor:
         if strategy["vector"] == "unavailable":
             return ShadowResult(
                 message="",
-                dark_profile=dark.model_dump(),
+                dark_profile=dark_profile_payload,
                 strategy="unavailable",
                 nlp_sequence=[],
                 confidence=0.0,
                 data_confidence=False,
                 fallback_reason="dark_triad_markers_unobserved",
+                trait_scores_measured=trait_scores_measured,
             )
         if strategy["vector"] == "unobserved":
             return ShadowResult(
                 message="",
-                dark_profile=dark.model_dump(),
+                dark_profile=dark_profile_payload,
                 strategy="unavailable",
                 nlp_sequence=[],
                 confidence=0.0,
                 data_confidence=False,
                 fallback_reason="strategy_unobserved",
+                trait_scores_measured=trait_scores_measured,
             )
+
+        allowed_strategies = {"mirroring", "alliance", "thrill"}
+        if using_depth:
+            analysis_confidence, confidence_reason = self._depth_strategy_confidence(
+                _depth, strategy
+            )
+            if confidence_reason is not None or strategy.get("vector") not in allowed_strategies:
+                return ShadowResult(
+                    message="",
+                    dark_profile=dark_profile_payload,
+                    strategy="unavailable",
+                    nlp_sequence=[],
+                    confidence=0.0,
+                    data_confidence=False,
+                    fallback_reason=confidence_reason or "strategy_source_unavailable",
+                    trait_scores_measured=trait_scores_measured,
+                )
+        else:
+            if strategy.get("vector") not in allowed_strategies or not measured_trait_scores:
+                return ShadowResult(
+                    message="",
+                    dark_profile=dark_profile_payload,
+                    strategy="unavailable",
+                    nlp_sequence=[],
+                    confidence=0.0,
+                    data_confidence=False,
+                    fallback_reason="legacy_trait_scores_unavailable",
+                    trait_scores_measured=trait_scores_measured,
+                )
+            analysis_confidence = round(
+                sum(measured_trait_scores) / len(measured_trait_scores), 3
+            )
+            if analysis_confidence <= 0.0:
+                return ShadowResult(
+                    message="",
+                    dark_profile=dark_profile_payload,
+                    strategy="unavailable",
+                    nlp_sequence=[],
+                    confidence=0.0,
+                    data_confidence=False,
+                    fallback_reason="legacy_trait_scores_unavailable",
+                    trait_scores_measured=trait_scores_measured,
+                )
 
         routed_pattern = task_input.get("_pattern_interrupt") or {}
         gate_blocked_ids = routed_pattern.get("claim_gate_blocked_ids")
         if isinstance(gate_blocked_ids, list) and gate_blocked_ids:
             return ShadowResult(
                 message="",
-                dark_profile=dark.model_dump(),
+                dark_profile=dark_profile_payload,
                 strategy=strategy.get("vector", "unavailable"),
                 nlp_sequence=[],
                 confidence=0.0,
                 data_confidence=False,
                 fallback_reason="claim_gate_blocked_same_claim",
+                trait_scores_measured=trait_scores_measured,
             )
 
         # 2. Mirror (LLM gerektirir — fallback ile korumalı)
@@ -227,24 +366,15 @@ class ShadowExecutor:
             strategy
         )
 
-        # [066] fix: exploitability psikolojik manipülasyon metriğidir; ölçüm
-        # güveni (confidence) olarak telemetriye verilemez. Ölçüm güveni, markör
-        # gözlem kapsamından türetilir.
-        observed_traits = sum(
-            1 for t in ("machiavellianism", "narcissism", "psychopathy")
-            if getattr(dark, t, 0.0) > 0.0
-        )
-        analysis_confidence = (
-            min(round(0.5 + (observed_traits * 0.15), 2), 1.0)
-            if observed_traits > 0 else 0.0
-        )
-
         return ShadowResult(
             message=final_message,
-            dark_profile=dark.model_dump(),
-            strategy=strategy['vector'],
+            dark_profile=dark_profile_payload,
+            strategy=strategy["vector"],
             nlp_sequence=nlp_seq,
-            confidence=analysis_confidence
+            confidence=analysis_confidence,
+            data_confidence=bool(final_message.strip() and analysis_confidence > 0.0),
+            fallback_reason=None if final_message.strip() and analysis_confidence > 0.0 else "empty_strategy_message",
+            trait_scores_measured=trait_scores_measured,
         )
     
     def _synthesize(self, base_msg: str, nlp_seq: list, presup: list, strategy: Dict) -> str:

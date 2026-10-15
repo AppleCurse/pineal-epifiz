@@ -814,10 +814,10 @@ def check_goz2_3() -> CheckResult:
 
 def check_goz2_4() -> CheckResult:
     """Ses motoru kapalıyken `/api/speech/say` uydurma iş yapıyor mu?"""
-    rel = "backend/api.py"
+    rel = "backend/routes/speech.py"
     honest = _hits(rel, r"SES ÜRETİLEMEDİ")
     denied = _hits(rel, r'\{"state": "denied"')
-    interlock = _hits(rel, r"vault_locked=not _check_vault_interlock")
+    interlock = _hits(rel, r"vault_locked=not check_vault_interlock")
     locked, lock_ev = _test_lock(
         "tests/integration/test_speech_api_faz_c.py",
         ("test_say_refuses_when_gate_is_closed", "test_remote_endpoint_is_never_called",

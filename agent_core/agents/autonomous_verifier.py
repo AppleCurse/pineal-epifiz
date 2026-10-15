@@ -194,16 +194,16 @@ class VerifierReport(BaseModel):
     verifications: List[VerificationResult] = Field(default_factory=list)
     canonical_observation_checks: List[CanonicalObservationCheck] = Field(default_factory=list)
     rejected_canonical_observation_count: int = 0
-    overall_authenticity_score: float = 0.0
+    overall_authenticity_score: float = Field(default=0.0, ge=0.0, le=1.0)
     status: str = "UNVERIFIED"
-    confidence: float = 0.0
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     # [BOSS-4] Panel özeti (rapor düzeyinde): jüri koltukları, düşürülenler, kural.
     jurors: List[str] = []
     dropped_juror: List[str] = []
     decision_rule: str = ""
     # [015] Kanıt sözleşmesi: doğrulama yapılmadıysa data_confidence=False
     # ve fallback_reason doldurulur; yüksek güvenli "UNVERIFIED" üretilmez.
-    data_confidence: bool = True
+    data_confidence: bool = False
     fallback_reason: Optional[str] = None
     #: [RÖNTGEN-2] Oy muhasebesi: verilen / sayılan / kapıda iptal / geçersiz.
     vote_accounting: Dict[str, int] = {}

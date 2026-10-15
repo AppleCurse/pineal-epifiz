@@ -1,6 +1,6 @@
 """FastAPI yüzeyi — HTTP, WS ve OpenAI-uyumlu uçların TEK montaj noktası.
 
-Kapsam (6000 satırlık monolit; bilinçli olarak modül tavanına tabidir):
+Kapsam (büyük API montaj modülü; bilinçli olarak satır tavanına tabidir):
   * **Yaşam döngüsü**: ``lifespan`` açılışta bağımlılık sağlığını denetler
     (``check_startup_dependencies``), üretimde fail-closed kapıları uygular.
   * **Güvenlik**: kimlik doğrulama middleware'i, oda (room) sahipliği ve
@@ -34,7 +34,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI, HTTPException, Path, Request, WebSocket
-from fastapi.responses import FileResponse
+from backend.routes.speech_audio import api_speech_audio as api_speech_audio, router as _speech_audio_router  # noqa: F401
+from backend.routes.speech import (
+    build_speech_router,
+)
 from fastapi.exceptions import RequestValidationError
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.staticfiles import StaticFiles
@@ -63,7 +66,12 @@ if sys.platform == 'win32':
 
 from agent_core.aspasia.aspasia_chief import AspasiaChief
 from agent_core.aspasia.interface import AspasiaCommandGateway
-from agent_core.chat.dialogue_manager import DialogueManager
+from agent_core.chat.dialogue_manager import (
+    DialogueInputError,
+    DialogueManager,
+    DialogueSessionCapacityError,
+    MAX_DIALOGUE_MESSAGE_CHARS,
+)
 from agent_core.scraper.instagram_ghost import InstagramGhostScraper
 from agent_core.services import crawl_enricher, socid_enricher
 from agent_core.services.browser_session import BrowserSession
@@ -87,7 +95,6 @@ from agent_core.utils.security import (
     principal_of_request,
     redact_structure,
     redact_text,
-    safe_child_path,
     security_posture,
     token_matches,
     validate_identifier,
@@ -194,7 +201,10 @@ async def lifespan(application: FastAPI):
         logger.critical("Startup security/dependency gate failed: %s", exc.error_code)
         raise
 
+    speech_cache_task = asyncio.create_task(_speech_cache_sweeper())
     yield
+    speech_cache_task.cancel()
+    await asyncio.gather(speech_cache_task, return_exceptions=True)
     # Kapanista odalari TEK bir yoldan kapat
     for client_id in list(application.state.rooms):
         room = application.state.rooms.get(client_id)
@@ -214,6 +224,7 @@ async def lifespan(application: FastAPI):
 # kendini yanlış sürüm olarak tanıttı. Sürüm artık kopyalanmıyor; VERSION
 # dosyasından OKUNUYOR. Böylece "sürüm kimliği" sorusunun tek bir cevabı var.
 app = FastAPI(title=f"PINEAL-HERETIC v{VERSION} API", lifespan=lifespan)
+app.include_router(_speech_audio_router)
 app.state.llm_backend_mode = "legacy"
 app.state.openai_router = None
 app.state.startup_health = {
@@ -297,6 +308,21 @@ def _openai_error(message: str, error_type: str, code: str, param: Optional[str]
             "code": code,
         }
     }
+
+
+def _openai_upstream_error_details(status_code: Any) -> tuple[int, str, str, str]:
+    """Map upstream failures without misreporting the caller's own credentials."""
+    if not isinstance(status_code, int) or isinstance(status_code, bool):
+        return 502, "Upstream provider returned an invalid response", "server_error", "upstream_provider_error"
+    if status_code in {401, 403}:
+        return 502, "Upstream provider authentication or permission check failed", "server_error", "upstream_authentication_error"
+    if status_code == 429:
+        return 429, "Upstream provider rate limit exceeded", "rate_limit_error", "upstream_rate_limited"
+    if status_code == 408:
+        return 504, "Upstream provider timed out", "server_error", "upstream_timeout"
+    if status_code in {400, 404, 413, 415, 422}:
+        return status_code, "Upstream provider rejected the chat completion request", "invalid_request_error", f"upstream_{status_code}"
+    return 502, "Upstream provider failed to complete the request", "server_error", "upstream_provider_error"
 
 
 def _secure_path(request: Request) -> str:
@@ -645,6 +671,7 @@ from backend.routes.language import (  # noqa: E402,F401 (API-BÖLME 2: yeniden 
     LanguageTranslatePayload,
     register_language_routes,
 )
+from backend.routes.speech_state import speech_cache_sweeper as _speech_cache_sweeper, speech_finished as _speech_finished  # noqa: E402,F401
 from backend.security.task_ownership import (  # noqa: F401  (geriye dönük ihracat)
     TaskForbiddenError as TaskForbiddenError,
     adopt as _adopt_task,
@@ -1658,28 +1685,38 @@ async def openai_chat_completions(payload: OpenAIChatCompletionPayload, request:
             status_code = 400
             message = "Requested model has no verified pricing record"
             error_type = "invalid_request_error"
+            error_code = code.lower()
         else:
-            status_code = 503
-            message = "Configured LLM provider is unavailable"
-            error_type = "server_error"
+            upstream_status = getattr(exc, "status_code", None)
+            if isinstance(upstream_status, int) and 400 <= upstream_status <= 599:
+                status_code, message, error_type, error_code = _openai_upstream_error_details(
+                    upstream_status
+                )
+            elif "api key rejected" in str(exc).lower() or "auth_failed" in code.lower():
+                status_code = 502
+                message = "Configured upstream provider credentials were rejected"
+                error_type = "server_error"
+                error_code = "upstream_authentication_error"
+            elif "model_substitution_denied" in str(exc).lower():
+                status_code = 502
+                message = "Upstream provider returned a different model than requested"
+                error_type = "server_error"
+                error_code = "model_substitution_denied"
+            else:
+                status_code = 503
+                message = "Configured LLM provider is unavailable"
+                error_type = "server_error"
+                error_code = code.lower()
         return JSONResponse(
-            _openai_error(message, error_type, code.lower()),
+            _openai_error(message, error_type, error_code),
             status_code=status_code,
         )
     except Exception as exc:
-        upstream_status = getattr(exc, "status_code", None)
-        if upstream_status in {400, 404, 408, 413, 422, 429}:
-            status_code = upstream_status
-            error_type = "rate_limit_error" if upstream_status == 429 else "invalid_request_error"
-        else:
-            status_code = 502
-            error_type = "server_error"
+        status_code, message, error_type, error_code = _openai_upstream_error_details(
+            getattr(exc, "status_code", None)
+        )
         return JSONResponse(
-            _openai_error(
-                "Upstream provider rejected the chat completion request",
-                error_type,
-                f"upstream_{upstream_status or 'error'}",
-            ),
+            _openai_error(message, error_type, error_code),
             status_code=status_code,
         )
 
@@ -2314,6 +2351,71 @@ def _new_task_id() -> str:
     return f"op_{datetime.now().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}"
 
 
+def _summarize_osint_search_results(search_results: list[Any]) -> tuple[list[Any], dict[str, Any]]:
+    """Keep provider failures distinct from a successful empty web search."""
+    if not search_results:
+        return [], {
+            "status": "NOT_REQUESTED",
+            "available": False,
+            "queries_requested": 0,
+            "queries_available": 0,
+            "result_count": 0,
+            "errors": [],
+        }
+    all_results: list[Any] = []
+    seen_urls: set[str] = set()
+    errors: list[str] = []
+    available_queries = 0
+    for outcome in search_results:
+        if isinstance(outcome, asyncio.CancelledError):
+            raise outcome
+        if isinstance(outcome, BaseException):
+            if isinstance(outcome, Exception):
+                errors.append(type(outcome).__name__)
+                continue
+            raise outcome
+        if not getattr(outcome, "available", False):
+            errors.append(
+                str(getattr(outcome, "error", None) or getattr(outcome, "status", "unavailable"))
+            )
+            continue
+        available_queries += 1
+        if getattr(outcome, "error", None):
+            errors.append(str(outcome.error))
+        for result in getattr(outcome, "results", []) or []:
+            source_url = getattr(result, "source_url", None)
+            content = getattr(result, "content", None)
+            if (
+                not isinstance(source_url, str)
+                or not source_url.strip()
+                or not isinstance(content, str)
+                or not content.strip()
+            ):
+                errors.append("INVALID_PROVIDER_RESULT")
+                continue
+            source_url = source_url.strip()
+            if source_url in seen_urls:
+                continue
+            seen_urls.add(source_url)
+            all_results.append(result)
+
+    unique_errors = sorted(set(errors))
+    if available_queries == 0:
+        status = "UNAVAILABLE"
+    elif unique_errors:
+        status = "PARTIAL"
+    else:
+        status = "OK" if all_results else "NO_RESULTS"
+    return all_results, {
+        "status": status,
+        "available": available_queries > 0,
+        "queries_requested": len(search_results),
+        "queries_available": available_queries,
+        "result_count": len(all_results),
+        "errors": unique_errors,
+    }
+
+
 async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
     client_id = req.client_id
     executor = get_executor(client_id)
@@ -2432,17 +2534,21 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                 search_tasks = [executor.search_engine.search(q, num_results=6) for q in queries]
                 search_results = await asyncio.gather(*search_tasks, return_exceptions=True)
 
-                all_raw_results = []
-                seen_urls = set()
-                for s_res in search_results:
-                    if isinstance(s_res, Exception):
-                        continue
-                    for r in getattr(s_res, "results", []):
-                        u = r.source_url or ""
-                        if u and u in seen_urls:
-                            continue
-                        seen_urls.add(u)
-                        all_raw_results.append(r)
+                all_raw_results, web_search_status_record = _summarize_osint_search_results(
+                    search_results
+                )
+                web_search_status = web_search_status_record["status"]
+                unique_search_errors = web_search_status_record["errors"]
+                available_queries = web_search_status_record["queries_available"]
+                if web_search_status in {"UNAVAILABLE", "PARTIAL"}:
+                    broadcast_log(
+                        client_id,
+                        "WARNING",
+                        f"WEB ARAMA: {web_search_status}; "
+                        f"{available_queries}/{len(search_tasks)} sorgu kullanılabilir, "
+                        f"{len(all_raw_results)} kaynak; hata kodları: "
+                        f"{', '.join(unique_search_errors[:5]) or 'yok'}.",
+                    )
 
                 # Katmanlı alaka sıralaması: Tam ad eşleşmesi > parça eşleşmesi > genel
                 target_parts = [p.lower() for p in clean_u.split() if len(p) > 1]
@@ -2496,6 +2602,7 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                     "following": None,
                     "is_private": None,
                     "detected_urls": found_profiles,
+                    "web_search": web_search_status_record,
                     "platform": "web_dossier",
                     "sensor_note": (
                         f"X sensörü kanıt üretemedi: {x_sensor_reason}" if x_sensor_reason
@@ -3383,6 +3490,17 @@ def _check_vault_interlock(client_id: str) -> bool:
         return False
 
 
+app.include_router(
+    build_speech_router(
+        rate_limit=rate_limit,
+        check_vault_interlock=_check_vault_interlock,
+        broadcast_speech=broadcast_speech,
+        broadcast_log=broadcast_log,
+        speech_finished=_speech_finished,
+    )
+)
+
+
 # ─── KASA MANDALI (Tüzük Md.4) — dış dünyaya açılan HER kapının tek kilidi ───
 #
 # Kural: kasa kilitliyse sistemde TEK BİR dış ağ veya tarayıcı hareketi
@@ -3785,16 +3903,37 @@ async def api_minor_case_state(client_id: str = "default"):
     }
 
 
+def _dialogue_scope_prefix(request: Request) -> str:
+    """Server-derived identity prefix for in-memory dialogue session keys.
+
+    Dialogue sessions are not rooms, so they must not use caller-supplied
+    ``task_id`` as their whole storage key. The auth middleware's rate identity
+    is already derived from the configured token (or client address in local
+    development); hashing it keeps raw identity material out of session keys.
+    """
+    identity = getattr(request.state, "rate_identity", None)
+    if not isinstance(identity, str) or not identity:
+        identity = _get_principal()
+    if not identity and request.client is not None:
+        identity = request.client.host
+    if not identity:
+        identity = "unknown"
+    return hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24] + ":"
+
+
 @app.get("/api/dialogue/sessions")
-async def api_dialogue_sessions():
-    """DialogueManager oturumlari - Aspasia terminal -> ajan zinciri"""
+async def api_dialogue_sessions(request: Request):
+    """List only the authenticated caller's scoped dialogue sessions."""
     if dialogue_manager is None:
         return {"sessions": [], "count": 0}
     try:
+        prefix = _dialogue_scope_prefix(request)
         sessions = []
-        for task_id, ctx in dialogue_manager.sessions.items():
+        for session_key, ctx in dialogue_manager.sessions.items():
+            if not session_key.startswith(prefix):
+                continue
             sessions.append({
-                "task_id": task_id,
+                "task_id": session_key[len(prefix):],
                 "history_count": len(ctx.history),
                 "last_seen": ctx.last_seen,
                 "target_profile": bool(ctx.target_profile),
@@ -3961,11 +4100,11 @@ class CrawlFetchPayload(BaseModel):
 
 @app.post("/api/experimental/crawl/fetch")
 async def crawl_fetch(payload: CrawlFetchPayload):
-    """Public-web sayfasını crawl4ai ile LLM-dostu metne çevirir (FAZ 4).
+    """Public-web sayfasını güvenli taşıma sonrası Crawl4AI markdown'a çevirir.
 
-    Kapı: ENABLE_CRAWL4AI=true (varsayılan kapalı; renderer=http tarayıcı
-    binary'si gerektirmez). Dürüst sonuç: içerik çekilemezse `available:false`
-    + makine-okunur sebep; ASLA uydurma içerik döner. SSRF guard'lı.
+    Kapı: ENABLE_CRAWL4AI=true (varsayılan kapalı). HTTP isteği DNS-pinned
+    `safe_get` ile yapılır; JS/browser renderer, ağ adresi sabitlenebilir olana
+    dek fail-closed kapalıdır. İçerik çekilemezse `available:false` + sebep.
     """
     # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız; politika kapılarından öncedir).
     if (blocked := _require_minor_clearance(payload.client_id, subject=payload.url)) is not None:
@@ -4043,15 +4182,15 @@ async def shadow_generate(task: dict):
     return result.model_dump()
 
 class ChatPayload(BaseModel):
-    # [AUDIT R3] task_id, DialogueManager.sessions anahtarı olur; sınırsız
-    # gövde ile 512 oturum x MB'lık anahtar = yüzlerce MB DoS yüzeyiydi.
+    # [AUDIT R3] DialogueManager ayrıca profil JSON boyutunu ve mesaj geçmişini
+    # sınırlar; geniş geçmiş/serbest metinle oturum başına sınırsız bellek yoktur.
     task_id: str = Field(min_length=1, max_length=_MAX_TASK_ID_LENGTH)
     target_profile: dict
     user_profile: dict
-    target_message: str = Field(max_length=32_000)
+    target_message: str = Field(max_length=MAX_DIALOGUE_MESSAGE_CHARS)
 
 @app.post("/api/experimental/chat/respond")
-async def chat_respond(payload: ChatPayload):
+async def chat_respond(payload: ChatPayload, request: Request):
     """Hedefin mesajına otonom karşı hamle üretir"""
     # [ÇOCUK KİLİDİ] Hedefe DÖNÜK mesaj üretimi; oda adı yok → any-mod.
     if (blocked := _require_minor_clearance(None)) is not None:
@@ -4061,11 +4200,34 @@ async def chat_respond(payload: ChatPayload):
         return _module_unavailable_response(payload.task_id, "dialogue_manager")
 
     try:
-        if payload.task_id not in dialogue_manager.sessions:
-            dialogue_manager.start_session(payload.task_id, payload.target_profile, payload.user_profile)
-            
-        res = await dialogue_manager.generate_response(payload.task_id, payload.target_message)
+        scoped_task_id = _dialogue_scope_prefix(request) + payload.task_id
+        if scoped_task_id not in dialogue_manager.sessions:
+            dialogue_manager.start_session(
+                scoped_task_id, payload.target_profile, payload.user_profile
+            )
+
+        res = await dialogue_manager.generate_response(
+            scoped_task_id, payload.target_message
+        )
         return res.model_dump()
+    except DialogueInputError as e:
+        return JSONResponse(
+            {
+                "error": {"code": "INVALID_DIALOGUE_INPUT", "message": str(e)},
+                "available": False,
+                "task_id": payload.task_id,
+            },
+            status_code=422,
+        )
+    except DialogueSessionCapacityError as e:
+        return JSONResponse(
+            {
+                "error": {"code": "DIALOGUE_CAPACITY", "message": str(e)},
+                "available": False,
+                "task_id": payload.task_id,
+            },
+            status_code=503,
+        )
     except Exception as e:
         # [E5] Üretim BAŞARISIZ olursa yanıt da başarısız olmalı: eskiden
         # `200 + {"error": {...}}` dönüyordu — yani başarısız bir çağrı HTTP
@@ -4248,17 +4410,42 @@ async def _run_public_web_research(
             "status": "invalid_target", "available": False,
             "query": "", "results": [], "matched_username": "",
             "total_results_searched": 0,
+            "search_outcome": {
+                "status": "NOT_REQUESTED", "available": False, "error": None,
+            },
             "searched_at": datetime.now().isoformat(),
             "note": "URL'den hedef kullanıcı adı çıkarılamadı.",
         }
 
     query = f'"{handle}"'
-    outcome = await search_engine.search(query, num_results=8)
-    if not getattr(outcome, "available", False):
+    try:
+        outcome = await search_engine.search(query, num_results=8)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
         return {
             "status": "unavailable", "available": False, "query": query,
             "results": [], "matched_username": handle,
             "total_results_searched": 0,
+            "search_outcome": {
+                "status": "UNAVAILABLE", "available": False,
+                "error": type(exc).__name__,
+            },
+            "searched_at": datetime.now().isoformat(),
+            "note": f"Arama çağrısı başarısız: {type(exc).__name__}.",
+        }
+
+    search_outcome = {
+        "status": getattr(outcome, "status", "UNKNOWN"),
+        "available": bool(getattr(outcome, "available", False)),
+        "error": getattr(outcome, "error", None),
+    }
+    if not search_outcome["available"]:
+        return {
+            "status": "unavailable", "available": False, "query": query,
+            "results": [], "matched_username": handle,
+            "total_results_searched": 0,
+            "search_outcome": search_outcome,
             "searched_at": datetime.now().isoformat(),
             "note": getattr(outcome, "error", None) or "Arama sağlayıcısı kullanılamadı.",
         }
@@ -4357,6 +4544,7 @@ async def _run_public_web_research(
         "status": status,
         "available": True,
         "query": query,
+        "search_outcome": search_outcome,
         "results": matched,
         "matched_username": handle,
         "total_results_searched": len(raw),
@@ -5091,236 +5279,6 @@ async def api_task_memory(
     summary["recalled"] = [hit.model_dump() for hit in result.hits]
     summary["recall_note"] = result.machine_note
     return summary
-
-
-#: [FAZ C · C3] Mikrofon kaydı için üst sınır: 8 MiB (yetenekteki sınırla aynı).
-MAX_LISTEN_AUDIO_BYTES = 8 * 1024 * 1024
-
-
-class SpeechListenResponse(BaseModel):
-    """[FAZ C · C3] Mikrofonun duyduğu: metin YEREL motordan gelir, uydurulmaz."""
-
-    available: bool = False
-    reason: str | None = None
-    state: str = "idle"
-    transcript: str = ""
-    engine: str | None = None
-    chars: int = 0
-    machine_note: str = ""
-
-
-class SpeechSayPayload(BaseModel):
-    """[FAZ C · C2] Seslendirme isteği."""
-
-    text: str = Field(min_length=1, max_length=2000)
-    voice: str = Field(default="", max_length=64)
-    client_id: str = Field(default="default", max_length=128)
-
-
-@app.get("/api/speech/status")
-async def api_speech_status():
-    """[FAZ C · C2] Sesin GERÇEK durumu: motor var mı, hangi kapı, konuşuyor mu."""
-    from agent_core.services import speech
-
-    return speech.status()
-
-
-class SpeechReportPayload(BaseModel):
-    """[FAZ C · C4] Sesli rapor: görev sonucu (veya doğrudan metin) okunur."""
-
-    client_id: str = "default"
-    report: dict | None = None
-    text: str = ""
-
-
-@app.post("/api/speech/report")
-async def api_speech_report(req: SpeechReportPayload):
-    """[FAZ C · C4] Bulunanı SÖYLER: görev sonucu sesli rapora çevrilir.
-
-    Metin payload'daki GERÇEK alanlardan kurulur — olmayan alan için cümle
-    UYDURULMAZ. Motor yoksa ses üretilmez; metin yine de döner (gizlenmez).
-    """
-    from agent_core.services import speech
-
-    if not rate_limit(f"report:{req.client_id}", "speech"):
-        return JSONResponse(
-            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla rapor okuma isteği"}},
-            status_code=429,
-        )
-
-    result = await speech.read_report(
-        req.report,
-        text=req.text,
-        vault_locked=not _check_vault_interlock(req.client_id),
-    )
-    payload = result.model_dump()
-    if result.available:
-        broadcast_speech(req.client_id, {"state": "speaking", **payload})
-        duration = max(0.0, float(result.duration_ms or 0) / 1000.0)
-        asyncio.create_task(_speech_finished(req.client_id, duration))
-        broadcast_log(req.client_id, "INFO", f"SES: {result.machine_note}")
-    else:
-        broadcast_speech(req.client_id, {"state": "denied", **payload})
-        broadcast_log(req.client_id, "WARNING", f"SES: RAPOR OKUNAMADI: {result.reason}")
-    return payload
-
-
-@app.post("/api/speech/listen", response_model=SpeechListenResponse)
-async def api_speech_listen(
-    request: Request,
-    client_id: str = "default",
-    language: str = "",
-):
-    """[FAZ C · C3] Göz dinler: mikrofon kaydı YEREL motorda metne çevrilir.
-
-    Ses dosyası makineden dışarı çıkmaz (yalnız 127.0.0.1/::1/localhost).
-    Motor yoksa uydurma transkript DÖNMEZ: `available:false` + sebep.
-    Konuşma sürerken çağrılırsa önce SUSTURUR (araya girme).
-    """
-    from agent_core.services import speech
-
-    if not rate_limit(f"listen:{client_id}", "speech"):
-        return JSONResponse(
-            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla dinleme isteği"}},
-            status_code=429,
-        )
-
-    try:
-        form = await request.form()
-    except Exception:  # python-multipart kurulu değilse net hata (uydurma yanıt yok)
-        return JSONResponse(
-            {
-                "error": {
-                    "code": "MULTIPART_UNAVAILABLE",
-                    "message": "Dosya yükleme için python-multipart gerekli",
-                }
-            },
-            status_code=500,
-        )
-    upload = form.get("file")
-    if upload is None:
-        return JSONResponse(
-            {"error": {"code": "NO_AUDIO", "message": "Ses dosyası yok"}},
-            status_code=400,
-        )
-    audio = await upload.read()
-    if not audio:
-        return JSONResponse(
-            {"error": {"code": "EMPTY_AUDIO", "message": "Ses dosyası boş"}},
-            status_code=400,
-        )
-    if len(audio) > MAX_LISTEN_AUDIO_BYTES:
-        return JSONResponse(
-            {"error": {"code": "AUDIO_TOO_LARGE", "message": "Ses dosyası çok büyük"}},
-            status_code=413,
-        )
-
-    suffix = os.path.splitext(getattr(upload, "filename", "") or "")[1][:8] or ".webm"
-    # ARAYA GİRME: konuşurken dinlemeye geçiyorsa önce susar.
-    if speech.status()["state"] == "speaking":
-        speech.interrupt()
-    speech.start_listening()
-    broadcast_speech(client_id, {"state": "listening"})
-    result = await speech.listen(
-        audio,
-        suffix=suffix,
-        language=language or None,
-        vault_locked=not _check_vault_interlock(client_id),
-    )
-    payload = result.model_dump()
-    if result.available:
-        broadcast_speech(client_id, {"state": "idle", "transcript": result.transcript})
-        broadcast_log(client_id, "INFO", f"SES: duyuldu ({result.chars} karakter)")
-    else:
-        broadcast_speech(client_id, {"state": "denied", "reason": result.reason})
-        broadcast_log(client_id, "WARNING", f"SES DUYULAMADI: {result.reason}")
-    return payload
-
-
-@app.post("/api/speech/say")
-async def api_speech_say(req: SpeechSayPayload):
-    """[FAZ C · C2] Aspasia konuşur — ses YERELDE üretilir, makineden çıkmaz.
-
-    Motor yoksa uydurma ses DÖNMEZ: `available:false` + makine-okunur sebep.
-    Konuşma durumu (`speaking` → `idle`) WebSocket'ten UI'a akar.
-    """
-    from agent_core.services import speech
-
-    if not rate_limit(f"speech:{req.client_id}", "speech"):
-        return JSONResponse(
-            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla seslendirme isteği"}},
-            status_code=429,
-        )
-
-    # Kasa interlock'u GERÇEK durumdan okunur (uydurma "açık" yok): kilitliyken
-    # yetenek zaten koşamaz (Tüzük Md.4).
-    result = await speech.speak(
-        req.text,
-        voice=req.voice or None,
-        vault_locked=not _check_vault_interlock(req.client_id),
-    )
-    payload = result.model_dump()
-    if result.available:
-        broadcast_speech(req.client_id, {"state": "speaking", **payload})
-        duration = max(0.0, float(result.duration_ms or 0) / 1000.0)
-        asyncio.create_task(_speech_finished(req.client_id, duration))
-        broadcast_log(req.client_id, "INFO", f"SES: {result.machine_note}")
-    else:
-        broadcast_speech(req.client_id, {"state": "denied", **payload})
-        broadcast_log(req.client_id, "WARNING", f"SES ÜRETİLEMEDİ: {result.reason}")
-    return payload
-
-
-async def _speech_finished(client_id: str, seconds: float) -> None:
-    """Ses süresi bitince durum `idle`'a döner (tahmin değil: WAV süresi)."""
-    try:
-        await asyncio.sleep(min(60.0, seconds + 0.35))
-    except asyncio.CancelledError:
-        return
-    from agent_core.services import speech
-
-    speech.set_state("idle")
-    broadcast_speech(client_id, {"state": "idle"})
-
-
-@app.get("/api/speech/audio/{name}")
-async def api_speech_audio(name: str = Path(min_length=1, max_length=128)):
-    """[FAZ C · C2] Üretilen ses dosyası (yalnız yerel dosya; yol kaçışı kapalı)."""
-    from agent_core.services import speech
-    from agent_core.capabilities.adapters_voice import speech_dir
-
-    try:
-        path = safe_child_path(speech_dir(), name)
-    except ValueError:
-        return JSONResponse(
-            {"error": {"code": "INVALID_AUDIO_NAME", "message": "Geçersiz ses dosyası"}},
-            status_code=400,
-        )
-    if not os.path.exists(path):
-        return JSONResponse(
-            {"error": {"code": "NOT_FOUND", "message": "Ses dosyası yok"}},
-            status_code=404,
-        )
-    _ = speech  # servis yolu tek kaynaktır; dosya adı yeteneğin verdiği addır
-    return FileResponse(path, media_type="audio/wav", filename=name)
-
-
-@app.post("/api/speech/stop")
-async def api_speech_stop(client_id: str = "default"):
-    """[FAZ C · C3] Araya girme: konuşma KESİLİR ve durum UI'a düşer."""
-    from agent_core.services import speech
-
-    # [FAZ C · C3] ARAYA GİRME: konuşurken mikrofon açılırsa Aspasia SUSAR.
-    was_speaking = speech.status()["state"] == "speaking"
-    speech.interrupt() if was_speaking else speech.stop()
-    broadcast_speech(
-        client_id,
-        {"state": "interrupted" if was_speaking else "idle", "interrupted": was_speaking},
-    )
-    return {
-        "status": "interrupted" if was_speaking else "stopped",
-        "state": speech.status()["state"],
-    }
 
 
 # ---------------------------------------------------------------------------

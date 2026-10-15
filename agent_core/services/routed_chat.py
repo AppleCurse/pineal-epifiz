@@ -3,6 +3,9 @@
 Only explicitly configured OpenAI-compatible connections are executable here.
 The router owns policy and resilience state; :class:`LLMGateway` remains the
 sole network, spend, retry, cancellation-log, and immutable call-id boundary.
+Fusion/pipeline are non-streaming and do not accept tools; normal tool calls are
+returned to the caller but are not executed by Pineal. See
+``docs/PROVIDER_EXECUTION_BOUNDARIES.md`` for the exact contract.
 """
 
 from __future__ import annotations
@@ -320,11 +323,14 @@ class RoutedChatExecutor:
             raise RoutingRuntimeError("fusion mode does not support tool calls")
         if tools and strategy in {RoutingStrategy.PIPELINE, RoutingStrategy.CONTEXT_RELAY}:
             raise RoutingRuntimeError("pipeline modes do not support tool calls")
+        required_capabilities = _required_capabilities(
+            messages, tools, response_format=response_format
+        )
         effective_max_tokens = gateway.max_output_tokens if max_tokens is None else max_tokens
         plan = self.plan(
             model,
             strategy=strategy,
-            required_capabilities=_required_capabilities(messages, tools),
+            required_capabilities=required_capabilities,
             estimated_input_tokens=_estimated_tokens(messages, tools),
             max_output_tokens=effective_max_tokens,
             session_key=user,
@@ -380,7 +386,9 @@ class RoutedChatExecutor:
                 "fusion, pipeline, and context-relay do not support streaming"
             )
         effective_max_tokens = gateway.max_output_tokens if max_tokens is None else max_tokens
-        required = set(_required_capabilities(messages, None))
+        required = set(
+            _required_capabilities(messages, None, response_format=response_format)
+        )
         required.add("streaming")
         plan = self.plan(
             model,
@@ -1031,7 +1039,15 @@ def _strict_bool(data: Mapping[str, Any], key: str, default: bool) -> bool:
 def _required_capabilities(
     messages: list[dict[str, Any]],
     tools: Optional[list[dict[str, Any]]],
+    *,
+    response_format: Optional[dict[str, Any]] = None,
 ) -> frozenset[str]:
+    """Derive route requirements from request shapes without assuming support.
+
+    A model must explicitly declare the requested capability in its catalog
+    descriptor before it is eligible. Those declarations still are not live
+    conformance evidence; see ``docs/PROVIDER_EXECUTION_BOUNDARIES.md``.
+    """
     required = {"chat"}
     if tools:
         required.add("tools")
@@ -1044,7 +1060,44 @@ def _required_capabilities(
         for message in messages
     ):
         required.add("vision")
+    if any(_contains_audio_marker(message) for message in messages):
+        required.add("audio_input")
+
+    if response_format is not None:
+        if not isinstance(response_format, Mapping):
+            raise RoutingRuntimeError("response_format must be an object")
+        format_type = response_format.get("type")
+        if format_type == "json_object":
+            required.add("json_object")
+        elif format_type == "json_schema":
+            required.add("json_schema")
+        elif format_type != "text":
+            raise RoutingRuntimeError(
+                "response_format.type must be text, json_object, or json_schema"
+            )
     return frozenset(required)
+
+
+def _contains_audio_marker(value: Any) -> bool:
+    """Detect structured audio modalities anywhere inside arbitrary messages.
+
+    OpenAI-compatible clients use more than one nested shape (`input_audio`,
+    `audio_url`, and typed audio parts). Check both discriminator values and
+    keys so an unfamiliar audio variant is not accidentally routed as text.
+    """
+    if isinstance(value, Mapping):
+        kind = value.get("type")
+        if isinstance(kind, str) and "audio" in kind.lower():
+            return True
+        for key, child in value.items():
+            if isinstance(key, str) and "audio" in key.lower():
+                return True
+            if _contains_audio_marker(child):
+                return True
+        return False
+    if isinstance(value, (list, tuple)):
+        return any(_contains_audio_marker(item) for item in value)
+    return False
 
 
 def _estimated_tokens(

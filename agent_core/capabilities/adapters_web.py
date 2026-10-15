@@ -5,15 +5,17 @@
 aynı temiz kaynaktan gelsin.
 
     extractor.web.trafilatura  → hafif, hızlı, birincil (Apache-2.0)
-    extractor.web.crawl4ai     → JS'li/ağır sayfa, ikinci (Apache-2.0, mevcut)
-    extractor.web.scrapling    → adaptif, anti-bot, üçüncü (BSD-3-Clause)
+    extractor.web.crawl4ai     → güvenli HTTP HTML→Markdown, ikinci (Apache-2.0)
+    extractor.web.scrapling    → indirilen HTML için yerel parser, üçüncü (BSD-3-Clause)
     sensor.web.agent_reach     → sosyal/medya (X, Reddit, YouTube, GitHub),
                                  harici CLI, dördüncü ve SON kademe (MIT)
 
 Dürüstlük sözleşmesi (değişmedi):
 - Kütüphane yok / kapı kapalı / ağ yok / boş sonuç → `available=False` +
   makine-okunur sebep. **Uydurma metin üretilmez.**
-- Her URL `agent_core.utils.security.is_safe_url` SSRF guard'ından geçer.
+- URL preflight kontrolünden geçer; gerçek HTTP bağlantısı DNS-pinned `safe_get`
+  ile yapılır. Trafilatura/Scrapling/Crawl4AI yalnız indirilen HTML'i ayrıştırır;
+  kendi ağ istemcileri çağrılmaz.
 - Çıktı daima `EvidenceItem`: kaynak bağlantısı, alınma zamanı, çıkarıcı adı.
 """
 
@@ -32,7 +34,7 @@ from agent_core.capabilities.base import (
     CapabilityResult,
     make_evidence,
 )
-from agent_core.utils.security import is_safe_url
+from agent_core.utils.security import UnsafeURLError, is_safe_url
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +91,7 @@ def _clamp(text: str, max_chars: int) -> str:
 
 
 def _guard(url: str) -> tuple[bool, str]:
-    """SSRF guard + temel doğrulama. (güvenli mi, sebep)"""
+    """Preflight guard; the actual connection is revalidated and DNS-pinned."""
     if not url or not isinstance(url, str) or not url.strip():
         return False, "invalid_url"
     if not url.lower().startswith(("http://", "https://")):
@@ -97,6 +99,45 @@ def _guard(url: str) -> tuple[bool, str]:
     if not is_safe_url(url):
         return False, "ssrf_blocked"
     return True, ""
+
+
+async def _fetch_html(url: str, capability_id: str, timeout_seconds: float):
+    """Use the pinned transport; parser libraries must never fetch URLs."""
+    from agent_core.capabilities.egress import httpx
+    from agent_core.scraper.vault_gate import VaultLockedError
+    from agent_core.services.safe_web_fetch import SafeWebFetchError, fetch_safe_html
+
+    try:
+        return await fetch_safe_html(url, timeout_seconds=timeout_seconds), None
+    except asyncio.CancelledError:
+        raise
+    except UnsafeURLError:
+        reason = "ssrf_blocked"
+    except VaultLockedError:
+        reason = "vault_locked"
+    except SafeWebFetchError as exc:
+        reason = exc.code.lower()
+    except httpx.TimeoutException:
+        reason = "timeout"
+    except httpx.HTTPStatusError:
+        reason = "http_error"
+    except httpx.RequestError as exc:
+        return None, CapabilityResult(
+            capability_id=capability_id,
+            available=False,
+            unavailable_reason="network_error",
+            error=type(exc).__name__,
+        )
+    except Exception as exc:
+        return None, CapabilityResult(
+            capability_id=capability_id,
+            available=False,
+            unavailable_reason="fetch_error",
+            error=type(exc).__name__,
+        )
+    return None, CapabilityResult(
+        capability_id=capability_id, available=False, unavailable_reason=reason
+    )
 
 
 class TrafilaturaCapability(BaseCapability):
@@ -122,31 +163,24 @@ class TrafilaturaCapability(BaseCapability):
                 capability_id=self.id, available=False, unavailable_reason=reason
             )
 
-        def _work() -> tuple[str, str]:
-            import copy
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        try:
+            fetched, failure = await asyncio.wait_for(
+                _fetch_html(url, self.id, self.timeout_seconds), timeout=self.timeout_seconds
+            )
+        except asyncio.TimeoutError:
+            return CapabilityResult(
+                capability_id=self.id, available=False, unavailable_reason="timeout"
+            )
+        if failure is not None:
+            return failure
 
-            import trafilatura  # lazy: paket yoksa availability zaten ret döner
+        def _work(downloaded_html: str) -> tuple[str, str]:
+            import trafilatura  # lazy: parser only; network is handled by safe_get
 
-            # [2026-10-14 · CANLI KANIT] İNDİRME TAVANI yeteneğin KENDİ bütçesinin
-            # altında olmalı. trafilatura'nın varsayılanı 30 sn; yetenek bütçesi de
-            # 30 sn olduğu için indirme, dış `wait_for` ile YARIŞIYORDU ve yavaş
-            # sayfada yetenek "timeout" dönüyordu — oysa indirme 6,5 sn'de
-            # başarıyordu (ölçüm: github.com, 433 KB). Tavanı bütçenin altına
-            # çekince gerçek metin döner; yine de makul taban (5 sn) korunur.
-            download_timeout = max(5, min(20, int(self.timeout_seconds) - 5))
-            try:
-                from trafilatura import settings as trafilatura_settings
-
-                config = copy.deepcopy(trafilatura_settings.DEFAULT_CONFIG)
-                config.set("DEFAULT", "DOWNLOAD_TIMEOUT", str(download_timeout))
-            except Exception:  # ayar üretilemezse varsayılanla devam (dürüst davranış)
-                config = None
-
-            downloaded = trafilatura.fetch_url(url, config=config) if config else trafilatura.fetch_url(url)
-            if not downloaded:
-                return "", ""
             text = trafilatura.extract(
-                downloaded,
+                downloaded_html,
                 output_format="markdown",
                 include_comments=False,
                 include_tables=True,
@@ -154,17 +188,17 @@ class TrafilaturaCapability(BaseCapability):
             ) or ""
             title = ""
             try:
-                meta = trafilatura.extract_metadata(downloaded)
+                meta = trafilatura.extract_metadata(downloaded_html)
                 if meta is not None:
                     title = (getattr(meta, "title", "") or "").strip()
             except Exception:  # metadata opsiyoneldir; metin varsa devam
                 logger.debug("metadata çıkarımı başarısız — title boş bırakıldı", exc_info=True)
-                title = ""
             return text, title
 
         try:
+            remaining = max(0.001, self.timeout_seconds - (loop.time() - started))
             text, title = await asyncio.wait_for(
-                asyncio.to_thread(_work), timeout=self.timeout_seconds
+                asyncio.to_thread(_work, fetched.html), timeout=remaining
             )
         except asyncio.TimeoutError:
             return CapabilityResult(
@@ -184,12 +218,13 @@ class TrafilaturaCapability(BaseCapability):
             )
 
         max_chars = int(ctx.params.get("max_chars") or DEFAULT_MAX_CHARS)
-        lang_scope = _language_scope(text, "trafilatura", url)
+        final_url = fetched.final_url
+        lang_scope = _language_scope(text, "trafilatura", final_url)
         item = make_evidence(
             content=_clamp(text, max_chars),
             source_engine="trafilatura",
             epistemic_type="observation",
-            provenance_refs=[url],
+            provenance_refs=[final_url],
             scope={"kind": "web_text", "title": title, **lang_scope},
             source_metrics={"chars": len(text), "truncated": len(text) > max_chars},
         )
@@ -197,7 +232,7 @@ class TrafilaturaCapability(BaseCapability):
             capability_id=self.id,
             available=True,
             items=(item,),
-            payload={"url": url, "title": title, "text": text},
+            payload={"url": final_url, "title": title, "text": text},
             notes={
                 "chars": len(text),
                 "title": title,
@@ -207,11 +242,11 @@ class TrafilaturaCapability(BaseCapability):
 
 
 class Crawl4AICapability(BaseCapability):
-    """crawl4ai sarmalayıcı — ikinci kademe (Apache-2.0, projede mevcut).
+    """Crawl4AI markdown parser — ikinci kademe (Apache-2.0).
 
-    Mevcut `services/crawl_enricher.py` kodunu DEĞİŞTİRMEZ; onu capability
-    sözleşmesine bağlar. Böylece crawl4ai artık yalnız `api.py` içindeki tek
-    çağrı noktasında değil, bütün ajanlar tarafından aynı arayüzle kullanılır.
+    HTML `safe_get` ile indirilir ve Crawl4AI'nin dönüştürücüsüne yerel veri
+    olarak verilir. Crawler/browser ağ istemcileri kullanılmaz; JS renderer,
+    DNS pinlenebilir bir transport kurulana dek fail-closed kapalıdır.
     """
 
     id = "extractor.web.crawl4ai"
@@ -224,7 +259,7 @@ class Crawl4AICapability(BaseCapability):
     #: `gate_disabled:ENABLE_CRAWL4AI`, açıksa availability kararı verir.
     gates = frozenset({"ENABLE_CRAWL4AI", "vault"})
     timeout_seconds = 60.0
-    description = "JS'li/ağır sayfalar için tarayıcılı kazıma (ikinci kademe)."
+    description = "Güvenli indirilen HTML'i Crawl4AI markdown'a dönüştürür (ikinci kademe)."
 
     def availability(self) -> Availability:
         try:
@@ -233,6 +268,8 @@ class Crawl4AICapability(BaseCapability):
             return Availability.unavailable("dependency_missing:crawl4ai")
         if not crawl_enricher.is_enabled():
             return Availability.unavailable("gate_disabled:ENABLE_CRAWL4AI")
+        if not _module_available("crawl4ai.markdown_generation_strategy"):
+            return Availability.unavailable("dependency_missing:crawl4ai")
         return Availability.ok()
 
     async def run(self, ctx: CapabilityContext) -> CapabilityResult:
@@ -289,10 +326,10 @@ class Crawl4AICapability(BaseCapability):
 
 
 class ScraplingCapability(BaseCapability):
-    """Scrapling — üçüncü kademe, adaptif kazıma (BSD-3-Clause).
+    """Scrapling Selector — üçüncü kademe, yerel HTML ayrıştırma (BSD-3-Clause).
 
-    Site yapısı değişince kırılmayan, anti-bot direnci olan kazıyıcı. Pineal'in
-    en kırılgan noktası (selector'a bağlı Playwright) için son düşüş hattı.
+    SSRF güvenliği için Scrapling'in kendi Fetcher/anti-bot ağ taşıması
+    kullanılmaz; sayfa `safe_get` ile indirilir, Selector yalnız HTML'i işler.
     """
 
     id = "extractor.web.scrapling"
@@ -317,24 +354,35 @@ class ScraplingCapability(BaseCapability):
                 capability_id=self.id, available=False, unavailable_reason=reason
             )
 
-        def _work() -> str:
-            try:
-                from scrapling.fetchers import Fetcher  # scrapling >= 0.9
-            except ImportError:  # eski/sade paket düzeni
-                from scrapling import Fetcher  # type: ignore[no-redef]
-            page = Fetcher.get(url)
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        try:
+            fetched, failure = await asyncio.wait_for(
+                _fetch_html(url, self.id, self.timeout_seconds), timeout=self.timeout_seconds
+            )
+        except asyncio.TimeoutError:
+            return CapabilityResult(
+                capability_id=self.id, available=False, unavailable_reason="timeout"
+            )
+        if failure is not None:
+            return failure
+
+        def _work(html: str, source_url: str) -> str:
+            from scrapling import Selector
+
+            page = Selector(html, url=source_url, adaptive=False)
             getter = getattr(page, "get_all_text", None)
             if callable(getter):
                 try:
                     return getter(separator="\n", strip=True) or ""
                 except TypeError:
                     return getter() or ""
-            text = getattr(page, "text", "") or getattr(page, "html_content", "") or ""
-            return text
+            return getattr(page, "text", "") or ""
 
         try:
+            remaining = max(0.001, self.timeout_seconds - (loop.time() - started))
             text = await asyncio.wait_for(
-                asyncio.to_thread(_work), timeout=self.timeout_seconds
+                asyncio.to_thread(_work, fetched.html, fetched.final_url), timeout=remaining
             )
         except asyncio.TimeoutError:
             return CapabilityResult(
@@ -354,12 +402,13 @@ class ScraplingCapability(BaseCapability):
             )
 
         max_chars = int(ctx.params.get("max_chars") or DEFAULT_MAX_CHARS)
-        lang_scope = _language_scope(text, "scrapling", url)
+        final_url = fetched.final_url
+        lang_scope = _language_scope(text, "scrapling", final_url)
         item = make_evidence(
             content=_clamp(text, max_chars),
             source_engine="scrapling",
             epistemic_type="observation",
-            provenance_refs=[url],
+            provenance_refs=[final_url],
             scope={"kind": "web_text", **lang_scope},
             source_metrics={"chars": len(text)},
         )

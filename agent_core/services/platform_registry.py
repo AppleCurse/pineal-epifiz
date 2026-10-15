@@ -208,7 +208,7 @@ def ig_target_profile_update(ig_data: Any) -> dict:
         ],
         "post_types": [p.post_type or "unknown" for p in posts],
         "images": [p.display_url for p in posts],
-        "followers": ig_data.follower_count or 0,
+        "followers": ig_data.follower_count,  # None = ölçülmedi; 0 ölçümdür.
         "following": ig_data.following_count,  # None = ölçülmedi ([024])
         "is_private": ig_data.is_private,
     }

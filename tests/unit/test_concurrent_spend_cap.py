@@ -47,9 +47,13 @@ class _SlowCompletions:
         return _Response()
 
 
+class _BadRequestError(ValueError):
+    status_code = 400
+
+
 class _FailingCompletions:
     async def create(self, **kwargs):
-        raise ValueError("400 invalid request")
+        raise _BadRequestError("400 invalid request")
 
 
 class _MalformedThenValidCompletions:
@@ -159,7 +163,7 @@ async def test_malformed_paid_response_is_settled_before_bounded_retry(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_cancelled_call_releases_reservation_and_logs_error(monkeypatch):
+async def test_cancelled_call_retains_conservative_cost_and_logs_error(monkeypatch):
     completions = _BlockingCompletions()
     gateway = _paid_gateway(monkeypatch, completions, cap=_cap(1.5))
 
@@ -173,11 +177,13 @@ async def test_cancelled_call_releases_reservation_and_logs_error(monkeypatch):
 
     assert gateway._reserved_spend_usd == 0.0
     assert gateway._budget_reservations == {}
+    assert gateway.spend_usd > 0, "the provider may have accepted the cancelled request"
+    assert gateway.call_log[-1]["cost_usd"] == gateway.spend_usd
     assert gateway.call_log[-1]["error"] == "CANCELLED"
 
 
 @pytest.mark.asyncio
-async def test_cancel_during_retry_backoff_releases_reservation(monkeypatch):
+async def test_cancel_during_retry_backoff_keeps_prior_ambiguous_cost(monkeypatch):
     backoff_started = asyncio.Event()
     backoff_release = asyncio.Event()
 
@@ -202,6 +208,8 @@ async def test_cancel_during_retry_backoff_releases_reservation(monkeypatch):
 
     assert gateway._reserved_spend_usd == 0.0
     assert gateway._budget_reservations == {}
+    assert gateway.spend_usd > 0, "the timed-out first attempt remains ambiguous"
+    assert gateway.call_log[-1]["cost_usd"] == gateway.spend_usd
     assert gateway.call_log[-1]["error"] == "CANCELLED"
 
 

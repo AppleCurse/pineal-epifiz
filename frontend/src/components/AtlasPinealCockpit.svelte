@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import {
     apiFetch, clientId, isAuthFailure, logs, taskStatus, isProcessing,
     apiToken, agentStatuses, vaultLocked, activeViewMode, inspectedAgentId,
@@ -584,14 +584,23 @@
   // --- [FAZ C · C3] DİNLEYEN GÖZ: mikrofon -> yerel STT -> Aspasia ---
   // Kayıt TARAYICIDA tutulur, yalnız transkript için YEREL motora gider;
   // ses dosyası dışarı çıkmaz. Motor yoksa uydurma metin yazılmaz.
+  const MAX_MIC_AUDIO_BYTES = 8 * 1024 * 1024;
   let micRecorder: MediaRecorder | null = null;
   let micChunks: Blob[] = [];
   let micStream: MediaStream | null = null;
+  let micMimeType = 'audio/webm';
+  let micRecordedBytes = 0;
+  let micLimitReached = false;
   let isListening = false;
+  let isTranscribing = false;
 
   async function toggleListening() {
     if (isListening) {
       stopListening();
+      return;
+    }
+    if (isTranscribing || micLimitReached) {
+      addLog('SES: önceki kayıt işleniyor; lütfen bekleyin', 'WARNING');
       return;
     }
     // ARAYA GİRME: Aspasia konuşurken mikrofon açılırsa SUSAR.
@@ -610,32 +619,89 @@
       return;
     }
     micChunks = [];
-    const mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
-    micRecorder = new MediaRecorder(micStream, { mimeType: mime });
-    micRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) micChunks.push(e.data); };
-    micRecorder.onstop = () => { void transcribeAndSend(); };
-    micRecorder.start();
+    micRecordedBytes = 0;
+    micLimitReached = false;
+    micMimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
+    const recorder = new MediaRecorder(micStream, { mimeType: micMimeType });
+    micRecorder = recorder;
+    recorder.ondataavailable = (e) => {
+      if (!e.data || e.data.size === 0 || micLimitReached) return;
+      if (micRecordedBytes + e.data.size > MAX_MIC_AUDIO_BYTES) {
+        micLimitReached = true;
+        micChunks = [];
+        isTranscribing = true;
+        addLog('SES: kayıt 8 MiB sınırını aştı; gönderilmedi', 'WARNING');
+        if (recorder.state !== 'inactive') recorder.stop();
+        micStream?.getTracks().forEach((t) => t.stop());
+        micStream = null;
+        isListening = false;
+        return;
+      }
+      micRecordedBytes += e.data.size;
+      micChunks.push(e.data);
+    };
+    recorder.onstop = () => {
+      if (micLimitReached) {
+        micChunks = [];
+        micRecordedBytes = 0;
+        micLimitReached = false;
+        isTranscribing = false;
+        return;
+      }
+      isTranscribing = true;
+      void transcribeAndSend().finally(() => { isTranscribing = false; });
+    };
+    recorder.start(1000);
     isListening = true;
     playClick(660, 40);
     addLog('SES: dinliyorum...', 'INFO');
   }
 
-  function stopListening() {
-    if (micRecorder && micRecorder.state !== 'inactive') micRecorder.stop();
+  function stopListening(transcribe = true) {
+    if (micRecorder && micRecorder.state !== 'inactive') {
+      if (!transcribe) {
+        micRecorder.onstop = null;
+        micRecorder.ondataavailable = null;
+      }
+      micRecorder.stop();
+    }
+    if (!transcribe) {
+      micChunks = [];
+      micRecordedBytes = 0;
+      micLimitReached = false;
+      isTranscribing = false;
+    }
     micStream?.getTracks().forEach((t) => t.stop());
     micStream = null;
     isListening = false;
-    playClick(330, 40);
+    if (transcribe) playClick(330, 40);
   }
+
+  onDestroy(() => stopListening(false));
 
   async function transcribeAndSend() {
     if (!micChunks.length) {
+      micRecordedBytes = 0;
       addLog('SES: kayıt boş', 'WARNING');
       return;
     }
     const form = new FormData();
-    form.append('file', new Blob(micChunks, { type: micChunks[0].type || 'audio/webm' }), 'mic.webm');
+    const audioType = micChunks[0].type || micMimeType;
+    const baseMime = audioType.split(';', 1)[0].toLowerCase();
+    const extensionByMime: Record<string, string> = {
+      'audio/mp4': 'mp4', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/webm': 'webm'
+    };
+    const extension = extensionByMime[baseMime] || 'webm';
+    const audioBlob = new Blob(micChunks, { type: audioType });
+    if (audioBlob.size > MAX_MIC_AUDIO_BYTES) {
+      micChunks = [];
+      micRecordedBytes = 0;
+      addLog('SES: kayıt 8 MiB sınırını aştı; gönderilmedi', 'WARNING');
+      return;
+    }
+    form.append('file', audioBlob, `mic.${extension}`);
     micChunks = [];
+    micRecordedBytes = 0;
     try {
       const res = await apiFetch(
         `/api/speech/listen?client_id=${encodeURIComponent($clientId)}`,
@@ -1004,7 +1070,7 @@
           {:else if activePillarModal === 'shadow' && shadowProfile}
             <div class="report-block">
               <h4>Gölge Profili (Karanlık Üçlü)</h4>
-              <p>Narsisizm Skoru: {#if hasEvidence(shadowProfile.dark_profile?.narcissism)}{shadowProfile.dark_profile?.narcissism}{:else}<span class="evidence-insufficient" title="Alan boş döndü — ölçüm yok">{INSUFFICIENT_EVIDENCE}</span>{/if}</p>
+              <p>Narsisizm Skoru: {#if shadowProfile.trait_scores_measured === true && hasEvidence(shadowProfile.dark_profile?.narcissism)}{shadowProfile.dark_profile?.narcissism}{:else}<span class="evidence-insufficient" title="Trait skoru üretilmedi — derinlik stratejisi ayrı bir metriktir">{INSUFFICIENT_EVIDENCE}</span>{/if}</p>
               <p>Tespit Edilen Strateji: {#if hasEvidence(shadowProfile.strategy)}{shadowProfile.strategy}{:else}<span class="evidence-insufficient" title="Alan boş döndü — ölçüm yok">{INSUFFICIENT_EVIDENCE}</span>{/if}</p>
             </div>
           {:else if activePillarModal === 'osint' && osintFootprint}

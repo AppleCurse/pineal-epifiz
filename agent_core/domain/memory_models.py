@@ -35,7 +35,7 @@ class AgentRun(BaseModel):
     completed_at: Optional[datetime] = None
     input_summary: Dict[str, Any] = {}
     output_summary: Dict[str, Any] = {}
-    confidence: Optional[float] = None
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     evidence_ids: List[str] = []
     call_ids: List[str] = []
     warnings: List[str] = []
@@ -58,7 +58,7 @@ class PassionProfile(BaseModel):
     flow_triggers: List[str] = []
     sentiment_polarity: float = 0.0  # -1.0 (karamsar) ile +1.0 (coşkulu) arası
     evidence_quotes: List[str] = []
-    confidence: float = 0.0
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     data_confidence: bool = False
     fallback_reason: Optional[str] = "unavailable"
 
@@ -70,7 +70,7 @@ class FrictionProfile(BaseModel):
     stress_triggers: List[str] = []
     boundary_signals: List[str] = []
     evidence_quotes: List[str] = []
-    confidence: float = 0.0
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     data_confidence: bool = False
     fallback_reason: Optional[str] = "unavailable"
 
@@ -82,7 +82,7 @@ class CognitiveStyle(BaseModel):
     complexity_level: str = "unknown"  # sade, teknik, kavramsal
     humor_style: Optional[str] = None  # hiciv, ironi, kuru mizah, yok
     social_orientation: str = "unknown"  # toplulukçu, bağımsız, gözlemci
-    confidence: float = 0.0
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     data_confidence: bool = False
     fallback_reason: Optional[str] = "unavailable"
 
@@ -96,7 +96,7 @@ class AuthenticBridge(BaseModel):
     authentic_opening_topic: str = ""
     conversation_starter_rationale: str = ""
     suggested_opening_message: str = ""
-    confidence: float = 0.0
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     data_confidence: bool = False
     fallback_reason: Optional[str] = "unavailable"
 
@@ -110,7 +110,7 @@ class HolisticProfile(BaseModel):
     cognitive: Optional[CognitiveStyle] = None
     bridge: Optional[AuthenticBridge] = None
     verified_claims: List[Dict[str, Any]] = []
-    overall_confidence: float = 0.0
+    overall_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = ConfigDict(extra="allow")
