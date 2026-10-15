@@ -96,6 +96,41 @@ sayılmaz (deponun kendi kuralı). Ayrıca fiyat kopyaları hâlâ **elle senkro
 kilit ayrışmayı yakalar ama tek kaynaktan TÜRETMEZ (kalıcı çözüm: fiyatların
 `config/provider_catalog.json`'dan okunması).
 
+### 1d · Devam dalındaki son ölçüm (2026-10-15)
+
+**Son kayıtlar (girdi/çıktı, USD/1M):**
+
+| Model | Önceki kayıt | Son canlı ölçüm | Kanıt |
+|---|---|---|---|
+| deepseek/deepseek-v4-pro | 0.386976 / 0.773952 | **0.95526 / 1.91052** | CI 38660006254 |
+| upstage/solar-pro4 (OpenRouter) | 0.03 / 0.12 | **0.09 / 0.36** | CI 38660006254 |
+| z-ai/glm-5.2 | 0.3276 / 1.03 → 0.04 / 7.00 | **0.04 / 4.40** | CI 38662205946 |
+
+Kanıt bağlantıları: [38660006254](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38660006254),
+[38662205946](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38662205946).
+Üç kopya güncellendi: pin, OpenRouter katalog bölümü, gateway harcama tablosu.
+Ölçüm kaymayı gösterir; nedenini (kampanya/sağlayıcı değişimi) göstermez.
+Önceki "promo bitti" ifadeleri bu turda ayrıca kanıtlanmış değildir.
+
+**Eklenen denetimler:** OR kataloğundaki 9 fiyatlı kayıt pinli; pinsiz beyan
+ve adsız ücretli muhasebe kaydı testle reddedilir. API'nin token başına
+fiyatı hata mesajında /1M'ye dönüştürülür. Maliyet/rezervasyon testleri fiyatı
+tablodan türetir. Gecelik workflow 06:17 İstanbul'da çalışacak; anahtar yokluğu
+ve erişim kesintisi yeşil sayılmaz. Zamanlanmış/elle workflow'un gerçek
+GitHub koşusu ayrıca kontrol edilmelidir; yerel shell testi bunun yerine geçmez.
+
+**Bu bölümün açıkları:**
+
+1. Luna ve GPT-OSS-120B'nin ücretli OR legacy fiyatları canlı denetim dışında.
+2. Nous kanalının Sonnet-5 ve solar-pro4 dahil kendi fiyatları bu turda canlı
+   doğrulanmadı. OpenRouter sonucu başka kanalın indiriminin kanıtı değildir.
+3. Fiyatlar hâlâ birden fazla yerde elle tutuluyor; tek kaynak çözümü yapılmadı.
+4. §2'deki 9 yetenek + 2 kanıt engeli bu fiyat onarımıyla kapanmadı.
+
+**Hüküm:** CI/fiyat kontratının geçmesi, sistemin tümüyle çalıştığı anlamına
+GELMEZ. Önceki "depo sağlam" ve "elimden gelmeyen tek şey" ifadeleri bu
+engelleri dışarıda bıraktığı için doğru kapsamı anlatmıyordu.
+
 ## 2 · KAPANMAYANLAR — tam liste (9 yetenek + 2 kanıt kalemi)
 
 | # | Kalem | Bugünkü sebep (ölçüm) | Tam olarak gereken | Kim |

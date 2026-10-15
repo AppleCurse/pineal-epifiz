@@ -1,5 +1,36 @@
 # Changelog
 
+## Unreleased — 2026-10-15 — Fiyat doğrulaması: kapsam, son ölçüm ve açıklar
+
+- OpenRouter katalog bölümündeki **9 fiyatlı modelin tamamı** pinli. Önceki
+  5 modele solar-pro4, ling-3.0-flash, glm-5.2 ve grok-4.6 eklendi.
+- Canlı kanıt: CI [38660006254](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38660006254)
+  deepseek-v4-pro **$0.95526/$1.91052**, solar-pro4 **$0.09/$0.36**,
+  glm-5.2 **$0.04/$7.00** okudu. CI
+  [38662205946](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38662205946)
+  GLM çıktısını **$4.40/1M** okudu; son kayıt **$0.04/$4.40**.
+  Pin, OpenRouter katalog kaydı ve gateway harcama tablosu hizalandı.
+  Bu ölçümler fiyat farklılığını kanıtlar; kampanyanın bittiğini veya fiyatın
+  neden değiştiğini tek başına kanıtlamaz. Önceki açıklamalardaki nedensellik
+  iddiaları bu nedenle kesin hüküm değildir.
+- Hata mesajında token başına API değeri ile /1M değeri karıştırılıyordu:
+  artık iki taraf da **$/1M** gösterilir; karşılaştırma hesabı değişmedi.
+- Maliyet/atomik rezervasyon testlerindeki gömülü solar-pro4 fiyatları
+  `MODEL_PRICING`'ten türetilir; mekanizma testi fiyat kopyası taşımaz.
+- Yeni `catalog-drift.yml`: her gün **03:17 UTC / 06:17 İstanbul** ve elle
+  tetikleme. Anahtar yokluğu ve erişim kesintisi bu workflow'da başarısızdır;
+  kesinti "fiyat kayması" diye sunulmaz. Zamanlama main'e birleşince etkinleşir.
+  Shell davranışı başarı/anahtar yok/kesinti/kayma/beklenmeyen hata ile sınandı.
+- **Açık:** `openai/gpt-5.6-luna` ve `openai/gpt-oss-120b` ücretli legacy
+  muhasebesinde var, OR katalog/pin kapsamı dışında. İsimleri kilit testiyle
+  sabitlendi; canlı fiyatları doğrulanmış değildir.
+- **Açık:** Nous kanal fiyatları bu turda canlı doğrulanmadı. Sonnet-5
+  $1.60/$8.00 ve solar-pro4 $0.03/$0.12 tutuldu; OR fiyatı bu kanala kanıt
+  değildir. İndirimin hâlen geçerli olduğu da bu ölçümle kanıtlanmaz.
+- **Açık:** fiyat kopyaları hâlâ elle senkron. Tutarlılık testleri var ama tek
+  kaynaktan türetme yapılmadı. Bu çalışma tüm yeteneklerin çalıştığının kanıtı
+  değildir; kalan yetenek/ortam engelleri raporun §2 bölümünde duruyor.
+
 ## Unreleased — 2026-10-14 — Katalog bekçisinin yakaladığı GERÇEK fiyat kayması
 
 Bekçi kırmızıyı hak ediyordu: düşüşün sebebi kesinti değil, **gerçek fiyat

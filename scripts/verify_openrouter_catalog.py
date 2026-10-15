@@ -91,7 +91,8 @@ REQUIRED_OPENROUTTER = {
     # değil. İkisi bilinçli olarak farklı kanallardır.
     "upstage/solar-pro4": (0.09, 0.36),
     "inclusionai/ling-3.0-flash": (0.021, 0.063),
-    "z-ai/glm-5.2": (0.04, 7.0),
+    # [2026-10-15 · CI 38662205946] Çıktı son ölçümde $4.40/1M (önceki $7.00).
+    "z-ai/glm-5.2": (0.04, 4.4),
     "x-ai/grok-4.6": (2.0, 6.0),
 }
 
@@ -256,9 +257,9 @@ def verify_live_openrouter(
             actual_in = float(pricing.get("prompt", 0))
             actual_out = float(pricing.get("completion", 0))
             if abs(actual_in - expected_in / 1_000_000) > 1e-12:
-                failures.append(f"{model_id}: live input price {actual_in} != {expected_in}/1M")
+                failures.append(f"{model_id}: live input price ${actual_in * 1_000_000:g}/1M != ${expected_in:g}/1M")
             if abs(actual_out - expected_out / 1_000_000) > 1e-12:
-                failures.append(f"{model_id}: live output price {actual_out} != {expected_out}/1M")
+                failures.append(f"{model_id}: live output price ${actual_out * 1_000_000:g}/1M != ${expected_out:g}/1M")
         return failures, None
 
     return [], f"live OpenRouter unreachable after {attempts} attempt(s) — {last_error}"

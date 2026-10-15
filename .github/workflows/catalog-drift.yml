@@ -1,13 +1,9 @@
 name: Catalog Drift (canlı fiyat bekçisi)
 
-# [2026-10-14] NEDEN AYRI BİR WORKFLOW
-# Fiyat doğrulaması bugüne kadar YALNIZ push/PR'da koşuyordu. Depoya bir ay
-# boyunca dokunulmadı ve tablo bayatladı: ölçülen sapmalar (sol-pro $2/$10 ->
-# $4/$20, deepseek-v4-pro, solar-pro4 promosyonu, glm-5.2) o sessiz dönemde
-# birikti ve yalnız sonraki push'ta su yüzüne çıktı.
-# Bu workflow drift'i PUSH BEKLEMEDEN yüzeye çıkarır: gecelik koşu + elle
-# tetikleme (workflow_dispatch) — elle tetikleme, bekçinin gerçekten koştuğunu
-# kanıtlamak için var (koşamayan bekçi, bekçi değildir).
+# [2026-10-15] Push/PR dışında da fiyat kaymasını kontrol eder.
+# Ölçümler fiyat farklılıklarını gösterdi; bunların kampanya bitişinden mi,
+# sağlayıcı seçiminden mi kaynaklandığı katalog yanıtından kanıtlanamaz.
+# 03:17 UTC = 06:17 Europe/Istanbul. Zamanlanmış koşu main'e birleşince etkinleşir.
 on:
   schedule:
     - cron: "17 3 * * *"
@@ -28,7 +24,7 @@ jobs:
       - name: Canlı OpenRouter kataloğunu depodaki tablolarla karşılaştır
         # Hükümler (verify_openrouter_catalog.py ile aynı sözleşme):
         #   FAIL:        canlı okundu ve ÇELİŞİYOR        -> kırmızı (güncelle)
-        #   UNVERIFIED:  servise ulaşılamadı                -> sarı uyarı
+        #   UNVERIFIED:  servise ulaşılamadı                -> KIRMIZI (doğrulanamadı; kayma değil)
         #   SKIP:        anahtar yok                       -> KIRMIZI: anahtarsız
         #                bir "bekçi" hiçbir şey doğrulamaz; sessiz yeşil en kötü
         #                sonuçtur (kimse bakmaz).
@@ -45,7 +41,8 @@ jobs:
 
           if printf '%s' "$OUT" | grep -q "^UNVERIFIED:"; then
             reason=$(printf '%s' "$OUT" | grep -m1 "^UNVERIFIED:" | sed 's/%/%25/g')
-            echo "::warning title=catalog-drift-unverified::${reason}%0A(Doğrulama YAPILAMADI — 'geçti' sayılmaz.)"
+            echo "::error title=catalog-drift-unverified::${reason}%0A(Doğrulama YAPILAMADI — fiyat kayması hükmü değildir.)"
+            exit 1
           fi
 
           if [ "$RC" -ne 0 ]; then

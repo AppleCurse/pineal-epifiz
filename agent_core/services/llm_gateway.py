@@ -539,7 +539,8 @@ class LLMGateway:
         "deepseek/deepseek-v4-flash": {"in": 0.091, "out": 0.182},
         # [2026-10-14 · canlı teyit] $0.3276/$1.03 -> $0.04/$7.00. Girdi 8×
         # ucuzladı, çıktı 6,8× pahalandı: eski tablo her iki yönde de yanlıştı.
-        "z-ai/glm-5.2": {"in": 0.04, "out": 7.0},
+        # [2026-10-15 · CI 38662205946] Son çıktı ölçümü $4.40/1M.
+        "z-ai/glm-5.2": {"in": 0.04, "out": 4.4},
         # [2026-10-14 · canlı teyit] $0.4679/$0.9358 -> $0.386976/$0.773952 ->
         # $0.95526/$1.91052. Son ölçüm aynı gün ikinci koşuda alındı; fiyat oynak,
         # tablo her canlı ölçümden sonra güncellenir (tahminle değil).

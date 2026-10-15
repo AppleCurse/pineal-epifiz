@@ -418,3 +418,59 @@ def test_ci_step_captures_stderr_and_publishes_the_reason():
     assert "::warning title=catalog-unverified" in step, (
         "doğrulanamayan koşu yüksek sesle işaretlenmeli"
     )
+
+
+def test_live_price_failure_uses_the_same_unit_on_both_sides(monkeypatch):
+    """API token başına döner; hata mesajındaki iki taraf da /1M olmalı."""
+    monkeypatch.setattr(
+        oc.urllib.request, "urlopen",
+        lambda *a, **k: _Response(_payload({"google/gemini-3.7-flash": (0.99, 4.4)})),
+    )
+    failures, unverified = oc.verify_live_openrouter("key")
+    assert unverified is None
+    assert failures == [
+        "google/gemini-3.7-flash: live input price $0.99/1M != $0.75/1M",
+        "google/gemini-3.7-flash: live output price $4.4/1M != $3.75/1M",
+    ]
+
+
+@pytest.mark.parametrize("output, probe_rc, expected_rc, annotation", [
+    ("PASS: local catalog contract verified + live OpenRouter models verified", 0, 0, None),
+    ("SKIP: live OpenRouter check (OPENROUTER_API_KEY not configured)", 0, 1,
+     "::error title=catalog-drift-no-key::"),
+    ("UNVERIFIED: live OpenRouter unreachable", 0, 1,
+     "::error title=catalog-drift-unverified::"),
+    ("FAIL: model: live output price $4.4/1M != $7/1M", 1, 1,
+     "::error title=catalog-drift::"),
+    ("Traceback: unexpected failure", 1, 1, "::error title=catalog-drift::"),
+])
+def test_nightly_workflow_shell_requires_live_verification(
+    tmp_path, output, probe_rc, expected_rc, annotation,
+):
+    """Gerçek workflow shell'i yürütülür; yalnız ağ betiği sahteleştirilir.
+
+    Anahtar eksikliği/kesinti yeşil olamaz. Bu test canlı fiyat kanıtı değildir.
+    """
+    import os
+    import subprocess
+
+    import yaml
+
+    workflow = yaml.safe_load((ROOT / ".github/workflows/catalog-drift.yml").read_text())
+    shell = workflow["jobs"]["drift"]["steps"][-1]["run"]
+    fake_python = tmp_path / "python"
+    fake_python.write_text('#!/bin/sh\nprintf "%s\\n" "$PROBE_OUTPUT"\nexit "$PROBE_RC"\n')
+    fake_python.chmod(0o755)
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", shell],
+        cwd=tmp_path,
+        env={**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}",
+             "PROBE_OUTPUT": output, "PROBE_RC": str(probe_rc)},
+        capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == expected_rc, result.stdout + result.stderr
+    assert output in result.stdout
+    if annotation:
+        assert annotation in result.stdout
+    else:
+        assert "::error" not in result.stdout
