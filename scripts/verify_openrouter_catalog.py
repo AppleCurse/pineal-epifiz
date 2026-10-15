@@ -93,7 +93,8 @@ REQUIRED_OPENROUTTER = {
     "inclusionai/ling-3.0-flash": (0.021, 0.063),
     # [2026-10-15 · CI 38662205946] Çıktı son ölçümde $4.40/1M (önceki $7.00).
     # [2026-10-15 · CI 38664381599] Girdi son ölçümde $0.037/1M.
-    "z-ai/glm-5.2": (0.037, 4.4),
+    # [2026-10-15 · CI 38665669314 + 38665674379] Çıktı yeniden $7/1M.
+    "z-ai/glm-5.2": (0.037, 7.0),
     "x-ai/grok-4.6": (2.0, 6.0),
 }
 
