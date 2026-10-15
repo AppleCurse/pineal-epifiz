@@ -83,7 +83,11 @@ async def test_priced_model_still_accounts_spend(monkeypatch):
 
     gw = _gateway_with_mock(handler, monkeypatch)
     await gw.query("ping", model="upstage/solar-pro4")
-    assert gw.spend_usd == pytest.approx(0.03)  # 1M in-token * $0.03/M
+    # [2026-10-14] Fiyat BURAYA gömülmez: beklenen değer tablodan türetilir.
+    # Gömülü $0.03, tablo canlı ölçümle $0.09'a güncellenince bu testi
+    # kırmıştı — test maliyet MEKANİZMASINI sınar, fiyat sabitini değil.
+    rate_in = LLMGateway.MODEL_PRICING["upstage/solar-pro4"]["in"]
+    assert gw.spend_usd == pytest.approx(rate_in)  # 1M girdi token * tablo fiyatı
 
 
 @pytest.mark.asyncio

@@ -336,12 +336,71 @@ def test_pinned_live_coverage_includes_the_spend_cap_models():
         "anthropic/claude-sonnet-5",
         "deepseek/deepseek-v4-flash",
         "deepseek/deepseek-v4-pro",
+        "upstage/solar-pro4",
+        "inclusionai/ling-3.0-flash",
+        "z-ai/glm-5.2",
+        "x-ai/grok-4.6",
     }
     assert beklenen <= set(oc.REQUIRED_OPENROUTTER), (
         "bu modeller harcama sayacında fiyatlı ama canlı kontrolden çıkarılmış"
     )
     for model_id in beklenen:
         assert model_id in LLMGateway.MODEL_PRICING, model_id
+
+
+def test_catalog_openrouter_pricing_is_fully_pinned():
+    """Katalogun `openrouter` bölümündeki HER fiyatlı kayıt pinli olmalı.
+
+    Katalog "bu modeli OR bize şu fiyattan verir" diye İDDİA eder; iddia ya
+    doğrulanır ya kaldırılır. Ara durum (beyan var, kontrol yok) yasak —
+    2026-10-14'te kapsam dışı kalan dört kayıt tam bu ara durumdaydı.
+    """
+    catalog = json.loads(oc.CATALOG_PATH.read_text(encoding="utf-8"))
+    for provider in catalog["providers"]:
+        if provider["id"] != "openrouter":
+            continue
+        for model in provider.get("models", []):
+            pricing = model.get("pricing") or {}
+            if not pricing:
+                continue  # fiyat beyanı yoksa doğrulanacak iddia da yok
+            assert model["id"] in oc.REQUIRED_OPENROUTTER, (
+                f"katalogda fiyatlı ama canlı kontrolde yok: {model['id']}"
+            )
+
+
+def test_uncovered_priced_models_are_named_not_silent():
+    """Ücretlendirilen ama doğrulanamayan modeller ADIYLA kayıtlı olmalı.
+
+    Bunlar harcama sayacında fiyatlı (`MODEL_PRICING`) ama katalogda beyan
+    edilmedikleri için canlı kontrole alınamıyorlar. Sessiz kalmak yerine
+    isimleri sabitlenir: yeni bir "fiyatlı ama doğrulanamaz" model eklenirse
+    bu test kırmızı olur ve karar (katalogda yetkilendir → pinle, ya da kaydı
+    düşür) zorunlu hâle gelir.
+    """
+    from agent_core.services.llm_gateway import LLMGateway
+
+    catalog = json.loads(oc.CATALOG_PATH.read_text(encoding="utf-8"))
+    katalogdaki_or = set()
+    for provider in catalog["providers"]:
+        if provider["id"] == "openrouter":
+            katalogdaki_or |= {m["id"] for m in provider.get("models", [])}
+
+    ucretli = {
+        model_id
+        for model_id, rates in LLMGateway.MODEL_PRICING.items()
+        if (rates["in"] or rates["out"])  # $0 hatları (pineal-*, :free) kapsam dışı
+    }
+    pinli = set(oc.REQUIRED_OPENROUTTER)
+    kapsam_disi = ucretli - pinli
+    assert kapsam_disi == set(oc.UNCOVERED_PRICED_MODELS), (
+        f"kapsam dışı ücretli model kümesi değişti: {sorted(kapsam_disi)} — "
+        "her yeni üye ya katalogda yetkilendirilip pinlenmeli ya da buradaki "
+        "adlandırılmış boşluk listesine gerekçesiyle eklenmeli"
+    )
+    for model_id in oc.UNCOVERED_PRICED_MODELS:
+        assert model_id not in katalogdaki_or, (
+            f"{model_id} artık katalogda — pini eklenip kapsam genişletilmeli"
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -359,3 +418,59 @@ def test_ci_step_captures_stderr_and_publishes_the_reason():
     assert "::warning title=catalog-unverified" in step, (
         "doğrulanamayan koşu yüksek sesle işaretlenmeli"
     )
+
+
+def test_live_price_failure_uses_the_same_unit_on_both_sides(monkeypatch):
+    """API token başına döner; hata mesajındaki iki taraf da /1M olmalı."""
+    monkeypatch.setattr(
+        oc.urllib.request, "urlopen",
+        lambda *a, **k: _Response(_payload({"google/gemini-3.7-flash": (0.99, 4.4)})),
+    )
+    failures, unverified = oc.verify_live_openrouter("key")
+    assert unverified is None
+    assert failures == [
+        "google/gemini-3.7-flash: live input price $0.99/1M != $0.75/1M",
+        "google/gemini-3.7-flash: live output price $4.4/1M != $3.75/1M",
+    ]
+
+
+@pytest.mark.parametrize("output, probe_rc, expected_rc, annotation", [
+    ("PASS: local catalog contract verified + live OpenRouter models verified", 0, 0, None),
+    ("SKIP: live OpenRouter check (OPENROUTER_API_KEY not configured)", 0, 1,
+     "::error title=catalog-drift-no-key::"),
+    ("UNVERIFIED: live OpenRouter unreachable", 0, 1,
+     "::error title=catalog-drift-unverified::"),
+    ("FAIL: model: live output price $4.4/1M != $7/1M", 1, 1,
+     "::error title=catalog-drift::"),
+    ("Traceback: unexpected failure", 1, 1, "::error title=catalog-drift::"),
+])
+def test_nightly_workflow_shell_requires_live_verification(
+    tmp_path, output, probe_rc, expected_rc, annotation,
+):
+    """Gerçek workflow shell'i yürütülür; yalnız ağ betiği sahteleştirilir.
+
+    Anahtar eksikliği/kesinti yeşil olamaz. Bu test canlı fiyat kanıtı değildir.
+    """
+    import os
+    import subprocess
+
+    import yaml
+
+    workflow = yaml.safe_load((ROOT / ".github/workflows/catalog-drift.yml").read_text())
+    shell = workflow["jobs"]["drift"]["steps"][-1]["run"]
+    fake_python = tmp_path / "python"
+    fake_python.write_text('#!/bin/sh\nprintf "%s\\n" "$PROBE_OUTPUT"\nexit "$PROBE_RC"\n')
+    fake_python.chmod(0o755)
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", shell],
+        cwd=tmp_path,
+        env={**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}",
+             "PROBE_OUTPUT": output, "PROBE_RC": str(probe_rc)},
+        capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == expected_rc, result.stdout + result.stderr
+    assert output in result.stdout
+    if annotation:
+        assert annotation in result.stdout
+    else:
+        assert "::error" not in result.stdout

@@ -73,9 +73,44 @@ REQUIRED_OPENROUTTER = {
     # depo $0.09/$0.18 ve $0.4679/$0.9358 tutuyordu (2 ondalığa yuvarlanmış/promo
     # dönemi); canlı katalog $0.091/$0.182 ve $0.386976/$0.773952 okudu.
     "deepseek/deepseek-v4-flash": (0.091, 0.182),
-    "deepseek/deepseek-v4-pro": (0.386976, 0.773952),
+    # [2026-10-14 · ikinci ölçüm] Dün $0.386976/$0.773952 okunmuştu; aynı gün
+    # ikinci koşuda $0.95526/$1.91052 (≈2,47×). Fiyat OYNAK: her koşu ölçer.
+    "deepseek/deepseek-v4-pro": (0.95526, 1.91052),
     "anthropic/claude-sonnet-5": (2.0, 10.0),
+    # [2026-10-14 · kapsam turu 2] Katalogun `openrouter` bölümünde beyan edilmiş
+    # ama hiç canlı kontrol edilmemiş dört kayıt daha: katalog bunların OR fiyatı
+    # olduğunu İDDİA ediyor; artık iddia her koşuda sınanır. Ayrıca kodun kendi
+    # notu bu ikisinde promosyon bekliyor — "solar-pro4/ling-3.0-flash promo
+    # 2026-09-10'a kadar; sonrası 0.12/0.24 ve daha yükseğe döner". Promo bir ay
+    # önce bittiğine göre sapma çıkması BEKLENEN sonuçtur; çıkarsa tablo canlı
+    # değere hizalanır (tahminle değil, ölçümle).
+    # Ölçüm 2026-10-14 (canlı): solar-pro4 $0.09/$0.36 · glm-5.2 $0.04/$7.00 ·
+    # deepseek-v4-pro $0.95526/$1.91052. ling-3.0-flash ve grok-4.6 DEĞİŞMEDİ.
+    # NOT (kanal farkı): solar-pro4'ün nous indirimli kanalı ROUTES'ta $0.03/$0.12
+    # olarak durur — bu pin OR (bulut liste) fiyatını doğrular, nous sözleşmesini
+    # değil. İkisi bilinçli olarak farklı kanallardır.
+    "upstage/solar-pro4": (0.09, 0.36),
+    "inclusionai/ling-3.0-flash": (0.021, 0.063),
+    # [2026-10-15 · CI 38662205946] Çıktı son ölçümde $4.40/1M (önceki $7.00).
+    # [2026-10-15 · CI 38664381599] Girdi son ölçümde $0.037/1M.
+    "z-ai/glm-5.2": (0.037, 4.4),
+    "x-ai/grok-4.6": (2.0, 6.0),
 }
+
+# ── KAPSAM BOŞLUĞU (dürüstçe adlandırılmış) ──────────────────────────────────
+# `LLMGateway.MODEL_PRICING` şu iki modeli ücretlendirir ama bunlar
+# `config/provider_catalog.json`'da YOKTUR; katalogda olmadıkları için canlı
+# kontrole de alınamazlar (yerel kontrat önce katalog eşleşmesi ister).
+# Katalogu sessizce genişletmek "yetkilendirilmiş API" iddiasını büyütmek olurdu;
+# onun yerine boşluk AÇIKÇA adlandırılır ve testle dondurulur:
+#   * `openai/gpt-5.6-luna`  — nous indirimli kanal + OR legacy aynı $0.20/$1.20
+#   * `openai/gpt-oss-120b`  — Groq free kanalı; OR-legacy ücretli yol accounting'i
+# Operatör bu ikisini katalogda yetkilendirirse pinleri de eklenir ve doğrulama
+# kapsamı kendiliğinden genişler.
+UNCOVERED_PRICED_MODELS = frozenset({
+    "openai/gpt-5.6-luna",
+    "openai/gpt-oss-120b",
+})
 
 # Nous FINAL-KARAR-MATRIX facts. These are verified locally, never against
 # the OpenRouter catalog. FAZ-2 (2. ajan mühürlü canlı denetim): prefix'ler
@@ -223,9 +258,9 @@ def verify_live_openrouter(
             actual_in = float(pricing.get("prompt", 0))
             actual_out = float(pricing.get("completion", 0))
             if abs(actual_in - expected_in / 1_000_000) > 1e-12:
-                failures.append(f"{model_id}: live input price {actual_in} != {expected_in}/1M")
+                failures.append(f"{model_id}: live input price ${actual_in * 1_000_000:g}/1M != ${expected_in:g}/1M")
             if abs(actual_out - expected_out / 1_000_000) > 1e-12:
-                failures.append(f"{model_id}: live output price {actual_out} != {expected_out}/1M")
+                failures.append(f"{model_id}: live output price ${actual_out * 1_000_000:g}/1M != ${expected_out:g}/1M")
         return failures, None
 
     return [], f"live OpenRouter unreachable after {attempts} attempt(s) — {last_error}"

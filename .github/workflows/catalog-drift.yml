@@ -1,0 +1,57 @@
+name: Catalog Drift (canlı fiyat bekçisi)
+
+# [2026-10-15] Push/PR dışında da fiyat kaymasını kontrol eder.
+# Ölçümler fiyat farklılıklarını gösterdi; bunların kampanya bitişinden mi,
+# sağlayıcı seçiminden mi kaynaklandığı katalog yanıtından kanıtlanamaz.
+# 03:17 UTC = 06:17 Europe/Istanbul. Zamanlanmış koşu main'e birleşince etkinleşir.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Canlı OpenRouter kataloğunu depodaki tablolarla karşılaştır
+        # Hükümler (verify_openrouter_catalog.py ile aynı sözleşme):
+        #   FAIL:        canlı okundu ve ÇELİŞİYOR        -> kırmızı (güncelle)
+        #   UNVERIFIED:  servise ulaşılamadı                -> KIRMIZI (doğrulanamadı; kayma değil)
+        #   SKIP:        anahtar yok                       -> KIRMIZI: anahtarsız
+        #                bir "bekçi" hiçbir şey doğrulamaz; sessiz yeşil en kötü
+        #                sonuçtur (kimse bakmaz).
+        run: |
+          set +e
+          OUT="$(python scripts/verify_openrouter_catalog.py 2>&1)"
+          RC=$?
+          printf '%s\n' "$OUT"
+
+          if printf '%s' "$OUT" | grep -q "SKIP: live OpenRouter check"; then
+            echo "::error title=catalog-drift-no-key::OPENROUTER_API_KEY tanımlı değil. Bu workflow CANLI doğrulama için var; anahtarsız koşu hiçbir şey doğrulamaz. Secret'ı tanımlayın ya da workflow'u silin — sessiz yeşil bırakmayın."
+            exit 1
+          fi
+
+          if printf '%s' "$OUT" | grep -q "^UNVERIFIED:"; then
+            reason=$(printf '%s' "$OUT" | grep -m1 "^UNVERIFIED:" | sed 's/%/%25/g')
+            echo "::error title=catalog-drift-unverified::${reason}%0A(Doğrulama YAPILAMADI — fiyat kayması hükmü değildir.)"
+            exit 1
+          fi
+
+          if [ "$RC" -ne 0 ]; then
+            blob=$(printf '%s' "$OUT" | grep '^FAIL:' | head -20 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            if [ -z "$blob" ]; then
+              blob=$(printf '%s' "$OUT" | tail -20 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            fi
+            echo "::error title=catalog-drift::Canlı fiyat kataloğu depodaki tablolarla ÇELİŞİYOR. Güncellenecek üç yer: scripts/verify_openrouter_catalog.py (pin) · config/provider_catalog.json (openrouter bölümü) · LLMGateway.MODEL_PRICING (harcama sayacı). Ölçüm:%0A${blob}"
+          fi
+          exit $RC
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
