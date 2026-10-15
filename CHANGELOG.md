@@ -29,9 +29,10 @@
   `GET /api/v1/models` yanıtında `deepseek-v4-pro` için $0.395328/$0.790656,
   `glm-5.2` için $0.65/$10.00 per 1M ölçtü. Sonraki live-check run'ları
   [38789947274](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38789947274),
-  [38794722007](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38794722007)
-  ve [38821301808](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38821301808)
-  deepseek fiyatını $0.392022/$0.784044, $0.386976/$0.773952 ve son olarak $0.348174/$0.696348;
+  [38794722007](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38794722007),
+  [38821301808](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38821301808)
+  ve [38822647324](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38822647324)
+  deepseek fiyatını $0.392022/$0.784044, $0.386976/$0.773952, $0.348174/$0.696348 ve son canlı okumada $0.346434/$0.692868;
   glm-5.2'yi $0.037/$7.00 per 1M ölçtü.
   Gateway, katalog ve verifier son canlı ölçüme hizalandı. Bu kısa aralıklı fark,
   fiyat snapshot'ının oynaklığını gösterir; katalog sorgusu inference/hesap
