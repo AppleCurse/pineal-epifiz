@@ -75,7 +75,33 @@ REQUIRED_OPENROUTTER = {
     "deepseek/deepseek-v4-flash": (0.091, 0.182),
     "deepseek/deepseek-v4-pro": (0.386976, 0.773952),
     "anthropic/claude-sonnet-5": (2.0, 10.0),
+    # [2026-10-14 · kapsam turu 2] Katalogun `openrouter` bölümünde beyan edilmiş
+    # ama hiç canlı kontrol edilmemiş dört kayıt daha: katalog bunların OR fiyatı
+    # olduğunu İDDİA ediyor; artık iddia her koşuda sınanır. Ayrıca kodun kendi
+    # notu bu ikisinde promosyon bekliyor — "solar-pro4/ling-3.0-flash promo
+    # 2026-09-10'a kadar; sonrası 0.12/0.24 ve daha yükseğe döner". Promo bir ay
+    # önce bittiğine göre sapma çıkması BEKLENEN sonuçtur; çıkarsa tablo canlı
+    # değere hizalanır (tahminle değil, ölçümle).
+    "upstage/solar-pro4": (0.03, 0.12),
+    "inclusionai/ling-3.0-flash": (0.021, 0.063),
+    "z-ai/glm-5.2": (0.3276, 1.03),
+    "x-ai/grok-4.6": (2.0, 6.0),
 }
+
+# ── KAPSAM BOŞLUĞU (dürüstçe adlandırılmış) ──────────────────────────────────
+# `LLMGateway.MODEL_PRICING` şu iki modeli ücretlendirir ama bunlar
+# `config/provider_catalog.json`'da YOKTUR; katalogda olmadıkları için canlı
+# kontrole de alınamazlar (yerel kontrat önce katalog eşleşmesi ister).
+# Katalogu sessizce genişletmek "yetkilendirilmiş API" iddiasını büyütmek olurdu;
+# onun yerine boşluk AÇIKÇA adlandırılır ve testle dondurulur:
+#   * `openai/gpt-5.6-luna`  — nous indirimli kanal + OR legacy aynı $0.20/$1.20
+#   * `openai/gpt-oss-120b`  — Groq free kanalı; OR-legacy ücretli yol accounting'i
+# Operatör bu ikisini katalogda yetkilendirirse pinleri de eklenir ve doğrulama
+# kapsamı kendiliğinden genişler.
+UNCOVERED_PRICED_MODELS = frozenset({
+    "openai/gpt-5.6-luna",
+    "openai/gpt-oss-120b",
+})
 
 # Nous FINAL-KARAR-MATRIX facts. These are verified locally, never against
 # the OpenRouter catalog. FAZ-2 (2. ajan mühürlü canlı denetim): prefix'ler

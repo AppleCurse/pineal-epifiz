@@ -336,12 +336,71 @@ def test_pinned_live_coverage_includes_the_spend_cap_models():
         "anthropic/claude-sonnet-5",
         "deepseek/deepseek-v4-flash",
         "deepseek/deepseek-v4-pro",
+        "upstage/solar-pro4",
+        "inclusionai/ling-3.0-flash",
+        "z-ai/glm-5.2",
+        "x-ai/grok-4.6",
     }
     assert beklenen <= set(oc.REQUIRED_OPENROUTTER), (
         "bu modeller harcama sayacında fiyatlı ama canlı kontrolden çıkarılmış"
     )
     for model_id in beklenen:
         assert model_id in LLMGateway.MODEL_PRICING, model_id
+
+
+def test_catalog_openrouter_pricing_is_fully_pinned():
+    """Katalogun `openrouter` bölümündeki HER fiyatlı kayıt pinli olmalı.
+
+    Katalog "bu modeli OR bize şu fiyattan verir" diye İDDİA eder; iddia ya
+    doğrulanır ya kaldırılır. Ara durum (beyan var, kontrol yok) yasak —
+    2026-10-14'te kapsam dışı kalan dört kayıt tam bu ara durumdaydı.
+    """
+    catalog = json.loads(oc.CATALOG_PATH.read_text(encoding="utf-8"))
+    for provider in catalog["providers"]:
+        if provider["id"] != "openrouter":
+            continue
+        for model in provider.get("models", []):
+            pricing = model.get("pricing") or {}
+            if not pricing:
+                continue  # fiyat beyanı yoksa doğrulanacak iddia da yok
+            assert model["id"] in oc.REQUIRED_OPENROUTTER, (
+                f"katalogda fiyatlı ama canlı kontrolde yok: {model['id']}"
+            )
+
+
+def test_uncovered_priced_models_are_named_not_silent():
+    """Ücretlendirilen ama doğrulanamayan modeller ADIYLA kayıtlı olmalı.
+
+    Bunlar harcama sayacında fiyatlı (`MODEL_PRICING`) ama katalogda beyan
+    edilmedikleri için canlı kontrole alınamıyorlar. Sessiz kalmak yerine
+    isimleri sabitlenir: yeni bir "fiyatlı ama doğrulanamaz" model eklenirse
+    bu test kırmızı olur ve karar (katalogda yetkilendir → pinle, ya da kaydı
+    düşür) zorunlu hâle gelir.
+    """
+    from agent_core.services.llm_gateway import LLMGateway
+
+    catalog = json.loads(oc.CATALOG_PATH.read_text(encoding="utf-8"))
+    katalogdaki_or = set()
+    for provider in catalog["providers"]:
+        if provider["id"] == "openrouter":
+            katalogdaki_or |= {m["id"] for m in provider.get("models", [])}
+
+    ucretli = {
+        model_id
+        for model_id, rates in LLMGateway.MODEL_PRICING.items()
+        if (rates["in"] or rates["out"])  # $0 hatları (pineal-*, :free) kapsam dışı
+    }
+    pinli = set(oc.REQUIRED_OPENROUTTER)
+    kapsam_disi = ucretli - pinli
+    assert kapsam_disi == set(oc.UNCOVERED_PRICED_MODELS), (
+        f"kapsam dışı ücretli model kümesi değişti: {sorted(kapsam_disi)} — "
+        "her yeni üye ya katalogda yetkilendirilip pinlenmeli ya da buradaki "
+        "adlandırılmış boşluk listesine gerekçesiyle eklenmeli"
+    )
+    for model_id in oc.UNCOVERED_PRICED_MODELS:
+        assert model_id not in katalogdaki_or, (
+            f"{model_id} artık katalogda — pini eklenip kapsam genişletilmeli"
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
