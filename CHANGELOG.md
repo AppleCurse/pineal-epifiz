@@ -36,9 +36,13 @@
   skill paketi ve audit raporu tazelik testleri ile `git diff --check` geçti.
   Audit regresyon özeti: 20 kapalı, 1 kapalı-tasarım, 0 açık, 3 doğrulanamaz.
 - **Kanıt sınırı:** kaynak ve mock/yerel testler canlı çalışma kanıtı değildir.
-  Gerçek LLM sağlayıcısı, X, SearXNG/uzak crawl, Piper/Whisper ve tarayıcıda
-  ses oynatma bu turda çalıştırılmadı. Bu sandbox'ta `cargo`/`rustc` yok;
-  Rust'a ilişkin üç audit bulgusu bu nedenle “doğrulanamaz” kalır.
+  Canlı LLM inference, X, SearXNG/uzak crawl, Piper/Whisper ve tarayıcıda ses
+  oynatma bu turda çalıştırılmadı; CI'nin OpenRouter `/models` sorgusu yalnızca
+  katalog/fiyat kanıtıdır. Bu sandbox'ta `cargo`/`rustc` yok; buna karşılık PR
+  CI [38789102103](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38789102103)
+  `cargo check` ve `cargo test` adımlarını geçti. Makine audit raporu üç eski
+  maddeyi hâlâ muhafazakâr biçimde “doğrulanamaz” sınıflandırır; özellikle
+  E-GÖZ3-8'in gerçek Redis/dosya sistemi/ağ dayanıklılığı bu CI ile ölçülmedi.
 
 ## Unreleased — 2026-10-15 — Fiyat doğrulaması: kapsam, son ölçüm ve açıklar
 
