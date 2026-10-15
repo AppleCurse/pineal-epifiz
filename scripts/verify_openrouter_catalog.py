@@ -73,7 +73,9 @@ REQUIRED_OPENROUTTER = {
     # depo $0.09/$0.18 ve $0.4679/$0.9358 tutuyordu (2 ondalığa yuvarlanmış/promo
     # dönemi); canlı katalog $0.091/$0.182 ve $0.386976/$0.773952 okudu.
     "deepseek/deepseek-v4-flash": (0.091, 0.182),
-    "deepseek/deepseek-v4-pro": (0.386976, 0.773952),
+    # [2026-10-14 · ikinci ölçüm] Dün $0.386976/$0.773952 okunmuştu; aynı gün
+    # ikinci koşuda $0.95526/$1.91052 (≈2,47×). Fiyat OYNAK: her koşu ölçer.
+    "deepseek/deepseek-v4-pro": (0.95526, 1.91052),
     "anthropic/claude-sonnet-5": (2.0, 10.0),
     # [2026-10-14 · kapsam turu 2] Katalogun `openrouter` bölümünde beyan edilmiş
     # ama hiç canlı kontrol edilmemiş dört kayıt daha: katalog bunların OR fiyatı
@@ -82,9 +84,14 @@ REQUIRED_OPENROUTTER = {
     # 2026-09-10'a kadar; sonrası 0.12/0.24 ve daha yükseğe döner". Promo bir ay
     # önce bittiğine göre sapma çıkması BEKLENEN sonuçtur; çıkarsa tablo canlı
     # değere hizalanır (tahminle değil, ölçümle).
-    "upstage/solar-pro4": (0.03, 0.12),
+    # Ölçüm 2026-10-14 (canlı): solar-pro4 $0.09/$0.36 · glm-5.2 $0.04/$7.00 ·
+    # deepseek-v4-pro $0.95526/$1.91052. ling-3.0-flash ve grok-4.6 DEĞİŞMEDİ.
+    # NOT (kanal farkı): solar-pro4'ün nous indirimli kanalı ROUTES'ta $0.03/$0.12
+    # olarak durur — bu pin OR (bulut liste) fiyatını doğrular, nous sözleşmesini
+    # değil. İkisi bilinçli olarak farklı kanallardır.
+    "upstage/solar-pro4": (0.09, 0.36),
     "inclusionai/ling-3.0-flash": (0.021, 0.063),
-    "z-ai/glm-5.2": (0.3276, 1.03),
+    "z-ai/glm-5.2": (0.04, 7.0),
     "x-ai/grok-4.6": (2.0, 6.0),
 }
 

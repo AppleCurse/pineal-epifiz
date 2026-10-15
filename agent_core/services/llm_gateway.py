@@ -527,17 +527,23 @@ class LLMGateway:
         # cached-effective değil). Kaynak: /api/v1/models + model sayfaları.
         # Not: solar-pro4/ling-3.0-flash promo 2026-09-10'a kadar; sonrası 0.12/0.24 ve
         # daha yükseğe döner — `OPENROUTER_MAX_SPEND_USD` bu tabloyu baz alır.
-        "upstage/solar-pro4": {"in": 0.03, "out": 0.12},
+        # [2026-10-14 · canlı teyit] solar-pro4 promosyonu bitti: $0.03/$0.12 ->
+        # $0.09/$0.36 (OR liste). Nous indirimli kanal ROUTES'ta $0.03/$0.12 kalır;
+        # bu tablo BULUT (OR) maliyetini taşır — eski değer %67 eksik sayıyordu.
+        "upstage/solar-pro4": {"in": 0.09, "out": 0.36},
         "inclusionai/ling-3.0-flash": {"in": 0.021, "out": 0.063},
         # 2026-09-08 araştırma düzeltmesi: OR kataloğu deepseek-v4-flash'i
         # $0.09/$0.18 gösteriyordu (eski $0.0679/$0.168 iki tarafla da uyuşmuyordu).
         # [2026-10-14 · canlı teyit] Gerçek fiyat $0.091/$0.182 (2 ondalığa
         # yuvarlanmış değer sayacı %1,1 eksik sayıyordu).
         "deepseek/deepseek-v4-flash": {"in": 0.091, "out": 0.182},
-        "z-ai/glm-5.2": {"in": 0.3276, "out": 1.03},
-        # [2026-10-14 · canlı teyit] $0.4679/$0.9358 -> $0.386976/$0.773952
-        # (eski tablo maliyeti %17,3 FAZLA sayıyordu; iki yön de yanlıştır).
-        "deepseek/deepseek-v4-pro": {"in": 0.386976, "out": 0.773952},
+        # [2026-10-14 · canlı teyit] $0.3276/$1.03 -> $0.04/$7.00. Girdi 8×
+        # ucuzladı, çıktı 6,8× pahalandı: eski tablo her iki yönde de yanlıştı.
+        "z-ai/glm-5.2": {"in": 0.04, "out": 7.0},
+        # [2026-10-14 · canlı teyit] $0.4679/$0.9358 -> $0.386976/$0.773952 ->
+        # $0.95526/$1.91052. Son ölçüm aynı gün ikinci koşuda alındı; fiyat oynak,
+        # tablo her canlı ölçümden sonra güncellenir (tahminle değil).
+        "deepseek/deepseek-v4-pro": {"in": 0.95526, "out": 1.91052},
         "google/gemini-3.7-flash": {"in": 0.75, "out": 3.75},
         # 2026-09-02 karar matrisi: Sonnet 5 $2/$10 (promo), Grok 4.6 $2/$6.
         # 2026-09-08 notu: Sonnet 5 promo'su 31.08.2026'da sona erdi; Anthropic
