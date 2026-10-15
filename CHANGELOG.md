@@ -26,6 +26,9 @@
   PR #130 birleşti (`5547cd2`). Elle tetikleme 403 (integration yetkisi yok)
   döndü; aynı job artık fiyat dosyası değişikliklerinde push ile de çalışır.
   Gecelik tetiklemenin gelecekteki sonucu ve elle başlatma yetkisi kanıtlanmadı.
+- Gerçek bekçi jobu [38665260977](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38665260977)
+  push ile çalıştı ve canlı 9-pin karşılaştırması geçti; SKIP/UNVERIFIED yeşil
+  dönemez. Bu sonuç yalnız o koşudaki OR fiyat eşleşmesini kanıtlar.
 - **Açık:** `openai/gpt-5.6-luna` ve `openai/gpt-oss-120b` ücretli legacy
   muhasebesinde var, OR katalog/pin kapsamı dışında. İsimleri kilit testiyle
   sabitlendi; canlı fiyatları doğrulanmış değildir.

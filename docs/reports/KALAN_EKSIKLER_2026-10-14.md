@@ -123,6 +123,13 @@ Aynı job fiyat dosyaları değiştiğinde push ile de tetiklenir; gerçek GitHu
 sonucu ayrıca kontrol edilir. Gecelik zamanlamanın ileride fiilen tetiklenmesi
 ve elle tetikleme yetkisi ayrı açıklardır; yerel shell testi canlı kanıt değildir.
 
+
+**Gerçek bekçi jobu kanıtı:** [Catalog Drift 38665260977](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38665260977)
+`5b817b8` push'unda tamamlandı: drift jobu ve canlı karşılaştırma adımı **success**.
+Bu job SKIP/UNVERIFIED durumunda exit 1 verir; dolayısıyla bu sonuç 9 pinin
+canlı katalogla o koşuda eşleştiğinin kanıtıdır. Fiyatların sonraki çağrılarda
+sabit kalacağı, Nous sözleşmesi veya diğer yetenekler hakkında kanıt değildir.
+
 **Bu bölümün açıkları:**
 
 1. Luna ve GPT-OSS-120B'nin ücretli OR legacy fiyatları canlı denetim dışında.
