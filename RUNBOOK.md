@@ -10,6 +10,7 @@
 
 ## Anahtarlar (`.env` veya UI Kasası)
 - `OPENROUTER_API_KEY` + `LIVE_LLM_E2E=1` → canlı bulut LLM.
+- **9Router kipinde kasa anahtarı — `sk-pineal` önek şartı (M-3):** `OPENROUTER_BASE_URL` içinde `20128` varsa `/api/vault` yalnızca `NINEROUTER_API_KEY` / `PINEAL_LLM_API_KEY` / `OPENROUTER_API_KEY` **ortam değişkenindeki** anahtarı, **ve bu anahtar `sk-pineal` ile başlıyorsa** kullanır; aksi halde kasa (vault) anahtarı tercih edilir (`backend/api.py:1231-1240`). Yani sıradan `sk-...` ile başlayan bir 9Router anahtarı **kasadan girildiğinde 9Router yolu seçilmez** — somut tuzak. Çözüm: anahtarı `NINEROUTER_API_KEY` ortam değişkeniyle verin ya da `sk-pineal` önekli bir anahtar kullanın. **[P4 · 2026-10-16] kod yoluyla ölçüldü; canlı 9Router çağrısı DOĞRULANMADI (egress kapalı).**
 - Yerel: `USE_LOCAL_LLM=true`, `LOCAL_LLM_URL=http://localhost:11434/v1`, `LOCAL_LLM_MODEL=...` (anahtar gerekmez).
   Not: API sunucusunda Kasa'daki "yerel model" seçimi (`use_local`) bu env'i ezer; env varsayılanı yalnız Kasa seçimi yapılmamışsa geçerlidir.
 - `TAVILY_API_KEY`, `SERPAPI_API_KEY`, `EXA_API_KEY` → AutonomousVerifier web doğrulaması (yoksa DuckDuckGo + SearXNG yedeği).
@@ -246,6 +247,7 @@ Sistem sağlığı ve 7 rotanın canlılığı `scripts/preflight_9router.py` il
 - `osint_investigator`: `pineal-osint-pipeline` (yedek: `(pipeline)`) — *Not: Pineal iç arama ve web kazıma orkestrasyonudur (`SearchEngine` + Tavily/SerpAPI). 9Router combo'su değildir.*
 - `authenticity_auditor`: `pineal-vision` (yedek: `(forensic)`)
 - `depth_analyst`: `pineal-deep-reasoning` (yedek: `(combo)`)
+- `dialogue_manager`: **9Router kanonik zinciri YOK (M-1)** — `LLMGateway.NINEROUTER_AGENT_CHAINS` (20 ajan) içinde bulunmadığı için 9Router kipinde `config/task_routing.json`'daki **bulut** model-id'lerine düşer (`openai/gpt-oss-120b`, `poolside/laguna-s-2.1:free`); yerel hub bu id'leri tanımaz. Görev yürütücüsünde çağıran yoktur (`config/agent_tiers.json`: "DORMANT: no gateway callers"), ancak `/api/chat/respond` yolu `dialogue_manager.llm` üzerinden çağırır. Zinciri 9Router kipinde de kanonik tutmak için: `OPENROUTER_AGENT_CHAIN_DIALOGUE_MANAGER=pineal-fast-extract,pineal-general-reasoning` (env override; `llm_gateway.py:760-766`). **[P4 · 2026-10-16] kod yoluyla ölçüldü (zincir çözümü `9router_canonical` DEĞİL, `task_routing`); canlı 9Router çağrısı DOĞRULANMADI.**
 
 ## Aspasia komut katmanı (ASPASIA-PROMOTION)
 Aspasia merkezi doğal-dil arayüzüdür; **orchestrator değildir.** Görev
