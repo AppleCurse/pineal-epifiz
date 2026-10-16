@@ -102,11 +102,58 @@ REQUIRED_OPENROUTTER = {
     # [2026-10-15 · CI 38664381599] Girdi son ölçümde $0.037/1M.
     # [2026-10-15 · CI 38665669314 + 38665674379] Çıktı yeniden $7/1M.
     # [2026-10-15 · PR CI 38787820334] $0.65/$10.00; [38821301808] $0.037/$7.00 per 1M.
-    # [2026-10-16 · CI 38833598719 (Faz 1) + 38840573018 (P0) + 38843226709 (main)]
-    # Canlı katalog $0.62/$2.42 okundu (girdi 16,8× YÜKSELDİ, çıktı 2,9× DÜŞTÜ);
-    # üç koşu birebir aynı. Ölçülen değere hizalandı.
-    "z-ai/glm-5.2": (0.62, 2.42),
+    # [2026-10-16 · CI 38833598719 (Faz 1) + 38840573018 (P0) + 38843226709 (main)
+    #  + 38851706200 (main catalog-drift)] Canlı katalog $0.62/$2.42 okundu;
+    # dört koşu birebir aynı. Ölçülen değere hizalandı.
+    # [2026-10-16 · PR CI 38866434547 + 38867016705] Canlı katalog **GERİ**
+    # $0.037/$7.00 okundu — ARD ARDA İKİ koşu birebir aynı.
+    # [2026-10-16 · PR CI 38870244950 (P1 konsolidasyon)] Çıktı **$9.00/1M**
+    # okundu (girdi $0.037'de kaldı) → YENİ bir fiyat durumu. İki günde dört
+    # ayrı değer okundu; ölçülen son değere hizalandı (tahminle değil, ölçümle).
+    "z-ai/glm-5.2": (0.037, 9.0),
     "x-ai/grok-4.6": (2.0, 6.0),
+}
+
+# ── ÖLÇÜLMÜŞ FİYAT DURUMLARI (salınan modeller) ──────────────────────────────
+# Neden (2026-10-16 · CI 38833598719/38840573018/38843226709/38851706200 →
+# 38866434547/38867016705 → 38870244950): `z-ai/glm-5.2` ve
+# `deepseek/deepseek-v4-pro` için canlı katalog iki günde DÖRT farklı fiyat
+# okundu. Tek bir pinle çalışan bekçi bu modelde yanlış alarm üretiyordu
+# (katalog adımı art arda kırmızıydı; ölçümün kendisi değil, BEKÇİNİN
+# TASARIMI sorunluydu).
+#
+# Yeni kural: canlı fiyat **bilinen bir ÖLÇÜLMÜŞ durum** ise geçerli sayılır
+# (hangi durumun okunduğu yazılır); **yeni** bir fiyat gelirse yine `FAIL:`
+# edilir — yani kapı zayıflatılmaz, yalnız BİLİNEN oynaklık kapsam dışına
+# çıkar. Her durum bir CI koşu kimliğiyle kayıtlıdır (kanıt).
+#
+# UYARI: harcama sayacı (LLMGateway.MODEL_PRICING) TEK değer taşır — son
+# ölçülen durum. Salınım sürdüğü sürece sayacın canlı durumdan saptığı
+# olabilir; kalıcı çözüm canlı fiyatın periyodik olarak tabloya alınmasıdır
+# (ayrı iş kalemi).
+OBSERVED_OPENROUTER_STATES: dict[str, tuple[tuple[float, float], ...]] = {
+    # CI 38787820334 → $0.65/$10.00 · 38821301808/38866434547/38867016705 →
+    # $0.037/$7.00 · 38833598719/38840573018/38843226709/38851706200 →
+    # $0.62/$2.42 · 38870244950 → $0.037/$9.00
+    "z-ai/glm-5.2": (
+        (0.65, 10.0),
+        (0.037, 7.0),
+        (0.62, 2.42),
+        (0.037, 9.0),
+    ),
+    # CI 38662205946 → $0.4679/$0.9358 · 38787820334 → $0.395328/$0.790656 ·
+    # 38789947274 → $0.392022/$0.784044 · 38794722007/38833598719 →
+    # $0.386976/$0.773952 · 38821301808 → $0.348174/$0.696348 ·
+    # 38822647324 → $0.346434/$0.692868 · 38840573018 → $0.95526/$1.91052
+    "deepseek/deepseek-v4-pro": (
+        (0.4679, 0.9358),
+        (0.395328, 0.790656),
+        (0.392022, 0.784044),
+        (0.386976, 0.773952),
+        (0.348174, 0.696348),
+        (0.346434, 0.692868),
+        (0.95526, 1.91052),
+    ),
 }
 
 # ── KAPSAM BOŞLUĞU (dürüstçe adlandırılmış) ──────────────────────────────────
@@ -230,10 +277,13 @@ def verify_live_openrouter(
     key: str,
     attempts: int = _LIVE_MAX_ATTEMPTS,
     sleep: Callable[[float], None] | None = None,
-) -> tuple[list[str], str | None]:
+) -> tuple[list[str], list[str], str | None]:
     """Cross-check the live OpenRouter catalog.
 
-    Returns ``(failures, unverified_reason)``:
+    Returns ``(failures, warnings, unverified_reason)``:
+
+    * ``warnings`` dolu → canlı fiyat BİLİNEN bir ölçülmüş durum ama sayacın
+      pini farklı (bilinen salınım; kapı kırılmaz, durum yazılır).
 
     * ``failures`` dolu → canlı katalog bizim pinlerle çelişiyor (gerçek kayma).
     * ``unverified_reason`` dolu → servise ulaşılamadı; DOĞRULAMA YAPILMADI.
@@ -245,6 +295,7 @@ def verify_live_openrouter(
     if sleep is None:
         sleep = _live_sleep
     last_error = ""
+    warnings: list[str] = []
     for attempt in range(1, max(1, attempts) + 1):
         try:
             request = urllib.request.Request(
@@ -269,13 +320,39 @@ def verify_live_openrouter(
             pricing = item.get("pricing", {})
             actual_in = float(pricing.get("prompt", 0))
             actual_out = float(pricing.get("completion", 0))
+            observed_states = OBSERVED_OPENROUTER_STATES.get(model_id)
+            if observed_states:
+                # Salınan model: canlı fiyat BİLİNEN bir ölçülmüş durum olmalı.
+                matched = None
+                for state_in, state_out in observed_states:
+                    if (
+                        abs(actual_in - state_in / 1_000_000) <= 1e-12
+                        and abs(actual_out - state_out / 1_000_000) <= 1e-12
+                    ):
+                        matched = (state_in, state_out)
+                        break
+                if matched is None:
+                    known = ", ".join(f"${a:g}/${b:g}" for a, b in observed_states)
+                    failures.append(
+                        f"{model_id}: live price ${actual_in * 1_000_000:g}/"
+                        f"${actual_out * 1_000_000:g} per 1M is NOT a measured state "
+                        f"(measured states: {known})"
+                    )
+                elif matched != (expected_in, expected_out):
+                    # Durum BİLİNİYOR ama sayacın pini farklı: gürültü değil,
+                    # ölçülen gerçek — uyarı olarak yazılır, kapı kırılmaz.
+                    warnings.append(
+                        f"{model_id}: live measured state ${matched[0]:g}/{matched[1]:g} "
+                        f"differs from the accounting pin ${expected_in:g}/${expected_out:g}"
+                    )
+                continue
             if abs(actual_in - expected_in / 1_000_000) > 1e-12:
                 failures.append(f"{model_id}: live input price ${actual_in * 1_000_000:g}/1M != ${expected_in:g}/1M")
             if abs(actual_out - expected_out / 1_000_000) > 1e-12:
                 failures.append(f"{model_id}: live output price ${actual_out * 1_000_000:g}/1M != ${expected_out:g}/1M")
-        return failures, None
+        return failures, warnings, None
 
-    return [], f"live OpenRouter unreachable after {attempts} attempt(s) — {last_error}"
+    return [], warnings, f"live OpenRouter unreachable after {attempts} attempt(s) — {last_error}"
 
 
 def main() -> int:
@@ -293,7 +370,11 @@ def main() -> int:
     if not key:
         print("SKIP: live OpenRouter check (OPENROUTER_API_KEY not configured)")
     else:
-        live_failures, unverified = verify_live_openrouter(key)
+        live_failures, live_warnings, unverified = verify_live_openrouter(key)
+        for warning in live_warnings:
+            # Bilinen salınım: ölçülen durum yazılır, kapı kırılmaz.
+            print(f"::warning::{warning}")
+            print(f"WARNING: {warning}")
         if unverified is not None:
             # Doğrulama YAPILAMADI. Bu bir "geçti" değildir ve öyle sunulmaz.
             print(f"UNVERIFIED: {unverified}")

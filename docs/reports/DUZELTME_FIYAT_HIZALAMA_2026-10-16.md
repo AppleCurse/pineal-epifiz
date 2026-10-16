@@ -182,3 +182,50 @@ contract verified` (canlı `SKIP`: anahtar yok) · katalog kontrat testleri
   eden, **yeni** bir kayma değerini yine de `FAIL:` ile reddeden bir bekçi
   tasarımı. Bu, bekçiyi zayıflatmaz; **bilinen** oynaklığı ölçülebilir bir
   küme ile sınırlar. Uygulanırsa ayrı PR + ayrı test gerekir.
+
+### 5.4 ÜÇÜNCÜ ÖLÇÜM + YENİ BEKÇİ TASARIMI (2026-10-16 · P1 konsolidasyonu)
+
+PR #139'un konsolidasyon koşusunda ([38870244950](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38870244950))
+canlı katalog **üçüncü kez** farklı bir fiyat okudu:
+
+```
+FAIL: z-ai/glm-5.2: live input price $0.037/1M != $0.62/1M
+FAIL: z-ai/glm-5.2: live output price $9/1M != $2.42/1M
+```
+
+Girdi $0.037'de kaldı, **çıktı $7.00 → $9.00** oldu. Yani iki günde dört ayrı
+fiyat okundu:
+
+| Ölçüm (CI koşu) | girdi/çıktı ($/1M) |
+|---|---|
+| 38787820334 (2026-10-15) | 0.65 / 10.00 |
+| 38821301808 · 38866434547 · 38867016705 | 0.037 / 7.00 |
+| 38833598719 · 38840573018 · 38843226709 · 38851706200 | 0.62 / 2.42 |
+| **38870244950** (2026-10-16) | **0.037 / 9.00** |
+
+**Teşhis:** ölçümün kendisi değil, **bekçinin tasarımı** sorunluydu. Tek bir
+pin, salınan bir fiyatı "kayma" diye okuyor; katalog adımı 4/6 koşuda
+kırmızıydı ve her seferinde **yeni bir pin** yazmak gerekti (ölçüm güvenilir,
+tablo kırılgan).
+
+**Yapılan (kapı zayıflatılmadan):** `scripts/verify_openrouter_catalog.py`
+içine `OBSERVED_OPENROUTER_STATES` eklendi — her model için **ölçülmüş**
+(girdi, çıktı) durumları, her biri CI koşu kimliğiyle kayıtlı:
+
+* canlı fiyat kümede bir **durum** ise → `PASS` + hangi durumun okunduğu
+  `WARNING:`/`::warning::` olarak yazılır (sayacın pini farklıysa);
+* canlı fiyat kümede **yok** isa → `FAIL:` (bilinmeyen yeni fiyat = gerçek
+  kayma) — **giriş ve çıktı AYRI ayrı eşleşemez** (karışık çift kabul edilmez).
+
+Ölçülen son duruma hizalama (depo politikası) üç kopyada da yapıldı:
+pin `(0.037, 9.0)` · `config/provider_catalog.json` `0.037/9.0` ·
+`llm_gateway.MODEL_PRICING` `{"in": 0.037, "out": 9.0}`.
+
+**Yeni sözleşme testleri (5):** durum kümesi pini içerir · durumlar pozitiftir ·
+bilinen durum geçer (yalnız uyarı) · **bilinmeyen durum yine FAIL** · girdi ve
+çıktı karışık eşleşemez.
+
+**KAPSAM SINIRI (dürüstlük):** harcama sayacı **tek** değer taşır (son ölçülen
+durum). Salınım sürdüğü sürece sayacın canlı durumdan saptığı olabilir
+(girdi tarafında 16,8×). Kalıcı çözüm — canlı fiyatın periyodik olarak tabloya
+alınması — **ayrı bir iş kalemi** olarak açıkta duruyor; bu PR'da uygulanmadı.

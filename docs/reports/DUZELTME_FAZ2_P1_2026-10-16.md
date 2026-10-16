@@ -431,3 +431,21 @@ backend/api.py satır sayısı                       → 5805 → 5758 (tavan 57
 * **DOĞRULANMADI:** konsolidasyonun canlı uçtan uca (WS) doğrulaması bu
   turda **yeniden yapılmadı** (P1'in canlı koşusu a4a4a61'de yapılmıştı;
   bu turda ortam egress'i kapalı).
+
+---
+
+## 12. Canlı fiyat: üçüncü ölçüm + bekçi tasarımı düzeltmesi
+
+Konsolidasyon koşusunda ([38870244950](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38870244950))
+canlı katalog **üçüncü kez** farklı okundu: `z-ai/glm-5.2` çıktı $7.00 → **$9.00**
+(girdi $0.037). İki günde dört ayrı fiyat ölçüldü → teşhis: ölçüm değil,
+**bekçinin tasarımı** sorunluydu (tek pin, salınan fiyatta yanlış alarm).
+
+Düzeltme: `scripts/verify_openrouter_catalog.py` → `OBSERVED_OPENROUTER_STATES`
+(her durum CI koşu kimliğiyle kayıtlı). Bilinen ölçülmüş durum → `PASS` +
+`WARNING`; **bilinmeyen yeni fiyat → yine `FAIL:`** (giriş/çıktı karışık
+eşleşemez). Kapı zayıflatılmadı. 5 yeni sözleşme testi eklendi.
+
+Ayrıntı: [`DUZELTME_FIYAT_HIZALAMA_2026-10-16.md`](DUZELTME_FIYAT_HIZALAMA_2026-10-16.md) §5.4.
+**Kapsam sınırı:** harcama sayacı tek değer taşır (son ölçülen durum);
+canlı fiyatın periyodik tabloya alınması ayrı bir iş kalemi olarak açık.

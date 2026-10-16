@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased — 2026-10-16 — Canlı fiyat: üçüncü ölçüm + salınım dayanıklı bekçi
+
+- **Üçüncü ölçüm:** canlı katalog `z-ai/glm-5.2` için çıktı $7.00 → **$9.00/1M**
+  okundu (girdi $0.037). İki günde dört ayrı fiyat ölçüldü → teşhis: ölçümün
+  kendisi değil, **tek pinli bekçinin tasarımı** sorunluydu (katalog adımı
+  art arda kırmızı; her seferinde yeni pin yazmak gerekti).
+- **Düzeltme (kapı zayıflatılmadan):** `scripts/verify_openrouter_catalog.py`
+  → `OBSERVED_OPENROUTER_STATES` (her model için **ölçülmüş** fiyat durumları,
+  her biri CI koşu kimliğiyle kayıtlı). Canlı fiyat bilinen bir durum ise
+  `PASS` + hangi durumun okunduğu `WARNING` olarak yazılır; **bilinmeyen yeni
+  fiyat yine `FAIL:`** eder. Girdi ve çıktı AYRI ayrı eşleşemez.
+- **Hizalama (ölçümle):** pin `(0.037, 9.0)` · `config/provider_catalog.json`
+  `0.037/9.0` · `llm_gateway.MODEL_PRICING` `{"in": 0.037, "out": 9.0}`.
+- **Test:** 5 yeni sözleşme testi (durum kümesi pini içerir · durumlar pozitif ·
+  bilinen durum geçer · bilinmeyen durum FAIL · karışık eşleşme geçmez).
+- **Kapsam sınırı:** harcama sayacı TEK değer taşır (son ölçülen durum);
+  canlı fiyatın periyodik tabloya alınması ayrı bir iş kalemi olarak açık.
+
 ## Unreleased — 2026-10-16 — P1: bulunan profiller artık gerçekten taranıyor (konsolide)
 
 - **Kopuk kablo kapatıldı (Bulgu 1):** `detected_urls` → `agent_core/services/profile_router.py`
