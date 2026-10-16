@@ -14,7 +14,13 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PY = str(ROOT / ".venv" / "bin" / "python")
+PY = sys.executable
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 
 
 def run_tests(selector: str) -> tuple[int, str]:
@@ -34,16 +40,22 @@ def revert_step(name: str, target: str, rel_path: str, current: str, reverted: s
     path = ROOT / rel_path
     backup = Path(tempfile.mkdtemp()) / path.name
     shutil.copy2(path, backup)
-    text = path.read_text(encoding="utf-8")
+    raw_text = path.read_text(encoding="utf-8")
+    crlf = "\r\n" in raw_text
+    text = raw_text.replace("\r\n", "\n")
     if current not in text:
-        print(f"!! {name}: hedef metin bulunamadı ({rel_path})")
+        print(f"!! {name}: hedef metin bulunamadi ({rel_path})")
         shutil.copy2(backup, path)
         return False
-    path.write_text(text.replace(current, reverted, 1), encoding="utf-8")
+    new_text = text.replace(current, reverted, 1)
+    if crlf:
+        new_text = new_text.replace("\n", "\r\n")
+    path.write_text(new_text, encoding="utf-8")
     code, out = run_tests(target)
     shutil.copy2(backup, path)
     ok = code != 0
-    print(f"{'PASS' if ok else 'FAIL'} · {name}")
+    print(f"{'PASS' if ok else 'FAIL'} - {name}")
+
     print(f"      test: {target}")
     print(f"      revert sonrası pytest exit: {code} (beklenen: !=0)")
     if not ok:
@@ -75,7 +87,7 @@ def main() -> int:
 
     # 2) X sensörü — boş havuzda `no_session_pool` yerine `user_not_found`
     results.append(revert_step(
-        "P0-2 X sensörü: boş havuz → no_session_pool",
+        "P0-2 X sensörü: boş havuz -> no_session_pool",
         "tests/unit/test_p0_honest_status.py::test_x_sensor_reports_no_session_pool_not_user_not_found",
         "agent_core/capabilities/adapters_sensors.py",
         current='''            pool_state = await _x_pool_state(api)
