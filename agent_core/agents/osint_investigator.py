@@ -243,10 +243,53 @@ class OsintInvestigatorAgent:
             headers["api-key"] = self.osint_api_key
         return headers
 
+    @staticmethod
+    def _extract_candidate_emails(target: dict[str, Any], payload: dict[str, Any]) -> list[str]:
+        """Hedef profil, biyografi veya arama snippet'lerinden e-posta adaylarını çıkarır."""
+        import re
+        from agent_core.services.holehe_scanner import sanitize_email
+
+        candidates: list[str] = []
+
+        def _add(raw: Any):
+            if isinstance(raw, str):
+                s = sanitize_email(raw)
+                if s and s not in candidates:
+                    candidates.append(s)
+
+        # 1. target.connected_emails
+        raw_conn = target.get("connected_emails")
+        if isinstance(raw_conn, (list, tuple, set)):
+            for e in raw_conn:
+                _add(e)
+        elif isinstance(raw_conn, str):
+            _add(raw_conn)
+
+        # 2. target.email
+        _add(target.get("email"))
+
+        # 3. target.bio
+        bio = str(target.get("bio") or "")
+        if bio:
+            for match in re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", bio):
+                _add(match)
+
+        # 4. payload.search_snippets / target.search_snippets
+        snippets = payload.get("search_snippets") or target.get("search_snippets") or []
+        if isinstance(snippets, list):
+            for snip in snippets:
+                text = snip.get("text", "") if isinstance(snip, dict) else str(snip)
+                if text:
+                    for match in re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text):
+                        _add(match)
+
+        return candidates
+
     async def execute(self, payload: Dict[str, Any]) -> OsintProfile:
         payload = payload if isinstance(payload, dict) else {}
         raw_target = payload.get("target_profile")
         target = raw_target if isinstance(raw_target, dict) else {}
+
         raw_username = target.get("username", "")
         username = raw_username.strip() if isinstance(raw_username, str) else ""
 
@@ -259,7 +302,8 @@ class OsintInvestigatorAgent:
             )
 
         clean_username = username.lstrip("@")
-        
+        candidate_emails = self._extract_candidate_emails(target, payload)
+
         # [011] Gerçek API anahtarı yoksa MOCK veri dönülmez: dürüst boş
         # fallback döner (confidence=0.0, data_confidence=False). Sahte
         # e-posta/telefon/oturum üretmek yasak.
@@ -267,7 +311,7 @@ class OsintInvestigatorAgent:
             logger.info(f"[OSINT] API anahtarı bulunamadı, '{clean_username}' için analiz atlanıyor.")
             # Return empty/unknown state due to lack of API key, avoiding LLM hallucinations.
             profile = OsintProfile(
-                connected_emails=[],
+                connected_emails=candidate_emails,
                 connected_phones=[],
                 associated_platforms=[],
                 digital_footprint_score=0.0,
@@ -281,10 +325,25 @@ class OsintInvestigatorAgent:
             profile = await self._apply_username_scan(profile, clean_username, payload)
             # [FAZ 3] Bağlı e-posta varsa holehe kayıt taraması (ENABLE_HOLEHE
             # kapalıysa profil alanları yine değişmez; yalnız provenance eklenir).
+            # [P1 · KABLO BAĞLANTISI] Hedef profilinde/biyografisinde/arama snippet'inde
+            # e-posta varsa Holehe'ye iletilir. E-posta yoksa dürüstçe
+            # 'no_target_email' gerekçesi mühürlenir (sessizce kaybolmaz).
             if profile.connected_emails:
                 profile = await self._apply_email_scan(
                     profile, profile.connected_emails[0], payload
                 )
+            else:
+                profile = profile.model_copy(update={
+                    "email_scan": {
+                        "requested_email": "",
+                        "available": False,
+                        "provider": "holehe",
+                        "reason": "no_target_email",
+                        "found_sites": [],
+                        "scanned_count": 0,
+                        "error_count": 0,
+                    }
+                })
             return profile
         else:
             # [E-GÖZ2-3 · YAPRAK] aiohttp yolu da kasa kapısından geçer:

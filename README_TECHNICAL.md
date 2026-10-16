@@ -1,4 +1,4 @@
-# PINEAL EPİFİZ v5.1 · PINEAL-HERETIC
+# PINEAL EPİFİZ v3.0.0-rc.2 · PINEAL-HERETIC
 
 > **"Kodu okuyanla belgeyi okuyan aynı şeyi görecek."**  
 > Bu belge, depodaki canlı koddan iğneden ipliğe doğrulanmış teknik, mimari ve operasyonel kılavuzdur.  

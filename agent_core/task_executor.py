@@ -1334,6 +1334,41 @@ class PinealExecutor:
                 )
                 self._log("WARNING", f"[{task_id}] OSINT taraması atlandı: {e}")
 
+        # [P1 · DERİN PROFİL ÇÖZÜMLEME] detected_urls yetenek omurgasına bağlanır
+        _deep_items: list[Any] = []
+        _detected_urls = list((input_data.get("target_profile") or {}).get("detected_urls") or [])
+        if _detected_urls:
+            try:
+                from agent_core.services.deep_profile_resolver import resolve_deep_profiles
+                _d_items, _d_channels, _d_idents = await resolve_deep_profiles(
+                    _detected_urls, payload=input_data
+                )
+                _deep_items = _d_items
+                if _d_channels:
+                    _cur_channels = [c for c in (status.channel_status or []) if (c.get("channel") if isinstance(c, dict) else getattr(c, "channel", "")) != "profile.deep_scan"]
+                    status.channel_status = _cur_channels + [c.to_dict() if hasattr(c, "to_dict") else c for c in _d_channels]
+                if _d_idents:
+                    _tp = input_data.setdefault("target_profile", {})
+                    _tp["socid_identities"] = _d_idents
+                    self._log("INFO", f"[{task_id}] DERİN PROFİL: {len(_d_idents)} profil kimliği çıkarıldı")
+            except Exception as _d_exc:
+                self._log("WARNING", f"[{task_id}] Derin profil çözümleme atlandı: {_d_exc}")
+
+        # [P2 · ÇAPRAZ PROFİLLEME] Farklı platform hesaplarını deterministik eşleştirir
+        _cross_items: list[Any] = []
+        try:
+            from agent_core.services.cross_profiler import correlate_profiles
+            _corr = correlate_profiles(
+                input_data.get("target_profile"),
+                status.osint_footprint or input_data.get("public_osint"),
+            )
+            _cross_items = _corr.items
+            if _corr.matches:
+                input_data["cross_profile_matches"] = [m.model_dump() for m in _corr.matches]
+                self._log("INFO", f"[{task_id}] ÇAPRAZ PROFİL: {len(_corr.matches)} platform hesabı eşleştirildi")
+        except Exception as _c_exc:
+            self._log("WARNING", f"[{task_id}] Çapraz profilleme atlandı: {_c_exc}")
+
         # GÖREV 2.3/2.4: psikodinamik derinlik motoru (deterministik).
         # Metin yoksa agirlik otomatik gorsel+zamansala kayar; motor ASLA
         # halt etmez (hic kanal yoksa no_evidence verdict'i doner).
@@ -1430,6 +1465,8 @@ class PinealExecutor:
                     input_data["pillar_bundle"],
                     target_profile=input_data.get("target_profile"),
                 )
+                if _deep_items or _cross_items:
+                    canonical_items = list(canonical_items) + list(_deep_items) + list(_cross_items)
                 input_data["forensic_evidence"] = [
                     item.model_dump(mode="json") for item in canonical_items
                 ]

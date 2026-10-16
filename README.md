@@ -8,17 +8,19 @@ Bu program **kesinlikle bir hacker aracı değildir**, şifre kırmaz veya gizli
 ```
                        ╔═══════════════════════════════════════════╗
                        ║        P I N E A L   E P İ F İ Z          ║
-                       ║       v5.1 ADLİ BİLİŞSEL İSTASYON         ║
+                       ║      v3.0.0-rc.2 ADLİ BİLİŞSEL İSTASYON   ║
                        ╚═══════════════════════════════════════════╝
 
     [ 🌐 ÇOK KANALLI OSINT ]       [ 🧠 7 MATEMATİKSEL DALGA MOTORU ]       [ 👁️ ATLAS GÖZLEMEVİ ]
-   Instagram · LinkedIn · X/Web       Frequency · Seismos · Void                 %12.2 Pirinç Halka
-   Tavily · Exa · SerpAPI             Strata · Gravity · Pulse · Key             Organik Yaşayan Göz
+   Instagram (Playwright)         Frequency (FFT) · Seismos · Void           %12.2 Pirinç Halka
+   X (twscrape) · Web (SearXNG)   Strata · Gravity · Pulse · Key             Organik Yaşayan Göz
+   SOCID · Çapraz Profilleme
                │                                      │                                  │
                └──────────────────────┬───────────────┴──────────────────────────────────┘
                                       │
-                         [ ⚡ 12 UZMAN ANALİZ ROLÜ ]
-                  Orkestratör süreç içinde yürütür · Canlı Rack
+                         [ ⚡ 13 GÖREV AJANI · IN-PROCESS ]
+                  Kural Tabanlı Router · Süreç İçi Yürütme · Canlı Rack
+                 (Docker beacon'lar yalnız liveness sinyali yayınlar)
                                       │
                          [ ⚔️ TAKTİK MUHAREBE MASASI ]
                        100% Şeffaf Adli Teftiş & Kara Kutu
@@ -129,14 +131,14 @@ PINEAL-HERETIC v5.1, operatöre hem derin sinematik sezgi hem de cerrahi şeffaf
 
 ## Ne İşe Yarar ve Nasıl Çalışır?
 
-Diyelim ki bir hesabı incelemek istiyorsunuz. Programın içinde birbirinden farklı uzmanlıkları olan **12 Akıllı Ajan (Uzman)** bulunur. Görevi başlattığınızda şunlar olur:
-1. **Veri Toplar:** Sizin verdiğiniz linkteki herkese açık resimleri ve yazıları çeker.
+Diyelim ki bir hesabı incelemek istiyorsunuz. Programın içinde birbirinden farklı analitik rolleri olan **13 Görev Ajanı** bulunur. Görevi başlattığınızda şunlar olur:
+1. **Veri Toplar:** Hedef URL'den (Instagram için Playwright, X için twscrape sensörü) herkese açık verileri toplar; açık web aramasından gelen snippet'lar ise "arama özeti" olarak korunur, sahte gönderi sayılmaz.
 2. **Davranış ve Karakter Analizi Yazar:**
-   - *Zamanlama Uzmanı*, kişinin hangi saatlerde daha aktif olduğunu söyler.
-   - *İnsan Davranışı Analisti*, o kişinin paylaşımlarından ne tarz şeyleri sevdiğini, hobilerini ve karakter yapısını anlamaya çalışır.
-   - Bütün uzmanlar kendi aralarında toplanıp hedefin profilini tartışarak tek, net bir rapor çıkarır.
-3. **Kasa (Vault) Güvenliği:** Asistan, topladığı notları ve gördüğü fotoğrafları hiçbir zaman internette bırakmaz. Bilgisayarınızın derinlerinde yer alan, adına "Kasa (Vault)" dediğimiz şifreli bir odada tutar. **Ekranda kasayı kilitle derseniz**, sistem dış dünyayla (internetle) bağını tamamen koparır ve asla araştırma yapmaz.
-4. **Çocuk Koruması (Kırmızı Çizgi):** Hedef hesaptaki kişi 18 yaşının altındaysa asistan bunu tespit eder etmez araştırmayı durdurur. Bu, sistemin üzerine kurulu olduğu değişmez, aşılamaz, en temel kuraldır.
+   - *Frequency Engine*, paylaşım saatlerini FFT periodogramıyla inceleyerek sirkadiyen ritmi modeller.
+   - *İnsan Davranışı Analisti*, açık paylaşımlardan ilgi alanlarını ve davranış kalıplarını inceler.
+   - Ajanlar kural tabanlı bir yönlendirici (`CognitiveRouter`) tarafından deterministik olarak sırayla yürütülür; serbest yapay zeka tartışması değil, doğrulanabilir kanıt zinciri oluşturulur.
+3. **Kasa (Vault Interlock) Güvenliği:** Ekranda **kasayı kilitle** dediğinizde, sistem dış dünyayla ağ bağlantısını fail-closed olarak tamamen keser ve hiçbir dış OSINT/kazıma çağrısı yapmaz. Kasa açıkken toplanan ham veriler yerel diskte mühürlenir; dil sentezi için yapılandırılmış LLM sağlayıcısına (OpenRouter, Groq, DeepSeek veya yerel 9Router) iletilir.
+4. **Çocuk Koruması (Kırmızı Çizgi):** Sistem yapay zekayla otomatik yaş tahmini yapmaz; operatörün açık beyanına dayalı çocuk kilidi (`POST /api/minor/case` veya görev beyanı) verildiğinde fail-closed olarak araştırmayı derhal durdurur ve reddeder (`minor_gate.py`).
 
 ---
 
@@ -162,7 +164,7 @@ PillarOrchestrator ───┼── StrataEngine     (Zaman İçinde Değişen
 
 | Dalga Motoru | Kaynak Dosya | Matematiksel / Analitik Görev |
 |---|---|---|
-| **Frequency** | `frequency_engine.py` | Paylaşım zaman damgalarını sinüs/kosinüs dalgasına döker; gece uykusuzluğu ve biyolojik ritmi hesaplar. |
+| **Frequency** | `frequency_engine.py` | Paylaşım zaman serisini Lomb-Scargle / FFT periodogramı ile spektral analize tabi tutar; sirkadiyen ritim, periyodisite ve uyku fazını hesaplar (oyuncak sin/cos modeli değildir). |
 | **Seismos** | `seismos_engine.py` | Duygusal durumlardaki ani faz sıçramalarını ve sismik kırılma noktalarını (`SeismicEvent`) saptar. |
 | **Void** | `void_engine.py` | İnsanın profilde ısrarla bahsetmediği negatif alanları (para, aile, zaaflar) bularak bastırılanı çıkarır. |
 | **Strata** | `strata_engine.py` | Yıllar içindeki üslup kaymalarını (`IdentityDrift`) ve terk edilen eski maskeleri ayrıştırır. |
@@ -172,34 +174,30 @@ PillarOrchestrator ───┼── StrataEngine     (Zaman İçinde Değişen
 
 ---
 
-## 5. 12 Uzman Analiz Rolü — Kanonik Boru Hattı
+## 5. 13 Görev Ajanı — Kanonik Boru Hattı
 
-> **Mimari not (2026-10-07 denetimi, Madde 3).** 12 rol, Docker'da birbirinden
-> bağımsız çalışan **analiz yürütücüleri değildir**. Rolleri çekirdek
-> orkestratör (`PinealExecutor`) **süreç içinde** (in-process) sırayla yürütür
-> ve gerçek `active / ready / wait` geçişlerini yazar. `docker-compose.yml`
-> içindeki 12 `beacon-*` servisi ise yalnızca **canlılık işaretçisidir**
-> (liveness beacon): "yuva ayakta ve boşta" sinyalini kendi kanalına
-> (`pineal:agent:beacon`) yayınlar; analiz yürütmez ve ajan durumunu **ezmez**.
+> **Mimari gerçeği (2026-10-16 denetimi):** `PinealExecutor` içinde **13 görev ajanı** kayıtlıdır (ayrıca opt-in `interpreter`).
+> Bunlar Docker'da birbirinden bağımsız çalışan konteynerler **değildir**; çekirdek orkestratör tarafından **in-process (süreç içinde)**
+> kural tabanlı `CognitiveRouter` mantığıyla sırayla yürütülür. `docker-compose.yml` içindeki 12 `beacon-*` servisi ise yalnızca
+> **canlılık işaretçisidir** (`pineal:agent:beacon` kalp atışı yayını); analiz yürütmez.
+> `LilithGrowthAgent` ise online boru hattında değil, CLI üzerinden (`scripts/run_lilith.py`) bağımsız çalışan içerik paketleyicisidir.
 
-Sistemdeki 12 uzman rol orkestratör tarafından yürütülür; durumları Redis
-Pub/Sub ve WebSocket üzerinden canlı olarak Rack'e yansır:
+Sistemdeki 13 görev ajanı:
+1. **OSINT Investigator:** Kullanıcı adı (Maigret) ve e-posta (Holehe) ayak izi çıkarma (açık kaynak / omurga).
+2. **Autonomous Verifier:** 3 jürili bağımsız doğrulama paneli ve arama motoru teyidi.
+3. **Authenticity Auditor:** Profil ve iddia özgünlük/tutarlılık denetimi.
+4. **Human Behavior:** Davranışsal ilgi ve aksiyon kalıpları analizi.
+5. **Passion Mapper:** Tutku, ilgi ve akış haritalama.
+6. **Friction & Bounds:** Bilişsel sürtünme, sınır ve stres noktaları tespiti.
+7. **Cognitive Profiler:** Dilbilimsel ve bilişsel düşünce stili analizi.
+8. **Mirror of Truth:** Derin ayna refleksiyonu ve kör nokta tespiti.
+9. **Resonance Calculator:** Vektör kosinüs benzerliği ve rezonans hesabı.
+10. **Pattern Interrupt:** Beklenti kırma ve temas stratejisi ağacı.
+11. **Resonance Synthesizer:** İlk temas ve rezonans köprüsü sentezi.
+12. **Depth Analyst:** 7 sütunlu psikodinamik derinlik motoru çıktılarının adli analizi.
+13. **Shadow Executor:** Gölge arketip ve bastırılmış motivasyon analizi.
 
-```
-[ OSINT Investigator ] ──> [ 7-Pillar Forensics ] ──> [ Mirror of Truth ]
-          │                                                   │
-          ▼                                                   ▼
-[ Autonomous Verifier ] ──> [ Human Behavior ] ───> [ Passion Mapper ]
-(3 Jürili Hakem Paneli)     (Cold Reading / Aşil)   (Akış & Neşe Haritası)
-          │                                                   │
-          ▼                                                   ▼
-[ Friction & Bounds ]  ───> [ Cognitive Profiler ] ──> [ Resonance Calc ]
-(Sınır & Stres Noktası)     (Dilbilimsel Düşünce)     (Numpy Vektör Kosinüs)
-          │                                                   │
-          ▼                                                   ▼
-[ Pattern Interrupt ]  ───> [ Resonance Synth ] ───> [ Depth Analyst ]
-(Beklenti Kırma Ağacı)      (İlk Temas Mesajı)        (Gerçeklik Endeksi & Mühür)
-```
+*(Opt-in: `ENABLE_INTERPRETER=true` ise 14. ajan olarak `InterpreterAgent` devreye girer).*
 
 Proje hem **Python** tabanlı, dağıtık otonom ajanlarla çalışan bir Backend'den hem de **Svelte** ile yazılmış hızlı bir arayüzden oluşur.
 
