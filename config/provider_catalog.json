@@ -200,8 +200,8 @@
       "tools"
      ],
      "pricing": {
-      "input_per_million_usd": 0.62,
-      "output_per_million_usd": 2.42
+      "input_per_million_usd": 0.037,
+      "output_per_million_usd": 9.0
      }
     },
     {

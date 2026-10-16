@@ -79,6 +79,27 @@ Bölme, **en iyi test edilmiş ve en az bağımlılığı olan** katmanla başla
   listesine `backend/routes/telemetry.py` eklendi: bu modül rust çekirdeğini
   **çağırmaz**, yalnız `backend/api.py`'den enjekte edilen durumu aktarır.
 
+### 2.4 Dördüncü bölme — public-web araştırma (2026-10-16, API-BÖLME 4)
+
+| Modül | Satır | Test |
+|---|---|---|
+| `backend/services/web_research.py` | 214 | `tests/unit/test_alternative_web_research.py`, `tests/unit/test_crawl_enricher.py` |
+
+* Tetikleyici: Faz 2 · P1 (profil derinleştirme) `backend/api.py`'ye bağlantı
+  satırları eklemek zorundaydı; tavan 5.908 idi ve **artırılamazdı**.
+  Kural işletildi: **satır eklemek yerine modül çıkarıldı.**
+* Taşınan gövde: `_run_public_web_research` (159 satır) + `_extract_handle_from_url`
+  (9 satır) → `backend/services/web_research.py`.
+* `backend/api.py`: **5.908 → 5.805 satır**.
+* Tavan (`MAX_LINES`) 5.908 → **5.805** olarak DÜŞÜRÜLDÜ (ratchet: geri çıkış yok).
+* Dış sözleşme korunur: `backend/api.py` `_run_public_web_research` ve
+  `_extract_handle_from_url` adlarını yeniden ihraç eder.
+* Bağımlılıklar **ENJEKTE** edilir: kasa mandalı (`vault_locked_fn`) ve arama
+  sağlayıcısı çağırandan gelir; modül `backend.api`'yi içe aktarmaz
+  (dairesel bağımlılık yok — yalnız geriye dönük uyum için TEBEL İÇE AKTARIM var).
+* `tests/unit/test_api_monolith_ratchet.py` yeni bölme için de kapatıldı
+  (modül var mı, yeniden ihraç var mı, gövde kopyalanmış mı, tavan düştü mü).
+
 ---
 
 ## 3. Uç nokta envanteri (ölçülen dağılım)

@@ -548,10 +548,14 @@ class LLMGateway:
         # [2026-10-15 · CI 38665669314 + 38665674379] Çıktı yeniden $7/1M.
         # [2026-10-15 · PR CI 38787820334] Canlı /models yeniden değişti:
         # $0.65/$10.00 per 1M; önceki snapshot artık güncel değil.
-        # [2026-10-16 · CI 38833598719 + 38840573018 + 38843226709] Canlı katalog
-        # $0.62/$2.42 okudu (girdi 16,8× yükseldi, çıktı 2,9× düştü); üç koşu
-        # birebir aynı ölçüm. Harcama sayacı ölçülen değere hizalandı.
-        "z-ai/glm-5.2": {"in": 0.62, "out": 2.42},
+        # [2026-10-16 · CI 38833598719 + 38840573018 + 38843226709 + 38851706200]
+        # Canlı katalog $0.62/$2.42 okudu; dört koşu birebir aynı ölçüm.
+        # [2026-10-16 · PR CI 38866434547 + 38867016705] Canlı katalog GERİ
+        # $0.037/$7.00 okundu (ard arda iki koşu birebir aynı).
+        # [2026-10-16 · PR CI 38870244950] Çıktı $9.00/1M okundu → sayacı son
+        # ölçüme hizalandı. Modelde fiyat SALINIYOR; ölçülmüş durum kümesi
+        # scripts/verify_openrouter_catalog.py içinde kayıtlı.
+        "z-ai/glm-5.2": {"in": 0.037, "out": 9.0},
         # [2026-10-14..15] Ölçülen geçmiş: $0.4679/$0.9358 ->
         # $0.386976/$0.773952 -> $0.95526/$1.91052.
         # [2026-10-15 · PR CI 38787820334] $0.395328/$0.790656; sonraki

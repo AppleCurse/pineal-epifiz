@@ -72,7 +72,14 @@ def build_dossier_profile(
     * ``bio`` boş kalır: arama snippet'i biyografi DEĞİLDİR.
     * ``followers``/``following`` ``None`` = ölçülmedi (0 ölçümdür).
     * ``posts`` boş: snippet "gönderi" değildir.
+    * ``scanned_urls``/``scanned_profiles`` burada **boş** başlar: derin tarama
+      bu katmanda KOŞMAZ (tek koşum yolu: görev yürütücüsü →
+      ``deep_profile_resolver``). Görev sırasında doldurulur. **Hedefin
+      ``posts`` alanına hiçbir zaman YAZILMAZ**: bulunan profil ile hedefin
+      aynı kişi olduğu kanıtlanmamıştır (P0 kuralı: "bulundu" ≠ "hedef").
     """
+    scanned_urls: list[dict[str, Any]] = []
+    scanned_profiles: dict[str, dict[str, Any]] = {}
     return {
         "username": display_user,
         "name": clean_u,
@@ -89,6 +96,9 @@ def build_dossier_profile(
         "following": None,
         "is_private": None,
         "detected_urls": found_profiles,
+        # [P1 · 2026-10-16] Bulunan profillerin gerçek kazım defteri.
+        "scanned_urls": scanned_urls,
+        "scanned_profiles": scanned_profiles,
         "web_search": web_search or {},
         "platform": "web_dossier",
         "sensor_note": (
@@ -129,7 +139,13 @@ def dossier_channel_rows(
     queries_available: int = 0,
     queries_requested: int = 0,
 ) -> list[ChannelRun]:
-    """Web dosyası kanallarının durum satırları (boş liste yasak)."""
+    """Web dosyası kanallarının durum satırları (boş liste yasak).
+
+    Bulunan profil URL'leri varsa "henüz kazınmadı" satırı yazılır: derin tarama
+    bu katmanda koşmaz, **görev yürütücüsünde** koşar (tek koşum yolu) ve
+    oradaki gerçek satırlar bu yer tutucuyu **değiştirir**. Arama kanalı satırı
+    (``search.web``) her zaman korunur.
+    """
     rows: list[ChannelRun] = []
     if str(web_search_status).upper() in {"UNAVAILABLE", "PARTIAL"}:
         rows.append(
@@ -151,6 +167,7 @@ def dossier_channel_rows(
         )
     if found_profile_count:
         # Bulunan profil URL'leri henüz KAZINMADI; "bağlandı" diye sunulmaz.
+        # (Görev yürütücüsü bu satırı gerçek koşu satırlarıyla değiştirir.)
         rows.append(
             not_run(
                 "profile.deep_scan",

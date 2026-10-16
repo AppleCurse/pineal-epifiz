@@ -38,6 +38,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 API = REPO_ROOT / "backend/api.py"
 BODY_LIMIT_MODULE = REPO_ROOT / "backend/middleware/body_size_limit.py"
 LANGUAGE_MODULE = REPO_ROOT / "backend/routes/language.py"
+WEB_RESEARCH_MODULE = REPO_ROOT / "backend/services/web_research.py"
 
 #: Denetim öncesi ÖLÇÜLEN değer: 6.034 satır.
 #: İlk bölme (gövde tavanı middleware'i taşındı) sonrası: 5.937 satır.
@@ -50,12 +51,16 @@ MEASURED_AT_AUDIT = 6034
 MEASURED_AFTER_FIRST_SPLIT = 5937
 MEASURED_AFTER_SECOND_SPLIT = 5916
 MEASURED_AFTER_THIRD_SPLIT = 5908
+#: Dördüncü bölme (2026-10-16, API-BÖLME 4): public-web araştırma gövdesi
+#: `backend/services/web_research.py` modülüne taşındı → 5.805 satır.
+MEASURED_AFTER_FOURTH_SPLIT = 5805
 
 #: Tavan. Yeni uç nokta eklemek yerine MODÜL ÇIKAR. Tavana dayanınca
 #: `docs/reports/API_MONOLITH_SPLIT_PLAN.md` sırasındaki bir sonraki
 #: düşük-bağımlılıklı alanı taşı ve bu sayıyı DÜŞÜR.
 #: Üçüncü bölmeden sonra ölçülen değere indirildi (ratchet: geri çıkış yok).
-MAX_LINES = 5908
+#: [API-BÖLME 4] Dördüncü bölmeden sonra 5.805'e indirildi.
+MAX_LINES = 5805
 
 
 def _line_count() -> int:
@@ -185,6 +190,59 @@ def test_api_does_not_redefine_language_models():
     assert not redefinitions, (
         "dil hattı payload modelleri hem taşınmış hem api.py içinde yeniden "
         "tanımlanmış: iki kopya birbirinden sapar"
+    )
+
+
+def test_web_research_split_module_exists_and_is_importable():
+    """[API-BÖLME 4] Public-web araştırma gövdesi ayrı modülde yaşar."""
+    assert WEB_RESEARCH_MODULE.is_file(), (
+        "ayrıştırılan public-web araştırma modülü bulunamadı: "
+        "backend/services/web_research.py"
+    )
+    from backend.services.web_research import (
+        extract_handle_from_url,
+        run_public_web_research,
+    )
+
+    assert callable(extract_handle_from_url)
+    assert callable(run_public_web_research)
+
+
+def test_api_reexports_web_research_split_symbols():
+    """[API-BÖLME 4] Geriye dönük uyumluluk: `from backend.api import ...` çalışır."""
+    import backend.api as api
+    from backend.services.web_research import (
+        extract_handle_from_url as CanonicalExtract,
+        run_public_web_research as CanonicalRun,
+    )
+
+    assert api._extract_handle_from_url is CanonicalExtract
+    assert api._run_public_web_research is CanonicalRun
+
+
+def test_api_does_not_redefine_web_research_body():
+    """[API-BÖLME 4] Kopya bırakılmamalı: gövde api.py içinde yeniden yazılamaz."""
+    import ast
+
+    tree = ast.parse(API.read_text(encoding="utf-8"))
+    definitions = [
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name in {"_run_public_web_research", "_extract_handle_from_url"}
+    ]
+    assert not definitions, (
+        "public-web araştırma gövdesi hem taşınmış hem api.py içinde yeniden "
+        "tanımlanmış: iki kopya birbirinden sapar"
+    )
+
+
+def test_api_shrank_after_fourth_split():
+    """[API-BÖLME 4] Ölçülebilir ilerleme: tavan 5.805'e indi."""
+    current = _line_count()
+    assert current <= MEASURED_AFTER_FOURTH_SPLIT, (
+        f"backend/api.py {current} satır — dördüncü bölme tavanı "
+        f"{MEASURED_AFTER_FOURTH_SPLIT}"
     )
 
 

@@ -1,5 +1,82 @@
 # Changelog
 
+## Unreleased — 2026-10-16 — Canlı fiyat: üçüncü ölçüm + salınım dayanıklı bekçi
+
+- **Üçüncü ölçüm:** canlı katalog `z-ai/glm-5.2` için çıktı $7.00 → **$9.00/1M**
+  okundu (girdi $0.037). İki günde dört ayrı fiyat ölçüldü → teşhis: ölçümün
+  kendisi değil, **tek pinli bekçinin tasarımı** sorunluydu (katalog adımı
+  art arda kırmızı; her seferinde yeni pin yazmak gerekti).
+- **Düzeltme (kapı zayıflatılmadan):** `scripts/verify_openrouter_catalog.py`
+  → `OBSERVED_OPENROUTER_STATES` (her model için **ölçülmüş** fiyat durumları,
+  her biri CI koşu kimliğiyle kayıtlı). Canlı fiyat bilinen bir durum ise
+  `PASS` + hangi durumun okunduğu `WARNING` olarak yazılır; **bilinmeyen yeni
+  fiyat yine `FAIL:`** eder. Girdi ve çıktı AYRI ayrı eşleşemez.
+- **Hizalama (ölçümle):** pin `(0.037, 9.0)` · `config/provider_catalog.json`
+  `0.037/9.0` · `llm_gateway.MODEL_PRICING` `{"in": 0.037, "out": 9.0}`.
+- **Test:** 5 yeni sözleşme testi (durum kümesi pini içerir · durumlar pozitif ·
+  bilinen durum geçer · bilinmeyen durum FAIL · karışık eşleşme geçmez).
+- **Kapsam sınırı:** harcama sayacı TEK değer taşır (son ölçülen durum);
+  canlı fiyatın periyodik tabloya alınması ayrı bir iş kalemi olarak açık.
+
+## Unreleased — 2026-10-16 — P2: çapraz profilleme deterministik ve dürüst
+
+- **Bulgu:** denetimde çapraz profilleme kodu **yoktu**; PR #138 ile `main`'e gelen
+  uygulama üç gerçek kusur taşıyordu: (a) biyografideki **alt dize** eşleşmesi
+  yanlış pozitif üretiyordu (en güçlü sinyalle!), (b) socid'in `user_id` alanı
+  **kullanıcı adı gibi** eşleştiriliyordu (rastgele sayı çakışması), (c) skor
+  "olasılık" gibi sunuluyordu ve `EvidenceItem.confidence` alanına yazılıyordu
+  (alan sözleşmesi ihlali: "source scores must remain in source_metrics").
+- **Düzeltme:** `agent_core/services/cross_profiler.py` yeniden yazıldı.
+  Sinyaller: `self_declared_link` (birebir bağlantı) · `exact_handle` ·
+  `normalized_handle` · `shared_platform_id` (socid ortak kimlik). Aynı platform
+  eşleşmesi, jenerik kullanıcı adları ve kısa adlar eşleşme üretmez.
+- **Skor artık "kapsam":** `coverage = Σ(yanan sinyallerin belgelenmiş
+  ağırlıkları)`; kanıtta `confidence=None`, `source_metrics.coverage_label="kapsam"`,
+  `scope.confidence_label="kapsam"`, metinde yüzde dili yok.
+- **UI:** profil kartında "ÇAPRAZ PROFİL (çıkarım · kapsam)" listesi.
+- **Test:** 13 yeni P2 sözleşme testi · revert-doğrulama **3/3** · tam koşu
+  `2730 passed, 6 skipped` · ruff temiz · svelte-check 0 hata.
+  Rapor: `docs/reports/DUZELTME_FAZ2_P2_2026-10-16.md`.
+
+## Unreleased — 2026-10-16 — P1: bulunan profiller artık gerçekten taranıyor (konsolide)
+
+- **Kopuk kablo kapatıldı (Bulgu 1):** `detected_urls` → `agent_core/services/profile_router.py`
+  (saf URL→yetenek sınıflandırması) → `agent_core/services/profile_deep_scan.py`
+  (tek geçit: `CapabilityRunner`) → kanal durumu + kanıt + kazanılan alan.
+  Instagram → `sensor.ig.instagrapi`, X/Twitter → `sensor.x.twscrape`,
+  LinkedIn/Facebook → `extractor.identity.socid`; diğer profil adresleri genel
+  kimlik çıkarıcıya (`socid`) gider. Profil OLMAYAN adres (gönderi/etiket/giriş/
+  rezerv yol) yola bağlanmaz; sebebiyle bildirilir.
+- **Konsolidasyon (main'de paralel bir P1 vardı):** PR #138 `main`'e merge
+  edilmişti (tek squash commit `d83c67b` → "unrelated histories"). İki ayrı
+  uygulama bırakılmadı: sınıflandırma `profile_router`'da TEK,
+  koşum `profile_deep_scan`'de TEK, giriş noktası
+  `deep_profile_resolver.resolve_deep_profiles` (üçlü sözleşmesi korundu),
+  **koşum yeri görev yürütücüsü** (API + CLI). PR #138'in P2 çapraz profillemesi
+  değiştirilmedi; kanıt zincirine `extra_items` ile bağlandı.
+- **Gerçek kusur düzeltildi:** API katmanı `payload["policy"]` içine
+  `rate_ok` yazmıyordu → hız kapısı "bilinmiyor" diye RET ediyor, sensörler
+  hiç koşamıyordu. Artık `rate_ok=True` taşınıyor (kasa/çocuk kilidi/`ENABLE_*`
+  bayrakları **dokunulmadan** aynı yerde).
+- **`socid` ölü kod değil (Bulgu 3):** yetenek artık gerçekten çağrılıyor; ölçüldü —
+  kasa kilitliyken `policy:vault_locked`, kapı kapalıyken `policy:gate_disabled`,
+  ağ yoksa `extract_unavailable:network_error`; hiçbir durumda kanıt uydurmuyor.
+  Ürettiği kanıt `forensic_evidence` / `evidence_timeline` zincirine giriyor.
+- **Dürüstlük korundu:** kapalı kapı `not_run` + makine-okunur sebep; snippet'a
+  sessiz düşüş yok; **bulunan profilin gönderileri hedefin `posts` alanına
+  yazılmaz** (kimlik karıştırması) — `scanned_urls`/`scanned_profiles` altında
+  ayrı durur.
+- **API-BÖLME 4:** public-web araştırma gövdesi `backend/services/web_research.py`
+  modülüne taşındı; `backend/api.py` 5908 → **5758 satır**; tavan **düşürüldü**.
+  Dış sözleşme (adlar, yollar, yanıt anahtarları) değişmedi.
+- **Ölçüm:** `2707 passed, 6 skipped` (0 failed) · P1 sözleşmeleri 37 + PR #138
+  sözleşmeleri 15 = **52 passed** · ruff `All checks passed!` · svelte-check
+  0 hata · revert-doğrulama **6/6** · envanter/audit/routing/skills taze.
+  Rapor: `docs/reports/DUZELTME_FAZ2_P1_2026-10-16.md`.
+- **DOĞRULANMADI:** canlı X/IG kazıma, canlı socid çıkarımı ve canlı
+  arama→derin tarama zinciri (bu ortamda dış ağ erişimi yok; sebepleri raporda).
+
+
 ## Unreleased — 2026-10-16 — Canlı fiyat hizalaması: CI'ın üç kez birebir ölçtüğü değer
 
 - **Ölçüm (üç bağımsız CI koşusu, birebir aynı):**

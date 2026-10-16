@@ -21,6 +21,7 @@ from agent_core.agents.osint_investigator import OsintInvestigatorAgent
 from agent_core.capabilities.base import CapabilityResult, make_evidence
 from agent_core.domain.evidence_models import EvidenceItem
 from agent_core.services.cross_profiler import (
+    SIGNAL_WEIGHTS,
     CrossProfileCorrelation,
     _detect_platform_and_handle,
     _normalize_handle,
@@ -295,10 +296,13 @@ class TestP2CrossProfiler:
         res = correlate_profiles(tp)
         assert isinstance(res, CrossProfileCorrelation)
         assert res.cluster_count >= 2
-        # Exact match confidence is 0.85
+        # [P2 · 2026-10-16] Skor artık "olasılık" değil, KAPSAM skoru:
+        # belgelenmiş ağırlıklardan (`SIGNAL_WEIGHTS`) gelir ve "kapsam"
+        # etiketiyle taşınır.
         for m in res.matches:
             assert m.match_method == "exact_handle"
-            assert m.confidence == 0.85
+            assert m.coverage == SIGNAL_WEIGHTS["exact_handle"]
+            assert m.confidence_label == "kapsam"
             assert m.epistemic_type == "inference"
 
         assert len(res.items) == res.cluster_count
@@ -307,8 +311,11 @@ class TestP2CrossProfiler:
             assert item.epistemic_type == "inference"
             assert item.source_engine == "cross_profiler"
             assert "Çapraz profil korelasyonu" in item.content
+            # Alan sözleşmesi: kalibre edilmemiş skor `confidence` alanına girmez.
+            assert item.confidence is None
+            assert item.source_metrics["coverage_label"] == "kapsam"
 
-    def test_correlate_profiles_bio_cross_link_gives_highest_confidence(self):
+    def test_correlate_profiles_bio_cross_link_gives_the_highest_coverage(self):
         tp = {
             "username": "@main_hero",
             "platform": "instagram",
@@ -318,9 +325,9 @@ class TestP2CrossProfiler:
             ],
         }
         res = correlate_profiles(tp)
-        bio_matches = [m for m in res.matches if m.match_method == "cross_link"]
+        bio_matches = [m for m in res.matches if "self_declared_link" in m.signals]
         assert len(bio_matches) >= 1
-        assert bio_matches[0].confidence == 0.95
+        assert bio_matches[0].coverage == SIGNAL_WEIGHTS["self_declared_link"]
         assert bio_matches[0].epistemic_type == "inference"
 
     def test_correlate_profiles_normalized_match(self):
@@ -332,9 +339,9 @@ class TestP2CrossProfiler:
             ],
         }
         res = correlate_profiles(tp)
-        norm_matches = [m for m in res.matches if m.match_method == "normalized_handle"]
+        norm_matches = [m for m in res.matches if "normalized_handle" in m.signals]
         assert len(norm_matches) == 1
-        assert norm_matches[0].confidence == 0.70
+        assert norm_matches[0].coverage == SIGNAL_WEIGHTS["normalized_handle"]
         assert norm_matches[0].epistemic_type == "inference"
 
 

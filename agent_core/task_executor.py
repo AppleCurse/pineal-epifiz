@@ -1334,23 +1334,37 @@ class PinealExecutor:
                 )
                 self._log("WARNING", f"[{task_id}] OSINT taraması atlandı: {e}")
 
-        # [P1 · DERİN PROFİL ÇÖZÜMLEME] detected_urls yetenek omurgasına bağlanır
+        # [P1 · DERİN PROFİL ÇÖZÜMLEME] detected_urls yetenek omurgasına bağlanır.
+        # KOŞUM TEK YERDE: `deep_profile_resolver` → `profile_router` (saf
+        # sınıflandırma) → `CapabilityRunner` (kapılar, çocuk kilidi, timeout).
+        # API katmanı yalnız adresleri taşır; ikinci bir koşum yolu açılsaydı
+        # aynı yetenek iki kez çağrılırdı.
         _deep_items: list[Any] = []
         _detected_urls = list((input_data.get("target_profile") or {}).get("detected_urls") or [])
         if _detected_urls:
             try:
-                from agent_core.services.deep_profile_resolver import resolve_deep_profiles
-                _d_items, _d_channels, _d_idents = await resolve_deep_profiles(
+                from agent_core.services.deep_profile_resolver import (
+                    resolve_deep_profiles_detailed,
+                )
+                _resolution = await resolve_deep_profiles_detailed(
                     _detected_urls, payload=input_data
                 )
-                _deep_items = _d_items
-                if _d_channels:
+                _deep_items = list(_resolution.items)
+                if _resolution.channel_runs:
                     _cur_channels = [c for c in (status.channel_status or []) if (c.get("channel") if isinstance(c, dict) else getattr(c, "channel", "")) != "profile.deep_scan"]
-                    status.channel_status = _cur_channels + [c.to_dict() if hasattr(c, "to_dict") else c for c in _d_channels]
-                if _d_idents:
-                    _tp = input_data.setdefault("target_profile", {})
-                    _tp["socid_identities"] = _d_idents
-                    self._log("INFO", f"[{task_id}] DERİN PROFİL: {len(_d_idents)} profil kimliği çıkarıldı")
+                    status.channel_status = _cur_channels + [c.to_dict() if hasattr(c, "to_dict") else c for c in _resolution.channel_runs]
+                _tp = input_data.setdefault("target_profile", {})
+                if _resolution.identities:
+                    _tp["socid_identities"] = _resolution.identities
+                # [P1] KAZANAN ALAN DEFTERİ: hangi profil tarandı, kaç gönderi
+                # geldi, neden koşmadı. UI rozeti bu defterden okur.
+                _tp["scanned_urls"] = list(_resolution.scanned_urls)
+                _tp["scanned_profiles"] = dict(_resolution.profiles)
+                self._log(
+                    "INFO",
+                    f"[{task_id}] DERİN PROFİL: {len(_resolution.scanned_urls)} profil tarandı, "
+                    f"{len(_resolution.identities)} kimlik kaydı, {len(_deep_items)} kanıt",
+                )
             except Exception as _d_exc:
                 self._log("WARNING", f"[{task_id}] Derin profil çözümleme atlandı: {_d_exc}")
 
@@ -1364,7 +1378,12 @@ class PinealExecutor:
             )
             _cross_items = _corr.items
             if _corr.matches:
-                input_data["cross_profile_matches"] = [m.model_dump() for m in _corr.matches]
+                _matches = [m.model_dump() for m in _corr.matches]
+                input_data["cross_profile_matches"] = _matches
+                # [P2] Eşleşmeler hedef profilin içinde de taşınır: UI rozeti
+                # "kapsam" etiketiyle okur (olasılık olarak sunulmaz).
+                _tp2 = input_data.setdefault("target_profile", {})
+                _tp2["cross_profile_matches"] = _matches
                 self._log("INFO", f"[{task_id}] ÇAPRAZ PROFİL: {len(_corr.matches)} platform hesabı eşleştirildi")
         except Exception as _c_exc:
             self._log("WARNING", f"[{task_id}] Çapraz profilleme atlandı: {_c_exc}")
@@ -1461,12 +1480,14 @@ class PinealExecutor:
             try:
                 from agent_core.services.pillar_evidence_adapter import adapt_pillar_bundle
 
+                # [P1 · 2026-10-16] Derin tarama ve çapraz profilleme
+                # kanıtları adaptörün `extra_items` kanalıyla kanonik kanıt
+                # zincirine girer (pillar paketi boş olsa bile kanıt kaybolmaz).
                 canonical_items = adapt_pillar_bundle(
                     input_data["pillar_bundle"],
                     target_profile=input_data.get("target_profile"),
+                    extra_items=[*_deep_items, *_cross_items],
                 )
-                if _deep_items or _cross_items:
-                    canonical_items = list(canonical_items) + list(_deep_items) + list(_cross_items)
                 input_data["forensic_evidence"] = [
                     item.model_dump(mode="json") for item in canonical_items
                 ]

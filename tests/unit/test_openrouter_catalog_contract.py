@@ -181,7 +181,7 @@ def test_live_match_yields_no_failures_and_no_unverified(monkeypatch):
         oc.urllib.request, "urlopen",
         lambda *a, **k: _Response(_payload()),
     )
-    failures, unverified = oc.verify_live_openrouter("key")
+    failures, _warnings, unverified = oc.verify_live_openrouter("key")
     assert failures == [] and unverified is None
 
 
@@ -190,7 +190,7 @@ def test_live_price_drift_is_a_failure_not_an_unverified_start(monkeypatch):
         oc.urllib.request, "urlopen",
         lambda *a, **k: _Response(_payload({"google/gemini-3.7-flash": (0.99, 3.75)})),
     )
-    failures, unverified = oc.verify_live_openrouter("key")
+    failures, _warnings, unverified = oc.verify_live_openrouter("key")
     assert unverified is None, "katalog okunduysa 'doğrulanamadı' DENEMEZ"
     assert any("live input price" in f for f in failures), failures
 
@@ -249,7 +249,7 @@ def test_transient_failure_is_retried_then_succeeds(monkeypatch):
         return _Response(_payload())
 
     monkeypatch.setattr(oc.urllib.request, "urlopen", _flaky)
-    failures, unverified = oc.verify_live_openrouter("key")
+    failures, _warnings, unverified = oc.verify_live_openrouter("key")
     assert (failures, unverified) == ([], None)
     assert calls["n"] == 2, "tek sarsıntıda pes edilmez"
 
@@ -262,7 +262,7 @@ def test_retries_are_bounded_and_report_the_last_error(monkeypatch):
         raise urllib.error.URLError("kapalı")
 
     monkeypatch.setattr(oc.urllib.request, "urlopen", _always_down)
-    failures, unverified = oc.verify_live_openrouter("key")
+    failures, _warnings, unverified = oc.verify_live_openrouter("key")
     assert failures == []
     assert unverified is not None and "unreachable" in unverified
     assert calls["n"] == oc._LIVE_MAX_ATTEMPTS, "deneme sayısı sabit ve sınırlı"
@@ -426,7 +426,7 @@ def test_live_price_failure_uses_the_same_unit_on_both_sides(monkeypatch):
         oc.urllib.request, "urlopen",
         lambda *a, **k: _Response(_payload({"google/gemini-3.7-flash": (0.99, 4.4)})),
     )
-    failures, unverified = oc.verify_live_openrouter("key")
+    failures, _warnings, unverified = oc.verify_live_openrouter("key")
     assert unverified is None
     assert failures == [
         "google/gemini-3.7-flash: live input price $0.99/1M != $0.75/1M",
@@ -487,3 +487,72 @@ def test_nightly_workflow_shell_requires_live_verification(
         assert annotation in result.stdout
     else:
         assert "::error" not in result.stdout
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SALINAN MODELLER: "ölçülmüş durum kümesi" sözleşmesi (2026-10-16)
+#
+# Neden: `z-ai/glm-5.2` ve `deepseek/deepseek-v4-pro` canlı katalogda iki
+# günde DÖRT ayrı fiyat okundu (CI 38833598719/38840573018/38843226709/
+# 38851706200 → 38866434547/38867016705 → 38870244950). Tek pinde çalışan
+# bekçi bu modelde art arda yanlış alarm üretti. Bekçi artık "canlı fiyat
+# BİLİNEN bir ÖLÇÜLMÜŞ durum mu?" diye sorar; YENİ bir fiyat yine FAIL eder.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_observed_states_contain_the_primary_pin():
+    """Her salınan modelin durum kümesi, sayacın pinini İÇERMELİ.
+
+    Aksi hâlde "ölçülmüş durum" listesi tutarsız olur ve bekçi, kendi
+    pinimize ölçülmüş değer diye itiraz ederdi.
+    """
+    for model_id, states in oc.OBSERVED_OPENROUTER_STATES.items():
+        pin = oc.REQUIRED_OPENROUTTER.get(model_id)
+        assert pin is not None, f"{model_id}: durum kümesi var ama pin yok"
+        assert tuple(pin) in states, f"{model_id}: pin {pin} durum kümesinde yok"
+
+
+def test_observed_states_are_positive_pairs():
+    """Durum kümesi boş/negatif olamaz (fiyat $0 veya eksi olamaz)."""
+    for model_id, states in oc.OBSERVED_OPENROUTER_STATES.items():
+        assert states, f"{model_id}: boş durum kümesi"
+        for state_in, state_out in states:
+            assert state_in > 0 and state_out > 0, f"{model_id}: {state_in}/{state_out}"
+
+
+def test_known_measured_state_passes_even_when_it_is_not_the_pin(monkeypatch):
+    """BİLİNEN ölçülmüş durum → kapı KIRMIZI değil (yalnız uyarı yazılır)."""
+    monkeypatch.setattr(
+        oc.urllib.request, "urlopen",
+        lambda *a, **k: _Response(_payload({"z-ai/glm-5.2": (0.62, 2.42)})),
+    )
+    failures, warnings, unverified = oc.verify_live_openrouter("key")
+    assert unverified is None
+    assert failures == [], failures
+    assert any("z-ai/glm-5.2" in w for w in warnings), warnings
+
+
+def test_unknown_price_state_still_fails(monkeypatch):
+    """YENİ (hiç ölçülmemiş) bir fiyat → kapı yine KIRMIZI (güçlendirme yok)."""
+    monkeypatch.setattr(
+        oc.urllib.request, "urlopen",
+        lambda *a, **k: _Response(_payload({"z-ai/glm-5.2": (0.05, 8.0)})),
+    )
+    failures, _warnings, unverified = oc.verify_live_openrouter("key")
+    assert unverified is None
+    assert any("NOT a measured state" in f for f in failures), failures
+
+
+def test_measured_state_must_match_input_and_output_together(monkeypatch):
+    """Girdi ve çıktı AYRI ayrı ölçülmüş durumlardan geliyorsa GEÇERMEZ.
+
+    Karışık eşleşme kabul edilirse bekçi, hiç ölçülmemiş bir fiyat
+    çiftini "ölçülmüş" diye kabul ederdi.
+    """
+    monkeypatch.setattr(
+        oc.urllib.request, "urlopen",
+        lambda *a, **k: _Response(_payload({"z-ai/glm-5.2": (0.62, 9.0)})),
+    )
+    failures, _warnings, unverified = oc.verify_live_openrouter("key")
+    assert unverified is None
+    assert any("NOT a measured state" in f for f in failures), failures
