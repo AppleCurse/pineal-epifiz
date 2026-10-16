@@ -97,6 +97,7 @@ Pineal, sağlanan sosyal profil örneğinden **kaynak alanlarını**, bu alanlar
 4. **Ne bulabiliyorsun?** Sağlayıcıya bağlı bir `OsintProfile`; eşleşme kimlik doğrulaması değildir. Sağlayıcı/anahtar yoksa sonuç sınırlı veya unavailable olabilir.
 5. **Çıktını kime veriyorsun?** Görev durumuna, `public_osint` girdisine, uygun downstream raporlara ve UI'ye.
 6. **Bir kullanıcı seni ne zaman kullanır?** Hedef adı/kullanıcı adı varsa executor discovery aşamasında çağırır; router planında yer almazsın.
+7. **Hangi kapılara tabi?** **[P4 · 2026-10-16]** Maigret ve holehe **omurgadan** koşar (`sensor.identity.maigret` / `sensor.identity.holehe`); kapı (`ENABLE_MAIGRET` / `ENABLE_HOLEHE`), kasa kilidi ve çocuk kilidi otomatik uygulanır, **reddedilen tarama da makine-okunur sebeple (`policy:vault_locked` / `policy:gate_disabled`) profilde kalır** ve mühürlü kayda bağlanır. **Holehe hakkında düzeltme:** 2026-10-16 denetiminin "holehe ana hattan erişilemez" tespiti **P1 kablo düzeltmesiyle geçersizleşti** — hedef profil/biyografi/arama snippet'ındaki e-posta artık çıkarılıyor (`osint_investigator.py:305-333`), ölçüm: biyografideki e-posta → holehe yeteneği çağrılıyor → kasa kilitliyken `policy:vault_locked` ile **dürüstçe** durdu. **Canlı holehe taraması DOĞRULANMADI** (sandbox egress'i kapalı).
 
 #### `resonance_calc` — [KOD HESAPLAMASI; GİRDİLERİN BİR KISMI MODEL TAHMİNİ]
 1. **Sen kimsin?** İki taraf için sağlanan vektörleri ve metin öğelerini hesapla karşılaştıran ajansın.
@@ -156,7 +157,7 @@ Pineal, sağlanan sosyal profil örneğinden **kaynak alanlarını**, bu alanlar
 5. **Çıktını kime veriyorsun?** Yalnız `/api/experimental/chat/respond` yanıtına. Varsayılan olarak oturumları süreç belleğinde 30 dakika ve en çok 512 oturum tutar; hedef platforma mesaj yollamaz.
 6. **Bir kullanıcı seni ne zaman kullanır?** API çağıranı endpoint'e görev kimliği, profiller ve hedef mesajını açıkça POST ettiğinde; standart UI bu endpoint'i çağırmaz.
 
-#### `LilithGrowthAgent` — [MODEL ÜRETİMİ + FORMÜL; AYRI CLI]
+#### `LilithGrowthAgent` — [MODEL ÜRETİMİ + FORMÜL; **CLI-ONLY**]
 1. **Sen kimsin?** Ana görev hattı dışındaki sosyal içerik paketi üreticisisin.
 2. **Neye bakıyorsun?** Konu/platforma ve isteğe bağlı passion/friction/üslup alanlarına. JSON'daki `target_profile` varlığı veri durumu bayrağını etkileyebilir. **Verilen profildeki biyografi ve gönderi metni prompt bağlamına "sağlanan metin" olarak eklenir** (bkz. `agent_core/agents/lilith_growth.py:586-593`): bu metin bir **üretim girdisidir**, kanıt değildir; bu yüzden Lilith'ın çıktısı kanıt zincirine girmez.
 3. **Ne arıyorsun?** Kanca, içerik gövdesi, CTA ve görsel prompt üretmek.

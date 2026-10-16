@@ -288,6 +288,24 @@ class TestAgentMerge:
         assert merged.fallback_reason == "email_scan_no_match"
 
     @pytest.mark.asyncio
+    async def test_refused_scan_is_sealed_as_evidence(self, monkeypatch):
+        """[P4 · 2026-10-16] Kapı/kasa reddi de mühürlü kanıt olarak korunur.
+
+        Maigret yolu reddedilen taramayı da `username_scan_evidence` ile
+        zincirde bırakır; holehe yolu bu asimetriyi gideriyor: reddedilen
+        tarama "görünmez" olmamalı.
+        """
+        monkeypatch.delenv("ENABLE_HOLEHE", raising=False)
+        profile = await OsintInvestigatorAgent()._apply_email_scan(
+            self._profile(), "victim@example.com", self.POLICY)
+        assert "gate_disabled" in profile.email_scan["reason"]
+        # Reddedilen tarama profilde GÖRÜNÜR (mühürlü zaman çizelgesi bağlanır)
+        assert profile.email_scan_evidence is not None
+        # ...ama reddedilen tarama KANIT UYDURMAZ: giriş sayısı 0'dır.
+        assert profile.email_scan_evidence["entries"] == []
+        assert profile.email_scan_sealed == 0
+
+    @pytest.mark.asyncio
     async def test_unavailable_scan_keeps_profile_fields(self, monkeypatch):
         monkeypatch.setenv("ENABLE_HOLEHE", "true")
         scan = _res(available=False, reason="provider_errors", scanned=8, errors=8)
