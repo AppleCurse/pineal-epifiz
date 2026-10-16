@@ -127,6 +127,39 @@ PINEAL-HERETIC v5.1, operatöre hem derin sinematik sezgi hem de cerrahi şeffaf
 | `run_lilith.py` | Ana analiz hattı dışında, CLI'dan Lilith içerik paketi üretimi. |
 | `/api/experimental/interpreter/execute` | Yalnız opt-in Interpreter yapılandırmasında bulunan deneysel kod görevi yolu. |
 
+### Durum tablosu: ölçülen çalışma ↔ DOĞRULANMADI (2026-10-16 denetimi)
+
+Bu tablo, depodaki iddiaların **gerçekten koşulup koşulmadığını** gösterir. Ölçülmeyen hiçbir şey "çalışıyor" yazılmaz; ölçülemeyenler **DOĞRULANMADI** olarak **sebebiyle** birlikte listelenir. Ham kanıt: `docs/reports/DENETIM_2026-10-16.md` ve `docs/reports/DUZELTME_FAZ2_P*.md`.
+
+**ÖLÇÜLEBİLDİ (gerçekten koşuldu, ham çıktısı görüldü):**
+
+| Ne | Ölçüm |
+|---|---|
+| API ayakta | Yerel `uvicorn`: `/health` → **200**, `/api/telemetry` → **200** (26 capability) |
+| Kasa kilidi | Kasa kilitliyken `POST /api/initiate` → **423 VAULT_LOCKED**; kasa açık → **200** |
+| WebSocket akışı | Yerel `websockets` istemcisiyle **63 kare** alındı |
+| Yetenek omurgası (mock'suz) | Kasa kilitli → 3/3 `not_run` + `policy:vault_locked`; kasa açık → IG/X `policy:gate_disabled`, socid `extract_unavailable:network_error` |
+| Profil derinleştirme (P1) | `detected_urls` → router sınıflandırması → `CapabilityRunner`; kapalı kapı → `not_run` + sebep; arama snippet'ı **gönderi sayılmaz** |
+| Çapraz profilleme (P2) | 4 **deterministik** sinyal; skor "kapsam" etiketli (olasılık **değil**); her eşleşme `EvidenceItem` |
+| OSINT omurgası (P4) | Biyografideki e-posta → holehe yeteneği **çağrılıyor** → kasa kilitliyken `policy:vault_locked` (dürüst sebep, mühürlü kayıt) |
+| Test tabanı | `pytest tests -q` → **2740 passed, 6 skipped** · `ruff check .` → **All checks passed!** |
+| Frontend | `npm run check` → **0 hata / 0 uyarı** · `npm run build` → başarılı |
+| Model fiyatı | Canlı OpenRouter ölçümü CI'da; **durum-kümesi** bekçisi (bilinmeyen fiyat → `FAIL`, ölçülen durum → `PASS` + uyarı) |
+
+**DOĞRULANMADI (sebebiyle):**
+
+| Ne | Sebep |
+|---|---|
+| Canlı X (twscrape) kazıma | Sandbox egress'i kapalı; hesap havuzu yok |
+| Canlı Instagram / LinkedIn kazıma | Egress kapalı; Playwright kurulumu + cookie gerekiyor |
+| Canlı `socid_extractor` | Egress kapalı → `extract_unavailable:network_error` |
+| Canlı arama → `detected_urls` → derin tarama (uçtan uca) | Egress kapalı (arama sağlayıcısı **ve** hedef) |
+| 9Router (`127.0.0.1:20128`) | Sandbox'tan erişilemiyor (HTTP 000) |
+| `ENABLE_*` bayraklarının **tamamı açık** hâli | Kapılar kapalı tutuldu (görev talimatı) — açık hâli ölçülmedi |
+| Yerel canlı OpenRouter çağrısı | Egress kapalı |
+| Canlı sosyal medya çapraz profil eşleşmesi | Egress kapalı |
+| Lilith'in canlı LLM çağrısının ana hat sayacına yazılması | Egress kapalı (CLI canlı çağrı: `ConnectError` → dürüst "FALLBACK") |
+
 ---
 
 ## Ne İşe Yarar ve Nasıl Çalışır?

@@ -218,7 +218,9 @@ class OsintInvestigatorAgent:
                 "email_scan": scan.model_dump(),
                 **sealed,
             })
-        return profile.model_copy(update={"email_scan": scan.model_dump()})
+        # [P4 · 2026-10-16] Kapı/kasa reddi de MÜHÜRLÜ kanıt olarak korunur
+        # (maigret ile simetri): reddedilen tarama da zincirde görünür.
+        return profile.model_copy(update={"email_scan": scan.model_dump(), **sealed})
 
     def _get_alf_headers(self) -> Dict[str, str]:
         import random

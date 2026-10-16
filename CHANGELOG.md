@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased — 2026-10-16 — P4: dokümantasyon = kod (ölçülen ↔ DOĞRULANMADI)
+
+- **Denetim tespiti güncellendi:** "holehe ana hattan erişilemez" tespiti **P1
+  kablo düzeltmesiyle geçersizleşti**. Ölçüm (mock'suz prob): biyografideki
+  e-posta → `connected_emails` dolu → `sensor.identity.holehe` çağrılıyor →
+  kasa kilitliyken `policy:vault_locked` ile **dürüstçe** duruyor. Canlı tarama
+  **DOĞRULANMADI** (egress kapalı).
+- **Kod düzeltmesi (1 satır):** reddedilen holehe taraması artık **mühürlü
+  kayda** bağlanıyor (maigret ile simetri). Öncesinde profil yalnız
+  `email_scan.reason` taşıyordu; reddedilen tarama zincirde iz bırakmıyordu.
+  Reddedilen tarama kanıt **uydurmuyor** (giriş sayısı 0).
+- **README (md.13):** "ölçülen çalışma ↔ DOĞRULANMADI" durum tablosu eklendi —
+  11 ölçülebilir satır, 9 **sebebiyle** DOĞRULANMADI satırı.
+- **README_TECHNICAL (md.14):** OSINT bölümüne holehe'nin ölçülmüş durumu +
+  kapı listesi; Lilith başlığı **CLI-ONLY** olarak işaretlendi.
+- **RUNBOOK (md.15):** M-3 (9Router kasa anahtarında **`sk-pineal` önek şartı**)
+  ve M-1 (9Router kipinde **`dialogue_manager` kanonik zinciri yok** → bulut
+  model-id'lerine düşer) notları eklendi.
+- **Doğrulanan (düzeltme yok) README iddiaları:** 12 `beacon-*` servisi ✓ ·
+  13 görev ajanı ✓ · `localhost:8000` ✓ · tüm dosya yolu referansları ✓.
+- **Test:** 13 yeni test (12 doküman-kod kilidi + 1 kanıt) · **5/5
+  revert-doğrulama PASS** (`scripts/revert_verification_p4.py`).
+- **Ölçüm:** `pytest tests -q` → **2753 passed, 6 skipped** · `ruff check .` →
+  **All checks passed!** · `audit_regression.py` → **✓ BEKÇİ GEÇTİ**.
+
 ## Unreleased — 2026-10-16 — P3: Lilith kararı (CLI-only) + ana hat kapıları (M-2)
 
 - **Bulgu (M-2):** Lilith CLI kendi `httpx` adaptörünü kullanıyordu
