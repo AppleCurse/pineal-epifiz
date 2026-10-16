@@ -2599,7 +2599,7 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                     "search_snippets": snippets or [],
                     "post_times": [],
                     "posts_meta": [],
-                    "post_types": []
+                    "post_types": [],
                     "images": [],
                     "followers": None,
                     "following": None,
@@ -2629,7 +2629,7 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                     "post_times": [],
                     "posts_meta": [],
                     "post_types": [],
-                    "images": []
+                    "images": [],
                     "followers": None,
                     "following": None,
                     "is_private": None,
