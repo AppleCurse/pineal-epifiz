@@ -43,6 +43,10 @@ export interface SysTelemetry {
   spendCapUsd: number;
   activeReservations: number;
   taskRuns: number;
+  // [P0 · DENETİM 2026-10-16] X sensörü + sebebi. "Kapalı" demek yetmez;
+  // NEDEN kapalı olduğu da bilinir.
+  xSensorReady: boolean;
+  xSensorReason: string | null;
 }
 
 export const sysTelemetry = writable<SysTelemetry>({
@@ -56,6 +60,8 @@ export const sysTelemetry = writable<SysTelemetry>({
   spendCapUsd: 0,
   activeReservations: 0,
   taskRuns: 0,
+  xSensorReady: false,
+  xSensorReason: null,
 });
 
 // THROTTLE düğmesi: ping aralığı (saniye) detentleri.
@@ -114,6 +120,9 @@ async function pollOnce() {
         spendCapUsd: Number(t.llm_spend_cap_usd || 0),
         activeReservations: Number(t.llm_active_reservations || 0),
         taskRuns: Number((t.task_lifecycle || {}).runs || 0),
+        // [P0] X sensörü: hazır mı + NEDEN değil.
+        xSensorReady: !!t.x_scraper,
+        xSensorReason: t.x_scraper_reason ? String(t.x_scraper_reason) : null,
       });
       if (t.vault_locked !== undefined) {
         vaultLocked.set(!!t.vault_locked);

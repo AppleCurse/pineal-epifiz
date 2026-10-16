@@ -16,6 +16,8 @@ from typing import Any
 from agent_core.domain.evidence_models import EvidenceItem, EpistemicType
 from agent_core.domain.pillar_models import EvidenceStatus
 from agent_core.domain.pillar_wave2_models import FullPillarBundle
+# [P0 · DENETİM 2026-10-16] Kanıt tipi ayrımı: corpus beyanı (gönderi ↔ snippet).
+from agent_core.domain.content_basis import content_basis
 from agent_core.engines.frequency_engine import parse_timestamp
 
 
@@ -102,6 +104,15 @@ def _profile_scope(target_profile: dict[str, Any] | None) -> dict[str, Any]:
         "time_window": window,
         "time_window_note": "Non-empty posts with aligned timestamps only; undated text may also be in the corpus.",
         "provenance_note": "Only source-provided references are carried; no missing source IDs are synthesized.",
+        # [P0 · DENETİM 2026-10-16] Corpus'un ne olduğu beyan edilir: gerçek
+        # platform gönderisi mi, arama sonucu (snippet) mi, karışık mı?
+        # "posts" alanı artık yalnız platform gönderilerini taşır.
+        "content_basis": content_basis(profile),
+        "search_snippet_count": len(
+            profile.get("search_snippets")
+            if isinstance(profile.get("search_snippets"), (list, tuple))
+            else []
+        ),
     }
 
 

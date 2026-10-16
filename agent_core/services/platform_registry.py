@@ -207,6 +207,12 @@ def ig_target_profile_update(ig_data: Any) -> dict:
             for p in posts
         ],
         "post_types": [p.post_type or "unknown" for p in posts],
+        # [P0 · DENETİM 2026-10-16] Kanıt tipi: bunlar platformdan KAZINMIŞ
+        # gönderilerdir → `platform_post`. (Arama sonucu snippet'ları `posts`
+        # alanına yazılmaz; `search_snippets` altında tip etiketiyle durur.)
+        "post_evidence_types": ["platform_post" for _ in posts],
+        "search_snippets": [],
+        "content_basis": "platform_post",
         "images": [p.display_url for p in posts],
         "followers": ig_data.follower_count,  # None = ölçülmedi; 0 ölçümdür.
         "following": ig_data.following_count,  # None = ölçülmedi ([024])
@@ -384,9 +390,14 @@ async def scrape_x(
         if fallback is not None:
             return fallback
 
-        raise InsufficientEvidenceError(
+        error = InsufficientEvidenceError(
             f"X sensörü kanıt üretemedi ({reason}); profil uydurulmadı."
         )
+        # [P0 · DENETİM 2026-10-16] Makine-okunur sebep istisnaya taşınır:
+        # çağıran taraf "user_not_found" / "no_session_pool" ayrımını metin
+        # ayrıştırmak zorunda kalmaz.
+        setattr(error, "channel_reason", str(reason))
+        raise error
 
     series = list((result.payload or {}).get("series") or [])
     if not series:
@@ -434,6 +445,10 @@ async def _x_via_agent_reach(
     emit("INFO", f"SCRAPER X: agent-reach ile kamuya açık okuma ({len(text)} karakter)")
     profile = x_target_profile_update(username, [{"text": text, "created_at": ""}])
     profile["sensor"] = "agent_reach"
+    # [P0 · DENETİM 2026-10-16] agent-reach metni platform gönderisi DEĞİLDİR:
+    # doğrudan okunan sayfa metnidir → kanıt tipi `agent_reach_text`.
+    profile["post_evidence_types"] = ["agent_reach_text" for _ in profile.get("posts") or []]
+    profile["content_basis"] = "agent_reach_text"
     profile["sensor_note"] = (
         "X akışı twscrape ile okunamadı; agent-reach ikinci yolu kullanıldı "
         "(zaman damgası yok — frequency motoru için veri üretilmedi)."
@@ -478,6 +493,10 @@ def x_target_profile_update(username: str, series: List[Dict[str, Any]]) -> Dict
         "post_times": post_times,
         "posts_meta": posts_meta,
         "post_types": ["text" for _ in posts],
+        # [P0 · DENETİM 2026-10-16] Kanıt tipi: gerçek gönderi → platform_post.
+        "post_evidence_types": ["platform_post" for _ in posts],
+        "search_snippets": [],
+        "content_basis": "platform_post",
         "images": [],
         "followers": None,   # ölçülmedi — uydurma sayı YOK
         "following": None,   # ölçülmedi

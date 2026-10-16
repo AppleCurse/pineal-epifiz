@@ -20,6 +20,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from agent_core.services.llm_gateway import LLMGateway
 from agent_core.services.upstream_findings import upstream_findings_block
 from agent_core.services.confidence import normalize_confidence
+# [P0 · DENETİM 2026-10-16] Kanıt tipi ayrımı: beyan ↔ arama sonucu.
+from agent_core.domain.content_basis import EVIDENCE_PLATFORM_POST, extract_public_text
 
 logger = logging.getLogger(__name__)
 
@@ -48,14 +50,13 @@ class AuthenticityAuditorAgent:
         target = raw_target if isinstance(raw_target, dict) else {}
         raw_bio = target.get("bio")
         bio = raw_bio.strip() if isinstance(raw_bio, str) else ""
-        raw_posts = target.get("posts", [])
-        if isinstance(raw_posts, str):
-            raw_posts = [raw_posts]
-        posts = (
-            [post.strip() for post in raw_posts if isinstance(post, str) and post.strip()]
-            if isinstance(raw_posts, (list, tuple))
-            else []
-        )
+        # [P0 · DENETİM 2026-10-16] "Hedefin kendi beyanı" YALNIZCA platform
+        # gönderileridir. Arama sonucu (snippet) üçüncü taraf metnidir —
+        # hedefin beyanı sayılmaz. Kanıt tipi etiketi kaybolmaz.
+        posts = [
+            item.text
+            for item in extract_public_text(target, kinds=(EVIDENCE_PLATFORM_POST,))
+        ]
         raw_visual = payload.get("visual_evidence")
         visual_evidence = raw_visual if isinstance(raw_visual, dict) else {}
         visual_signal = any(

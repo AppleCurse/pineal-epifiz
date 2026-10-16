@@ -17,6 +17,8 @@ from agent_core.domain.memory_models import PassionProfile, FrictionProfile, Cog
 from agent_core.services.llm_gateway import LLMGateway
 from agent_core.services.upstream_findings import upstream_findings_block
 from agent_core.services.confidence import normalize_confidence
+# [P0 · DENETİM 2026-10-16] Kanıt tipi ayrımı: gönderi ↔ arama sonucu.
+from agent_core.domain.content_basis import extract_public_text, render_corpus_block
 
 logger = logging.getLogger(__name__)
 
@@ -38,26 +40,26 @@ class TargetPsycheProfiler:
 
     @staticmethod
     def _extract_target_context(payload: Dict[str, Any]) -> Tuple[str, str, Dict[str, Any], str, Dict[str, Any]]:
-        """Tüm lensler için tipli hedef bağlamını ve görsel delilleri ayrıştırır."""
+        """Tüm lensler için tipli hedef bağlamını ve görsel delilleri ayrıştırır.
+
+        [P0 · DENETİM 2026-10-16] Metin corpus'u KANIT TİPİYLE birlikte
+        hazırlanır: platform gönderisi ile arama sonucu (snippet) LLM'e
+        "gönderi" diye gider. `posts` alanı artık yalnız gerçek gönderileri
+        taşır; snippet'lar `search_snippets` altından etiketli gelir.
+        """
         payload = payload if isinstance(payload, dict) else {}
         raw_target = payload.get("target_profile")
         target = raw_target if isinstance(raw_target, dict) else {}
         raw_bio = target.get("bio")
         bio = raw_bio.strip() if isinstance(raw_bio, str) else ""
-        raw_posts = target.get("posts", [])
-        if isinstance(raw_posts, str):
-            raw_posts = [raw_posts]
-        posts = (
-            [post.strip() for post in raw_posts if isinstance(post, str) and post.strip()]
-            if isinstance(raw_posts, (list, tuple))
-            else []
-        )
         raw_visual = payload.get("visual_evidence")
         visual_evidence = raw_visual if isinstance(raw_visual, dict) else {}
 
-        posts_text = (
-            "\n".join(f"- {post}" for post in posts[:10])
-            if posts else "Gönderi metni bulunamadı."
+        corpus_items = extract_public_text(target)
+        posts_text = render_corpus_block(
+            corpus_items,
+            limit=10,
+            empty_text="Gönderi metni bulunamadı.",
         )
         upstream_block = upstream_findings_block(payload)
         return bio, posts_text, visual_evidence, upstream_block, target
@@ -100,7 +102,8 @@ Yalnızca verilen metinlerdeki ve fotoğraflarda fiilen tespit edilen somut nesn
 Hedef Biyografi:
 "{bio}"
 
-Son Paylaşımlar / Metinler:
+Hedef Metin Corpus'u (kanıt tipi etiketli; 'arama sonucu' satırları hedefin
+yazdığı gönderi DEĞİLDİR):
 {posts_text}
 
 {visual_text}
@@ -191,7 +194,8 @@ Asla sahte derin travmalar veya klişe uydurma. Sadece metinlerdeki ve fotoğraf
 Hedef Biyografi:
 "{bio}"
 
-Son Paylaşımlar / Metinler:
+Hedef Metin Corpus'u (kanıt tipi etiketli; 'arama sonucu' satırları hedefin
+yazdığı gönderi DEĞİLDİR):
 {posts_text}
 
 {visual_text}
@@ -274,7 +278,8 @@ Kişinin nasıl bir iletişim tarzı benimsediğini analiz et.
 Hedef Biyografi:
 "{bio}"
 
-Son Paylaşımlar / Metinler:
+Hedef Metin Corpus'u (kanıt tipi etiketli; 'arama sonucu' satırları hedefin
+yazdığı gönderi DEĞİLDİR):
 {posts_text}
 
 {visual_text}

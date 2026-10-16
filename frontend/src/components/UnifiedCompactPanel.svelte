@@ -13,6 +13,8 @@
     ttsRate, TTS_DETENTS, startHealthPoll, stopHealthPoll
   } from '../lib/telemetry';
   import PillarFeed from './PillarFeed.svelte';
+  // [P0 · DENETİM 2026-10-16] Kapalı yeteneğin sebebi okunur metne çevrilir.
+  import { reasonLabel } from '../lib/channelStatus';
   import AnalogGauge from './diesel/AnalogGauge.svelte';
   import ToggleSwitch from './diesel/ToggleSwitch.svelte';
   import KeyLock from './diesel/KeyLock.svelte';
@@ -541,6 +543,18 @@
       tone="green"
       value={$health.ok ? $health.integrityPct : null}
       sub={$health.ok ? `${$health.integrityPct}% · ${$health.status.toUpperCase()} (${trStatus($health.status)})` : '—'}
+    />
+    <!-- [P0 · DENETİM 2026-10-16] X sensörü: kapalıysa SEBEP yazılır. -->
+    <AnalogGauge
+      label="X SENSOR"
+      tr="X SENSÖRÜ"
+      tone="red"
+      value={$sysTelemetry.ok ? ($sysTelemetry.xSensorReady ? 82 : 12) : null}
+      sub={$sysTelemetry.ok
+        ? ($sysTelemetry.xSensorReady
+            ? 'HAZIR (READY)'
+            : `ÇALIŞMADI: ${reasonLabel($sysTelemetry.xSensorReason)}`)
+        : '—'}
     />
     </div>
     <SplitFlap

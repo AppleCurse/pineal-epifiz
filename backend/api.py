@@ -101,6 +101,28 @@ from agent_core.utils.security import (
 )
 from agent_core.task_executor import PinealExecutor, InsufficientEvidenceError
 from agent_core.version import VERSION
+# [P0 · DENETİM 2026-10-16] Kanal durumu sözleşmesi: "koştu / ÇALIŞMADI
+# (sebep) / hata" — boş liste değil. Dosya kuralları `backend/services/
+# web_dossier.py` modülünde (API-BÖLME 3).
+from agent_core.domain.channel_status import (
+    ChannelRun,
+    failed as channel_failed,
+    serialize as serialize_channel_status,
+)
+from backend.services.web_dossier import (
+    build_dossier_failure_profile,
+    build_dossier_profile,
+    build_snippets,
+    dossier_channel_rows,
+    instagram_channel_rows,
+    x_sensor_channel_rows,
+)
+# [API-BÖLME 3] `/api/telemetry` ucu ayrı modüle taşındı; ad + yol korunur.
+from backend.routes.telemetry import (  # noqa: E402,F401 (yeniden ihraç, dış sözleşme)
+    TelemetryDeps,
+    build_telemetry_endpoint,
+    capability_status_table as _capability_status_table,
+)
 # [FIX #8] Scraper'ın KENDİNE ÖZLÜ InsufficientEvidenceError'ı (başka bir
 # Exception hiyerarşisi) da yakalanmalı; ayrı sınıflar olduğundan
 # isinstance ile ayrım yapılır, str(type) kontrolü ile değil.
@@ -2484,6 +2506,9 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
         # olduğu gibi işaretlenerek devam edilir (aşağıdaki web dosyası yolu).
         x_sensor_reason = ""
         x_profile: dict = {}
+        # [P0 · DENETİM 2026-10-16] Kanal durumu defteri: her sensör/araştırma
+        # "koştu / ÇALIŞMADI(sebep) / hata" üretir. Boş liste dönmek YASAK.
+        channel_runs: list[ChannelRun] = []
         if req.url and effective_type == "x":
             from agent_core.services.platform_registry import extract_x_username
             clean_u = extract_x_username(req.url) or ""
@@ -2495,12 +2520,28 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                     vault_locked=not _check_vault_interlock(client_id),
                     rate_ok=True,
                 )
+                channel_runs.extend(
+                    x_sensor_channel_rows(
+                        ok_detail=(
+                            f"{len(x_profile.get('post_times') or [])} zaman damgalı gönderi"
+                        )
+                    )
+                )
                 broadcast_log(
                     client_id, "INFO",
                     f"TELEMETRİ: X akışı ele geçirildi — {len(x_profile['post_times'])} gerçek zaman damgalı gönderi.",
                 )
             except (InsufficientEvidenceError, ScraperInsufficientEvidenceError) as exc:
                 x_sensor_reason = str(exc)[:200]
+                # [P0] Sensör koşmadı → sebep kanıt defterine yazılır. "Bulunamadı"
+                # ile "hiç çalışmadı" ARTIK AYRI görünür. Makine-okunur sebep
+                # (örn. `no_session_pool`) istisna üzerinde taşınıyorsa o kullanılır.
+                channel_runs.extend(
+                    x_sensor_channel_rows(
+                        reason=x_sensor_reason,
+                        machine_reason=str(getattr(exc, "channel_reason", None) or ""),
+                    )
+                )
                 broadcast_log(
                     client_id, "WARNING",
                     f"X SENSÖRÜ KANIT ÜRETEMEDİ ({x_sensor_reason}); "
@@ -2567,12 +2608,11 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
 
                 ordered_results = (tier1 + tier2 + tier3) or all_raw_results
 
-                # Anlamlı içerikleri filtrele
-                snippets = []
-                for r in ordered_results:
-                    c = (r.content or "").strip()
-                    if c and len(c) > 20:
-                        snippets.append(f"[{r.provider.upper()}] {c}")
+                # Anlamlı içerikleri filtrele.
+                # [P0 · DENETİM 2026-10-16 · Bulgu 2] Snippet'lar ARAMA SONUCUDUR;
+                # "gönderi" değildir. Yapılandırılmış olarak tutulur ve `posts`
+                # alanına YAZILMAZ — kanıt tipi `search_snippet` olarak korunur.
+                snippets = build_snippets(ordered_results)
 
                 # Tespit edilen doğrudan sosyal medya profilleri
                 found_profiles = []
@@ -2586,47 +2626,43 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                     broadcast_log(client_id, "INFO", f"HEDEF PROFİLLERİ TESPİT EDİLDİ: {', '.join(found_profiles[:3])}")
 
                 display_user = f"@{clean_u.replace(' ', '_').lower()}" if " " in clean_u else f"@{clean_u}"
-                # [FAZ A] Dürüst dosya: arama snippet'i BİYOGRAPHİ diye
-                # sunulmaz, takipçi sayısı UYDURULMAZ (eski kod profil
-                # bulunduğunda sabit 150 yazıyordu). Ölçülmeyen alan None.
-                payload["target_profile"].update({
-                    "username": display_user,
-                    "name": clean_u,
-                    "bio": "",
-                    "posts": snippets or [],
-                    "post_times": [],
-                    "posts_meta": [],
-                    "post_types": ["text" for _ in snippets] if snippets else [],
-                    "images": [],
-                    "followers": None,
-                    "following": None,
-                    "is_private": None,
-                    "detected_urls": found_profiles,
-                    "web_search": web_search_status_record,
-                    "platform": "web_dossier",
-                    "sensor_note": (
-                        f"X sensörü kanıt üretemedi: {x_sensor_reason}" if x_sensor_reason
-                        else "Açık kaynak dosyası: platform sensörüyle kazınmadı."
-                    ),
-                })
-                broadcast_log(client_id, "INFO", f"TELEMETRİ: {len(snippets)} açık kaynak verisi ve {len(found_profiles)} profil hedefe bağlandı.")
+                # [P0 · DENETİM 2026-10-16] Dosya kuralları ve kanal durumu
+                # `backend/services/web_dossier.py` modülünde (API-BÖLME 3).
+                payload["target_profile"].update(
+                    build_dossier_profile(
+                        display_user=display_user,
+                        clean_u=clean_u,
+                        snippets=snippets,
+                        found_profiles=found_profiles,
+                        web_search=web_search_status_record,
+                        x_sensor_reason=x_sensor_reason,
+                    )
+                )
+                channel_runs.extend(
+                    dossier_channel_rows(
+                        web_search_status=web_search_status,
+                        snippet_count=len(snippets),
+                        found_profile_count=len(found_profiles),
+                        queries_available=available_queries,
+                        queries_requested=len(search_tasks),
+                    )
+                )
+                broadcast_log(
+                    client_id, "INFO",
+                    f"TELEMETRİ: {len(snippets)} arama sonucu (snippet) bulundu, "
+                    f"{len(found_profiles)} profil URL'si tespit edildi — "
+                    "hiçbiri kazınmadı, gönderi sayılmaz.",
+                )
             except Exception as se:
                 broadcast_log(client_id, "WARNING", f"OSINT ARAMA UYARISI: {se}")
-                payload["target_profile"].update({
-                    "username": f"@{clean_u}",
-                    "name": clean_u,
-                    "bio": "",
-                    "posts": [],
-                    "post_times": [],
-                    "posts_meta": [],
-                    "post_types": [],
-                    "images": [],
-                    "followers": None,
-                    "following": None,
-                    "is_private": None,
-                    "platform": "web_dossier",
-                    "sensor_note": f"Açık kaynak araması başarısız: {type(se).__name__}",
-                })
+                channel_runs.append(
+                    channel_failed("search.web", reason=type(se).__name__)
+                )
+                payload["target_profile"].update(
+                    build_dossier_failure_profile(
+                        clean_u=clean_u, error_type=type(se).__name__
+                    )
+                )
         if x_profile:
             payload["target_profile"].update(x_profile)
         if req.url and effective_type == "instagram":
@@ -2647,6 +2683,11 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                         req.url, cookie,
                         log=lambda lvl, msg: broadcast_log(client_id, lvl, msg),
                     ))
+                    channel_runs.extend(
+                        instagram_channel_rows(
+                            post_count=len(payload["target_profile"].get("posts") or [])
+                        )
+                    )
                     broadcast_log(client_id, "INFO", "TELEMETRİ: Veri ele geçirildi.")
                     last_err = None
                     break
@@ -2687,6 +2728,9 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
             "vault_locked": not _check_vault_interlock(client_id),
             "minor_case": _minor_case_for(client_id),
         }
+        # [P0 · DENETİM 2026-10-16] Kanal durumu defteri görev payload'ına taşınır;
+        # görev yürütücüsü bunu görev durumuna (WS telemetrisi) kopyalar.
+        payload["channel_status"] = serialize_channel_status(channel_runs)
         # Arama motoru da aynı gerçeği görür. [KASA MANDALI] Eskiden burada
         # "ücretsiz DuckDuckGo yolu bugünkü davranışını korur" yazıyordu — yani
         # kasa kilitli olsa bile DuckDuckGo'ya istek ÇIKIYORDU. Bu delik
@@ -2852,6 +2896,8 @@ def broadcast_result(client_id, res):
         "shadow_profile": _dump_field(getattr(res, "shadow_profile", None)),
         "osint_footprint": _dump_field(getattr(res, "osint_footprint", None)),
         "target_profile": getattr(res, "target_profile", None),
+        # [P0 · DENETİM 2026-10-16] Kanal durumu: "koştu / ÇALIŞMADI(sebep)".
+        "channel_status": getattr(res, "channel_status", None) or [],
         **_pillar_payload_fields(res),
         "telemetry": getattr(res, "telemetry", None)
     }
@@ -3242,53 +3288,23 @@ async def api_override(req: OverridePayload):
         broadcast_log(req.client_id, "INFO", f"HAFIZA: Yeni konsept mühürlendi [{req.tag.strip()}]")
     return {"status": "sealed", "quarantined": quarantined}
 
-@app.get("/api/telemetry")
-async def api_telemetry(client_id: str = "default"):
-    room = get_room(client_id)
-    executor = room["executor"]
-    vault = room["vault"]
-    capability = await _scraper_capability()
-    budget_reader = getattr(type(executor.llm_gateway), "budget_status", None)
-    budget = budget_reader(executor.llm_gateway) if callable(budget_reader) else {}
-    # Agent Rack status
-    agent_statuses = {}
-    if HAS_AGENT_RACK:
-        try:
-            tracker = get_tracker() if get_tracker else None
-            if tracker:
-                agent_statuses = tracker.get_all_statuses()
-        except Exception:
-            agent_statuses = {}
-    # [FORENSIC VAULT-INTERLOCK] Telemetri, kilidin GERÇEK durumunu söyler:
-    # placeholder anahtar "hazır" sayılmaz; `vault_locked` interlock ile birebir.
-    vault_open = _check_vault_interlock(client_id)
-    search_keys = getattr(executor, "search_engine", None)
-    return {
-        "core": True,
-        "gateway": _is_real_key(getattr(executor.llm_gateway, 'api_key', None)),
-        "scraper": capability["instagram"],
-        "vault": vault_open,
-        "search_engine": bool(vault.get("search_keys", False)) or any(
-            _is_real_key(getattr(search_keys, attr, None))
-            for attr in ("tavily_key", "serpapi_key", "exa_key")
-        ),
-        # [FAZ A] Artık SABİT False değil: X sensörü gerçekten var mı, kapıları
-        # açık mı? Cevap capability spine'ın TEK kaynağından gelir.
-        "x_scraper": _x_sensor_ready(),
-        "instagram_scraper": capability["instagram"],
-        "instagram_session": _is_real_key(vault.get("ig_sessionid")),
-        "browser_installed": capability["browser"],
-        "llm_spend_usd": round(float(budget.get("spend_usd", 0.0)), 6),
-        "llm_reserved_spend_usd": round(float(budget.get("reserved_usd", 0.0)), 6),
-        "llm_spend_cap_usd": float(budget.get("cap_usd", 0.0)),
-        "llm_active_reservations": int(budget.get("active_reservations", 0)),
-        "telemetry_delivery": _delivery_status(room),
-        "task_lifecycle": _lifecycle(room).metrics(),
-        "rust_core": rust_core_status(),
-        "llm_unpriced_calls": int(getattr(executor.llm_gateway, "unpriced_calls", 0)),
-        "agent_statuses": agent_statuses,
-        "vault_locked": not vault_open,
-    }
+# [API-BÖLME 3 · 2026-10-16] `/api/telemetry` ucu `backend/routes/telemetry.py`
+# modülüne taşındı (api.py tek-modül tavanı; bkz. API_MONOLITH_SPLIT_PLAN §4).
+# Dış sözleşme korunur: ad, yol ve gövde aynen; yalnız bağımlılıklar ENJEKTE
+# edilir. `api_telemetry` adı dışarıdan yeniden ihraç edilir. Kayıt, bağımlılık
+# tanımları TAMAMlandıktan sonra yapılır (aşağıda `app.include_router` bloğu).
+def _agent_statuses_snapshot() -> dict:
+    """Agent Rack durum anlık görüntüsü (hata halinde boş sözlük)."""
+    if not HAS_AGENT_RACK or not get_tracker:
+        return {}
+    try:
+        tracker = get_tracker()
+        return tracker.get_all_statuses() if tracker else {}
+    except Exception:
+        return {}
+
+
+
 
 
 # ─── v5.0: Agent Rack + Vault + Dialogue Manager canlı köprüleri ─────────
@@ -3499,6 +3515,24 @@ app.include_router(
         speech_finished=_speech_finished,
     )
 )
+
+# [API-BÖLME 3 · 2026-10-16] `/api/telemetry` ucu ayrı modüle taşındı; kayıt
+# burada yapılır çünkü bağımlılıklar (`_check_vault_interlock` vb.) yukarıda
+# tanımlanır. Yol ve gövde değişmedi.
+api_telemetry = build_telemetry_endpoint(
+    TelemetryDeps(
+        get_room=get_room,
+        check_vault_interlock=_check_vault_interlock,
+        scraper_capability=_scraper_capability,
+        delivery_status=_delivery_status,
+        lifecycle_metrics=lambda room: _lifecycle(room).metrics(),
+        x_sensor_ready=_x_sensor_ready,
+        is_real_key=_is_real_key,
+        agent_statuses_provider=_agent_statuses_snapshot,
+        runtime_status_provider=rust_core_status,
+    )
+)
+app.get("/api/telemetry")(api_telemetry)
 
 
 # ─── KASA MANDALI (Tüzük Md.4) — dış dünyaya açılan HER kapının tek kilidi ───

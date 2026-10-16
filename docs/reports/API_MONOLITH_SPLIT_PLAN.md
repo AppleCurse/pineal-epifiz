@@ -59,6 +59,26 @@ Bölme, **en iyi test edilmiş ve en az bağımlılığı olan** katmanla başla
   `test_language_routes_are_registered_on_the_app`,
   `test_api_does_not_redefine_language_models`.
 
+### 2.3 Üçüncü bölme — `/api/telemetry` + web dosyası (2026-10-16, API-BÖLME 3)
+
+| Modül | Satır | Test |
+|---|---|---|
+| `backend/routes/telemetry.py` | 135 | `tests/unit/test_p0_honest_status.py`, `tests/unit/test_task_lifecycle.py`, `tests/e2e/test_smoke.py` |
+| `backend/services/web_dossier.py` | 184 | `tests/unit/test_p0_honest_status.py` |
+
+* Tetikleyici: Faz 2 · P0 dürüstlük düzeltmeleri (kanıt tipi ayrımı, kanal
+  durumu, telemetri sebep tablosu) `backend/api.py`'yi 6.021 satıra çıkardı;
+  tavan 5.916 idi. Kural işletildi: **satır eklemek yerine modül çıkarıldı.**
+* `backend/api.py`: **6.021 → 5.908 satır**.
+* Tavan (`MAX_LINES`) 5.916 → **5.908** olarak DÜŞÜRÜLDÜ (ratchet: geri çıkış yok).
+* Uç gövdeleri DEĞİŞMEDİ; `/api/telemetry` yolu ve yanıt anahtarları aynen
+  korundu (`capabilities` / `x_scraper_reason` YENİ alanlar eklendi).
+* Dış sözleşme korunur: `backend/api.py` `api_telemetry` ve
+  `capability_status_table` adlarını yeniden ihraç eder.
+* `tests/unit/test_rust_runtime_status.py` içindeki `allowed_status_surfaces`
+  listesine `backend/routes/telemetry.py` eklendi: bu modül rust çekirdeğini
+  **çağırmaz**, yalnız `backend/api.py`'den enjekte edilen durumu aktarır.
+
 ---
 
 ## 3. Uç nokta envanteri (ölçülen dağılım)
