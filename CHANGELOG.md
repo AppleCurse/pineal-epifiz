@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased — 2026-10-16 — P3: Lilith kararı (CLI-only) + ana hat kapıları (M-2)
+
+- **Bulgu (M-2):** Lilith CLI kendi `httpx` adaptörünü kullanıyordu
+  (`lilith_growth.py:254`), ana hattın `LLMGateway`'ini **bypass** ediyordu:
+  `NINEROUTER_*` taşıması yok, canlı çağrı kapısı yok, ölçülen maliyet
+  ana hattın spend sayacına **yazılmıyordu**.
+- **Bulgu (doküman):** `README_TECHNICAL.md:161` "ham profil metni prompt
+  bağlamına doğrudan eklenmez" diyordu; kod (`lilith_growth.py:586-593`) hedef
+  biyografiyi ve ilk 10 gönderiyi **düz metin olarak ekliyordu** → iddia yanlıştı.
+  `README.md:183` de dosyayı `scripts/run_lilith.py` diye gösteriyordu; dosya
+  **depo kökünde**.
+- **Karar:** Lilith **CLI-only** kalır (çıktısı *kanıt* değil *üretim*; kanıt
+  zincirine karışmamalı) — ancak çağrı yolu **ana hattın `LLMGateway`'ine**
+  bağlandı: taşıma sırası `NINEROUTER_* > PINEAL_LLM_* > OPENROUTER_*`, canlı
+  kapı (`LIVE_LLM_E2E=1` / `PINEAL_ROUTER_LIVE=1`), bütçe/spend sayacı ve
+  çağrı kaydı Lilith için de geçerli. Anahtar yoksa anahtar gerektirmeyen
+  `FreeTextGateway` kullanılır.
+- **Dürüstlük:** ana hattın kapısı reddederse CLI "başarılı" diye sunmaz —
+  `stderr`'e `[LILITH] ÇALIŞMADI: <hüküm>` yazar, **çıkış kodu 2** ile çıkar.
+- **Doküman:** README + README_TECHNICAL kararı, gerekçeyi ve kapı kurallarını
+  yazıyor; çelişen iddia ve yanlış yol düzeltildi.
+- **Test:** 10 yeni sözleşme testi (`tests/unit/test_p3_lilith_cli.py`); Lilith
+  gateway testi yeni sözleşmeye güncellendi; **4/4 revert-doğrulama PASS**
+  (`scripts/revert_verification_p3.py`).
+- **Ölçüm:** `pytest tests -q` → **2740 passed, 6 skipped** · `ruff check .` →
+  **All checks passed!** · `audit_regression.py` → **✓ BEKÇİ GEÇTİ**.
+
 ## Unreleased — 2026-10-16 — Canlı fiyat: üçüncü ölçüm + salınım dayanıklı bekçi
 
 - **Üçüncü ölçüm:** canlı katalog `z-ai/glm-5.2` için çıktı $7.00 → **$9.00/1M**

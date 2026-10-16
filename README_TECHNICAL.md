@@ -158,11 +158,12 @@ Pineal, sağlanan sosyal profil örneğinden **kaynak alanlarını**, bu alanlar
 
 #### `LilithGrowthAgent` — [MODEL ÜRETİMİ + FORMÜL; AYRI CLI]
 1. **Sen kimsin?** Ana görev hattı dışındaki sosyal içerik paketi üreticisisin.
-2. **Neye bakıyorsun?** Konu/platforma ve isteğe bağlı passion/friction/üslup alanlarına. JSON'daki `target_profile` varlığı veri durumu bayrağını etkileyebilir; ham profil metni prompt bağlamına doğrudan eklenmez.
+2. **Neye bakıyorsun?** Konu/platforma ve isteğe bağlı passion/friction/üslup alanlarına. JSON'daki `target_profile` varlığı veri durumu bayrağını etkileyebilir. **Verilen profildeki biyografi ve gönderi metni prompt bağlamına "sağlanan metin" olarak eklenir** (bkz. `agent_core/agents/lilith_growth.py:586-593`): bu metin bir **üretim girdisidir**, kanıt değildir; bu yüzden Lilith'ın çıktısı kanıt zincirine girmez.
 3. **Ne arıyorsun?** Kanca, içerik gövdesi, CTA ve görsel prompt üretmek.
 4. **Ne bulabiliyorsun?** `LilithContentPackage`; nörokimyasal adlarla etiketlenmiş değerler model alanlarıdır, biyometrik ölçüm değildir. Paylaşımın erişimini veya viral başarısını ölçmez.
-5. **Çıktını kime veriyorsun?** `run_lilith.py` tarafından konsola basılır; sosyal platforma gönderilmez.
+5. **Çıktını kime veriyorsun?** Depo kökündeki `run_lilith.py` tarafından konsola basılır; sosyal platforma gönderilmez.
 6. **Bir kullanıcı seni ne zaman kullanır?** CLI'ı açıkça çalıştırıp konu/platform ve isteğe bağlı profil dosyası verdiğinde.
+7. **Hangi kapılara tabi?** **[P3 · 2026-10-16]** Lilith CLI artık **ana hattın `LLMGateway`'ini** kullanır: taşıma sırası `NINEROUTER_* > PINEAL_LLM_* > OPENROUTER_*`, canlı çağrı kapısı (`LIVE_LLM_E2E=1` / `PINEAL_ROUTER_LIVE=1`), bütçe/spend sayacı ve çağrı kaydı Lilith için de geçerlidir. Anahtar yoksa anahtar gerektirmeyen `FreeTextGateway` (Pollinations) kullanılır; çağrı başarısızsa ajan deterministik nöro-fallback'ine düşer ve bunu "başarılı" diye sunmaz.
 
 #### `InterpreterAgent` — [İSTEĞE BAĞLI DENEYSEL]
 1. **Sen kimsin?** Profil analizinden ayrı, Open Interpreter çevresindeki kod görevi ajanısın.

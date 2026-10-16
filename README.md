@@ -180,7 +180,7 @@ PillarOrchestrator ───┼── StrataEngine     (Zaman İçinde Değişen
 > Bunlar Docker'da birbirinden bağımsız çalışan konteynerler **değildir**; çekirdek orkestratör tarafından **in-process (süreç içinde)**
 > kural tabanlı `CognitiveRouter` mantığıyla sırayla yürütülür. `docker-compose.yml` içindeki 12 `beacon-*` servisi ise yalnızca
 > **canlılık işaretçisidir** (`pineal:agent:beacon` kalp atışı yayını); analiz yürütmez.
-> `LilithGrowthAgent` ise online boru hattında değil, CLI üzerinden (`scripts/run_lilith.py`) bağımsız çalışan içerik paketleyicisidir.
+> `LilithGrowthAgent` ise online boru hattında **değildir** — **[P3 · 2026-10-16] kararı: CLI-only**. Gerekçe: girdisi profil metnidir ve çıktısı bir **kanıt** değil **üretimdir**; kanıt zincirine karışmamalıdır (ana hatta bağlansaydı "gönderi" alanı snippet tabanlı olurdu ve "hedef" ile "bulunan profil" ayrımı bulanıklaşırdı). Erişim: depo kökündeki `run_lilith.py` (ör. `python run_lilith.py --topic "..." --platform instagram`). CLI, çağrı maliyetini ana hattın sayacına yazdırmak için ana hattın `LLMGateway`'ini kullanır (taşıma sırası `NINEROUTER_* > PINEAL_LLM_* > OPENROUTER_*`, canlı çağrı kapısı `LIVE_LLM_E2E=1` / `PINEAL_ROUTER_LIVE=1`, bütçe/spend sayacı).
 
 Sistemdeki 13 görev ajanı:
 1. **OSINT Investigator:** Kullanıcı adı (Maigret) ve e-posta (Holehe) ayak izi çıkarma (açık kaynak / omurga).
