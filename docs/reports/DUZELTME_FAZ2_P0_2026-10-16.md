@@ -460,6 +460,30 @@ dışında" olarak** işaretlenmiştir.
 
 ---
 
+## 9c. CI `smoke` adımları — yerelde CANLI doğrulandı
+
+CI'da `smoke` işi `backend` işine bağlıdır; katalog adımı kırmızı olduğu için
+bu ortamda `skipping` göründü. Aynı adımlar **gerçek uvicorn sunucusuyla
+yerelde** çalıştırıldı (ölçülen çıktılar):
+
+```
+$ PINEAL_ENV=development python -m uvicorn backend.api:app --host 127.0.0.1 --port 8123
+INFO:     Application startup complete.
+```
+
+| Smoke adımı | Sonuç | Kanıt |
+|---|---|---|
+| `GET /api/telemetry?client_id=ci` | **200** | Yanıtta 26 `capabilities` girdisi; her birinde `available` + `reason` (`gate_disabled:ENABLE_MEDIA_FORENSICS` …). Yeni alanlar: `capabilities`, `capabilities_unavailable_reason`, `x_scraper_reason` (`gate_disabled:ENABLE_X_SENSOR`). |
+| `GET /` (`id="app"`) | **200** | `id="app"` bulundu. |
+| `POST /api/aspasia/chat` | **200** | HTTP 200. |
+| `GET /health` | **200** | `status: ready`. |
+| MCP stdio handshake | **OK** | 27 araç listelendi; kasa kapalıyken `denied_by == "vault"` dürüst reddi. |
+
+**Sonuç:** telemetri uç noktası (P0'un modüle taşınan parçası) canlı sunucuda
+ölçüldü — "var" denmez, "200 döndü ve sebep alanları dolu" denir.
+
+---
+
 ## 10. Kalan DOĞRULANMADI listesi (P0)
 
 | # | Konu | Neden doğrulanamadı | Etki |
