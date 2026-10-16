@@ -78,12 +78,38 @@ async def resolve_deep_profiles(
         return [], [channel_row], []
 
     bootstrap()
+    from agent_core.services.platform_registry import classify_profile_url
+
     items: List[EvidenceItem] = []
     identities: List[Dict[str, Any]] = []
+    channel_rows: List[ChannelRun] = []
     extracted_count = 0
     errors: List[str] = []
 
     for url in targets:
+        # P1: URL platform_registry ile sınıflandırılır
+        c_info = classify_profile_url(url)
+        sensor_id = c_info.get("sensor_id")
+        if sensor_id and not any(r.channel == sensor_id for r in channel_rows):
+            try:
+                handle = c_info.get("handle") or url
+                s_res = await run_capability(
+                    sensor_id,
+                    CapabilityContext(subject=handle),
+                    state=state,
+                )
+                if not s_res.ok:
+                    channel_rows.append(
+                        not_run(sensor_id, reason=s_res.unavailable_reason or "disabled")
+                    )
+                else:
+                    channel_rows.append(
+                        ok(sensor_id, detail=f"ok ({len(s_res.items)} kayıt)")
+                    )
+            except Exception as s_exc:
+                channel_rows.append(failed(sensor_id, reason=type(s_exc).__name__))
+
+        # Kimlik çıkarımı (extractor.identity.socid)
         try:
             res: CapabilityResult = await run_capability(
                 "extractor.identity.socid",
@@ -110,22 +136,29 @@ async def resolve_deep_profiles(
             errors.append(type(exc).__name__)
 
     if extracted_count > 0:
-        channel_row = ok(
-            "profile.deep_scan",
-            detail=f"{extracted_count}/{len(targets)} profilden kimlik kaydı çıkarıldı",
+        channel_rows.append(
+            ok(
+                "profile.deep_scan",
+                detail=f"{extracted_count}/{len(targets)} profilden kimlik kaydı çıkarıldı",
+            )
         )
     elif errors and all("vault_locked" in e for e in errors):
-        channel_row = not_run("profile.deep_scan", reason="vault_locked")
+        channel_rows.append(not_run("profile.deep_scan", reason="vault_locked"))
     elif errors and len(errors) == len(targets):
-        channel_row = failed(
-            "profile.deep_scan",
-            reason=errors[0],
-            detail=f"{len(targets)} profil URL'si denendi; hata alındı",
+        channel_rows.append(
+            failed(
+                "profile.deep_scan",
+                reason=errors[0],
+                detail=f"{len(targets)} profil URL'si denendi; hata alındı",
+            )
         )
     else:
-        channel_row = ok(
-            "profile.deep_scan",
-            detail=f"{len(targets)} profil URL'si tarandı (0 çıkarılan alan)",
+        channel_rows.append(
+            ok(
+                "profile.deep_scan",
+                detail=f"{len(targets)} profil URL'si tarandı (0 çıkarılan alan)",
+            )
         )
 
-    return items, [channel_row], identities
+    return items, channel_rows, identities
+

@@ -147,17 +147,17 @@ class TestP1DeepProfileResolver:
 
     @pytest.mark.asyncio
     async def test_resolver_extracts_evidence_items_when_available(self, monkeypatch):
-        urls = ["https://instagram.com/photoguy", "https://x.com/photoguy"]
+        urls = ["https://site.test/photoguy", "https://other.test/photoguy"]
         payload = {"policy": {"vault_locked": False}}
 
         ev_item = make_evidence(
-            content="profile identity extracted from https://instagram.com/photoguy: id=123",
+            content="profile identity extracted from https://site.test/photoguy: id=123",
             source_engine="socid_extractor",
             epistemic_type="observation",
-            provenance_refs=["https://instagram.com/photoguy"],
+            provenance_refs=["https://site.test/photoguy"],
         )
         fake_record = SocidRecord(
-            source_url="https://instagram.com/photoguy",
+            source_url="https://site.test/photoguy",
             available=True,
             fields={"user_id": "123", "username": "photoguy"},
         )
@@ -169,7 +169,7 @@ class TestP1DeepProfileResolver:
         )
 
         async def _mock_run_cap(cap_id, ctx, state=None):
-            if ctx.subject == "https://instagram.com/photoguy":
+            if ctx.subject == "https://site.test/photoguy":
                 return fake_result
             return CapabilityResult(
                 capability_id=cap_id,
@@ -188,9 +188,68 @@ class TestP1DeepProfileResolver:
         assert items[0].source_engine == "socid_extractor"
         assert len(idents) == 1
         assert idents[0]["fields"]["user_id"] == "123"
-        assert len(channels) == 1
-        assert channels[0].status == "ok"
-        assert "1/2 profilden" in channels[0].detail
+        scan_ch = next(c for c in channels if c.channel == "profile.deep_scan")
+        assert scan_ch.status == "ok"
+        assert "1/2 profilden" in scan_ch.detail
+
+    def test_url_classified_to_correct_sensor(self):
+        """P1: URL -> doğru platform ve sensör/çıkarıcı eşleşmesi."""
+        from agent_core.services.platform_registry import classify_profile_url
+
+        x_info = classify_profile_url("https://x.com/cyber_target")
+        assert x_info["platform"] == "x"
+        assert x_info["handle"] == "cyber_target"
+        assert x_info["sensor_id"] == "sensor.x.twscrape"
+        assert x_info["extractor_id"] == "extractor.identity.socid"
+
+        ig_info = classify_profile_url("https://instagram.com/visual_target")
+        assert ig_info["platform"] == "instagram"
+        assert ig_info["handle"] == "visual_target"
+        assert ig_info["sensor_id"] == "sensor.ig.instagrapi"
+
+        web_info = classify_profile_url("https://github.com/coder_target")
+        assert web_info["platform"] == "web"
+        assert web_info["sensor_id"] is None
+        assert web_info["extractor_id"] == "extractor.identity.socid"
+
+    @pytest.mark.asyncio
+    async def test_sensor_disabled_reports_not_run_with_reason(self, monkeypatch):
+        """P1: Sensör kapalıysa P0 not_run + sebep üretilir, sessizce yutulmaz."""
+        monkeypatch.delenv("ENABLE_X_SENSOR", raising=False)
+        from agent_core.capabilities import adapters_osint
+        monkeypatch.setattr(adapters_osint, "_module_available", lambda _: True)
+
+        urls = ["https://x.com/target_x"]
+        payload = {"policy": {"vault_locked": False, "rate_ok": True}}
+
+        items, channels, idents = await resolve_deep_profiles(urls, payload=payload)
+        ch_map = {c.channel: c for c in channels}
+        assert "sensor.x.twscrape" in ch_map
+        assert ch_map["sensor.x.twscrape"].status == "not_run"
+        assert "gate_disabled" in (ch_map["sensor.x.twscrape"].reason or "")
+
+    @pytest.mark.asyncio
+    async def test_call_path_uses_egress(self, monkeypatch):
+        """P1: Profil çıkarma çağrı yolu egress.py'den geçer ve deneme kaydı bırakır."""
+        from agent_core.capabilities.egress import drain_egress_attempts, egress_attempts
+        from agent_core.services.socid_enricher import extract_profile
+
+        drain_egress_attempts()
+
+        # Sahte HTTP yanıtı taklidi (mock safe_get)
+        dummy_resp = type("Resp", (), {"status_code": 200, "text": "<html><div data-id='test'>info</div></html>"})()
+        monkeypatch.setattr("agent_core.utils.security.safe_get", AsyncMock(return_value=dummy_resp))
+        monkeypatch.setattr("agent_core.services.socid_enricher.extract_from_html",
+                            lambda html, source_url: SocidRecord(source_url=source_url, available=True, fields={"uid": "99"}))
+
+        rec = await extract_profile("https://example.com/test_user")
+        assert rec.available is True
+
+        attempts = drain_egress_attempts()
+        assert len(attempts) >= 1
+        assert attempts[0]["purpose"] == "osint"
+        assert "example.com" in attempts[0]["target"]
+
 
 
 # ==============================================================================

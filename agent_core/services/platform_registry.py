@@ -58,6 +58,48 @@ def effective_scraper_type(url: str, requested: Optional[str] = None) -> str:
     return "unsupported_web"
 
 
+def classify_profile_url(url: str) -> dict[str, Any]:
+    """Profil URL'sini platform ve ilgili yetenek kimliğine (sensor/extractor) eşler.
+
+    Sözleşme (P1):
+    - URL platformunu sınıflandırır (x, instagram, web).
+    - İlgili sensör kimliğini seçer:
+        * X -> sensor.x.twscrape
+        * Instagram -> sensor.ig.instagrapi
+        * Diğer/Web -> None (yalnız identity extractor)
+    - Kimlik çıkarıcı her zaman extractor.identity.socid'dir.
+    """
+    raw = (url or "").strip()
+    if not raw:
+        return {"platform": "unknown", "handle": "", "sensor_id": None, "extractor_id": None}
+
+    plat = effective_scraper_type(raw)
+    if plat == "x":
+        handle = extract_x_username(raw)
+        return {
+            "platform": "x",
+            "handle": handle,
+            "sensor_id": "sensor.x.twscrape",
+            "extractor_id": "extractor.identity.socid",
+        }
+    elif plat == "instagram":
+        handle = extract_username(raw)
+        return {
+            "platform": "instagram",
+            "handle": handle,
+            "sensor_id": "sensor.ig.instagrapi",
+            "extractor_id": "extractor.identity.socid",
+        }
+    else:
+        return {
+            "platform": "web",
+            "handle": "",
+            "sensor_id": None,
+            "extractor_id": "extractor.identity.socid",
+        }
+
+
+
 # [AUDIT P1-6] Yalnız GERÇEK profil URL'lerinden kullanıcı adı çıkarılır.
 # Eskiden URL'nin SON path segmenti körlemesine hedef sanılıyordu:
 # /p/CxYz123Ab/ -> "CxYz123Ab", /explore/tags/kedi/ -> "kedi",
