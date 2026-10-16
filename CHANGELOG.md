@@ -30,13 +30,21 @@
   `glm-5.2` için $0.65/$10.00 per 1M ölçtü. Sonraki live-check run'ları
   [38789947274](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38789947274),
   [38794722007](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38794722007),
-  [38821301808](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38821301808)
-  ve [38822647324](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38822647324)
-  deepseek fiyatını $0.392022/$0.784044, $0.386976/$0.773952, $0.348174/$0.696348 ve son canlı okumada $0.346434/$0.692868;
+  [38821301808](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38821301808),
+  [38822647324](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38822647324)
+  ve [38826080134](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38826080134)
+  deepseek fiyatını $0.392022/$0.784044, $0.386976/$0.773952, $0.348174/$0.696348, $0.346434/$0.692868 ve son canlı okumada $0.95526/$1.91052;
   glm-5.2'yi $0.037/$7.00 per 1M ölçtü.
   Gateway, katalog ve verifier son canlı ölçüme hizalandı. Bu kısa aralıklı fark,
   fiyat snapshot'ının oynaklığını gösterir; katalog sorgusu inference/hesap
   erişimini veya sonraki fiyat kararlılığını kanıtlamaz.
+- UX Dili ve Görünür Uyarılar: `AgentRack` iç modül jargonu (`TRACKER YÜKLÜ DEĞİL`)
+  yerine `BAĞLANTI KOPTU` operatör diline çevrildi, alt toplam `HATA` ile tek tip
+  yapıldı. `TacticalWarRoom` başlatma arızalarında ekranda `role="alert"` uyarı
+  bandı sunar, durma nedenini insani dille özetleyip teknik detayı `TEKNİK AYRINTI:`
+  altında şeffaf korur. `UnifiedCompactPanel` kasa kilitli ateşlemede görünür
+  `role="alert"` bandı basar (ses ve dürüstlük sözleşmesi bozulmadan). `test_ux_language.py`
+  ile kilitlendi.
 - **Doğrulama:** Python **2.626 geçti, 6 atlandı, 0 başarısız**; frontend
   `svelte-check` 0 hata/uyarı ve Vite production build başarılı. Envanter,
   skill paketi ve audit raporu tazelik testleri ile `git diff --check` geçti.
