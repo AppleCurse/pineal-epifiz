@@ -432,14 +432,19 @@
 
   function handleKeydown(e: KeyboardEvent) { if (e.key === 'Enter') sendMessage(); }
 
+  // [UX] Kasa reddi yalnız loga düşüyordu; ekranda görünür uyarı yoktu.
+  // Red artık role="alert" bandıyla operatörün gözü önünde.
+  let vaultNotice: string | null = null;
   export async function triggerAnalysis() {
     if (!targetUrl) return;
     // VAULT interlock: anahtar açılmadan ateşleme yok.
     if (!$keyUnlocked) {
       playHalt();
+      vaultNotice = 'KASA KİLİTLİ. Analiz için kasayı açmalısınız.';
       logs.update(l => [...l, { ts: new Date().toLocaleTimeString(), level: 'ERROR', msg: 'ATEŞLEME REDDEDİLDİ: VAULT anahtarı kilitli — önce anahtarı çevirin' }]);
       return;
     }
+    vaultNotice = null;
     if (!$armEngaged) {
       armEngaged.set(true);
       logs.update(l => [...l, { ts: new Date().toLocaleTimeString(), level: 'INFO', msg: 'SİSTEM KİLİDİ AÇILDI: ARM otonom aktif edildi' }]);
@@ -722,6 +727,9 @@
               {$isProcessing ? 'İŞLENİYOR (BUSY)...' : 'BAŞLAT (LAUNCH)'}
             </button>
           </div>
+          {#if vaultNotice}
+            <div class="vault-alert" role="alert">{vaultNotice}</div>
+          {/if}
 
           <!-- Chat Dialogue Feed -->
           <div class="dialogue-scroll-area" bind:this={chatContainer}>
@@ -1446,6 +1454,18 @@
   .quick-target-strip {
     display: flex;
     gap: 8px;
+    position: relative;
+    z-index: 4;
+  }
+  .vault-alert {
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid #ef4444;
+    border-radius: 4px;
+    padding: 7px 12px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+    color: #fca5a5;
     position: relative;
     z-index: 4;
   }
