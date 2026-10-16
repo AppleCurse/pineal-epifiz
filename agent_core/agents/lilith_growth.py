@@ -315,11 +315,29 @@ class LilithGrowthAgent:
         api_key: Optional[str],
         base_url: Optional[str],
         model: str = "gpt-4o",
+        use_main_line_gateway: bool = True,
     ) -> "LilithGrowthAgent":
         """
         CLI kimlik bilgilerinden uygun gateway'i seçip ajanı inşa eder.
-        api_key yoksa otomatik olarak sıfır-maliyet FreeTextGateway'e düşer.
+
+        [P3 · 2026-10-16 · M-2 düzeltmesi] Varsayılan gateway artık **ana
+        hattın** ``LLMGateway``'idir. Böylece Lilith CLI de:
+
+        * ``NINEROUTER_* > PINEAL_LLM_* > OPENROUTER_*`` taşıma sırasına uyar,
+        * canlı çağrı kapısına (``LIVE_LLM_E2E`` / ``PINEAL_ROUTER_LIVE``) tabidir,
+        * bütçe/spend sayacına ve çağrı kaydına girer.
+
+        Eski ``OpenAICompatibleGateway`` (doğrudan ``httpx``) yalnız
+        ``use_main_line_gateway=False`` ile **açıkça** seçilir; ölçülen maliyet
+        ana hattın sayacına yazılmadığı için varsayılan DEĞİLDİR.
+
+        api_key yoksa sıfır-maliyet ``FreeTextGateway``'e düşülür (canlı çağrı
+        yapılmaz).
         """
+        if use_main_line_gateway and api_key:
+            from agent_core.services.llm_gateway import LLMGateway
+
+            return cls(llm_gateway=LLMGateway())
         if api_key:
             gateway: Any = OpenAICompatibleGateway(
                 api_key=api_key,
