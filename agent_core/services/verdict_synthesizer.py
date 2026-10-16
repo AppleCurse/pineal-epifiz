@@ -34,6 +34,21 @@ def _core(result: Any) -> str:
     return (" | ".join(parts))[:_CLAIM_LIMIT]
 
 
+def _blocked_channels(snap: Any) -> List[dict[str, Any]]:
+    """Snapshot'taki koşmayan/başarısız kanalları döndürür (deterministik)."""
+    rows = getattr(snap, "channel_status", None)
+    if not isinstance(rows, list):
+        return []
+    out: List[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        status = str(row.get("status") or "")
+        if status in ("not_run", "failed"):
+            out.append(row)
+    return out
+
+
 def build_verdict_digest(room_state: Any) -> str:
     """Oda durumundan son görevin hüküm belgesini derler (deterministik)."""
     if not isinstance(room_state, dict):
@@ -64,5 +79,18 @@ def build_verdict_digest(room_state: Any) -> str:
 
     header = f"GÖREV {task_id} — DURUM: {status_value}"
     body = "\n".join(lines) if lines else "- (kanıt kaydı yok — hiçbir ajan kanıt üretmedi)"
+
+    # [P0 · DENETİM 2026-10-16] Hüküm belgesi KOŞMAYAN kanalları da listeler.
+    # Aksi hâlde "kanıt yok" ile "kanal hiç çalışmadı" ayrımı belgede kaybolur
+    # ve hüküm, eksik veriyi varmış gibi okunur.
+    blocked = _blocked_channels(snap)
+    if blocked:
+        body += "\nKOŞMAYAN KANALLAR:"
+        for row in blocked:
+            body += (
+                f"\n- [{row.get('channel', '?')}] {row.get('status', 'not_run')}"
+                f" · {row.get('reason') or 'sebep yok'}"
+            )
+
     digest = header + "\n" + body
     return digest[:_TOTAL_BUDGET]

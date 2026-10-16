@@ -42,12 +42,19 @@ def _gate() -> Availability | None:
     return None
 
 
-def _params(ctx: CapabilityContext) -> tuple[str, str, list[dict[str, Any]]]:
+def _params(ctx: CapabilityContext) -> tuple[str, str, list[dict[str, Any]], list[dict[str, Any]]]:
     title = str(ctx.params.get("title") or ctx.subject or "").strip()
     subject = str(ctx.params.get("subject") or "").strip()
     raw = ctx.params.get("evidence") or []
     items = [item for item in raw if isinstance(item, dict)] if isinstance(raw, list) else []
-    return title, subject, items
+    # [P0 · DENETİM 2026-10-16] Koşmayan kanallar rapora taşınır.
+    raw_channels = ctx.params.get("channels") or []
+    channels = (
+        [row for row in raw_channels if isinstance(row, dict)]
+        if isinstance(raw_channels, list)
+        else []
+    )
+    return title, subject, items, channels
 
 
 class _ReportCapability(BaseCapability):
@@ -69,13 +76,14 @@ class _ReportCapability(BaseCapability):
         return Availability.ok()
 
     async def run(self, ctx: CapabilityContext) -> CapabilityResult:
-        title, subject, items = _params(ctx)
+        title, subject, items, channels = _params(ctx)
         if not title:
             return CapabilityResult(
                 capability_id=self.id, available=False, unavailable_reason="empty_title"
             )
         package = report_factory.build_report(
-            items, title=title, subject=subject, formats=(self.format_name,)
+            items, title=title, subject=subject, formats=(self.format_name,),
+            channels=channels,
         )
         notes: dict[str, Any] = {
             "title": package.title,

@@ -23,6 +23,11 @@ Bölme planı (uç nokta envanteri ve sıra): `docs/reports/API_MONOLITH_SPLIT_P
 ÜSTÜNDE (6.000 satır) durduğu görüldü — yani envanter/açıklama işi bile
 gerçekten `api.py` içine satır ekleyemiyor. Kural işledi: satır eklemek yerine
 düşük-bağımlılıklı modül çıkarıldı (§4/1. adım) ve uç sözleşmeleri değişmedi.
+
+[API-BÖLME 3 · 2026-10-16] Üçüncü adım: P0 dürüstlük düzeltmeleri
+(`/api/telemetry` yetenek tablosu + web dosyası kural kuralları) iki yeni
+modül çıkardı — `backend/routes/telemetry.py` ve
+`backend/services/web_dossier.py` — ve tavan 5.916 → 5.907 DÜŞÜRÜLDÜ.
 """
 
 from __future__ import annotations
@@ -38,15 +43,19 @@ LANGUAGE_MODULE = REPO_ROOT / "backend/routes/language.py"
 #: İlk bölme (gövde tavanı middleware'i taşındı) sonrası: 5.937 satır.
 #: İkinci bölme (`/api/language/*` → `backend/routes/language.py`) sonrası:
 #: modül docstring'i dâhil 5.916 satır (ölçüldü 2026-10-14).
+#: Üçüncü bölme (2026-10-16, API-BÖLME 3): P0 düzeltmeleri iki yeni modül
+#: çıkardı — `backend/routes/telemetry.py` (`/api/telemetry`) ve
+#: `backend/services/web_dossier.py` (web dosyası kuralları) — 5.907 satır.
 MEASURED_AT_AUDIT = 6034
 MEASURED_AFTER_FIRST_SPLIT = 5937
 MEASURED_AFTER_SECOND_SPLIT = 5916
+MEASURED_AFTER_THIRD_SPLIT = 5908
 
 #: Tavan. Yeni uç nokta eklemek yerine MODÜL ÇIKAR. Tavana dayanınca
 #: `docs/reports/API_MONOLITH_SPLIT_PLAN.md` sırasındaki bir sonraki
 #: düşük-bağımlılıklı alanı taşı ve bu sayıyı DÜŞÜR.
-#: İkinci bölmeden sonra ölçülen değere indirildi (ratchet: geri çıkış yok).
-MAX_LINES = 5916
+#: Üçüncü bölmeden sonra ölçülen değere indirildi (ratchet: geri çıkış yok).
+MAX_LINES = 5908
 
 
 def _line_count() -> int:

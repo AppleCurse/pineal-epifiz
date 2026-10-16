@@ -126,6 +126,17 @@ def _canonical_message_context_enabled() -> bool:
     }
 
 
+def _channel_from_engine(channel: str, scan: Any) -> Dict[str, Any]:
+    """Tarayıcı/kapasite sonucunu kanal durumu sözlüğüne çevirir.
+
+    [P0 · DENETİM 2026-10-16] Boş liste dönmek yerine "koştu / ÇALIŞMADI /
+    hata" + sebep yazar.
+    """
+    from agent_core.domain.channel_status import from_engine_result
+
+    return from_engine_result(channel, scan).to_dict()
+
+
 def _append_upstream_finding(input_data: dict, agent: str, core: str) -> None:
     """Append only a bounded, explicitly classified inference core.
 
@@ -1071,6 +1082,13 @@ class PinealExecutor:
         # izleme + ilişki grafı için kararlı hedef anahtarı).
         self._current_target_profile = input_data.get("target_profile") or {}
         status = TaskStatus(task_id=task_id, status="processing", created_at=datetime.now(timezone.utc))
+        # [P0 · DENETİM 2026-10-16] Hedef kanal durumu (X sensörü, web araması,
+        # Instagram kazıma...) görev payload'ından devralınır; görev içinde
+        # koşan kanallar buna eklenir. Böylece "ÇALIŞMADI: sebep" telemetriye
+        # ve UI'a taşınır.
+        _inherited_channels = input_data.get("channel_status") or []
+        if isinstance(_inherited_channels, list):
+            status.channel_status = [c for c in _inherited_channels if isinstance(c, dict)]
         _task_wall_start = datetime.now(timezone.utc)
 
         # [RESUME · DESTEKLE DEVAM] Önceki koşudan devralma: tamamlanan
@@ -1270,6 +1288,23 @@ class PinealExecutor:
                 )
                 data_conf = getattr(osint_result, "data_confidence", True)
                 fallback = getattr(osint_result, "fallback_reason", None)
+                # [P0 · DENETİM 2026-10-16] OSINT kanallarının (maigret/holehe)
+                # koşu durumu görev telemetrisine yazılır: "koştu" / "ÇALIŞMADI
+                # (sebep)" / "hata". "Bulunamadı" ile "hiç çalışmadı" ayrımı
+                # buradan okunur. Kanal görevin parçası DEĞİLSE satır yazılmaz
+                # (olmayan kanal "koşmadı" diye raporlanmaz).
+                _osint_channels = []
+                _username_scan = status.osint_footprint.get("username_scan")
+                if _username_scan is not None:
+                    _osint_channels.append(
+                        _channel_from_engine("sensor.identity.maigret", _username_scan)
+                    )
+                _email_scan = status.osint_footprint.get("email_scan")
+                if _email_scan is not None:
+                    _osint_channels.append(
+                        _channel_from_engine("sensor.identity.holehe", _email_scan)
+                    )
+                status.channel_status = list(status.channel_status or []) + _osint_channels
                 status.agent_runs["osint_investigator"] = AgentRun(
                     task_id=task_id, agent_name="osint_investigator", status="completed",
                     started_at=datetime.now(timezone.utc), completed_at=datetime.now(timezone.utc),

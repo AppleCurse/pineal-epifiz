@@ -67,6 +67,72 @@ def _truncate(value: str, limit: int = 480) -> str:
     return text if len(text) <= limit else text[:limit].rstrip() + " …"
 
 
+#: [P0 · DENETİM 2026-10-16 · Bulgu B-4] twscrape `API()` varsayılan olarak
+#: ÇALIŞMA DİZİNİNE `accounts.db` yazıyordu → depo kökü kirleniyordu
+#: (envanter testi kırmızıya dönüyordu). Yol artık YAPILANDIRILABİLİR:
+#:   * `PINEAL_X_ACCOUNTS_DB` → tam yol (en yüksek öncelik)
+#:   * varsayılan → `./cache/x_accounts.db` (`.gitignore`'daki `cache/` altında)
+_X_ACCOUNTS_DB_ENV = "PINEAL_X_ACCOUNTS_DB"
+_X_ACCOUNTS_DB_DEFAULT = os.path.join("cache", "x_accounts.db")
+
+
+def _x_accounts_db_path() -> str:
+    """twscrape hesap havuzu DB yolunu çözer (varsayılan: cache/ altında)."""
+    configured = (os.getenv(_X_ACCOUNTS_DB_ENV) or "").strip()
+    path = configured or _X_ACCOUNTS_DB_DEFAULT
+    parent = os.path.dirname(os.path.abspath(path))
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    return path
+
+
+async def _x_pool_state(api: Any) -> dict[str, Any] | None:
+    """Hesap havuzunun gerçek durumunu ölçer (aktif oturum sayısı).
+
+    Havuz boşsa "hedef yok" değil, "oturum yok" denmelidir.
+
+    ``None`` döner → havuz ÖLÇÜLEMEDİ (ör. `pool` parametresini kabul etmeyen
+    bir sahte/eskiden kalan twscrape). Bu durumda `no_session_pool` kapısı
+    UYGULANMAZ: ölçülmeyen bir şey "yok" diye yazılmaz.
+    """
+    pool = getattr(api, "pool", None)
+    getter = getattr(pool, "get_all", None)
+    if getter is None:
+        return None
+    total = 0
+    active = 0
+    readable = True
+    try:
+        accounts = await getter()
+    except Exception as exc:  # pragma: no cover - bozuk/eksik DB
+        readable = False
+        logger.debug("twscrape hesap havuzu okunamadı: %s", type(exc).__name__)
+        accounts = []
+    for account in accounts or ():
+        total += 1
+        if getattr(account, "active", False):
+            active += 1
+    return {
+        "accounts_total": total,
+        "accounts_active": active,
+        "pool_readable": readable,
+        "accounts_db": getattr(pool, "_db_file", "") or "",
+    }
+
+
+def _make_twscrape_api(API: Any, db_path: str) -> Any:
+    """twscrape API nesnesini kurar — hesap DB'si yapılandırılabilir yoldadır.
+
+    `pool` parametresini kabul etmeyen (sahte/eskiden kalan) uygulamalar için
+    geriye dönük uyum: sıradan kurucuya düşülür.
+    """
+    try:
+        return API(pool=db_path)
+    except TypeError:
+        logger.debug("twscrape API 'pool' parametresini kabul etmiyor; varsayılan kurucu kullanılıyor")
+        return API()
+
+
 # --------------------------------------------------------------------- X
 class XTwscrapeCapability(BaseCapability):
     """X/Twitter sensörü — twscrape (MIT).
@@ -108,7 +174,24 @@ class XTwscrapeCapability(BaseCapability):
             )
 
         try:
-            api = API()
+            api = _make_twscrape_api(API, _x_accounts_db_path())
+            # [P0 · DENETİM 2026-10-16 · Bulgu B-1] Boş hesap havuzunda
+            # twscrape "kullanıcı yok" (user_not_found) döner — bu YANLIŞTIR:
+            # hedef değil, oturum havuzu yok. Kaynak gerçeği ayrı kanal olarak
+            # ölçülür: havuz boşsa sebep `no_session_pool` olur.
+            pool_state = await _x_pool_state(api)
+            if pool_state is not None and pool_state["accounts_active"] == 0:
+                return CapabilityResult(
+                    capability_id=self.id,
+                    available=False,
+                    unavailable_reason="no_session_pool",
+                    error=None,
+                    notes={
+                        "accounts_total": pool_state["accounts_total"],
+                        "accounts_active": 0,
+                        "accounts_db": pool_state["accounts_db"],
+                    },
+                )
             user = await api.user_by_login(username)
             if user is None:
                 return CapabilityResult(

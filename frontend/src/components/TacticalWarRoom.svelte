@@ -5,6 +5,8 @@
     agentStatuses, vaultLocked, activeViewMode, inspectedAgentId
   } from '../store';
   import { playClick, playHalt, playRunning } from '../lib/consoleAudio';
+  // [P0 · DENETİM 2026-10-16] Kanal durumu: "koştu / ÇALIŞMADI (sebep)".
+  import { blockedChannels, channelStatusText, type ChannelRun } from '../lib/channelStatus';
 
   // 12 Ajan Kanonik Tanımları
   const AGENT_LIST = [
@@ -55,6 +57,28 @@
   $: currentRunningAgent = $taskStatus?.current_agent || null;
   $: pipelineStatus = $taskStatus?.status || ($isProcessing ? 'RUNNING' : 'IDLE');
   $: detectedUrls = $taskStatus?.target_profile?.detected_urls || [];
+  // [P0 · DENETİM 2026-10-16] Kanıt tipi ayrımı: "gönderi" (platformdan
+  // kazınmış) ile "arama sonucu" (snippet) AYRI sayılır. UI, keşfedilen
+  // profil URL'sini "bağlandı" diye sunmaz.
+  $: targetPosts = $taskStatus?.target_profile?.posts || [];
+  $: searchSnippets = $taskStatus?.target_profile?.search_snippets || [];
+  $: contentBasis = $taskStatus?.target_profile?.content_basis || 'none';
+  $: channelRuns = ($taskStatus?.channel_status || []) as ChannelRun[];
+  $: blocked = blockedChannels(channelRuns);
+  // [P0] Radar rozeti gerçeği özetler: kazınan gönderi / bulunan (kazınmayan)
+  // profil / arama sonucu ayrı ayrı sayılır.
+  $: radarBadge = (() => {
+    const bits: string[] = [];
+    if (targetPosts.length > 0) bits.push(`${targetPosts.length} GÖNDERİ`);
+    if (detectedUrls.length > 0) bits.push(`${detectedUrls.length} PROFİL (KAZINMADI)`);
+    if (searchSnippets.length > 0) bits.push(`${searchSnippets.length} ARAMA SONUCU`);
+    if (bits.length === 0) return 'KANAL ÇALIŞMADI';
+    return bits.join(' · ');
+  })();
+  // [P0] Bağlı profil dekoru yalnız gerçek kazıma varsa "BAĞLANAN" der.
+  $: profileDeckLabel = targetPosts.length > 0
+    ? 'BAĞLANAN CANLI PROFİLLER:'
+    : 'TESPİT EDİLEN PROFİL URL’LERİ (KAZINMADI):';
   $: targetBio = $taskStatus?.target_profile?.bio || '';
   $: targetName = $taskStatus?.target_profile?.name || targetUrl || 'Hedef Belirlenmedi';
   $: realityIndex = $taskStatus?.depth_report?.reality_index ?? null;
@@ -117,8 +141,18 @@
     }
     if (run.status === 'completed') {
       if (id === 'osint_investigator') {
-        const count = detectedUrls.length;
-        return `${count} sosyal profil ve açık veri bağlandı`;
+        // [P0 · DENETİM 2026-10-16] "N profil bağlandı" YALNIZ gerçekten
+        // kazınma yapıldıysa yazılır. Bulunan (kazınılmamış) profil URL'leri
+        // ve arama sonuçları AYRI sayılır ve AYRI etiketlenir.
+        const posts = targetPosts.length;
+        const snippets = searchSnippets.length;
+        const found = detectedUrls.length;
+        const parts: string[] = [];
+        if (posts > 0) parts.push(`${posts} gönderi kazındı`);
+        if (snippets > 0) parts.push(`${snippets} arama sonucu (snippet — gönderi değil)`);
+        if (found > 0) parts.push(`${found} profil URL'si bulundu (kazınmadı)`);
+        if (parts.length === 0) return 'Kanal çalıştı — kanıt üretmedi (gönderi/snippet yok)';
+        return parts.join(' · ');
       }
       if (id === 'mirror_truth') {
         // 'Analitik' uydurma varsayılandı: alan yoksa ölçüm de yok.
@@ -389,7 +423,7 @@
         <div class="col-title">
           <span class="col-icon">📡</span> İSTİHBARAT VE DELİL RADARI
         </div>
-        <span class="col-badge">{detectedUrls.length} PROFİL BULUNDU</span>
+        <span class="col-badge">{radarBadge}</span>
       </div>
 
       <div class="radar-content">
@@ -405,7 +439,7 @@
 
           <!-- TESPİT EDİLEN SOSYAL HESAPLAR -->
           <div class="social-links-deck">
-            <span class="deck-label">BAĞLANAN CANLI PROFİLLER:</span>
+            <span class="deck-label">{profileDeckLabel}</span>
             {#if detectedUrls.length > 0}
               <div class="links-flow">
                 {#each detectedUrls as url}
@@ -431,6 +465,20 @@
               </div>
             {/if}
           </div>
+
+          <!-- [P0 · DENETİM 2026-10-16] KANAL DURUMU: çalışmayan kanal ve
+               sebebi. Boş sonuç ile "hiç çalışmadı" birbirine karışmaz. -->
+          {#if blocked.length > 0}
+            <div class="channel-block">
+              <span class="deck-label">ÇALIŞMAYAN KANALLAR:</span>
+              {#each blocked as run}
+                <div class="channel-line" data-status={run.status}>
+                  <span class="channel-mark">⛔</span>
+                  <span class="channel-text">{channelStatusText(run)}</span>
+                </div>
+              {/each}
+            </div>
+          {/if}
         </div>
 
         <!-- PSİKODİNAMİK SENTEZ VE ESSENCE -->
@@ -1091,6 +1139,40 @@
     color: #64748b;
     letter-spacing: 1px;
     font-weight: 700;
+  }
+
+  /* [P0 · DENETİM 2026-10-16] Çalışmayan kanal + sebep bloğu. */
+  .channel-block {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 10px;
+    padding: 8px;
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    background: rgba(127, 29, 29, 0.12);
+    border-radius: 4px;
+  }
+
+  .channel-line {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    font-size: 11px;
+    line-height: 1.35;
+    color: #fca5a5;
+  }
+
+  .channel-line[data-status='failed'] {
+    color: #fdba74;
+  }
+
+  .channel-mark {
+    flex: 0 0 auto;
+  }
+
+  .channel-text {
+    color: inherit;
+    word-break: break-word;
   }
 
   .links-flow {

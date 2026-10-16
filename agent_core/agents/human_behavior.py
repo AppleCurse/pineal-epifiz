@@ -20,6 +20,8 @@ from urllib.parse import urlparse
 
 from agent_core.services.upstream_findings import upstream_findings_block
 from agent_core.services.confidence import normalize_confidence
+# [P0 · DENETİM 2026-10-16] Kanıt tipi ayrımı: yazım tarzı ↔ arama sonucu.
+from agent_core.domain.content_basis import EVIDENCE_PLATFORM_POST, extract_public_text
 
 
 class HumanBehaviorPayload(BaseModel):
@@ -89,7 +91,14 @@ class HumanBehaviorAnalyzer:
         upstream_block = upstream_findings_block(input_data)
 
         bio = self._as_text(profile.get("bio", ""))
-        posts = [self._as_text(p) for p in (profile.get("posts") or [])]
+        # [P0 · DENETİM 2026-10-16] Dilbilimsel/ritmik analiz HEDEFİN KENDİ
+        # YAZDIĞI metne bakar. Arama sonucu (snippet) üçüncü taraf metnidir →
+        # "hedefin yazım tarzı" iddiası için kullanılmaz. Kanıt tipi etiketi
+        # kaybolmaz.
+        posts = [
+            item.text
+            for item in extract_public_text(profile, kinds=(EVIDENCE_PLATFORM_POST,))
+        ]
         post_times = profile.get("post_times") or []
         images = profile.get("images") or []
 

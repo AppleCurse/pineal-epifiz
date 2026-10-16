@@ -139,6 +139,10 @@ class TaskSnapshot(BaseModel):
     shadow_profile: Optional[Dict[str, Any]] = None
     osint_footprint: Optional[Dict[str, Any]] = None
     telemetry: Optional[Dict[str, Any]] = None
+    #: [P0 · DENETİM 2026-10-16] Kanal durumu defteri: her sensör/araştırma
+    #: "ok" | "not_run(+reason)" | "failed(+reason)" olarak kaydedilir. Boş
+    #: liste dönmek YASAK: "bulunamadı" ile "hiç çalışmadı" ayrımı buradan görünür.
+    channel_status: List[Dict[str, Any]] = []
     #: [DESTEK AKIŞI] Desteğe açılan talepler (pending → resolved).
     #: Ekleyici JSON alanı: eski istemciler için uyumlu.
     support_requests: List[Dict[str, Any]] = []
