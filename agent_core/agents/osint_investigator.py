@@ -323,15 +323,24 @@ class OsintInvestigatorAgent:
                             phones = data.get("phones", [])
                             platforms = data.get("platforms", [])
                             observed_fields = sum(bool(value) for value in (emails, phones, platforms))
-                            return OsintProfile(
+                            # Provider output is one source, not the end of the
+                            # OSINT pipeline. Continue with independent sensors so a
+                            # configured API key does not silently disable Maigret/Holehe.
+                            profile = OsintProfile(
                                 connected_emails=emails,
                                 connected_phones=phones,
                                 associated_platforms=platforms,
                                 # Coverage, not an invented provider-trust score.
                                 confidence=round(observed_fields / 3, 3),
-                                data_confidence=True,
-                                fallback_reason=None,
+                                data_confidence=bool(observed_fields),
+                                fallback_reason=None if observed_fields else "provider_returned_no_observations",
                             )
+                            profile = await self._apply_username_scan(profile, clean_username, payload)
+                            if profile.connected_emails:
+                                profile = await self._apply_email_scan(
+                                    profile, profile.connected_emails[0], payload
+                                )
+                            return profile
                         logger.warning(f"[OSINT] Canlı API hatası: HTTP {resp.status} - {await resp.text()}")
                         error_code = "AUTH_FAILED" if resp.status in (401, 403) else "RATE_LIMITED" if resp.status == 429 else "PROVIDER_ERROR"
                         return OsintProfile(confidence=0.0, data_confidence=False, fallback_reason="api_error", error_code=error_code)
