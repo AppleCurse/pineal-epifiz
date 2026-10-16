@@ -71,7 +71,7 @@ if use_main_line_gateway and api_key:
 
 - Anahtar yoksa → `FreeTextGateway` (sıfır-maliyet, anahtar gerektirmeyen) — değişmedi.
 - Eski `OpenAICompatibleGateway` yalnızca **açıkça** `use_main_line_gateway=False` ile seçilir (ölçülen maliyet ana hattın sayacına yazılmadığı için varsayılan DEĞİLDİR).
-- Ajanın `_request_generation()` (satır 411-454) zaten `query_json`/`query_json_chain` sözleşmesini destekliyordu → ana hat gateway'i **değişiklik gerektirmeden** uyumlu ✓.
+- Ajanın `_request_generation()` (satır 427-470) zaten `query_json`/`query_json_chain` sözleşmesini destekliyordu → ana hat gateway'i **değişiklik gerektirmeden** uyumlu ✓.
 
 ### 3.2 `run_lilith.py` — kasa anahtarı yedeği + dürüst hüküm
 

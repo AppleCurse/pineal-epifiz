@@ -27,9 +27,9 @@ Araçlar:
 
 | Konum | Gerçek |
 |---|---|
-| `agent_core/agents/osint_investigator.py:305` | `candidate_emails = self._extract_candidate_emails(target, payload)` — hedef `email`/biyografi/snippet'tan e-posta çıkarılıyor |
-| `agent_core/agents/osint_investigator.py:314` | `connected_emails=candidate_emails` → artık **boş olmayabilir** |
-| `agent_core/agents/osint_investigator.py:331-333` | `if profile.connected_emails:` → `_apply_email_scan(...)` **çağrılır** → `sensor.identity.holehe` omurgadan koşar |
+| `agent_core/agents/osint_investigator.py:307` | `candidate_emails = self._extract_candidate_emails(target, payload)` — hedef `email`/biyografi/snippet'tan e-posta çıkarılıyor |
+| `agent_core/agents/osint_investigator.py:316` | `connected_emails=candidate_emails` → artık **boş olmayabilir** |
+| `agent_core/agents/osint_investigator.py:333-335` | `if profile.connected_emails:` → `_apply_email_scan(...)` **çağrılır** → `sensor.identity.holehe` omurgadan koşar |
 
 **Canlı prob (mock'suz, gerçek `CapabilityRunner`):**
 
