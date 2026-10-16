@@ -319,7 +319,7 @@ ekranda "kimlik alanı" olarak değil, **mühürlü kanıt girdisi** olarak gör
 | Skills paketi | `python scripts/export_skills.py --check` | ✅ taze (26 dosya) |
 | Katalog kontratı | `python scripts/verify_openrouter_catalog.py` | ✅ local PASS (live SKIP: anahtar yok) |
 | Revert-doğrulama | `python scripts/revert_verification_p1.py` | ✅ **6/6** |
-| CI | GitHub Actions | ✅ PR #139 · koşu [38868146112](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38868146112): `backend`/`frontend`/`rust-core`/`android`/`smoke` **hepsi yeşil** (ilk iki koşu `backend` katalog adımında kırmızıydı — canlı fiyat kayması, §10) |
+| CI | GitHub Actions | ✅ PR #139 · koşu [38871291504](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38871291504) + smoke [38871284864](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38871284864): `backend`/`frontend`/`rust-core`/`android`/`smoke`/Workers×2 **hepsi yeşil** (ara koşularda `backend` **katalog adımı** kırmızıydı — canlı fiyat salınımı, §10 ve §12) |
 
 ---
 
