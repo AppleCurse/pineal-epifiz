@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased — 2026-10-16 — Canlı fiyat hizalaması: CI'ın üç kez birebir ölçtüğü değer
+
+- **Ölçüm (üç bağımsız CI koşusu, birebir aynı):**
+  [38833598719](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38833598719)
+  (Faz 1 denetim commit'i — katalog kodu YOK),
+  [38840573018](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38840573018)
+  (Faz 2 · P0) ve
+  [38843226709](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38843226709)
+  (`main`, PR #135 birleşimi) → `GET https://openrouter.ai/api/v1/models` yanıtında
+  `deepseek/deepseek-v4-pro` için **$0.95526/$1.91052**, `z-ai/glm-5.2` için
+  **$0.62/$2.42** per 1M okundu. Üç koşuda da dört `FAIL:` satırı birebir aynıydı.
+- **Hizalandı (tahminle değil, ölçümle):** `scripts/verify_openrouter_catalog.py`
+  pinleri, `config/provider_catalog.json` (`openrouter` bölümü) ve
+  `agent_core/services/llm_gateway.py` `MODEL_PRICING` (harcama sayacı) üçü birden
+  ölçülen değere alındı. `deepseek-v4-pro` girdi 2,76× YÜKSELDİ ($0.346434 → $0.95526);
+  `glm-5.2` girdi 16,8× yükseldi ($0.037 → $0.62), çıktı 2,9× düştü ($7.00 → $2.42) —
+  eski sayaç her iki yönde de yanlış sayıyordu.
+- **Kapsam notu:** bu düzeltme P0 "dürüst durum" değişikliğinin **devamı değil**,
+  ayrı bir canlı-veri hizalamasıdır (PR #135 birleşikti; katalog adımı o PR'da da
+  kırmızıydı ve PR'ın diff'i fiyat dosyalarına hiç dokunmuyordu).
+- **Kanıt sınırı:** ölçüm CI'ın canlı `/models` çağrısından gelir; bu ortamdan
+  `openrouter.ai` erişilemediği için canlı katalog **yerelde yeniden okunamadı**.
+  Fiyat snapshot'ı oynaktır; bir sonraki koşu yeni bir salınım ölçebilir.
+
 ## Unreleased — 2026-10-15 — Geniş kaynak/test sözleşmesi denetimi
 
 - Güven skorları: ortak `normalize_confidence` sözleşmesi yalnız sonlu `[0,1]`
