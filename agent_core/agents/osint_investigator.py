@@ -108,9 +108,13 @@ class OsintInvestigatorAgent:
           alanları DEĞİŞMEZ; yalnız kanıt-provenance olarak `username_scan`
           alanı eklenir (makine-okunur sebep ile).
         - Tarama güvenilir tamamlandıysa: gözlenen platformlar gerçek veri
-          olarak girer; güven = gözlenen kapsama (uydurma skor yok).
+          olarak girer; güven = gözlenen kapsama VE mevcut güvenin altına
+          inmez (başka kaynağın gözlemini ezmez — holehe ile aynı monoton
+          kural; bkz. `_apply_email_scan`).
         - Güvenilir yokluk (sıfır hata + sıfır eşleşme): data_confidence=True
-          kalır, düşük skor dürüstçe sıfır; sebep 'username_scan_no_match'.
+          kalır; hiç gözlem yoksa skor dürüstçe sıfır + sebep
+          'username_scan_no_match', başka kaynak gözlemi varsa mevcut
+          değerler korunur (başka taramanın kanıtını ezmez).
 
         [FAZ A] Tarama artık doğrudan servise değil, CAPABILITY OMURGASINA
         gider (`sensor.identity.maigret`): kasa/env kapıları, çocuk kilidi ve
@@ -143,19 +147,26 @@ class OsintInvestigatorAgent:
         if scan.available and scan.found_sites:
             merged = sorted({*profile.associated_platforms, *(h.site for h in scan.found_sites)})
             coverage = (len(scan.found_sites) / scan.scanned_count) if scan.scanned_count else 0.0
+            # Güven monoton: gözlenen kapsama MEVCUT güvenin altına inmez —
+            # sağlayıcı ya da başka taramanın gözlemini ezmez (holehe ile aynı
+            # kural; bkz. `_apply_email_scan`). Uydurma skor yok.
+            confidence = max(profile.confidence, round(coverage, 3))
             return profile.model_copy(update={
                 "associated_platforms": merged,
                 "data_confidence": True,
-                "confidence": round(coverage, 3),
+                "confidence": confidence,
                 "fallback_reason": None if not profile.fallback_reason else profile.fallback_reason,
                 "username_scan": scan.model_dump(),
                 **sealed,
             })
         if scan.available and scan.scanned_count and scan.error_count == 0:
+            # Güvenilir yokluk: yalnız HİÇ gözlem yoksa skor sıfırlanır ve
+            # sebep yazılır; başka kaynağın gözlemi varsa değerleri ezilmez.
+            no_platforms = not profile.associated_platforms
             return profile.model_copy(update={
                 "data_confidence": True,
-                "confidence": 0.0,
-                "fallback_reason": "username_scan_no_match",
+                "confidence": 0.0 if no_platforms else profile.confidence,
+                "fallback_reason": "username_scan_no_match" if no_platforms else profile.fallback_reason,
                 "username_scan": scan.model_dump(),
                 **sealed,
             })
@@ -221,6 +232,55 @@ class OsintInvestigatorAgent:
         # [P4 · 2026-10-16] Kapı/kasa reddi de MÜHÜRLÜ kanıt olarak korunur
         # (maigret ile simetri): reddedilen tarama da zincirde görünür.
         return profile.model_copy(update={"email_scan": scan.model_dump(), **sealed})
+
+    @staticmethod
+    def _no_target_email_seal() -> Dict[str, Any]:
+        """[FAZ 3] E-posta yokken Holehe ÇALIŞMAZ; dürüst `not_run` kaydı yazılır.
+
+        "E-posta bulunmadığında Holehe'yi çağrılmış gibi göstermek" yasak:
+        `email_scan` alanı taramanın gerçek durumunu taşır
+        (`available=False, reason="no_target_email"`) ve kanal durumu
+        çevirisinde `not_run` + sebep olur.
+        """
+        return {
+            "requested_email": "",
+            "available": False,
+            "provider": "holehe",
+            "reason": "no_target_email",
+            "found_sites": [],
+            "scanned_count": 0,
+            "error_count": 0,
+        }
+
+    async def _continue_independent_sensors(
+        self,
+        profile: OsintProfile,
+        clean_username: str,
+        payload: Dict[str, Any] | None,
+        candidate_emails: list[str] | None = None,
+    ) -> OsintProfile:
+        """[PR #136 · KABLO] Bağımsız sensörleri (Maigret → Holehe) dürüstçe birleştirir.
+
+        Sağlayıcı çıktısı — ya da sağlayıcı hatası — PIPELINE'IN SONU DEĞİLDİR:
+        bir API anahtarının varlığı (ya da o anahtarın hata vermesi) Maigret/
+        Holehe'yi sessizce devre dışı bırakamaz. Bu yardımcı TÜM sağlayıcı
+        yollarından (anahtar yok / 200 / HTTP hatası / timeout / ağ hatası)
+        çağrılır; böylece tek uygulama, tek koşum yolu olur.
+
+        - Maigret her zaman denenir (kapı/kasa reddinde yalnız `not_run`
+          provenance'ı mühürlenir; alanlar değişmez).
+        - Holehe YALNIZ gerçek bir e-posta girdisi varsa koşar; yoksa
+          `no_target_email` ile dürüst `not_run` kaydı yazılır.
+        """
+        profile = await self._apply_username_scan(profile, clean_username, payload)
+        if profile.connected_emails:
+            return await self._apply_email_scan(profile, profile.connected_emails[0], payload)
+        if candidate_emails:
+            # [P1 · KABLO BAĞLANTISI] Sağlayıcı e-posta döndürmese bile hedef
+            # profilinde/biyografisinde/arama snippet'inde gerçek bir e-posta
+            # varsa Holehe onunla koşar.
+            return await self._apply_email_scan(profile, candidate_emails[0], payload)
+        return profile.model_copy(update={"email_scan": self._no_target_email_seal()})
 
     def _get_alf_headers(self) -> Dict[str, str]:
         import random
@@ -322,31 +382,13 @@ class OsintInvestigatorAgent:
                 data_confidence=False,
                 fallback_reason="provider_credentials_unavailable",
             )
-            # [FAZ 2] ENABLE_MAIGRET kapalıysa profil alanları değişmez; kapı
-            # açıksa yalnız gerçek gözlemler dürüstçe birleştirilir.
-            profile = await self._apply_username_scan(profile, clean_username, payload)
-            # [FAZ 3] Bağlı e-posta varsa holehe kayıt taraması (ENABLE_HOLEHE
-            # kapalıysa profil alanları yine değişmez; yalnız provenance eklenir).
-            # [P1 · KABLO BAĞLANTISI] Hedef profilinde/biyografisinde/arama snippet'inde
-            # e-posta varsa Holehe'ye iletilir. E-posta yoksa dürüstçe
-            # 'no_target_email' gerekçesi mühürlenir (sessizce kaybolmaz).
-            if profile.connected_emails:
-                profile = await self._apply_email_scan(
-                    profile, profile.connected_emails[0], payload
-                )
-            else:
-                profile = profile.model_copy(update={
-                    "email_scan": {
-                        "requested_email": "",
-                        "available": False,
-                        "provider": "holehe",
-                        "reason": "no_target_email",
-                        "found_sites": [],
-                        "scanned_count": 0,
-                        "error_count": 0,
-                    }
-                })
-            return profile
+            # [FAZ 2/3 + PR #136] ENABLE_MAIGRET / ENABLE_HOLEHE kapalıysa
+            # profil alanları değişmez; kapı açıksa yalnız gerçek gözlemler
+            # dürüstçe birleştirilir. E-posta yoksa dürüst 'no_target_email'
+            # gerekçesi mühürlenir (sessizce kaybolmaz).
+            return await self._continue_independent_sensors(
+                profile, clean_username, payload, candidate_emails
+            )
         else:
             # [E-GÖZ2-3 · YAPRAK] aiohttp yolu da kasa kapısından geçer:
             # kilitliyken istek HİÇ OLUŞTURULMAZ, dürüst vault_locked profili
@@ -384,21 +426,70 @@ class OsintInvestigatorAgent:
                             phones = data.get("phones", [])
                             platforms = data.get("platforms", [])
                             observed_fields = sum(bool(value) for value in (emails, phones, platforms))
-                            return OsintProfile(
+                            # [PR #136] Sağlayıcı çıktısı kaynaklardan biridir,
+                            # pipeline'ın SONU değildir: başarılı API yanıtı
+                            # Maigret/Holehe'yi sessizce devre dışı bırakmaz.
+                            profile = OsintProfile(
                                 connected_emails=emails,
                                 connected_phones=phones,
                                 associated_platforms=platforms,
                                 # Coverage, not an invented provider-trust score.
                                 confidence=round(observed_fields / 3, 3),
-                                data_confidence=True,
-                                fallback_reason=None,
+                                # Sağlayıcı 200 + BOŞ gözlem "veri güveni" DEĞİLDİR:
+                                # tarama kapsamı bilinmediği için güvenilir yokluk
+                                # iddia edilemez (bkz. `_apply_*` güvenilir yokluk
+                                # ölçütü: tamamlanmış + hatasız tarama).
+                                data_confidence=bool(observed_fields),
+                                fallback_reason=None if observed_fields else "provider_returned_no_observations",
+                            )
+                            return await self._continue_independent_sensors(
+                                profile, clean_username, payload, candidate_emails
                             )
                         logger.warning(f"[OSINT] Canlı API hatası: HTTP {resp.status} - {await resp.text()}")
                         error_code = "AUTH_FAILED" if resp.status in (401, 403) else "RATE_LIMITED" if resp.status == 429 else "PROVIDER_ERROR"
-                        return OsintProfile(confidence=0.0, data_confidence=False, fallback_reason="api_error", error_code=error_code)
+                        # [PR #136] HTTP hata yolu da sensörleri ATLAZ: erken
+                        # return, yapılandırılmış anahtarı olan her görevde
+                        # Maigret/Holehe'yi görünmez kılardı. Sağlayıcı hatası
+                        # `fallback_reason="api_error"` + `error_code` ile AÇIK
+                        # kalır; bağımsız sensörler yine koşar (koşullu ve
+                        # güvenli: kapı/kasa/çocuk kilidi omurgadan uygulanır).
+                        return await self._continue_independent_sensors(
+                            OsintProfile(
+                                connected_emails=candidate_emails,
+                                confidence=0.0,
+                                data_confidence=False,
+                                fallback_reason="api_error",
+                                error_code=error_code,
+                            ),
+                            clean_username,
+                            payload,
+                            candidate_emails,
+                        )
             except asyncio.TimeoutError as e:
                 logger.warning(f"[OSINT] Canlı API timeout: {e}")
-                return OsintProfile(confidence=0.0, data_confidence=False, fallback_reason="api_error", error_code="TIMEOUT")
+                return await self._continue_independent_sensors(
+                    OsintProfile(
+                        connected_emails=candidate_emails,
+                        confidence=0.0,
+                        data_confidence=False,
+                        fallback_reason="api_error",
+                        error_code="TIMEOUT",
+                    ),
+                    clean_username,
+                    payload,
+                    candidate_emails,
+                )
             except Exception as e:
                 logger.warning(f"[OSINT] Canlı API bağlantı hatası: {e}")
-                return OsintProfile(confidence=0.0, data_confidence=False, fallback_reason="api_error", error_code="NETWORK_ERROR")
+                return await self._continue_independent_sensors(
+                    OsintProfile(
+                        connected_emails=candidate_emails,
+                        confidence=0.0,
+                        data_confidence=False,
+                        fallback_reason="api_error",
+                        error_code="NETWORK_ERROR",
+                    ),
+                    clean_username,
+                    payload,
+                    candidate_emails,
+                )
