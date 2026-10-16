@@ -73,7 +73,6 @@ from agent_core.chat.dialogue_manager import (
     MAX_DIALOGUE_MESSAGE_CHARS,
 )
 from agent_core.scraper.instagram_ghost import InstagramGhostScraper
-from agent_core.services import crawl_enricher, socid_enricher
 from agent_core.services.browser_session import BrowserSession
 from agent_core.services.dependency_health import (
     StartupDependencyError,
@@ -116,6 +115,12 @@ from backend.services.web_dossier import (
     dossier_channel_rows,
     instagram_channel_rows,
     x_sensor_channel_rows,
+)
+# [API-BÖLME 4 · 2026-10-16] Public-web araştırma gövdesi ayrı modüle taşındı;
+# ad + dış sözleşme korunur (yeniden ihraç).
+from backend.services.web_research import (  # noqa: F401 (yeniden ihraç, dış sözleşme)
+    extract_handle_from_url as _extract_handle_from_url,
+    run_public_web_research as _run_public_web_research,
 )
 # [API-BÖLME 3] `/api/telemetry` ucu ayrı modüle taşındı; ad + yol korunur.
 from backend.routes.telemetry import (  # noqa: E402,F401 (yeniden ihraç, dış sözleşme)
@@ -2625,6 +2630,12 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                 if found_profiles:
                     broadcast_log(client_id, "INFO", f"HEDEF PROFİLLERİ TESPİT EDİLDİ: {', '.join(found_profiles[:3])}")
 
+                # [P1 · 2026-10-16] Bulunan profiller GERÇEKTEN kazınır — ama
+                # KOŞUM TEK YERDE olur: görev yürütücüsü
+                # (`agent_core/services/deep_profile_resolver.py` → `profile_router`
+                # → `CapabilityRunner`). Burada yalnız adresler taşınır; ikinci bir
+                # koşum yolu açmak aynı yeteneği iki kez çağırırdı.
+
                 display_user = f"@{clean_u.replace(' ', '_').lower()}" if " " in clean_u else f"@{clean_u}"
                 # [P0 · DENETİM 2026-10-16] Dosya kuralları ve kanal durumu
                 # `backend/services/web_dossier.py` modülünde (API-BÖLME 3).
@@ -2651,7 +2662,7 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                     client_id, "INFO",
                     f"TELEMETRİ: {len(snippets)} arama sonucu (snippet) bulundu, "
                     f"{len(found_profiles)} profil URL'si tespit edildi — "
-                    "hiçbiri kazınmadı, gönderi sayılmaz.",
+                    "derin tarama görev sırasında koşacak (kanal defteri orada yazılır).",
                 )
             except Exception as se:
                 broadcast_log(client_id, "WARNING", f"OSINT ARAMA UYARISI: {se}")
@@ -2727,6 +2738,11 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
         payload["policy"] = {
             "vault_locked": not _check_vault_interlock(client_id),
             "minor_case": _minor_case_for(client_id),
+            # [P1 · 2026-10-16] Hız kapısı bilinmiyorsa RET eder (fail-closed).
+            # Bu görev yolunda hız durumu ölçülmüyor; repo konvansiyonu (aynı
+            # dosyanın X kazıma yolu) `rate_ok=True` verir. Kasa kapısı ve
+            # ENABLE_* bayrakları ETKİLENMEZ.
+            "rate_ok": True,
         }
         # [P0 · DENETİM 2026-10-16] Kanal durumu defteri görev payload'ına taşınır;
         # görev yürütücüsü bunu görev durumuna (WS telemetrisi) kopyalar.
@@ -4415,176 +4431,6 @@ class AlternativeAuthorizationPayload(BaseModel):
     approved: bool
 
 
-def _extract_handle_from_url(url: str) -> str:
-    """X/Instagram URL'sinden kullanıcı adı (subject) çıkarır."""
-    import re
-    if not url:
-        return ""
-    needle = re.search(r"(?:instagram\.com|x\.com|twitter\.com)/([^/?#]+)", url)
-    if needle:
-        return needle.group(1).strip().lstrip("@").lower()
-    return url.split("?")[0].rstrip("/").split("/")[-1].replace("@", "").lower()
-
-
-async def _run_public_web_research(
-    url: str, search_engine: Any, client_id: str = "default"
-) -> Dict[str, Any]:
-    """Yetki verilmiş alternatif: kanıt kaynaklı public-web araması.
-
-    Sözleşme (sahte veri YASAK):
-    - Biyografi/gönderi/kişilik ÜRETİLMEZ; yalnızca gerçek arama kayıtları
-      döner (source_url + provider + content).
-    - Subject matching: hedef kullanıcı adı kaynak URL'sinde veya içeriğinde
-      geçmeyen sonuçlar düşürülür (yanlış kişi eşleşmesi engeli).
-    - Sağlayıcı yok/çöktü -> available=False; sonuç yok -> no_results.
-    """
-    handle = _extract_handle_from_url(url)
-    if not handle:
-        return {
-            "status": "invalid_target", "available": False,
-            "query": "", "results": [], "matched_username": "",
-            "total_results_searched": 0,
-            "search_outcome": {
-                "status": "NOT_REQUESTED", "available": False, "error": None,
-            },
-            "searched_at": datetime.now().isoformat(),
-            "note": "URL'den hedef kullanıcı adı çıkarılamadı.",
-        }
-
-    query = f'"{handle}"'
-    try:
-        outcome = await search_engine.search(query, num_results=8)
-    except asyncio.CancelledError:
-        raise
-    except Exception as exc:
-        return {
-            "status": "unavailable", "available": False, "query": query,
-            "results": [], "matched_username": handle,
-            "total_results_searched": 0,
-            "search_outcome": {
-                "status": "UNAVAILABLE", "available": False,
-                "error": type(exc).__name__,
-            },
-            "searched_at": datetime.now().isoformat(),
-            "note": f"Arama çağrısı başarısız: {type(exc).__name__}.",
-        }
-
-    search_outcome = {
-        "status": getattr(outcome, "status", "UNKNOWN"),
-        "available": bool(getattr(outcome, "available", False)),
-        "error": getattr(outcome, "error", None),
-    }
-    if not search_outcome["available"]:
-        return {
-            "status": "unavailable", "available": False, "query": query,
-            "results": [], "matched_username": handle,
-            "total_results_searched": 0,
-            "search_outcome": search_outcome,
-            "searched_at": datetime.now().isoformat(),
-            "note": getattr(outcome, "error", None) or "Arama sağlayıcısı kullanılamadı.",
-        }
-
-    raw = getattr(outcome, "results", []) or []
-    matched = [
-        {
-            "source_url": r.source_url,
-            "provider": r.provider,
-            "content": r.content,
-            "subject_match": True,
-        }
-        for r in raw
-        if handle in (r.source_url or "").lower()
-        or handle in (r.content or "").lower()
-    ]
-    # socid-extractor zenginleştirmesi: eşleşen kaynak URL'lerden kararlı kimlik
-    # kaydı çıkmaya çalışılır. Kütüphane yok/ağ yok/kayıt yoksa alan EKLENMEZ —
-    # sonuç sözleşmesi bozulmaz (dürüst boş).
-    try:
-        socid_records = await socid_enricher.enrich_urls(
-            [m["source_url"] for m in matched], limit=3
-        )
-        by_url = {r.source_url: r for r in socid_records}
-        for m in matched:
-            rec = by_url.get(m["source_url"])
-            if rec is not None:
-                m["socid"] = rec.model_dump()
-        if socid_records:
-            socid_note = f" {len(socid_records)} sonuçtan yapılandırılmış kimlik kaydı çıkarıldı."
-        else:
-            socid_note = ""
-    except Exception as exc:  # zenginleştirme asıl sonucu asla bozmasın
-        logger.warning("socid enrichment skipped: %s: %s", type(exc).__name__, str(exc)[:80])
-        socid_note = ""
-    # [FAZ A · Retina] TEMİZ METİN OMURGASI. Eskiden tek bir crawl4ai çağrısı
-    # vardı ve yalnız ENABLE_CRAWL4AI açıkken çalışıyordu. Artık üç kademeli
-    # omurga devrede: trafilatura → crawl4ai → scrapling. İlk KANIT ÜRETEN
-    # kademe sonucu verir; hiçbiri üretemezse alan uydurma metinle DOLDURULMAZ
-    # (sebep + deneme izi yazılır). Tek arayüz: capabilities.extract_web_text.
-    crawl_note = ""
-    try:
-        from agent_core.capabilities import bootstrap as _caps_bootstrap
-        from agent_core.capabilities.adapters_web import extract_web_text
-        from agent_core.capabilities.state import policy_state
-
-        _caps_bootstrap()
-        web_state = policy_state(vault_locked=not _check_vault_interlock(client_id))
-        if matched:
-            crawled = 0
-            for m in matched[:crawl_enricher.research_limit()]:
-                result = await extract_web_text(m["source_url"], state=web_state)
-                if result.ok:
-                    # payload kademeye göre değişir (pydantic kayıt veya dict);
-                    # ikisi de desteklenir, erişim güvenli.
-                    payload_raw = result.payload
-                    title = (
-                        payload_raw.get("title", "") if isinstance(payload_raw, dict)
-                        else getattr(payload_raw, "title", "") or ""
-                    )
-                    m["crawl"] = {
-                        "available": True,
-                        # HANGİ kademenin ürettiği kayıtta yazar (görünürlük).
-                        "provider": result.capability_id,
-                        "requested_url": m["source_url"],
-                        "title": title,
-                        "text": result.items[0].content if result.items else "",
-                        "evidence_ids": [i.evidence_id for i in result.items],
-                        "attempts": result.notes.get("attempts", []),
-                    }
-                    crawled += 1
-                else:
-                    # Dürüst boş (sözleşme korunur): çekilemeyen sonuca `crawl`
-                    # alanı EKLENMEZ; sebep yalnız logda (uydurma metin yok).
-                    logger.info(
-                        "web extraction failed for %s: %s (attempts=%s)",
-                        m["source_url"], result.unavailable_reason,
-                        result.notes.get("attempts", []),
-                    )
-            if crawled:
-                crawl_note = f" {crawled} sonuca temiz metin çekildi (omurga: trafilatura → crawl4ai → scrapling)."
-    except Exception as exc:  # zenginleştirme asıl sonucu asla bozmasın
-        logger.warning("web extraction skipped: %s: %s", type(exc).__name__, str(exc)[:80])
-
-    if matched:
-        status = "ok"
-        note = f"{len(matched)}/{len(raw)} sonuç hedef kullanıcı adıyla eşleşti." + socid_note + crawl_note
-    elif raw:
-        status = "no_subject_match"
-        note = f"Arama yapıldı ({len(raw)} sonuç) ama hiçbiri hedef kullanıcı adıyla eşleşmedi; sonuç gösterilmiyor (yanlış kişi eşleşmesi engeli)."
-    else:
-        status = "no_results"
-        note = "Arama yapıldı, hiç sonuç döndü."
-
-    return {
-        "status": status,
-        "available": True,
-        "query": query,
-        "search_outcome": search_outcome,
-        "results": matched,
-        "matched_username": handle,
-        "total_results_searched": len(raw),
-        "searched_at": datetime.now().isoformat(),
-        "note": note,
-    }
 
 
 class BrowserClientPayload(BaseModel):
@@ -4815,7 +4661,11 @@ async def authorize_scraper_alternative(req: AlternativeAuthorizationPayload):
     if req.alternative == "public_web_search":
         executor = get_executor(req.client_id)
         research = await _run_public_web_research(
-            pending["url"], executor.search_engine, client_id=req.client_id
+            pending["url"],
+            executor.search_engine,
+            client_id=req.client_id,
+            # [API-BÖLME 4] Kasa mandalı DI ile verilir (modül api.py'ye bağımlı olmaz).
+            vault_locked_fn=lambda cid: not _check_vault_interlock(cid),
         )
         room["web_research"] = research
         room.pop("pending_alternative_authorization", None)

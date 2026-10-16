@@ -128,3 +128,57 @@ Tam koşu ve `ruff` sonucu teslim mesajındadır.
 | 2 | **Ekli "OpenRouter Models" HTML'i** | Kaydedilmiş sayfa `https://openrouter.ai/models?order=most-popular` — 19 satır, **tamamı görüntü/ses modeli**; 8 pinli modelin **hiçbiri** yok (`grep` → 0 eşleşme), ölçülen değerlerin (`0.95526`, `1.91052`, `0.62`, `0.037`) de 0 eşleşmesi. DOM'da fiyat yalnız yerelleştirilmiş **görüntü metni**; `ld+json` blokları model verisi taşımıyor. | Bu dosya ölçümün yerine geçemez; checker'ın girdisi `GET /api/v1/models` JSON'u. |
 | 3 | **Fiyatın bir sonraki koşuda aynı kalacağı** | Fiyat OYNAK (yukarıdaki geçmiş). | Hizalama bugünkü ölçüme göredir; sonraki salınımda aynı adım yeniden kırmızıya dönebilir — bu, ölçümün kendisini değil tabloyu gösterecek. |
 | 4 | **`nous-research` kanal fiyatları** | Bu düzeltme yalnız `openrouter` (bulut liste) pinlerini kapsar; indirimli nous kanalları ayrı sözleşmedir ve **değiştirilmedi**. | Kanal farkı bilinçli olarak korundu (dosyadaki "NOT (kanal farkı)" notu). |
+
+---
+
+## 5. EK ÖLÇÜM — 2026-10-16 (P1 PR'i sırasında) — fiyat GERİ salındı
+
+Bu ek, PR #139'un (P1 · profil derinleştirme) CI koşusunda **katalog adımının
+kırmızıya düşmesi** üzerine yazıldı. P1 koduyla **ilgisi yoktur**: katalog
+adımı canlı `/api/v1/models` okumasıdır ve P1 bu okumaya dokunmaz.
+
+### 5.1 Gözlem (iki ardışık CI koşusu, birebir aynı)
+
+| Koşu | Commit | Canlı ölçüm (`z-ai/glm-5.2`) | Pin ile uyum |
+|---|---|---|---|
+| `38833598719` (Faz 1) · `38840573018` (P0) · `38843226709` (main) · `38851706200` (main catalog-drift) | P0/fiyat | **$0.62 / $2.42** | ✅ uyumlu |
+| `38866434547` (P1) | P1 | **$0.037 / $7.00** | ❌ `FAIL:` |
+| `38867016705` (P1, tekrar) | P1 | **$0.037 / $7.00** | ❌ `FAIL:` |
+
+CI annotation'ı (iki koşuda **birebir aynı**):
+
+```
+FAIL: z-ai/glm-5.2: live input price $0.037/1M != $0.62/1M
+FAIL: z-ai/glm-5.2: live output price $7/1M != $2.42/1M
+```
+
+`deepseek/deepseek-v4-pro` **kırmızı değil** → canlı fiyatı hâlâ
+$0.95526/$1.91052; salınım yalnız `glm-5.2` modelinde.
+
+### 5.2 Yapılan düzeltme (depo politikası: "ölçülen değere hizala")
+
+Üç kopya **son ölçüme** hizalandı:
+
+* `scripts/verify_openrouter_catalog.py` → pin `(0.037, 7.0)`
+* `config/provider_catalog.json` → `input_per_million_usd: 0.037`,
+  `output_per_million_usd: 7.0`
+* `agent_core/services/llm_gateway.py` (`MODEL_PRICING`) → `{"in": 0.037, "out": 7.0}`
+
+Doğrulama: `scripts/verify_openrouter_catalog.py` → `PASS: local catalog
+contract verified` (canlı `SKIP`: anahtar yok) · katalog kontrat testleri
+**23 passed** · ruff temiz.
+
+### 5.3 KANIT SINIRI ve AÇIK ÖNERİ (bu PR'da UYGULANMADI)
+
+* **Doğrulanmadı:** canlı fiyat bu ortamdan okunamadı (`openrouter.ai` →
+  `URLError: TLS/SSL connection has been closed (EOF)`; egress allowlist:
+  github/npm/pypi). Ölçüm yalnız CI'ın canlı çağrısından gelir.
+* **Salınım gerçektir:** `glm-5.2` iki gündür iki durum arasında gidip geliyor
+  (bkz. §1.4 ve `scripts/verify_openrouter_catalog.py` içindeki ölçüm kaydı).
+  Tek pinle çalışan bir bekçi bu modelde **~50% kırılgan** kalır; bu, ölçümün
+  kendisini değil **bekçinin tasarımını** gösterir.
+* **ÖNERİ (ayrı iş kalemi, burada uygulanmadı):** salınan modeller için
+  "ölçülmüş durum kümesi" (her durumun CI koşu kimliğiyle kayıtlı) kabul
+  eden, **yeni** bir kayma değerini yine de `FAIL:` ile reddeden bir bekçi
+  tasarımı. Bu, bekçiyi zayıflatmaz; **bilinen** oynaklığı ölçülebilir bir
+  küme ile sınırlar. Uygulanırsa ayrı PR + ayrı test gerekir.

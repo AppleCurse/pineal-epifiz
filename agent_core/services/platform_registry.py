@@ -59,7 +59,7 @@ def effective_scraper_type(url: str, requested: Optional[str] = None) -> str:
 
 
 def classify_profile_url(url: str) -> dict[str, Any]:
-    """Profil URL'sini platform ve ilgili yetenek kimliğine (sensor/extractor) eşler.
+    """Profil URL'ini platform ve ilgili yetenek kimliğine eşler.
 
     Sözleşme (P1):
     - URL platformunu sınıflandırır (x, instagram, web).
@@ -68,36 +68,32 @@ def classify_profile_url(url: str) -> dict[str, Any]:
         * Instagram -> sensor.ig.instagrapi
         * Diğer/Web -> None (yalnız identity extractor)
     - Kimlik çıkarıcı her zaman extractor.identity.socid'dir.
+
+    [P1 · 2026-10-16 KONSOLİDASYON] Sınıflandırma artık TEK kaynaktan gelir:
+    ``agent_core.services.profile_router.classify_url`` (saf, host tabanlı).
+    Buradaki fonksiyon yalnız **dış sözleşme biçimini** korur (platform /
+    handle / sensor_id / extractor_id). Döngüsel import'u önlemek için
+    ``profile_router`` fonksiyon içinde import edilir (``profile_router``
+    bu modülün ``extract_*`` yardımcılarını kullanır).
     """
-    raw = (url or "").strip()
-    if not raw:
-        return {"platform": "unknown", "handle": "", "sensor_id": None, "extractor_id": None}
+    from agent_core.services.profile_router import (
+        CAPABILITY_INSTAGRAM,
+        CAPABILITY_SOCID,
+        CAPABILITY_X,
+        classify_url,
+    )
 
-    plat = effective_scraper_type(raw)
-    if plat == "x":
-        handle = extract_x_username(raw)
-        return {
-            "platform": "x",
-            "handle": handle,
-            "sensor_id": "sensor.x.twscrape",
-            "extractor_id": "extractor.identity.socid",
-        }
-    elif plat == "instagram":
-        handle = extract_username(raw)
-        return {
-            "platform": "instagram",
-            "handle": handle,
-            "sensor_id": "sensor.ig.instagrapi",
-            "extractor_id": "extractor.identity.socid",
-        }
-    else:
-        return {
-            "platform": "web",
-            "handle": "",
-            "sensor_id": None,
-            "extractor_id": "extractor.identity.socid",
-        }
-
+    route = classify_url(url)
+    sensor_id = None
+    if route.capability_id in (CAPABILITY_INSTAGRAM, CAPABILITY_X):
+        sensor_id = route.capability_id
+    platform = route.platform if route.platform in ("instagram", "x") else "web"
+    return {
+        "platform": platform,
+        "handle": route.handle,
+        "sensor_id": sensor_id,
+        "extractor_id": CAPABILITY_SOCID,
+    }
 
 
 # [AUDIT P1-6] Yalnız GERÇEK profil URL'lerinden kullanıcı adı çıkarılır.

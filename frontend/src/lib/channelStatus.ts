@@ -110,3 +110,54 @@ export function blockedChannels(runs: ChannelRun[] | null | undefined): ChannelR
   if (!Array.isArray(runs)) return [];
   return runs.filter((r) => r && (r.status === 'not_run' || r.status === 'failed'));
 }
+
+// ============================================================
+// [P1 · DENETİM 2026-10-16] PROFİL DERİN TARAMA DEFTERİ
+//
+// Bulunan profil URL'leri artık GERÇEKTEN taranır. Her URL için backend
+// bir defter satırı yazar: {url, platform, handle, capability_id, status,
+// reason, post_count}. UI bu satırı olduğu gibi gösterir — "bağlandı"
+// gibi ölçülmemiş bir dil KULLANILMAZ.
+// ============================================================
+
+export interface ScannedUrl {
+  url: string;
+  platform?: string;
+  handle?: string;
+  capability_id?: string | null;
+  status: ChannelState;
+  reason?: string | null;
+  detail?: string | null;
+  post_count?: number;
+}
+
+/** Taranmış profil URL'si için tek satırlık dürüst özet. */
+export function scannedUrlText(row: ScannedUrl): string {
+  const name = row.handle || row.url;
+  if (row.status === 'ok') {
+    const count = row.post_count ?? 0;
+    return `${name}: kazandı (${count} gönderi)`;
+  }
+  if (row.status === 'failed') {
+    return `${name}: ÇALIŞMADI — hata: ${reasonLabel(row.reason)}`;
+  }
+  return `${name}: ÇALIŞMADI — ${reasonLabel(row.reason)}`;
+}
+
+/** Derin tarama defterinin özeti (kaç kazandı / kaçı koşmadı). */
+export function scannedSummary(rows: ScannedUrl[] | null | undefined): {
+  total: number;
+  ok: number;
+  not_run: number;
+  failed: number;
+  posts: number;
+} {
+  const list = Array.isArray(rows) ? rows : [];
+  return {
+    total: list.length,
+    ok: list.filter((r) => r && r.status === 'ok').length,
+    not_run: list.filter((r) => r && r.status === 'not_run').length,
+    failed: list.filter((r) => r && r.status === 'failed').length,
+    posts: list.reduce((sum, r) => sum + (r?.post_count ?? 0), 0),
+  };
+}

@@ -1,5 +1,44 @@
 # Changelog
 
+## Unreleased — 2026-10-16 — P1: bulunan profiller artık gerçekten taranıyor (konsolide)
+
+- **Kopuk kablo kapatıldı (Bulgu 1):** `detected_urls` → `agent_core/services/profile_router.py`
+  (saf URL→yetenek sınıflandırması) → `agent_core/services/profile_deep_scan.py`
+  (tek geçit: `CapabilityRunner`) → kanal durumu + kanıt + kazanılan alan.
+  Instagram → `sensor.ig.instagrapi`, X/Twitter → `sensor.x.twscrape`,
+  LinkedIn/Facebook → `extractor.identity.socid`; diğer profil adresleri genel
+  kimlik çıkarıcıya (`socid`) gider. Profil OLMAYAN adres (gönderi/etiket/giriş/
+  rezerv yol) yola bağlanmaz; sebebiyle bildirilir.
+- **Konsolidasyon (main'de paralel bir P1 vardı):** PR #138 `main`'e merge
+  edilmişti (tek squash commit `d83c67b` → "unrelated histories"). İki ayrı
+  uygulama bırakılmadı: sınıflandırma `profile_router`'da TEK,
+  koşum `profile_deep_scan`'de TEK, giriş noktası
+  `deep_profile_resolver.resolve_deep_profiles` (üçlü sözleşmesi korundu),
+  **koşum yeri görev yürütücüsü** (API + CLI). PR #138'in P2 çapraz profillemesi
+  değiştirilmedi; kanıt zincirine `extra_items` ile bağlandı.
+- **Gerçek kusur düzeltildi:** API katmanı `payload["policy"]` içine
+  `rate_ok` yazmıyordu → hız kapısı "bilinmiyor" diye RET ediyor, sensörler
+  hiç koşamıyordu. Artık `rate_ok=True` taşınıyor (kasa/çocuk kilidi/`ENABLE_*`
+  bayrakları **dokunulmadan** aynı yerde).
+- **`socid` ölü kod değil (Bulgu 3):** yetenek artık gerçekten çağrılıyor; ölçüldü —
+  kasa kilitliyken `policy:vault_locked`, kapı kapalıyken `policy:gate_disabled`,
+  ağ yoksa `extract_unavailable:network_error`; hiçbir durumda kanıt uydurmuyor.
+  Ürettiği kanıt `forensic_evidence` / `evidence_timeline` zincirine giriyor.
+- **Dürüstlük korundu:** kapalı kapı `not_run` + makine-okunur sebep; snippet'a
+  sessiz düşüş yok; **bulunan profilin gönderileri hedefin `posts` alanına
+  yazılmaz** (kimlik karıştırması) — `scanned_urls`/`scanned_profiles` altında
+  ayrı durur.
+- **API-BÖLME 4:** public-web araştırma gövdesi `backend/services/web_research.py`
+  modülüne taşındı; `backend/api.py` 5908 → **5758 satır**; tavan **düşürüldü**.
+  Dış sözleşme (adlar, yollar, yanıt anahtarları) değişmedi.
+- **Ölçüm:** `2707 passed, 6 skipped` (0 failed) · P1 sözleşmeleri 37 + PR #138
+  sözleşmeleri 15 = **52 passed** · ruff `All checks passed!` · svelte-check
+  0 hata · revert-doğrulama **6/6** · envanter/audit/routing/skills taze.
+  Rapor: `docs/reports/DUZELTME_FAZ2_P1_2026-10-16.md`.
+- **DOĞRULANMADI:** canlı X/IG kazıma, canlı socid çıkarımı ve canlı
+  arama→derin tarama zinciri (bu ortamda dış ağ erişimi yok; sebepleri raporda).
+
+
 ## Unreleased — 2026-10-16 — Canlı fiyat hizalaması: CI'ın üç kez birebir ölçtüğü değer
 
 - **Ölçüm (üç bağımsız CI koşusu, birebir aynı):**
