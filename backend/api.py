@@ -2593,10 +2593,13 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                     "username": display_user,
                     "name": clean_u,
                     "bio": "",
-                    "posts": snippets or [],
+                    # Search-engine excerpts are not platform posts. Keep the
+                    # post collection reserved for content returned by a platform sensor.
+                    "posts": [],
+                    "search_snippets": snippets or [],
                     "post_times": [],
                     "posts_meta": [],
-                    "post_types": ["text" for _ in snippets] if snippets else [],
+                    "post_types": []
                     "images": [],
                     "followers": None,
                     "following": None,
@@ -2609,7 +2612,12 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                         else "Açık kaynak dosyası: platform sensörüyle kazınmadı."
                     ),
                 })
-                broadcast_log(client_id, "INFO", f"TELEMETRİ: {len(snippets)} açık kaynak verisi ve {len(found_profiles)} profil hedefe bağlandı.")
+                broadcast_log(
+                    client_id, "INFO",
+                    f"WEB DOSYASI: {len(snippets)} arama metni ve "
+                    f"{len(found_profiles)} profil URL bulundu; bu URLler "
+                    "henüz profil sensörüyle taranmış sayılmaz."
+                )
             except Exception as se:
                 broadcast_log(client_id, "WARNING", f"OSINT ARAMA UYARISI: {se}")
                 payload["target_profile"].update({
@@ -2617,10 +2625,11 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                     "name": clean_u,
                     "bio": "",
                     "posts": [],
+                    "search_snippets": [],
                     "post_times": [],
                     "posts_meta": [],
                     "post_types": [],
-                    "images": [],
+                    "images": []
                     "followers": None,
                     "following": None,
                     "is_private": None,
