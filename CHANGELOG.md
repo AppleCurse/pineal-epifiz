@@ -18,6 +18,26 @@
 - **Kapsam sınırı:** harcama sayacı TEK değer taşır (son ölçülen durum);
   canlı fiyatın periyodik tabloya alınması ayrı bir iş kalemi olarak açık.
 
+## Unreleased — 2026-10-16 — P2: çapraz profilleme deterministik ve dürüst
+
+- **Bulgu:** denetimde çapraz profilleme kodu **yoktu**; PR #138 ile `main`'e gelen
+  uygulama üç gerçek kusur taşıyordu: (a) biyografideki **alt dize** eşleşmesi
+  yanlış pozitif üretiyordu (en güçlü sinyalle!), (b) socid'in `user_id` alanı
+  **kullanıcı adı gibi** eşleştiriliyordu (rastgele sayı çakışması), (c) skor
+  "olasılık" gibi sunuluyordu ve `EvidenceItem.confidence` alanına yazılıyordu
+  (alan sözleşmesi ihlali: "source scores must remain in source_metrics").
+- **Düzeltme:** `agent_core/services/cross_profiler.py` yeniden yazıldı.
+  Sinyaller: `self_declared_link` (birebir bağlantı) · `exact_handle` ·
+  `normalized_handle` · `shared_platform_id` (socid ortak kimlik). Aynı platform
+  eşleşmesi, jenerik kullanıcı adları ve kısa adlar eşleşme üretmez.
+- **Skor artık "kapsam":** `coverage = Σ(yanan sinyallerin belgelenmiş
+  ağırlıkları)`; kanıtta `confidence=None`, `source_metrics.coverage_label="kapsam"`,
+  `scope.confidence_label="kapsam"`, metinde yüzde dili yok.
+- **UI:** profil kartında "ÇAPRAZ PROFİL (çıkarım · kapsam)" listesi.
+- **Test:** 13 yeni P2 sözleşme testi · revert-doğrulama **3/3** · tam koşu
+  `2730 passed, 6 skipped` · ruff temiz · svelte-check 0 hata.
+  Rapor: `docs/reports/DUZELTME_FAZ2_P2_2026-10-16.md`.
+
 ## Unreleased — 2026-10-16 — P1: bulunan profiller artık gerçekten taranıyor (konsolide)
 
 - **Kopuk kablo kapatıldı (Bulgu 1):** `detected_urls` → `agent_core/services/profile_router.py`

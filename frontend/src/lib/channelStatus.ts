@@ -161,3 +161,42 @@ export function scannedSummary(rows: ScannedUrl[] | null | undefined): {
     posts: list.reduce((sum, r) => sum + (r?.post_count ?? 0), 0),
   };
 }
+
+/** [P2 · DENETİM 2026-10-16] Çapraz profil eşleşmesi (deterministik sinyaller). */
+export interface CrossProfileMatch {
+  source_platform: string;
+  source_handle: string;
+  source_url?: string;
+  target_platform: string;
+  target_handle: string;
+  target_url?: string;
+  match_method: string;
+  /** KAPSAM skoru — olasılık DEĞİLDİR. */
+  coverage: number;
+  confidence_label: string;
+  epistemic_type: string;
+  signals?: string[];
+}
+
+/** Sinyal adını insan diline çevirir (kanıt izi, iddia değil). */
+export function crossProfileSignalText(signal: string): string {
+  switch (signal) {
+    case 'self_declared_link':
+      return 'biyografideki bağlantı';
+    case 'exact_handle':
+      return 'birebir aynı kullanıcı adı';
+    case 'normalized_handle':
+      return 'kullanıcı adı varyantı';
+    case 'shared_platform_id':
+      return 'ortak platform kimliği';
+    default:
+      return signal;
+  }
+}
+
+/** Eşleşmeyi "kapsam" etiketiyle özetler — olasılık dili kullanılmaz. */
+export function crossProfileText(row: CrossProfileMatch): string {
+  const signals = (row.signals || []).map(crossProfileSignalText).join(' + ');
+  const scope = row.confidence_label || 'kapsam';
+  return `${row.source_platform}/@${row.source_handle} ↔ ${row.target_platform}/@${row.target_handle} · ${signals || 'eşleşme'} · ${scope} ${row.coverage.toFixed(2)}`;
+}

@@ -9,8 +9,8 @@
   // [P1 · DENETİM 2026-10-16] Derin tarama defteri: bulunan profilin gerçek
   // kazım durumu (ölçülmüş gönderi sayısı + koşmama sebebi).
   import {
-    blockedChannels, channelStatusText, scannedSummary, scannedUrlText,
-    type ChannelRun, type ScannedUrl
+    blockedChannels, channelStatusText, crossProfileText, scannedSummary, scannedUrlText,
+    type ChannelRun, type CrossProfileMatch, type ScannedUrl
   } from '../lib/channelStatus';
 
   // 12 Ajan Kanonik Tanımları
@@ -64,6 +64,9 @@
   $: detectedUrls = $taskStatus?.target_profile?.detected_urls || [];
   // [P1] Bulunan profillerin GERÇEK kazım defteri (yoksa boş).
   $: scannedUrls = ($taskStatus?.target_profile?.scanned_urls || []) as ScannedUrl[];
+  // [P2 · DENETİM 2026-10-16] Çapraz profil eşleşmeleri: deterministik
+  // sinyallerden doğan ÇIKARIMLAR. Skor "kapsam" etiketlidir, olasılık değil.
+  $: crossMatches = ($taskStatus?.target_profile?.cross_profile_matches || []) as CrossProfileMatch[];
   $: scannedStats = scannedSummary(scannedUrls);
   $: scannedByUrl = (() => {
     const map = new Map<string, ScannedUrl>();
@@ -493,6 +496,15 @@
               {#if scannedStats.total > 0}
                 <div class="scan-summary">
                   DERİN TARAMA: {scannedStats.total} profil tarandı · {scannedStats.ok} kazandı · {scannedStats.not_run + scannedStats.failed} koşmadı
+                </div>
+              {/if}
+              <!-- [P2] Çapraz profil: eşleşme bir ÇIKARIMDIR; skor "kapsam"dır. -->
+              {#if crossMatches.length > 0}
+                <div class="scan-summary cross-profile-deck">
+                  ÇAPRAZ PROFİL (çıkarım · kapsam): {crossMatches.length} eşleşme
+                  {#each crossMatches as m}
+                    <div class="cross-profile-row">{crossProfileText(m)}</div>
+                  {/each}
                 </div>
               {/if}
             {:else}

@@ -1378,7 +1378,12 @@ class PinealExecutor:
             )
             _cross_items = _corr.items
             if _corr.matches:
-                input_data["cross_profile_matches"] = [m.model_dump() for m in _corr.matches]
+                _matches = [m.model_dump() for m in _corr.matches]
+                input_data["cross_profile_matches"] = _matches
+                # [P2] Eşleşmeler hedef profilin içinde de taşınır: UI rozeti
+                # "kapsam" etiketiyle okur (olasılık olarak sunulmaz).
+                _tp2 = input_data.setdefault("target_profile", {})
+                _tp2["cross_profile_matches"] = _matches
                 self._log("INFO", f"[{task_id}] ÇAPRAZ PROFİL: {len(_corr.matches)} platform hesabı eşleştirildi")
         except Exception as _c_exc:
             self._log("WARNING", f"[{task_id}] Çapraz profilleme atlandı: {_c_exc}")
