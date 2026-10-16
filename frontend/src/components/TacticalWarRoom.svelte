@@ -55,6 +55,7 @@
   $: currentRunningAgent = $taskStatus?.current_agent || null;
   $: pipelineStatus = $taskStatus?.status || ($isProcessing ? 'RUNNING' : 'IDLE');
   $: detectedUrls = $taskStatus?.target_profile?.detected_urls || [];
+  $: searchSnippetCount = ($taskStatus?.target_profile?.search_snippets || []).length;
   $: targetBio = $taskStatus?.target_profile?.bio || '';
   $: targetName = $taskStatus?.target_profile?.name || targetUrl || 'Hedef Belirlenmedi';
   $: realityIndex = $taskStatus?.depth_report?.reality_index ?? null;
@@ -118,7 +119,7 @@
     if (run.status === 'completed') {
       if (id === 'osint_investigator') {
         const count = detectedUrls.length;
-        return `${count} sosyal profil ve açık veri bağlandı`;
+        return `${count} profil URL bulundu · ${searchSnippetCount} arama metni; profil taraması ayrıca doğrulanmalı`;
       }
       if (id === 'mirror_truth') {
         // 'Analitik' uydurma varsayılandı: alan yoksa ölçüm de yok.
