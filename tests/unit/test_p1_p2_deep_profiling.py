@@ -15,11 +15,10 @@ Sözleşme kuralları:
 """
 
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
-from agent_core.agents.osint_investigator import OsintInvestigatorAgent, OsintProfile
-from agent_core.capabilities.base import Availability, CapabilityResult, make_evidence
-from agent_core.domain.channel_status import ChannelRun
+from agent_core.agents.osint_investigator import OsintInvestigatorAgent
+from agent_core.capabilities.base import CapabilityResult, make_evidence
 from agent_core.domain.evidence_models import EvidenceItem
 from agent_core.services.cross_profiler import (
     CrossProfileCorrelation,
@@ -59,6 +58,7 @@ class TestP1HolehePipeline:
     async def test_holehe_triggered_when_email_found_in_bio(self, monkeypatch):
         monkeypatch.delenv("OSINT_INDUSTRIES_KEY", raising=False)
         monkeypatch.setenv("ENABLE_HOLEHE", "true")
+        monkeypatch.setenv("ENABLE_MAIGRET", "false")
 
         called_email = None
 
@@ -82,6 +82,10 @@ class TestP1HolehePipeline:
         agent = OsintInvestigatorAgent()
         monkeypatch.setattr(agent, "_apply_email_scan", _mock_apply_email_scan)
 
+        async def _mock_apply_username_scan(profile, *a, **k):
+            return profile
+        monkeypatch.setattr(agent, "_apply_username_scan", _mock_apply_username_scan)
+
         payload = {
             "target_profile": {
                 "username": "@johndoe",
@@ -98,8 +102,13 @@ class TestP1HolehePipeline:
     @pytest.mark.asyncio
     async def test_holehe_records_no_target_email_when_missing(self, monkeypatch):
         monkeypatch.delenv("OSINT_INDUSTRIES_KEY", raising=False)
+        monkeypatch.setenv("ENABLE_MAIGRET", "false")
 
         agent = OsintInvestigatorAgent()
+
+        async def _mock_apply_username_scan(profile, *a, **k):
+            return profile
+        monkeypatch.setattr(agent, "_apply_username_scan", _mock_apply_username_scan)
         payload = {
             "target_profile": {
                 "username": "@cleanuser",
@@ -231,7 +240,7 @@ class TestP1DeepProfileResolver:
     @pytest.mark.asyncio
     async def test_call_path_uses_egress(self, monkeypatch):
         """P1: Profil çıkarma çağrı yolu egress.py'den geçer ve deneme kaydı bırakır."""
-        from agent_core.capabilities.egress import drain_egress_attempts, egress_attempts
+        from agent_core.capabilities.egress import drain_egress_attempts
         from agent_core.services.socid_enricher import extract_profile
 
         drain_egress_attempts()

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Set, Tuple
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field

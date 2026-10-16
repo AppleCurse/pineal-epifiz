@@ -19,7 +19,7 @@ import logging
 from typing import Any, Dict, List, Tuple
 
 from agent_core.capabilities import CapabilityContext, bootstrap, run_capability, adapters_osint
-from agent_core.capabilities.base import Availability, CapabilityResult
+from agent_core.capabilities.base import CapabilityResult
 from agent_core.capabilities.state import policy_state
 from agent_core.domain.channel_status import ChannelRun, failed, not_run, ok
 from agent_core.domain.evidence_models import EvidenceItem
