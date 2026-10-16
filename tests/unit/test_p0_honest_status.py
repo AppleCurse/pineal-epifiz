@@ -17,6 +17,8 @@ Her test, düzeltme geri alınınca KIRMIZIYA dönmelidir (revert-doğrulama):
 from __future__ import annotations
 
 import os
+import sys
+import types
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -336,20 +338,38 @@ class _FakeTwscrapeAPI:
     def __init__(self, pool=None, **kwargs) -> None:
         self.pool = pool if isinstance(pool, _FakePool) else _FakePool([_FakeAccount(False)])
         self.user = None
+        self.init_kwargs = kwargs
+        self.init_pool = pool
 
     async def user_by_login(self, username):
         return self.user
 
 
+async def _fake_gather(agen):
+    """`twscrape.gather` sahte çifti."""
+    return [item async for item in agen]
+
+
+def _install_fake_twscrape(monkeypatch, api_factory):
+    """Sahte `twscrape` modülünü `sys.modules`'a koyar.
+
+    [CI 2026-10-16] `twscrape` `requirements-retina.txt`'te (ÜÇÜNCÜ adım);
+    CI yalnız `requirements.lock` (BİRİNCİ adım) kurar. Bu yüzden testler
+    GERÇEK paketi import ETMEZ — `sys.modules` sahte modül enjekte edilir
+    (aynı desen: `tests/unit/test_retina_faz_a.py`).
+    """
+    fake = types.SimpleNamespace(API=api_factory, gather=_fake_gather)
+    monkeypatch.setitem(sys.modules, "twscrape", fake)
+    return fake
+
+
 @pytest.mark.asyncio
 async def test_x_sensor_reports_no_session_pool_not_user_not_found(monkeypatch):
     """[P0 · Bulgu B-1] Boş hesap havuzu ≠ "kullanıcı yok"."""
-    import twscrape
-
     from agent_core.capabilities.adapters_sensors import XTwscrapeCapability
     from agent_core.capabilities.base import CapabilityContext
 
-    monkeypatch.setattr(twscrape, "API", _FakeTwscrapeAPI)
+    _install_fake_twscrape(monkeypatch, _FakeTwscrapeAPI)
     cap = XTwscrapeCapability()
     result = await cap.run(CapabilityContext(subject="hedef"))
 
@@ -362,8 +382,6 @@ async def test_x_sensor_reports_no_session_pool_not_user_not_found(monkeypatch):
 @pytest.mark.asyncio
 async def test_x_sensor_keeps_user_not_found_when_pool_has_active_account(monkeypatch):
     """Havuzda AKTİF hesap varken "kullanıcı yok" ayrımı korunur."""
-    import twscrape
-
     from agent_core.capabilities.adapters_sensors import XTwscrapeCapability
     from agent_core.capabilities.base import CapabilityContext
 
@@ -372,7 +390,7 @@ async def test_x_sensor_keeps_user_not_found_when_pool_has_active_account(monkey
         api.pool = _FakePool([_FakeAccount(True)])
         return api
 
-    monkeypatch.setattr(twscrape, "API", _factory)
+    _install_fake_twscrape(monkeypatch, _factory)
     cap = XTwscrapeCapability()
     result = await cap.run(CapabilityContext(subject="hedef"))
 
@@ -421,14 +439,12 @@ def test_x_accounts_db_path_is_configurable_and_not_repo_root(monkeypatch):
 @pytest.mark.asyncio
 async def test_x_sensor_does_not_write_accounts_db_into_cwd(tmp_path, monkeypatch):
     """Çalışma dizinine accounts.db artefaktı düşmez."""
-    import twscrape
-
     from agent_core.capabilities.adapters_sensors import XTwscrapeCapability
     from agent_core.capabilities.base import CapabilityContext
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PINEAL_X_ACCOUNTS_DB", str(tmp_path / "cache" / "x_accounts.db"))
-    monkeypatch.setattr(twscrape, "API", _FakeTwscrapeAPI)
+    _install_fake_twscrape(monkeypatch, _FakeTwscrapeAPI)
 
     cap = XTwscrapeCapability()
     await cap.run(CapabilityContext(subject="hedef"))

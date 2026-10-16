@@ -387,6 +387,79 @@ sha256: 421aca0ed94c9a4f · ortam: posix
 
 ---
 
+## 9b. CI (GitHub Actions) — ölçülen iki ayrı hata ve ayrımı
+
+PR açıldıktan sonra CI `backend` işi kırmızı geldi. İki AYRI sebep vardı;
+ikisi de "tek bir hata" diye özetlenip geçilmedi.
+
+### 9b.1 Hata A — bu PR'ın kendi regresyonu: `twscrape` opsiyonel bağımlılığı
+
+`ci.yml:98` CI'da **yalnız `requirements.lock`** kurulur. `twscrape` ise
+`requirements-retina.txt`'tedir (ÜÇÜNCÜ adım) → CI'da **kurulu değildir**:
+
+```
+$ grep -icE "^twscrape" requirements.lock
+0
+$ grep -n "twscrape" requirements-retina.txt
+requirements-retina.txt:twscrape>=0.15.0
+```
+
+Yerel `.venv`'e retina paketleri kurulu olduğu için bu eksiklik gizliydi.
+Yeni test dosyasındaki `import twscrape` → CI'da `ModuleNotFoundError` →
+pytest exit 1 → "Run backend tests with coverage gate" adımı kırmızı.
+
+**Düzeltme:** testler artık GERÇEK paketi import etmiyor; `sys.modules`'a sahte
+modül enjekte ediliyor (deponun mevcut deseni: `tests/unit/test_retina_faz_a.py:295`).
+`tests/unit/test_p0_honest_status.py` → `_install_fake_twscrape()`.
+
+CI ortamının taklidi yerelde ÖLÇÜLDÜ (`/tmp/ci_sim/sitecustomize.py` →
+`twscrape`, `trafilatura`, `scrapling`, `instagrapi` import'u engellenir):
+
+```
+$ PYTHONPATH=/tmp/ci_sim .venv/bin/python -m pytest -q --cov=agent_core --cov=backend --cov-fail-under=80
+2655 passed, 6 skipped, 1 failed   → 1 hata: envanter sayfası bayat (dosya değişti) → yenilendi
+Required test coverage of 80% reached. Total coverage: 86.76%
+```
+
+### 9b.2 Hata B — bu PR ile İLGİSİZ, önceden var olan canlı fiyat kayması
+
+CI'nin "Verify provider catalog contract" adımı **Faz 1 commit'inde de** (yani
+hiç katalog kodu içermeyen commit'te) kırmızıydı. İş adımı annotation'ı:
+
+```
+failure: Canlı/yerel katalog kontratı KIRILDI. Sebep:
+FAIL: deepseek/deepseek-v4-pro: live input price $0.95526/1M != $0.346434/1M
+FAIL: deepseek/deepseek-v4-pro: live output price $1.91052/1M != $0.692868/1M
+FAIL: z-ai/glm-5.2: live input price $0.62/1M != $0.037/1M
+FAIL: z-ai/glm-5.2: live output price $2.42/1M != $7/1M
+```
+
+Kanıt zinciri:
+
+* `ec13281` (Faz 1) → aynı adım kırmızı, aynı dört `FAIL:` satırı.
+* `main`@`1923058` (aynı commit, 1.5 saat önce) → aynı adım **yeşil**.
+* `scripts/verify_openrouter_catalog.py:80-81` yorumu: "Fiyat OYNAK: her koşu
+  ölçer" — pinlerin canlı katalogdan **her koşuda** ölçülüp güncellenmesi
+  bekleniyor; `$0.95526/$1.91052` değerleri zaten 2026-10-14 ölçümü olarak
+  yorumda kayıtlı.
+* Depoda aynı sınıf sorun için ayrı PR/akis örneği var: `fix/deepseek-price-drift`
+  (PR #133) ve ayrı "Catalog Drift (canlı fiyat bekçisi)" workflow'u
+  (`.github/workflows/catalog-drift.yml`; geçmişte `1137712` ve `de454b9`
+  commit'lerinde de kırmızı).
+
+**Karar:** bu PR kapsamında fiyat tablosu GÜNCELLENMEDİ. Sebep: (a) canlı
+OpenRouter kataloğu bu sandbox'tan erişilemiyor (egress: yalnız
+github/npm/pypi) → güncel ölçümü kendimiz alamıyoruz; (b) fiyat tablosu
+`config/provider_catalog.json` + `scripts/verify_openrouter_catalog.py` +
+`agent_core/services/llm_gateway.py` (MODEL_PRICING) üçünü birden etkiler —
+maliyet muhasebesidir ve P0 "dürüst durum" kapsamının dışındadır; (c) fiyat
+OYNAK (iki ardışık ölçümde bile farklı okundu) — bu yüzden tahminle
+doldurulmaz, canlı ölçümle ve AYRI bir değişiklikle yapılmalıdır.
+Bu satırlar **DOĞRULANMADI olarak değil, "ölçülmüş ve bu PR'ın kapsamı
+dışında" olarak** işaretlenmiştir.
+
+---
+
 ## 10. Kalan DOĞRULANMADI listesi (P0)
 
 | # | Konu | Neden doğrulanamadı | Etki |
@@ -397,6 +470,7 @@ sha256: 421aca0ed94c9a4f · ortam: posix
 | 4 | **9Router LLM zinciri** | `http://127.0.0.1:20128/v1` sandbox'tan erişilemiyor (Faz 1 §4.4). | Prompt etiketleme kuralı TESTTE doğrulandı; gerçek model yanıtı doğrulanmadı. |
 | 5 | **`ENABLE_*` bayraklarının açık hâli** | Görev kuralı gereği körlemesine bayrak açılmadı; egress/kasa/çocuk kilidi kapılarına dokunulmadı. | Kapı davranışı `policy:gate_disabled` ile ölçüldü; açık hâli ölçülmedi. |
 | 6 | **PDF/diyagram/video rapor çıktılarında kanal listesi** | Markdown bölümü eklendi ve test edildi; PDF/diagram/video üreticileri kanal listesini almıyor. | Markdown doğrulandı; diğer formatlar doğrulanmadı. |
+| 7 | **Canlı OpenRouter fiyat kataloğu** (§9b.2) | `openrouter.ai` bu sandbox'tan erişilemiyor; CI'ın canlı ölçümü $0.95526/$1.91052 (deepseek-v4-pro) ve $0.62/$2.42 (glm-5.2) okudu, depo pinleri farklı. | Fiyat tablosu bu PR'da değiştirilmedi; **ölçülen** sapma kayda geçti, ayrı bir değişiklik gerekiyor. |
 
 ---
 
