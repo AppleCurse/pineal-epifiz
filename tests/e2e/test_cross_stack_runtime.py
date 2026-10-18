@@ -174,10 +174,14 @@ def test_critical_cross_stack_happy_path_without_method_mocks(
     assert 'data.type === "snapshot_update"' in source
     assert 'data.type === "result"' in source
     assert "data.event.event_type" in source
-    assert "run.output_summary._provenance" in (
+    #: [P6 · 2026-10-18] Ölü `UnifiedCompactPanel.svelte` silindi; canlı
+    #: arayüz çağrı kimliğini backend'in `call_ids` alanından bağlar
+    #: (backend/api.py:1987 → War Room "LLM ÇAĞRI KİMLİĞİ" satırı).
+    war_room = (
         Path(__file__).resolve().parents[2]
-        / "frontend/src/components/UnifiedCompactPanel.svelte"
+        / "frontend/src/components/TacticalWarRoom.svelte"
     ).read_text(encoding="utf-8")
+    assert "run.call_ids" in war_room
 
 
 def test_running_task_can_be_cancelled_idempotently(local_llm, monkeypatch, tmp_path):

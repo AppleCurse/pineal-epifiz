@@ -39,7 +39,26 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     except Exception:
         pass
 
-SVELTE = ROOT / "frontend/src/components/UnifiedCompactPanel.svelte"
+#: [P6 · 2026-10-18] Svelte gölge hedefi OPSİYONELdir. Önceden
+#: `UnifiedCompactPanel.svelte` (1990 satır) hedefti; o bileşen PR #143'te
+#: yenilen arayüzde KULLANILMAZ hâle geldi (ölü kod denetimi: ulaşılamayan
+#: frontend bileşeni → silindi). Canlı arayüzde statik ajan-model tablosu
+#: YOKTUR: model/via bilgisi koşunun provenance'ından gelir. Bu yüzden Svelte
+#: gölgesi üretilmez; belgenin (RUNBOOK) gölgesi canlıdır ve üretilmeye
+#: devam eder. Dosya yoksa çökme — atlanır ve açıkça bildirilir.
+SVELTE_CANDIDATES = (
+    ROOT / "frontend/src/components/UnifiedCompactPanel.svelte",
+)
+
+
+def _svelte_target() -> "Path | None":
+    for cand in SVELTE_CANDIDATES:
+        if cand.exists():
+            return cand
+    return None
+
+
+SVELTE = _svelte_target()
 RUNBOOK = ROOT / "RUNBOOK.md"
 
 SVELTE_START = "// <ROUTING-GENERATED-START do-not-edit>"
@@ -109,6 +128,8 @@ ROUTER_9_CANONICAL_MAP = {
 
 def render_svelte_block(snapshot: dict) -> list[str]:
     """Mevcut satırları koruyarak model alanlarını 9Router kanonik rotalarından yazar."""
+    if SVELTE is None:
+        return []
     current = SVELTE.read_text(encoding="utf-8")
     if current.count(SVELTE_START) != 1 or current.count(SVELTE_END) != 1:
         raise SystemExit("svelte marker hatasi: START/END 1'er kez olmali")
@@ -177,15 +198,23 @@ def generate(check_only: bool = False) -> bool:
     from agent_core.services.llm_gateway import LLMGateway
 
     snapshot = LLMGateway().effective_routing_snapshot()
-    svelte_new = _replace_between(
-        SVELTE.read_text(encoding="utf-8"), SVELTE_START, SVELTE_END, "\n".join(render_svelte_block(snapshot))
-    )
+    svelte_new: "str | None" = None
+    if SVELTE is not None:
+        svelte_new = _replace_between(
+            SVELTE.read_text(encoding="utf-8"),
+            SVELTE_START,
+            SVELTE_END,
+            "\n".join(render_svelte_block(snapshot)),
+        )
     runbook_new = _replace_between(
         RUNBOOK.read_text(encoding="utf-8"), RUNBOOK_START, RUNBOOK_END, render_runbook_block(snapshot)
     )
-    dirty = (svelte_new != SVELTE.read_text(encoding="utf-8")) or (runbook_new != RUNBOOK.read_text(encoding="utf-8"))
+    dirty = (svelte_new is not None and svelte_new != SVELTE.read_text(encoding="utf-8")) or (
+        runbook_new != RUNBOOK.read_text(encoding="utf-8")
+    )
     if not check_only and dirty:
-        SVELTE.write_text(svelte_new, encoding="utf-8")
+        if svelte_new is not None:
+            SVELTE.write_text(svelte_new, encoding="utf-8")
         RUNBOOK.write_text(runbook_new, encoding="utf-8")
     return dirty
 

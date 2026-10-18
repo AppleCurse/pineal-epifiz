@@ -420,10 +420,9 @@ def test_ui_language_gates_the_claim_behind_real_posts():
 
 def test_ui_does_not_claim_data_was_linked_without_measurement():
     """[P1] "veri bağlandı" gibi ölçülmemiş iddialar UI'da yok."""
-    targets = [
-        REPO_ROOT / "frontend" / "src" / "components" / "TacticalWarRoom.svelte",
-        REPO_ROOT / "frontend" / "src" / "components" / "UnifiedCompactPanel.svelte",
-    ]
+    #: [P6 · 2026-10-18] Ölü `UnifiedCompactPanel.svelte` silindi; sözleşme
+    #: artık CANLI frontend ağacının TAMAMINA uygulanır (daha güçlü kilit).
+    targets = sorted((REPO_ROOT / "frontend" / "src").rglob("*.svelte"))
     forbidden = re.compile(r"(sosyal profil ve açık veri bağlandı|profil bağlandı)", re.IGNORECASE)
     for path in targets:
         text = path.read_text(encoding="utf-8")

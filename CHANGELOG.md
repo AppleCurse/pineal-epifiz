@@ -1,5 +1,73 @@
 # Changelog
 
+## Unreleased — 2026-10-18 — P6: ölü kod / "çalışır gibi yapan" tespiti + düzeltmesi
+
+- **Yeni dedektör (gece bekçisi):** `scripts/dead_code_audit.py` — beş AST tabanlı
+  denetim: **C1** hiç import edilmemiş modül · **C1b** yalnız testlerden import
+  edilen modül · **C2** kendi gövdesi dışında referanssız ≥12 satırlık fonksiyon ·
+  **C3** kayıtlı ama çağrılmayan ajan · **C4** kayıtlı ama **düşürülemeyen**
+  yetenek · **C5** giriş noktalarından **ulaşılamayan** frontend dosyası.
+  CI'ya adım olarak eklendi (`ci.yml` → "Dead code guard"): bulgu varsa **exit 1**.
+- **Ölü P0 kopyası silindi:** `DeepScanResult.summary_row`
+  (`agent_core/services/profile_deep_scan.py:266`, 26 satır) hiç çağrılmıyordu;
+  canlı karşılığı `deep_profile_resolver._summary_row()` (P1'de değiştirilmiş).
+- **12 ölü frontend bileşeni silindi (4779 satır):** `UnifiedCompactPanel` (1990),
+  `CockpitEntry` (685), `PinealEye` (440), `LcdLogin` (501), `OrganikIrisCanvas` (228),
+  `irisRenderer.ts` (251) ve `diesel/*` + `PillarFeed` — PR #143'te yenilen
+  arayüzde **hiç import edilmiyordu** (ekranda asla görünmüyordu).
+  `svelte-check` 0/0 + `vite build` ✓ + paket hash'i **değişmedi** (kod zaten
+  pakette değildi).
+- **En kritik bulgu — testler de "çalışır gibi"ydi:** **6 test dosyası** ölü paneli
+  koruyordu (yeşil test, üretimde hiçbir şey garantisi yok). Hepsi **canlı yüzeye**
+  bağlandı: `test_ui_honesty_contract.py`, `test_frontend_agent_model_contract.py`,
+  `test_wiring_frontend.py`, `test_routing_shadows.py`, `test_aspasia_chief_layer.py`,
+  `test_p1_profile_routing.py`, `tests/e2e/test_cross_stack_runtime.py`.
+- **`generate_routing_shadows.py`:** Svelte hedefi (ölü panel) **opsiyonel** hâle
+  geldi — dosya yoksa üretici çökmez, RUNBOOK gölgesi (canlı) üretilmeye devam eder.
+- **AJAN KATMANI ÖLÇÜMÜ (kullanıcının sorusu):** `agent_core/agents/` içinde
+  **ölü ajan dosyası YOK** — 13 ajanın 13'ü de kayıtlı ve çağrılabilir
+  (10'u router üzerinden dinamik, 3'ü doğrudan). Kayıt defterindeki **26
+  yeteneğin 26'sı** da düşürülebilir. Kanıt: `scripts/dead_code_audit.py` → C3=0, C4=0.
+- **Yeni test:** `tests/unit/test_dead_code_audit.py` (**11 test**) — durumu kilitler
+  ve **revert-doğrulaması** içerir (geçici ölü modül/bileşen geri konunca
+  dedektör kırmızıya döner; silinen 12 bileşen geri gelirse test kırmızı).
+- **Ölçüm:** `pytest tests -q` → **2798 passed, 6 skipped** · `ruff check .` →
+  **All checks passed!** · `audit_regression.py` → **✓ BEKÇİ GEÇTİ** ·
+  `dead_code_audit.py` → **modül=0 test-only=0 fonksiyon=0 ajan=0 yetenek=0
+  frontend=0** · `npm run check` → 0/0 · `npm run build` → ✓ · envanter **742 → 732**
+  dosya.
+- **Kullanıcı kararına bırakılan iki ürün boşluğu** (ölü kod DEĞİL, raporda
+  kayıtlı): canlı arayüz `/api/aspasia/command` ucunu çağırmıyor (backend ucu
+  ayakta, README'de dokümante) · çağrı kimliği bağlayıcısı `_provenance.call_id`
+  yerine canlı `run.call_ids` alanından geliyor.
+- **Rapor:** `docs/reports/OLU_KOD_DENETIMI_2026-10-18.md`.
+
+## Unreleased — 2026-10-18 — P5: Faz 2 kapanış denetimi (18 bulgunun kilidi)
+
+- **Yeni düzeltme yok:** Denetimin (2026-10-16) **18** bulgusunun tamamı P0→P4'te
+  kapatılmıştı ve **bugün de** kapalı — her biri güncel kodda dosya:satır kanıtıyla
+  yeniden doğrulandı (`docs/reports/DUZELTME_FAZ2_KAPANIS_2026-10-18.md`).
+- **Yeni teslim — bulgu kilidi:** `tests/unit/test_p5_closing_audit.py` (**17 test**).
+  Her test bir **kod değişmezi** korur: 1 kopuk kablo · 2 snippet≠gönderi ·
+  3/3b socid omurgada · 4/4b maigret+holehe omurgada (reddedilen tarama mühürlü) ·
+  5b X sensörü boş havuzda `no_session_pool` · 6 Lilith CLI-only + ana hat gateway'i ·
+  7 çapraz profil deterministik (ağırlık toplamı 1.0, "kapsam") · 8/9/10 kapılar dürüst ·
+  11 UI'da "profil bağlandı" yok · 12/12b model matrisi + M-1 · 14/B-3 telemetri sebebi ·
+  B-4 `accounts.db` depo kökünü kirletmiyor.
+- **Ölçüm (PR #143 sonrası, `main` @ `7212657`):** `pytest tests -q` → **2765 passed,
+  6 skipped** · `ruff check .` → **All checks passed!** · `audit_regression.py` →
+  **✓ BEKÇİ GEÇTİ** · revert-doğrulama **P0 7/7 · P1 6/6 · P2 3/3 · P3 4/4 · P4 5/5 = 25/25**.
+- **Kapı tablosu ölçümü (mock'suz):** kasa kilitliyken 26/26 yetenek
+  `policy_allowed=False · vault_locked`; kasa açıkken 22 `gate_disabled` + 4 izinli →
+  **"kapalı"nın sebebi kaybolmuyor**.
+- **CI'da ölçülen fiyat salınımı:** PR #144'ün ilk `backend` koşusu **fiyat drift
+  bekçisi** yüzünden kırıldı (`deepseek-v4-pro` canlı $0.2088/$0.4176 — ölçülmüş
+  durum değil). Bekçi doğru davrandı; yeni okuma **ölçüldüğü** için
+  `OBSERVED_OPENROUTER_STATES` kümesine koşu kimliğiyle eklendi
+  (`39081581447`). Bilinmeyen fiyat hâlâ `FAIL` eder.
+- **Ortam notu:** platform çalışma ağacını sıfırladı (`.venv`/`node_modules` silindi) →
+  venv yeniden kuruldu (`ruff 0.17.1` doğrulandı).
+
 ## Unreleased — 2026-10-16 — P4: dokümantasyon = kod (ölçülen ↔ DOĞRULANMADI)
 
 - **Denetim tespiti güncellendi:** "holehe ana hattan erişilemez" tespiti **P1

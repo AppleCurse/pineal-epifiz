@@ -65,6 +65,22 @@ jobs:
             tail -40 /tmp/audit-guard.log
           fi
           exit $guard_rc
+      - name: Dead code guard (ölü modül/ajan/yetenek/frontend bileşeni)
+        # [P6 · 2026-10-18] "Çalışır gibi yapan" ve kullanılmayan dosya denetimi.
+        # AST tabanlı dedektör: (C1) hiç import edilmemiş modül, (C1b) yalnız
+        # testlerden import edilen modül, (C2) hiç çağrılmamış fonksiyon,
+        # (C3) kayıtlı ama çağrılmayan ajan, (C4) kayıtlı ama düşürülemeyen
+        # yetenek, (C5) giriş noktalarından ulaşılamayan frontend bileşeni.
+        # Bulgu varsa exit 1 → ölü kod depoya giremez.
+        run: |
+          set +e
+          python scripts/dead_code_audit.py | tee /tmp/dead-code-guard.log
+          guard_rc=${PIPESTATUS[0]}
+          if [ "$guard_rc" -ne 0 ]; then
+            tail -40 /tmp/dead-code-guard.log
+            echo "::error title=dead-code::Ölü kod bulundu (bkz. /tmp/dead-code-guard.log)"
+          fi
+          exit $guard_rc
       - name: Verify routing shadows committed fresh
         run: |
           python scripts/generate_routing_shadows.py
