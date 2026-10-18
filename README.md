@@ -226,7 +226,9 @@ Sonra tarayıcıda `http://localhost:8000` (ya da `frontend` klasöründe
 **İlk yapılacak şey: kasa.** Uygulamadaki kasa mandalına **9Router anahtarını**
 gir (adres varsayılan olarak `http://127.0.0.1:20128/v1`). Anahtar girilene kadar
 canlı LLM çağrıları kapalıdır ve Aspasia dürüstçe "bağlantı çalışmıyor" der.
-Anahtarı `.env` ile de verebilirsin (`NINEROUTER_API_KEY`).
+Anahtarı `.env` ile de verebilirsin (`NINEROUTER_API_KEY`). Küçük tuzak: 9Router
+kipinde kasa anahtarı `sk-pineal` önekiyle başlamalıdır; normal `sk-...` anahtar
+kasadan girilirse 9Router yolu seçilmez (ayrıntı: [RUNBOOK.md](RUNBOOK.md) M-3).
 
 Ayrıntılı kurulum, port haritası ve canlıya alma kontrol listesi:
 **[GO_LIVE.md](GO_LIVE.md)** · operasyon el kitabı: **[RUNBOOK.md](RUNBOOK.md)**.
