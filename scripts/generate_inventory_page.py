@@ -90,6 +90,20 @@ CORE = {
         "YENİ (API-BÖLME 3): TTS wav indirme ucu; yalnız içerik-hash'li dosya, "
         "private/no-store, TTL ve disk tavanı; geçici STT/Piper dosyaları sunulmaz."
     ),
+    "README.md": (
+        "Sistemin ANA KAPISI (P8'de sıfırdan yazıldı): 15 bölümde, "
+        "**herkesin anlayabileceği** bir dille anlatır — sistem ne işe yarar, nasıl "
+        "çalışır, ekranda ne görürsün, 7 dalga motoru ve 13 ajan ne yapar, 26 yetenek "
+        "nedir, güvenlik kilitleri, nasıl kurulur/çalıştırılır, Aspasia'ya neler "
+        "sorulur, 62 API ucu, P0→P8 yenilikleri ve **ölçülen ↔ DOĞRULANMADI** tablosu. "
+        "Her iddia kod yoluyla doğrulanmıştır; ölçülemeyen hiçbir şey 'çalışıyor' yazılmaz."
+    ),
+    "backend/services/aspasia_state.py": (
+        "YENİ (API-BÖLME 6): `/api/aspasia/state` denetim görünümünün gövdesi "
+        "(kayıtlı ajanlar, görev durumu, bütçe, kota, anomali, **sayfalı** çağrı izi "
+        "`offset`/`limit` + `call_window`). `backend/api.py` tavanından çıkarıldı; "
+        "bağımlılıklar enjekte edilir (dairesel bağımlılık yok)."
+    ),
 }
 
 CATEGORY_A = [
@@ -132,6 +146,9 @@ CATEGORY_B = [
     "backend/routes/support.py", "backend/routes/websocket.py", "backend/routes/tasks.py",
     "backend/security/principal.py", "backend/security/task_ownership.py",
     "backend/security/task_access.py",
+    "backend/services/aspasia_state.py",
+    "scripts/verify_command_loop.py",
+    "scripts/revert_verification_p8.py",
     "scripts/smoke_test_browser.py", "scripts/generate_routing_shadows.py",
     "scripts/audit_regression.py", "scripts/verify_openrouter_catalog.py",
     "scripts/preflight_9router.py", "scripts/export_skills.py", "scripts/run_task.py",

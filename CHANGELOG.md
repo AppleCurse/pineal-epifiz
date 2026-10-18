@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased — 2026-10-18 — P9: README yenilemesi + sistemin yeni haritası
+
+- **README baştan yazıldı — "herkesin anlayabileceği" bir dilde** (15 bölüm,
+  360 satır): eski ve yeni **her** özellik tek yerde toplandı. Eski sürümün
+  ağır metaforları ve teknik tabloları yerine: *sistem ne işe yarar* (2) ·
+  *nasıl çalışıyor* (3) · *ekranda ne görürsün* (4) · *7 dalga motoru* (5) ·
+  *13 görev ajanı* (6) · *26 yetenek* (7) · *dört güvenlik kilidi* (8) ·
+  *nasıl kurulur/çalıştırılır* (9) · *Aspasia'ya neler sorulur* (10) ·
+  *68 API ucu* (11) · *P0→P8 yenilikleri* (12) · *ölçülen ↔ DOĞRULANMADI* (13) ·
+  *depo haritası* (14) · *test ve kalite kapıları* (15).
+  Her iddia **kod yoluyla** doğrulanır; ölçülemeyen hiçbir şey "çalışıyor" yazılmaz.
+- **README artık kendi kendini doğrular:** yeni
+  `tests/unit/test_readme_claims.py` (10 test) README'deki SAYILARI canlı
+  koddan ölçer ve eşleştirir — ajan sayısı (`task_executor.py`), yetenek sayısı
+  (`capabilities.registry.bootstrap()`), dalga motoru sayısı (`engines/`),
+  API ucu sayısı (`backend.api.app.routes`) ve envanter dosya sayısı
+  (`scripts/generate_inventory_page.build_entries()` — haritanın **kendi**
+  ölçümü). Kod değişirse README sessizce geride kalamaz; her ajan ve her
+  yetenek **adıyla** anılmalıdır.
+- **Sistemin yeni haritasına kondu:** `docs/envanter.html` (745 dosya)
+  yeniden üretildi; kök `README.md` artık haritada **elle kürasyon** açıklamasıyla
+  görünür ("Sistemin ANA KAPISI…"), `backend/services/aspasia_state.py`,
+  `scripts/verify_command_loop.py` ve `scripts/revert_verification_p8.py` de
+  haritada etiketli olarak yer alır.
+- **Revert-doğrulama kalıcılaştırıldı:** P8'in 10 vakası artık depoda
+  `scripts/revert_verification_p8.py` (10/10 PASS) ve P9'un 8 vakası
+  `scripts/revert_verification_p9.py` (8/8 PASS) — kanıt artık `/tmp`de değil,
+  depoda ve tekrarlanabilir.
+- **P4 doküman sözleşmesi korundu:** README'nin "ölçülen ↔ DOĞRULANMADI"
+  tablosu yeni başlıkla (`## 13 · Durum tablosu: …`) aynı yerde duruyor;
+  `scripts/revert_verification_p4.py` işaretçileri yeni belgeye uyarlandı.
+- **Ölçüm:** `pytest tests/unit/test_readme_claims.py -q` → **10 passed** ·
+  `pytest tests/unit/test_p4_documentation.py` → **9 passed** ·
+  `ruff check .` → **All checks passed!** · `npm run check` → **0/0** ·
+  revert P8 **10/10** · revert P9 **8/8**.
+
 ## Unreleased — 2026-10-18 — P8: "en donanımlı" canlı kontrol paneli
 
 - **Panel yeniden yazıldı (6 blok, 920 satır):**

@@ -97,8 +97,8 @@ def main() -> int:
         "P4-2 doküman: README'de ölçülen ↔ DOĞRULANMADI tablosu yok",
         "tests/unit/test_p4_documentation.py::test_readme_has_the_measured_vs_unverified_table",
         "README.md",
-        start_marker="### Durum tablosu: ölçülen çalışma ↔ DOĞRULANMADI (2026-10-16 denetimi)",
-        end_marker="| Lilith'in canlı LLM çağrısının ana hat sayacına yazılması | Egress kapalı (CLI canlı çağrı: `ConnectError` → dürüst \"FALLBACK\") |",
+        start_marker="## 13 · Durum tablosu: ölçülen çalışma ↔ DOĞRULANMADI",
+        end_marker="| `ENABLE_*` bayraklarının tamamı açık hâli | Kapılar kapalı tutuldu (görev talimatı) |",
     ))
 
     # 3) README_TECHNICAL holehe notu
