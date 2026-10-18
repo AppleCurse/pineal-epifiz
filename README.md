@@ -146,6 +146,8 @@ Bu tablo, depodaki iddiaların **gerçekten koşulup koşulmadığını** göste
 | OSINT omurgası (P4) | Biyografideki e-posta → holehe yeteneği **çağrılıyor** → kasa kilitliyken `policy:vault_locked` (dürüst sebep, mühürlü kayıt) |
 | Test tabanı | `pytest tests -q` → **2800 passed, 6 skipped** (2026-10-18 ölçümü) · `ruff check .` → **All checks passed!** · `scripts/audit_regression.py` → **✓ BEKÇİ GEÇTİ** |
 | Ölü kod bekçisi (P6) | `scripts/dead_code_audit.py` → **ölü modül=0 · ölü fonksiyon=0 · kayıtlı-ama-çağrılmayan ajan=0 · düşürülemeyen yetenek=0 · ulaşılamayan frontend bileşeni=0** (13 ajanın 13'ü, 26 yeteneğin 26'sı **canlı**) |
+| Canlı kontrol paneli (P7/P8) | `frontend/src/components/LiveControlPanel.svelte` (920 satır, 6 blok) → 1 AJAN HATTI · 2 ANLIK KANAL (+ sıradaki ajan + ne kazıyor) · 3 MUHAKEME (karar/güven/model/sorumluluk + **çıktı satır satır**) · 4 TOPLANAN BİLGİ (**kanıt zinciri ajan→kanıt gruplu**) · 5 ÇAĞRI İZİ (**sayfalı**) · 6 AJAN DETAYI; metin+durum **filtresi** ve ajan seçimi. Veri kaynağı: WS `snapshot_update`/`result` + `GET /api/aspasia/state` — **örnek veri yok**; ölçüm yoksa `YETERSİZ KANIT` + sebep |
+| Komut döngüsü doğrulayıcı (P8) | `scripts/verify_command_loop.py` → canlı `komut → görev → ajan → kanıt → çağrı izi` döngüsünü **gerçek API'ye karşı** koşturur: erişilemeyen API'de `rc=2` + sebep; kırık döngüde `rc=1` + sebep; kanıtlanırsa `rc=0` |
 | Frontend | `npm run check` → **0 hata / 0 uyarı** · `npm run build` → başarılı |
 | Model fiyatı | Canlı OpenRouter ölçümü CI'da; **durum-kümesi** bekçisi (bilinmeyen fiyat → `FAIL`, ölçülen durum → `PASS` + uyarı) |
 

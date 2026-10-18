@@ -366,6 +366,239 @@ def test_live_control_panel_shows_input_summary_urls():
     assert "urls" in text
 
 
+# ------------------------------------------------------------------ P8 (backend)
+
+def _seed_calls(room, count: int, prefix: str = "p8") -> list:
+    """Gateway call_log'a `count` sahte-OLMAYAN ama GERÇEK kayıt biçimi ekler.
+
+    Kayıtlar `call_log`'un kendi kayıt şemasına uyar (call_id/model/...);
+    panelin okuduğu alanlar ölçülür.
+    """
+    gateway = room["executor"].llm_gateway
+    ids = []
+    for i in range(count):
+        call_id = f"{prefix}-{i}"
+        ids.append(call_id)
+        gateway.call_log.append({
+            "call_id": call_id,
+            "model": "m/a",
+            "requested_model": "m/a",
+            "actual_model": "m/a",
+            "provider": "p",
+            "route_key": "r",
+            "chain_source": "agent",
+            "quota_status": "ok",
+            "error": None,
+            "duration_ms": 10 + i,
+            "cost_usd": 0.0001 * i,
+            "agent_id": "deep_analyst",
+        })
+    return ids
+
+
+def test_state_endpoint_paginates_call_trace():
+    """[P8-D] Çağrı izi penceresi sayfalanır (offset/limit) — kayıt uydurulmaz."""
+    from starlette.testclient import TestClient
+
+    from backend.api import app, get_room
+
+    client_id = "p8_page_probe"
+    room = get_room(client_id)
+    ids = _seed_calls(room, 5)
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        newest = client.get(
+            "/api/aspasia/state",
+            params={"client_id": client_id, "offset": 0, "limit": 2},
+        )
+        older = client.get(
+            "/api/aspasia/state",
+            params={"client_id": client_id, "offset": 2, "limit": 2},
+        )
+        beyond = client.get(
+            "/api/aspasia/state",
+            params={"client_id": client_id, "offset": 50, "limit": 2},
+        )
+
+    assert newest.status_code == 200, newest.text
+    page = newest.json()
+    assert [row["call_id"] for row in page["calls"]] == [ids[3], ids[4]], (
+        "varsayılan pencere EN YENİ kayıtları göstermeli"
+    )
+    assert page["call_window"]["offset"] == 0
+    assert page["call_window"]["limit"] == 2
+    assert page["call_window"]["total"] == 5, "günlük toplamı kırpılmış olmamalı"
+    assert page["call_count"] == len(page["calls"])
+
+    older_page = older.json()
+    assert [row["call_id"] for row in older_page["calls"]] == [ids[1], ids[2]], (
+        "offset kaydırılınca ESKİ kayıtlar gelmeli"
+    )
+    assert older_page["call_window"]["offset"] == 2
+
+    beyond_page = beyond.json()
+    assert beyond_page["calls"] == [], "pencere dışı boş LİSTE dönmeli (uydurma yok)"
+    assert beyond_page["call_count"] == 0
+
+
+def test_call_binder_separates_log_missing_from_page_missing():
+    """[P8-D] Üç küme KARIŞTIRILMAZ: günlükte yok / başka sayfada / bağlı."""
+    from agent_core.aspasia.interface import CallBinder, TelemetryReader
+
+    class _Gateway:
+        call_log = [
+            {"call_id": "c-1", "model": "m", "provider": "p", "duration_ms": 1},
+            {"call_id": "c-2", "model": "m", "provider": "p", "duration_ms": 2},
+            {"call_id": "c-3", "model": "m", "provider": "p", "duration_ms": 3},
+        ]
+
+    run_view = {
+        "runs": {
+            "deep_analyst": {"call_ids": ["c-1", "c-3", "c-gone"]},
+        }
+    }
+    calls, binding = CallBinder(TelemetryReader(_Gateway())).bind(
+        run_view, offset=0, limit=1
+    )
+
+    # Bu sayfada yalnız en yeni kayıt var (c-3).
+    assert [row["call_id"] for row in calls] == ["c-3"]
+    # c-1 günlükte var ama BU SAYFADA değil → gerçek kopukluk DEĞİL.
+    assert binding["page_missing_call_ids"] == ["c-1"]
+    # c-gone günlükte HİÇ yok → gerçek kopukluk, sebebi yazılır.
+    assert binding["missing_call_ids"] == ["c-gone"]
+    assert binding["missing_reason"]
+    assert binding["bound_call_count"] == 2, "günlükteki iki kimlik bağlı sayılmalı"
+    assert binding["page_call_count"] == 1
+    assert binding["log_total"] == 3
+    # Görünür satırda bağlı ajan yazılır (kimlik uzayı TEK).
+    assert calls[0]["bound_agents"] == ["deep_analyst"]
+
+
+def test_telemetry_window_returns_older_records():
+    """[P8-D] `window(offset)` geçmişe kayar; limit aşımı kırpılır."""
+    from agent_core.aspasia.interface import TelemetryReader
+
+    class _Gateway:
+        call_log = [{"call_id": f"c-{i}"} for i in range(10)]
+
+    reader = TelemetryReader(_Gateway())
+    assert len(reader.window(offset=0, limit=3)) == 3
+    assert [r["call_id"] for r in reader.window(offset=0, limit=3)] == ["c-7", "c-8", "c-9"]
+    assert [r["call_id"] for r in reader.window(offset=5, limit=3)] == ["c-2", "c-3", "c-4"]
+    assert reader.window(offset=100, limit=3) == []
+    assert reader.total() == 10
+    assert reader.log_call_ids() == {f"c-{i}" for i in range(10)}
+
+
+# ------------------------------------------------------------------ P8 (frontend)
+
+def test_panel_renders_output_summary_line_by_line():
+    """[P8-A] Ajan çıktısı (output_summary) satır satır gösterilir."""
+    text = _strip_comments(_read(PANEL))
+    assert "output_summary" in text, "panel ajan çıktısını okumuyor"
+    assert "outputRows" in text, "çıktı satır dönüştürücüsü yok"
+    assert "ÇIKTI (output_summary)" in text, "çıktı başlığı yok"
+
+
+def test_panel_renders_evidence_chain_grouped_by_agent():
+    """[P8-A] Kanıt zinciri ajan→kanıt gruplu gösterilir."""
+    text = _strip_comments(_read(PANEL))
+    assert "evidence_chain" in text, "panel kanıt zincirini okumuyor"
+    assert "Object.keys(evidenceByAgent)" in text, (
+        "kanıt zinciri ajana göre gruplanmıyor (gruplama ifadesi yok)"
+    )
+    assert "KANIT ZİNCİRİ" in text, "kanıt zinciri başlığı yok"
+
+
+def test_panel_has_agent_filter():
+    """[P8-C] Metin + durum filtresi ve "filtreye uyan ajan yok" dürüstlüğü."""
+    text = _strip_comments(_read(PANEL))
+    assert "filterText" in text, "metin filtresi yok"
+    assert "statusFilter" in text, "durum filtresi yok"
+    assert "agentLane.filter((run) =>" in text, (
+        "filtre mantığı uygulanmıyor (ajan hattı filtresiz geçiyor)"
+    )
+    assert "filtreye uyan ajan yok" in text, (
+        "filtre boş sonucu sebep yazmıyor — sessiz boş kalmak yasak"
+    )
+
+
+def test_panel_paginates_call_trace():
+    """[P8-D] Çağrı izi geçmişi sayfalanır (offset/limit + düğmeler)."""
+    text = _strip_comments(_read(PANEL))
+    assert "callOffset" in text, "sayfa ofseti yok"
+    assert "pageCalls" in text, "sayfalama işlevi yok"
+    assert "offset=${callOffset}" in text, "durum ucuna offset gönderilmiyor"
+    assert "limit=${CALL_PAGE}" in text, "durum ucuna limit gönderilmiyor"
+    for marker in ("← DAHA ESKİ", "DAHA YENİ →", "CANLIYA DÖN"):
+        assert marker in text, f"sayfalama düğmesi yok: {marker}"
+
+
+def test_panel_shows_next_agent_and_agent_detail_block():
+    """[P8-A/C] Sıradaki ajan + seçili ajanın tam dökümü."""
+    text = _strip_comments(_read(PANEL))
+    assert "nextAgent" in text, "sıradaki ajan hesaplanmıyor"
+    assert "SIRADAKİ AJAN" in text, "sıradaki ajan başlığı yok"
+    assert "AJAN DETAYI" in text, "ajan detayı bloğu yok"
+    assert "activeAgent" in text, "seçili ajan durumu yok"
+
+
+def test_panel_marks_call_ids_outside_visible_window():
+    """[P8-D] Görünür pencere dışındaki çağrı kimliği SESSİZCE kaybolmaz."""
+    text = _strip_comments(_read(PANEL))
+    assert "visibleCallIds" in text, "görünür çağrı kümesi yok"
+    assert "İZ PENCERESİ DIŞINDA" in text, "pencere dışı çağrı işareti yok"
+
+
+def test_panel_reports_empty_output_summary_honestly():
+    """[P8-A] Çıktı üretmeyen ajan "YETERSİZ KANIT + sebep" der."""
+    text = _read(PANEL)
+    assert "ajan çıktı üretmedi" in text, "boş çıktı sebebi yazılmıyor"
+
+
+# ------------------------------------------------------------------ P8 (betik)
+
+def test_verify_command_loop_script_reports_unreachable_api():
+    """[P8-B] Erişilemeyen API'de betik rc=2 döner ve sebebi yazar.
+
+    Bu bir UYDURMA testi değil: betik GERÇEKTEN çalıştırılır, erişilemeyen
+    bir adrese gider ve dürüstçe "ulaşılamadı" demelidir.
+    """
+    import subprocess
+    import sys
+
+    script = Path("scripts/verify_command_loop.py")
+    assert script.is_file(), "doğrulama betiği yok"
+
+    proc = subprocess.run(
+        [
+            sys.executable, str(script),
+            "--url", "https://instagram.com/probe_user/",
+            "--base-url", "http://127.0.0.1:9",
+            "--timeout", "3",
+        ],
+        capture_output=True, text=True, timeout=120,
+    )
+    assert proc.returncode == 2, (
+        f"erişilemeyen API'de rc=2 bekleniyordu, rc={proc.returncode}\n{proc.stdout}"
+    )
+    assert "ulaşılamadı" in proc.stdout, (
+        f"erişilemeyen API sebebi yazılmadı:\n{proc.stdout}"
+    )
+
+
+def test_verify_command_loop_script_has_no_fabricated_rows():
+    """[P8-B] Betik örnek/örnek-veri satırı ÜRETMEZ; kanıtı olduğu gibi basar."""
+    text = _read(Path("scripts/verify_command_loop.py"))
+    assert "DÖNGÜ KIRILDI" in text, "döngü kırıkken dürüst sonuç satırı yok"
+    assert "DÖNGÜ KANITLANDI" in text, "döngü sağlam sonuç satırı yok"
+    assert "DOĞRULANMADI" in text, "doğrulanamayan durum işareti yok"
+    # Uydurma veri kalıpları yasak
+    for fake in ("mock_call", "sample_call", "demo_call", "FAKE_CALL", "örnek çağrı"):
+        assert fake not in text, f"betikte üretilmiş veri kalıbı: {fake}"
+
+
 # ------------------------------------------------------------------ komut akışı
 
 def test_aspasia_command_endpoint_rejects_without_gateway():

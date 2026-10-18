@@ -304,6 +304,31 @@ yaratma/planlama politikası değişmedi: plan = `CognitiveRouter`, yürütme =
   yazar**; ornek/elle veri YOK. Cagri kimligi bagi `run.call_ids` ↔ gateway
   `call_log` uzerinden kurulur (`interface.py:207 CallBinder`); pencere disindaki
   cagrilar SAYILIR ve sebebi yazilir.
+- **[P8 · 2026-10-18] Canli kontrol paneli — "en donanimli" surum**
+  (`frontend/src/components/LiveControlPanel.svelte`, 920 satir, 6 blok):
+  1) AJAN HATTI (kuyruk + anlik ajan) · 2) ANLIK KANAL + **SIRADAKI AJAN** +
+  **NE KAZILIYOR** (canli ajanin URL girdisi) · 3) MUHAKEME (karar/güven/model/
+  sorumluluk/cagri kimlikleri + **CIKTI `output_summary` satir satir**) ·
+  4) TOPLANAN BILGI (**kanit zinciri ajan→kanit GRUPLU** + kanal yapisi) ·
+  5) CAGRI IZI (**sayfali**: `← DAHA ESKI` · `DAHA YENI →` · `CANLIYA DON`) ·
+  6) AJAN DETAYI (secili ajanin tam dokumu). Ayrica **metin + durum filtresi**
+  ve **ajan secimi** (`selectedAgent` → canli ajan → kuyrugun ilk ajani).
+  Olcum yoksa `YETERSIZ KANIT` + **sebep**; ornek/elle veri YOK.
+  Veri kaynagi: WS `snapshot_update`/`result` + `GET /api/aspasia/state`.
+- **[P8 · 2026-10-18] Cagri izi sayfalamasi + bag ayrimi:** durum ucu
+  `GET /api/aspasia/state?client_id=…&offset=…&limit=…` kabul eder; yanit
+  `call_window` (`offset`/`limit`/`total`) ve `call_binding` (`bound_call_count`
+  = günlükte var mi · `page_call_count` = bu sayfada kaç · `page_missing_call_ids`
+  = başka sayfada · `missing_call_ids` = günlükte HIC yok, `missing_reason` ile)
+  döner. Kayit **UYDURULMAZ** — pencere kayar.
+- **[P8 · 2026-10-18] Canli komut dongusu dogrulama komutu:**
+  `python scripts/verify_command_loop.py --url <profil-url> [--base-url ...]`
+  → `komut → görev → ajan → kanit → cagri izi` zincirini gercek API'ye karsi
+  kosturur ve **ham ciktiyi** basar. Cikis kodu: `0` kanitlandi · `1` dongu
+  KIRIK (sebeple) · `2` on kosul saglanmadi (API'ye ulasilamadi) · `Ctrl-C` →
+  `DOGRULANMADI`. Kanit zinciri icin WS yakalamasi `websockets` paketine baglidir
+  (prod imajinda kurulu — `Dockerfile:41`; CI'da kurulu DEGIL → betik bunu
+  acikca yazar ve WS'siz de calisir).
 - **Extension noktasi (simdilik YOK):** cancel/halt intent'leri —
   lifecycle.terminate'a baglanacak; bu fazda kasten yok.
 

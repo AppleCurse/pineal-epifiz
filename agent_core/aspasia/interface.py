@@ -154,6 +154,11 @@ class RoutingInspector:
         }
 
 
+#: [P8] Sayfalı çağrı penceresinin üst sınırı (bir istek çok fazla kayıt
+#: çekmesin; çağrı günlüğü zaten 500 kayıtla sınırlı).
+_MAX_CALL_WINDOW = 200
+
+
 class TelemetryReader:
     """Bounded view over the gateway call log; no parallel telemetry store."""
 
@@ -172,8 +177,39 @@ class TelemetryReader:
         for record in list(getattr(self._gateway, "call_log", []))[-self._limit:]:
             if agent_id and record.get("agent_id") != agent_id:
                 continue
-            rows.append({k: record.get(k) for k in self._FIELDS if record.get(k) is not None})
+            rows.append(self._row(record))
         return rows
+
+    def _row(self, record: Dict[str, Any]) -> Dict[str, Any]:
+        """Tek çağrı kaydının GÖRÜNÜR alanları (ölçülmüş; alan yoksa yazılmaz)."""
+        return {k: record.get(k) for k in self._FIELDS if record.get(k) is not None}
+
+    def total(self) -> int:
+        """Günlükteki TOPLAM çağrı sayısı (sayfalama için; kırpılmamış)."""
+        return len(list(getattr(self._gateway, "call_log", [])))
+
+    def log_call_ids(self) -> set:
+        """Günlükteki TÜM çağrı kimlikleri (sayfalama bağı için)."""
+        return {
+            str(record.get("call_id"))
+            for record in list(getattr(self._gateway, "call_log", []))
+            if record.get("call_id")
+        }
+
+    def window(self, *, offset: int = 0, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Çağrı günlüğünün sayfalı penceresi (eskiden yeniye).
+
+        [P8 · CANLI PANEL] `call_log` 500 kayıtla sınırlıdır; panel önceden
+        yalnız son 40 kaydı görebiliyordu. `offset`/`limit` ile geçmişe
+        gidilebilir — **kayıt UYDURULMAZ**, sadece pencerenin kaymasıdır.
+        """
+        log = list(getattr(self._gateway, "call_log", []))
+        size = self._limit if limit is None else int(limit)
+        size = max(0, min(size, _MAX_CALL_WINDOW))
+        off = max(0, int(offset))
+        end = max(0, len(log) - off)
+        start = max(0, end - size)
+        return [self._row(record) for record in log[start:end]]
 
     def anomalies(self) -> Dict[str, Any]:
         out: Dict[str, Any] = {"fallbacks": [], "substitution_denials": [], "model_mismatches": []}
@@ -223,9 +259,24 @@ class CallBinder:
     def __init__(self, telemetry: Any):
         self._telemetry = telemetry
 
-    def bind(self, run_view: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-        """Çağrı satırlarını bağlar + bağlama özetini döner."""
-        calls = self._telemetry.recent()
+    def bind(
+        self,
+        run_view: Dict[str, Any],
+        *,
+        offset: int = 0,
+        limit: Optional[int] = None,
+    ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        """Çağrı satırlarını bağlar + bağlama özetini döner.
+
+        [P8] Üç ayrı küme KARIŞTIRILMAZ:
+          * `bound_call_count`  — çağrı kimliği **günlükte** (call_log) var mı?
+          * `page_call_count`   — **bu sayfada** görünen çağrı sayısı
+          * `missing_call_ids`  — günlükte HİÇ olmayan kimlik (üst sınır 500
+            nedeniyle düşen kayıt) → gerçek kopukluk, sebebi yazılır.
+        Sayfada olmayan ama günlükte olan kimlikler `page_missing_call_ids`
+        ile ayrılır (panelde "başka sayfada" olarak işaretlenir).
+        """
+        calls = self._telemetry.window(offset=offset, limit=limit)
         id_to_agents: Dict[str, List[str]] = {}
         for agent_name, run_row in ((run_view or {}).get("runs") or {}).items():
             for call_id in (run_row or {}).get("call_ids") or []:
@@ -233,16 +284,20 @@ class CallBinder:
         for row in calls:
             row["bound_agents"] = id_to_agents.get(str(row.get("call_id")), [])
         run_call_ids = set(id_to_agents.keys())
-        visible = {str(row.get("call_id")) for row in calls}
-        missing = sorted(run_call_ids - visible)
+        in_log = self._telemetry.log_call_ids()
+        in_page = {str(row.get("call_id")) for row in calls}
+        missing = sorted(run_call_ids - in_log)
         binding = {
             "run_call_count": len(run_call_ids),
-            "bound_call_count": len(run_call_ids & visible),
+            "bound_call_count": len(run_call_ids & in_log),
             "missing_call_ids": missing,
             "missing_reason": (
-                "call_log üst sınırı (500 kayıt) ve okuma penceresi (40 kayıt) "
-                "dışında kaldı" if missing else None
+                "call_log üst sınırı (500 kayıt) nedeniyle günlükten düştü"
+                if missing else None
             ),
+            "page_call_count": len(in_page),
+            "page_missing_call_ids": sorted((run_call_ids & in_log) - in_page),
+            "log_total": self._telemetry.total(),
         }
         return calls, binding
 

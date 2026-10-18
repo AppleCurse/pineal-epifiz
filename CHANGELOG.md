@@ -1,5 +1,57 @@
 # Changelog
 
+## Unreleased — 2026-10-18 — P8: "en donanımlı" canlı kontrol paneli
+
+- **Panel yeniden yazıldı (6 blok, 920 satır):**
+  `frontend/src/components/LiveControlPanel.svelte` →
+  1) AJAN HATTI (kuyruk + anlık ajan) · 2) ANLIK KANAL (**SIRADAKİ AJAN** +
+  **NE KAZILIYOR**) · 3) MUHAKEME (karar/güven/model/sorumluluk/çağrı kimlikleri +
+  **ÇIKTI `output_summary` satır satır**) · 4) TOPLANAN BİLGİ (**kanıt zinciri
+  ajan→kanıt GRUPLU** + kanal yapısı) · 5) ÇAĞRI İZİ (sayfalı) · 6) AJAN DETAYI
+  (seçili ajanın tam dökümü). Ölçüm yoksa `YETERSİZ KANIT` + **sebep**;
+  örnek/mock veri yok.
+- **Filtre + ajan seçimi (P8-C):** metin (`filterText`: ajan/model/via/kaynak/hata
+  kodu/URL/uyarı) ve durum (`statusFilter`) filtresi; `selectedAgent` ile ajan
+  detayı açma (seçili ajan → canlı ajan → kuyruğun ilk ajanı fallback zinciri).
+  Filtre boş sonucu **sebeple** yazılır (sessiz boş kalmaz).
+- **Çağrı izi geçmişi sayfalaması (P8-D):** `TelemetryReader.window(offset, limit)`
+  + `CallBinder.bind(run_view, offset, limit)` → `GET /api/aspasia/state?
+  client_id=…&offset=…&limit=…` → `call_window` (`offset`/`limit`/`total`) ve
+  `call_binding` ( **`bound_call_count` (günlükte var mı) / `page_call_count` (bu
+  sayfada) / `page_missing_call_ids` (başka sayfada) / `missing_call_ids` (günlükte
+  HİÇ yok → gerçek kopukluk + sebep)** ayrımı). Panelde `← DAHA ESKİ` ·
+  `DAHA YENİ →` · `CANLIYA DÖN`. Kayıt uydurulmaz — pencere kayar.
+- **Yeni doğrulama komutu (P8-B):** `scripts/verify_command_loop.py` — canlı
+  `komut → görev → ajan → kanıt → çağrı izi` döngüsünü **gerçek API'ye karşı**
+  koşturur, **ham çıktıyı** basar ve dürüstçe hüküm verir: `0` kanıtlandı ·
+  `1` döngü kırık (sebeple) · `2` ön koşul sağlanmadı (API'ye ulaşılamadı) ·
+  `Ctrl-C` → `DOĞRULANMADI`. WS kanıt zinciri yakalama **isteğe bağlı**
+  (`websockets`; prod imajında kurulu, CI'da değil → betik bunu **açıkça** yazar).
+- **[API-BÖLME 6] api.py tavanı yükseltilmedi, DÜŞÜRÜLDÜ:** `/api/aspasia/state`
+  gövdesi `backend/services/aspasia_state.py` modülüne taşındı
+  (`build_state_payload`; bağımlılıklar enjekte edilir, dairesel bağımlılık yok) →
+  **5772 → 5760** satır, ratchet tavanı **5760'a düşürüldü**
+  (`tests/unit/test_api_monolith_ratchet.py`).
+- **Yeni testler:** `tests/unit/test_live_control_panel.py` 17 → **29**
+  (+12 P8; backend'de **gerçekten çalıştırılan** sayfalama/bağ testleri, frontend
+  kontrat testleri, betiğin **subprocess** ile koştuğu hata-yolu testi) ·
+  `tests/unit/test_api_monolith_ratchet.py` 16 → **18**.
+  **Revert-doğrulama 10/10 kırmızıya döndü.**
+- **Canlı ölçüm (bu sandbox'ta gerçekten koşturuldu):** betik erişilemeyen API'de
+  `rc=2` + "ulaşılamadı" sebebi; canlı API'de (uvicorn :8000) komut ucu
+  `accepted:false / reason:"intent_unavailable"` döndü (9Router erişilemiyor →
+  `fallbacks: RUNTIMEERROR`) ve betik **"DÖNGÜ KIRILDI"** diyerek görev/`task_id`
+  **uydurmadı**; WS yakalama gerçek kare biçimiyle doğrulandı (1 snapshot + 1
+  result + 2 kanıt zinciri satırı).
+- **DOĞRULANMADI:** panelin **görsel** doğrulaması (headless tarayıcı yok) ·
+  canlı 9Router niyet çıkarımı ve canlı görevden gelen kanıt zinciri (egress) ·
+  `websockets` paketinin CI'da kurulu olması (`requirements.lock`'ta yok).
+- **Ölçüm:** `pytest tests -q` → **2840 passed, 8 skipped** (kapsam %92.58) · `ruff check .` → **All checks
+  passed!** · `npm run check` → **0/0** · `npm run build` → ✓ (index 180.53 kB) ·
+  `audit_regression.py` → **✓ BEKÇİ GEÇTİ** · `backend/api.py` **5760** satır
+  (ratchet tavanı 5760 ✓) · envanter **742 dosya**.
+- **Rapor:** `docs/reports/P8_CANLI_PANEL_2026-10-18.md`.
+
 ## Unreleased — 2026-10-18 — P7: canlı kontrol paneli + Aspasia komut döngüsü
 
 - **Aspasia komuta-kontrol döngüsü omurgası:** canlı arayüz artık
