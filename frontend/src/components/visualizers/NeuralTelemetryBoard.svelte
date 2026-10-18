@@ -1,6 +1,10 @@
 <script lang="ts">
   // Backend'den gelen canlı telemetri nesnesi (App.svelte üzerinden beslenir)
   export let telemetry: any = null;
+  // [P0 · DENETİM 2026-10-16] Yetenek tablosu: kapalı yetenek + SEBEP.
+  import { channelLabel, reasonLabel, type CapabilityRow } from '../../lib/channelStatus';
+  $: capabilityRows = ((telemetry?.capabilities || []) as CapabilityRow[]);
+  $: unavailableCapabilities = capabilityRows.filter((c) => c && !c.available);
 
   // Gerçek telemetri durumu — ASLA SİMÜLASYON YOK
   $: isOnline = !!(
@@ -232,10 +236,71 @@
       <div class="node-icon" class:active={isOnline && activeNodes.has('gateway')}>✅</div>
       <div class="node-label">CLIENT RESPONSE</div>
     </div>
+
+    <!-- [P0 · DENETİM 2026-10-16] ÇALIŞMAYAN YETENEKLER + sebep.
+         "Kapalı" demek yetmez; operatör NEDENini de görmelidir. -->
+    {#if isOnline && unavailableCapabilities.length > 0}
+      <div class="cap-panel">
+        <div class="cap-title">ÇALIŞMAYAN YETENEKLER ({unavailableCapabilities.length})</div>
+        {#each unavailableCapabilities as cap}
+          <div class="cap-line">
+            <span class="cap-mark">⛔</span>
+            <span class="cap-name">{channelLabel(cap.id)}</span>
+            <span class="cap-reason">{reasonLabel(cap.reason || cap.policy_reason)}</span>
+          </div>
+        {/each}
+      </div>
+    {/if}
   </div>
 </div>
 
 <style>
+  /* [P0 · DENETİM 2026-10-16] Kapalı yetenek paneli (sebepli). */
+  .cap-panel {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 20;
+    max-width: 340px;
+    max-height: 120px;
+    overflow-y: auto;
+    padding: 6px 8px;
+    background: rgba(15, 23, 42, 0.88);
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    border-radius: 6px;
+    font-size: 10px;
+    line-height: 1.35;
+    color: #fca5a5;
+  }
+
+  .cap-title {
+    font-size: 9px;
+    letter-spacing: 1px;
+    font-weight: 700;
+    color: #94a3b8;
+    margin-bottom: 3px;
+  }
+
+  .cap-line {
+    display: flex;
+    gap: 5px;
+    align-items: baseline;
+  }
+
+  .cap-mark {
+    flex: 0 0 auto;
+  }
+
+  .cap-name {
+    color: #e2e8f0;
+    font-weight: 700;
+  }
+
+  .cap-reason {
+    color: #fca5a5;
+    word-break: break-word;
+  }
+
   .telemetry-board {
     position: relative;
     width: 100%;

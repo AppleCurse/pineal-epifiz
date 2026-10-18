@@ -1,5 +1,7 @@
 import asyncio
 
+import pytest
+
 from agent_core.domain.memory_models import TaskSnapshot
 from agent_core.schemas.telemetry import (
     ErrorHaltEvent,
@@ -189,3 +191,51 @@ def test_queue_overflow_metrics_are_exposed_by_telemetry_api(monkeypatch):
 
     assert response["telemetry_delivery"]["state"] == "DEGRADED_QUEUE_OVERFLOW"
     assert response["telemetry_delivery"]["dropped_event_count"] == 2
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# [E-GÖZ3-2 · DAVRANIŞAL] Üretimde Redis düşüşü YASAK / geliştirmede GÖRÜNÜR
+# (statik kilidin tamamlayıcısı: kapı FIILEN koşturulur — bak. §4.2 raporu)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_production_redis_import_failure_is_hard_refusal(monkeypatch):
+    """Üretim + Redis bus import'u düşerse: kapıda RuntimeError (fallback YOK)."""
+    import sys as _sys
+
+    from agent_core.workers import agent_worker as aw
+
+    monkeypatch.setenv("PINEAL_ENV", "production")
+    monkeypatch.setitem(_sys.modules, "agent_core.services.redis_bus", None)
+    with pytest.raises(RuntimeError) as exc:
+        asyncio.run(
+            aw.run_worker(
+                "prod_refusal_agent",
+                bus=None,
+                heartbeat_interval=0.01,
+                max_heartbeats=1,
+                backend_url="",
+            )
+        )
+    assert "PRODUCTION_REQUIRES_REDIS" in str(exc.value)
+
+
+def test_dev_redis_import_failure_degrades_visibly(monkeypatch, caplog):
+    """Geliştirme + Redis düşerse: süreç YAŞAR ama DEGRADED_MODE izi ERROR'dur."""
+    import logging
+    import sys as _sys
+
+    from agent_core.workers import agent_worker as aw
+
+    monkeypatch.delenv("PINEAL_ENV", raising=False)
+    monkeypatch.setitem(_sys.modules, "agent_core.services.redis_bus", None)
+    with caplog.at_level(logging.ERROR):
+        asyncio.run(
+            aw.run_worker(
+                "dev_degraded_agent",
+                bus=None,
+                heartbeat_interval=0.01,
+                max_heartbeats=1,
+                backend_url="",
+            )
+        )
+    assert "DEGRADED_MODE" in caplog.text

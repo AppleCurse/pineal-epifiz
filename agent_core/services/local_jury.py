@@ -32,6 +32,8 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agent_core.services.confidence import normalize_confidence
+
 # Oy sözlüğü KOPYALANMAZ: tek doğruluk kaynağı B1 denetçisidir.
 from agent_core.services.jury_consensus import (
     VOTE_CONTRADICTED,
@@ -89,7 +91,7 @@ class SeatVote(BaseModel):
     vote: str = VOTE_UNKNOWN      # sayılan (kanonik) oy
     raw_vote: str = ""            # modelin yazdığı ham kelime
     reason: str = ""
-    confidence: float | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     latency_ms: int = 0
     error: str = ""               # koltuk oy veremediyse SEBEP (sessiz yutma yok)
 
@@ -297,11 +299,9 @@ async def _ask_seat(
             model=model, raw_vote=raw_vote[:40], error="sozluk_disi", latency_ms=latency
         )
     confidence: float | None = None
-    try:
-        if parsed.get("confidence") is not None:
-            confidence = max(0.0, min(1.0, float(parsed["confidence"])))
-    except (TypeError, ValueError):
-        confidence = None
+    if parsed.get("confidence") is not None:
+        normalized, valid = normalize_confidence(parsed["confidence"])
+        confidence = normalized if valid else None
     return SeatVote(
         model=model,
         vote=vote,
@@ -387,11 +387,11 @@ async def evaluate(
         return LocalJuryVerdict(available=False, reason="empty_evidence")
 
     try:
-        import httpx
+        from agent_core.capabilities.egress import open_client
     except ImportError:
         return LocalJuryVerdict(available=False, reason="dependency_missing:httpx")
 
-    async with httpx.AsyncClient() as client:
+    async with open_client(purpose="llm") as client:
         # [E7-muaf] `_ask_seat` ağ/JSON/şekil hatalarını yakalayıp
         # SeatVote(error=...) döner — düşen koltuk jüriyi düşürmez, karar
         # `quorum`/hata sayımıyla dürüstçe raporlanır.

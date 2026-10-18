@@ -1,13 +1,24 @@
+"""Görsel kanıt analizcisi — çoklu modlu (vision) inceleme, doğrulamalı indirme.
+
+Görseller indirilirken magic-byte imzasıyla gerçek MIME türü doğrulanır
+(``_sniff_image_mime``): HTTP başlığı yalan söyleyebilir. Boyut tavanı
+(``MAX_IMAGE_BYTES``) aşılırsa GÖRSEL YOK sayılır. Çıktı ``VisualEvidence``:
+nesneler, mekânlar, eylemler, estetik.
+
+``_derive_confidence`` güveni PROMPT'TAN veya sağlayıcıdan değil, indirilen
+gerçek kayıtlardan türetir — kanıtlanmayan görsel için güven üretilmez.
+
+Tüketici: ``task_executor`` (``_download_images``), ``authenticity_auditor``.
+Test: ``tests/unit/test_gateway_vision.py``.
+"""
+
 import logging
 import base64
 import hashlib
 import asyncio
+from agent_core.capabilities.egress import open_client, httpx
 from typing import List, Optional, Dict, Any
-
-from httpx import AsyncClient, Timeout
-
-from agent_core.utils.security import build_secure_client
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from agent_core.services.llm_gateway import LLMGateway
 
 logger = logging.getLogger(__name__)
@@ -42,7 +53,7 @@ class VisualEvidence(BaseModel):
     # [011] fix: fail-closed defaults. Model doğrudan kurulursa (hiç analiz
     # yapılmadan) 'tam güvenilir' sayılmaz; confidence/data_confidence yalnızca
     # gerçek üretim yolunda yerel olarak türetilir ([015]).
-    confidence: float = 0.0
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     data_confidence: bool = False
     fallback_reason: str = "not_analyzed"
     # [014] fix: her görsel için indirme provenance'ı (URL başarı/durum/sha/mime).
@@ -61,7 +72,7 @@ class VisionAnalyzer:
         self.llm_gateway = llm_gateway or LLMGateway()
 
     async def _download_image_record(
-        self, image_url: str, client: Optional[AsyncClient] = None
+        self, image_url: str, client: Optional[httpx.AsyncClient] = None
     ) -> Dict[str, Any]:
         """[013]/[014] fix: doğrulamalı indirme + kayıt bazlı provenance.
 
@@ -90,7 +101,7 @@ class VisionAnalyzer:
             if client:
                 resp = await safe_get(client, image_url, headers=headers)
             else:
-                async with build_secure_client(timeout=Timeout(15.0)) as new_client:
+                async with open_client(purpose="media", target=image_url, timeout=15.0, follow_redirects=False) as new_client:
                     resp = await safe_get(new_client, image_url, headers=headers)
 
             if resp.status_code != 200:
@@ -130,7 +141,7 @@ class VisionAnalyzer:
             return record
 
     async def _download_and_encode_image(
-        self, image_url: str, client: Optional[AsyncClient] = None
+        self, image_url: str, client: Optional[httpx.AsyncClient] = None
     ) -> Optional[str]:
         """Geriye uyumlu sarmalayıcı: doğrulamalı indirme -> base64 (veya None)."""
         record = await self._download_image_record(image_url, client=client)
@@ -183,7 +194,7 @@ class VisionAnalyzer:
             )
 
         # Parallel image download with shared client for connection pooling
-        async with build_secure_client(timeout=Timeout(15.0)) as client:
+        async with open_client(purpose="media", timeout=15.0, follow_redirects=False) as client:
             tasks = [self._download_image_record(url, client=client) for url in valid_urls]
             # [E7-muaf] `_download_image_record` hata yerine KAYIT döner
             # (status/reason alanlarıyla); provenance listesi bu yüzden

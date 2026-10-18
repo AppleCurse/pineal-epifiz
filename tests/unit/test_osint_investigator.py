@@ -12,6 +12,13 @@ def _hermetic_guard(monkeypatch):
     monkeypatch.setattr(LLMGateway, "query_json", _blocked)
 
 
+def test_uninitialized_osint_profile_does_not_claim_data_or_confidence():
+    profile = OsintProfile()
+    assert profile.confidence == 0.0
+    assert profile.data_confidence is False
+    assert profile.fallback_reason == "unavailable"
+
+
 @pytest.mark.asyncio
 async def test_osint_empty_username():
     """Kullanıcı adı yoksa veri yokluğu açıkça belirtilmelidir."""
@@ -26,8 +33,8 @@ async def test_osint_empty_username():
 
 
 @pytest.mark.asyncio
-async def test_osint_no_api_key_calls_llm_chain(monkeypatch):
-    """OSINT_INDUSTRIES_KEY yokken LLM zinciri üzerinden akıllı simülasyon yapılmalıdır."""
+async def test_osint_no_api_key_skips_llm_and_returns_dry_fallback(monkeypatch):
+    """API anahtarı yoksa OSINT uydurma profil üretmeden boş fallback döndürür."""
     monkeypatch.delenv("OSINT_INDUSTRIES_KEY", raising=False)
     
     mock_gateway = MagicMock(spec=LLMGateway)
@@ -51,6 +58,10 @@ async def test_osint_no_api_key_calls_llm_chain(monkeypatch):
     
     res = await agent.execute(payload)
     assert isinstance(res, OsintProfile)
+    assert res.connected_emails == []
+    assert res.connected_phones == []
+    assert res.associated_platforms == []
+    assert res.dark_web_hits == 0
     assert res.digital_footprint_score == 0.0
     assert res.confidence == 0.0
     assert res.data_confidence is False
@@ -61,7 +72,7 @@ async def test_osint_no_api_key_calls_llm_chain(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_osint_llm_failure_graceful_fallback(monkeypatch):
-    """LLM sorgusunda hata meydana gelirse sistem kırılmamalı, varsayılan OsintProfile(confidence=1.0) dönmelidir."""
+    """LLM sorgusu yerine dönmeyen hatada güven sıfırlanmalıdır."""
     monkeypatch.delenv("OSINT_INDUSTRIES_KEY", raising=False)
     
     mock_gateway = MagicMock(spec=LLMGateway)
@@ -101,5 +112,6 @@ async def test_osint_with_api_key_simulation(mock_get, monkeypatch):
     assert isinstance(res, OsintProfile)
     assert res.confidence == round(2 / 3, 3)
     assert res.data_confidence is True
+    assert res.fallback_reason is None
     assert res.connected_emails == ["test@example.com"]
     assert res.associated_platforms == ["X"]

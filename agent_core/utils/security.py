@@ -13,13 +13,9 @@ import urllib.parse
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping, Optional
+from typing import Callable, Iterable, Mapping, Optional
 
-# [AUDIT 2026-10-08 · E-GÖZ1-3] Merkezi ağ katmanı: istemci üretimi TEK fabrikadan
-# (`build_secure_client`) ve istekler TEK kapıdan (`safe_get`/`safe_post`) geçer.
-# `from httpx import ...` biçimi, ürün kodunun `import httpx` ile ham kütüphaneye
-# atlamasını izlemek içindir; bu modülün kendisi katmanın parçasıdır.
-from httpx import AsyncClient, Limits, Response, Timeout
+from agent_core.capabilities.egress import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -135,10 +131,108 @@ def security_posture() -> dict:
 
 
 def token_matches(candidate: Optional[str], expected: Optional[str] = None) -> bool:
-    expected = os.getenv("PINEAL_TOKEN", "") if expected is None else expected
+    """Kimlik doğrulama kararı.
+
+    ``expected`` AÇIKÇA verildiyse (testler ve iç çağrılar) davranış eskisiyle
+    birebir aynıdır: tek değerle sabit zamanlı karşılaştırma.
+
+    ``expected`` verilmediyse (HTTP/WS auth hattı) kök token (``PINEAL_TOKEN``)
+    VEYA tanımlı herhangi bir operatör token'ı (``PINEAL_OPERATOR_TOKENS``)
+    kabul edilir; böylece ``resolve_principal``'ın çözebildiği her kimlik auth
+    kapısından da geçer. ``PINEAL_OPERATOR_TOKENS`` tanımsızken (tek-token
+    dağıtım, testler) sonuç eskisiyle aynıdır.
+    """
+    if expected is None:
+        if not candidate:
+            return False
+        return resolve_principal(candidate) is not None
     if not candidate or not expected:
         return False
     return secrets.compare_digest(candidate.encode("utf-8"), expected.encode("utf-8"))
+
+
+# --- Operatör kimliği (principal) -------------------------------------------
+# Token -> principal eşlemesi. Oda sahipliği mührü (backend/security/principal.py)
+# bu kimliği kullanır: PINEAL_TOKEN "root" kimliğidir, PINEAL_OPERATOR_TOKENS
+# ile tanımlanan her ek token kendi kimliğine çözülür ve odalar token başına
+# ayrışır. PINEAL_OPERATOR_TOKENS tanımsızken davranış tek-token dağıtımıyla
+# birebir aynıdır.
+_OPERATOR_TOKEN_ENV = "PINEAL_OPERATOR_TOKENS"
+_ROOT_PRINCIPAL = "root"
+
+
+def _operator_tokens() -> tuple[tuple[str, str], ...]:
+    """PINEAL_OPERATOR_TOKENS -> ((principal, token), ...)
+
+    Biçim: virgülle ayrılmış girdiler; her girdi ``etiket:token`` ya da çıplak
+    ``token`` (etiket otomatik ``op<N>`` olur). Etiket ``[A-Za-z0-9_.-]+``.
+    Boş/bozuk girdiler SESSİZCE KABUL EDİLMEZ ama diğerlerini de düşürmez:
+    hatalı girdi atlanır ve loglanır (fail-safe: yanlış yazılmış bir satır
+    bütün operatör listesini kullanılamaz hale getirmemeli).
+    """
+    raw = os.getenv(_OPERATOR_TOKEN_ENV, "")
+    if not raw or not raw.strip():
+        return ()
+    out: list[tuple[str, str]] = []
+    for index, entry in enumerate(raw.split(",")):
+        entry = entry.strip()
+        if not entry:
+            continue
+        label, separator, value = entry.partition(":")
+        if separator and value.strip():
+            principal, token = label.strip(), value.strip()
+            if not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", principal):
+                logger.warning(
+                    "OPERATOR_TOKEN_REJECTED: geçersiz etiket (girdi #%d); "
+                    "yalnız [A-Za-z0-9_.-]{1,64} kabul edilir", index,
+                )
+                continue
+        else:
+            # Çıplak token: etiket yok -> konuma göre kararlı ad üret.
+            principal, token = f"op{index}", entry
+        if len(token) < 8:
+            logger.warning(
+                "OPERATOR_TOKEN_REJECTED: token çok kısa (girdi #%d, <8 karakter)",
+                index,
+            )
+            continue
+        out.append((principal, token))
+    return tuple(out)
+
+
+def resolve_principal(candidate: Optional[str]) -> Optional[str]:
+    """Sunulan token'ı bir OPERATÖR KİMLİĞİNE çözer; eşleşme yoksa ``None``.
+
+    Kimlik doğrulama kararı için ``token_matches`` kullanılmaya devam eder;
+    bu fonksiyon yalnız "HANGİ operatör?" sorusunu yanıtlar (oda sahipliği).
+    Karşılaştırmalar ``secrets.compare_digest`` ile sabit zamanlıdır.
+    """
+    if not candidate:
+        return None
+    candidate_bytes = candidate.encode("utf-8")
+    root_token = os.getenv("PINEAL_TOKEN", "")
+    if root_token and secrets.compare_digest(candidate_bytes, root_token.encode("utf-8")):
+        return _ROOT_PRINCIPAL
+    for principal, token in _operator_tokens():
+        if secrets.compare_digest(candidate_bytes, token.encode("utf-8")):
+            return principal
+    return None
+
+
+def principal_of_request(candidate: Optional[str]) -> Optional[str]:
+    """Kimlik doğrulama KAPALIYSA ``None`` (geliştirme), açıkken principal.
+
+    ``None`` -> sahiplik mühürü uygulanmaz (bugünkü davranış). Bu yalnız
+    development modunda olur; production'da auth fail-closed zorunludur
+    (bkz. ``security_posture``), dolayısıyla principal daima doludur.
+    """
+    try:
+        posture = security_posture()
+    except SecurityConfigurationError:
+        return None
+    if not posture.get("auth_required"):
+        return None
+    return resolve_principal(candidate)
 
 
 def validate_identifier(value: str, *, field: str = "identifier") -> str:
@@ -245,39 +339,14 @@ def is_safe_url(url: str) -> bool:
     return True
 
 
-#: Merkezi istemci varsayılanları — üretilen her istemci bu sınırlara uyar.
-DEFAULT_CLIENT_TIMEOUT = Timeout(10.0, connect=5.0)
-DEFAULT_CLIENT_LIMITS = Limits(max_connections=100, max_keepalive_connections=20)
-
-
-def build_secure_client(
-    *,
-    timeout: Optional[Timeout] = None,
-    follow_redirects: bool = False,
-    **overrides: Any,
-) -> AsyncClient:
-    """Ortak istemci fabrikası — dış istemci üretiminin TEK çıkış noktası.
-
-    [AUDIT 2026-10-08 · E-GÖZ1-3] Ürün kodu kendi `httpx.AsyncClient`'ini
-    kurmaz; her istemci buradan çıkar. Yönlendirmeler fabrikada KAPALI başlar:
-    `safe_get`/`safe_post` her atlamayı doğruladığı için istemcinin kör
-    yönlendirme takibi SSRF doğrulamasını atlayamaz.
-    """
-    kwargs: dict[str, Any] = dict(overrides)
-    kwargs.setdefault("timeout", timeout or DEFAULT_CLIENT_TIMEOUT)
-    kwargs.setdefault("follow_redirects", follow_redirects)
-    kwargs.setdefault("limits", DEFAULT_CLIENT_LIMITS)
-    return AsyncClient(**kwargs)
-
-
 async def safe_get(
-    client: AsyncClient,
+    client: httpx.AsyncClient,
     url: str,
     *,
     headers: Optional[Mapping[str, str]] = None,
     max_redirects: int = 3,
     stream: bool = False,
-) -> Response:
+) -> httpx.Response:
     """GET with DNS pinning and validation of every redirect target."""
     current_url = url
     for redirect_count in range(max_redirects + 1):
@@ -287,9 +356,7 @@ async def safe_get(
         request = client.build_request("GET", resolved.pinned_url, headers=request_headers)
         if request.url.scheme == "https":
             request.extensions["sni_hostname"] = resolved.hostname
-        # follow_redirects=False ZORUNLU: istemcinin kör takibi, her atlamayı
-        # doğrulayan bu döngünün önüne geçemez (doğrulama atlanamaz).
-        response = await client.send(request, stream=stream, follow_redirects=False)
+        response = await client.send(request, stream=stream)
         if response.status_code not in _REDIRECT_CODES:
             response.extensions["pineal_original_url"] = current_url
             response.extensions["pineal_resolved_addresses"] = resolved.addresses
@@ -302,56 +369,6 @@ async def safe_get(
         if redirect_count >= max_redirects:
             raise UnsafeURLError("TOO_MANY_REDIRECTS")
         current_url = urllib.parse.urljoin(current_url, location)
-    raise UnsafeURLError("TOO_MANY_REDIRECTS")
-
-
-async def safe_post(
-    client: AsyncClient,
-    url: str,
-    *,
-    json: Optional[Any] = None,
-    data: Optional[Mapping[str, Any]] = None,
-    headers: Optional[Mapping[str, str]] = None,
-    max_redirects: int = 3,
-) -> Response:
-    """POST with DNS pinning; every redirect hop is validated before it is sent.
-
-    Yönlendirme yarı-anlamı (browser semantics): 307/308 POST'u korur,
-    301/302/303 GET'e düşer. Hiçbir atlama doğrulanmadan gönderilmez.
-    """
-    current_url = url
-    method = "POST"
-    for redirect_count in range(max_redirects + 1):
-        resolved = await asyncio.to_thread(resolve_public_url, current_url)
-        request_headers = dict(headers or {})
-        request_headers["Host"] = resolved.host_header
-        request = client.build_request(
-            method,
-            resolved.pinned_url,
-            headers=request_headers,
-            json=json if method == "POST" else None,
-            data=data if method == "POST" else None,
-        )
-        if request.url.scheme == "https":
-            request.extensions["sni_hostname"] = resolved.hostname
-        response = await client.send(request, follow_redirects=False)
-        if response.status_code not in _REDIRECT_CODES:
-            response.extensions["pineal_original_url"] = current_url
-            response.extensions["pineal_resolved_addresses"] = resolved.addresses
-            return response
-
-        status_code = response.status_code
-        location = response.headers.get("location")
-        await response.aclose()
-        if not location:
-            raise UnsafeURLError("REDIRECT_WITHOUT_LOCATION")
-        if redirect_count >= max_redirects:
-            raise UnsafeURLError("TOO_MANY_REDIRECTS")
-        current_url = urllib.parse.urljoin(current_url, location)
-        if status_code == 303 or (status_code in (301, 302) and method == "POST"):
-            method = "GET"
-            json = None
-            data = None
     raise UnsafeURLError("TOO_MANY_REDIRECTS")
 
 

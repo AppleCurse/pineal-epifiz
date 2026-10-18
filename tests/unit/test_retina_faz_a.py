@@ -423,7 +423,7 @@ async def test_searxng_is_called_over_http_only(monkeypatch):
 
     class _Client:
         def __init__(self, **kw):
-            pass
+            seen["client_options"] = kw
 
         async def __aenter__(self):
             return self
@@ -438,10 +438,8 @@ async def test_searxng_is_called_over_http_only(monkeypatch):
 
     import agent_core.capabilities.adapters_sensors as sensors
 
-    monkeypatch.setattr(sensors, "build_secure_client", lambda **kw: _Client(**kw))
+    monkeypatch.setattr(sensors.httpx, "AsyncClient", _Client)
     monkeypatch.setenv("SEARXNG_BASE_URL", "http://127.0.0.1:8080")
-    # Özel adres (127.0.0.1): operatör açıkça izin vermiş sayılır (net_hygiene kapısı).
-    monkeypatch.setenv("PINEAL_SEARXNG_ALLOW_PRIVATE", "true")
     monkeypatch.setenv("ENABLE_SEARXNG", "true")
 
     result = await SearXNGCapability().run(CapabilityContext(subject="hedef kişi"))
@@ -450,6 +448,8 @@ async def test_searxng_is_called_over_http_only(monkeypatch):
     assert seen["params"]["q"] == "hedef kişi"
     assert seen["params"]["format"] == "json"
     assert result.items[0].provenance_refs == ["https://kaynak.test/a"]
+    assert seen["client_options"]["trust_env"] is False
+    assert seen["client_options"]["follow_redirects"] is False
 
 
 @pytest.mark.asyncio
@@ -469,10 +469,8 @@ async def test_searxng_unreachable_is_honest(monkeypatch):
         async def get(self, url, params=None):
             raise RuntimeError("connection refused")
 
-    monkeypatch.setattr(sensors, "build_secure_client", lambda **kw: _Client(**kw))
+    monkeypatch.setattr(sensors.httpx, "AsyncClient", _Client)
     monkeypatch.setenv("SEARXNG_BASE_URL", "http://127.0.0.1:8080")
-    # Özel adres (127.0.0.1): operatör açıkça izin vermiş sayılır (net_hygiene kapısı).
-    monkeypatch.setenv("PINEAL_SEARXNG_ALLOW_PRIVATE", "true")
     monkeypatch.setenv("ENABLE_SEARXNG", "true")
 
     result = await SearXNGCapability().run(CapabilityContext(subject="hedef"))
@@ -494,3 +492,77 @@ async def test_vault_lock_blocks_whole_retina_stack():
         )
         assert result.denied_by == "vault", f"{cap.id} kasa kilidini atladı"
         assert result.items == ()
+
+
+# --------------------------- A3 · trafilatura yalnız pinned HTML'i ayrıştırır
+@pytest.mark.asyncio
+async def test_trafilatura_parses_safe_fetch_without_opening_its_own_network(monkeypatch):
+    """Extractor transport oluşturamaz; yalnız egress kapısından gelen HTML'i işler."""
+    import sys
+    import types
+
+    from agent_core.capabilities import adapters_web
+    from agent_core.services.safe_web_fetch import SafeHTML
+
+    seen: dict[str, str] = {}
+    fake = types.ModuleType("trafilatura")
+
+    def _forbidden_fetch(*_args, **_kwargs):
+        raise AssertionError("trafilatura must not perform network I/O")
+
+    def _extract(html, **_kwargs):
+        seen["html"] = html
+        return "Bu içerik güvenli taşıma ile alınmış gerçek HTML'den çıktı."
+
+    fake.fetch_url = _forbidden_fetch
+    fake.extract = _extract
+    fake.extract_metadata = lambda html: None
+    monkeypatch.setitem(sys.modules, "trafilatura", fake)
+    monkeypatch.setattr(adapters_web, "is_safe_url", lambda _url: True)
+
+    async def _fetch(url, capability_id, timeout_seconds):
+        return SafeHTML(
+            requested_url=url,
+            final_url=url,
+            html="<html><p>safe fetched body</p></html>",
+            content_type="text/html",
+            status_code=200,
+            bytes_read=34,
+        ), None
+
+    monkeypatch.setattr(adapters_web, "_fetch_html", _fetch)
+    result = await TrafilaturaCapability().run(
+        CapabilityContext(subject="https://example.com/makale")
+    )
+
+    assert result.ok is True
+    assert seen["html"] == "<html><p>safe fetched body</p></html>"
+
+
+# ------------------------- A4 · agent-reach komut çözümü (canlı bulgu: ad karışıklığı)
+def test_agent_reach_command_prefers_explicit_env_and_never_guesses(monkeypatch):
+    """[2026-10-14 · CANLI KANIT] RUNBOOK'taki `npm i -g agent-reach` artık AYNI ADLI
+    BAŞKA bir projeyi kuruyor (Nostr ajan ağı; ölçülen sürüm 0.3.4). Bu yüzden
+    operatör gerçek CLI'ı `PINEAL_AGENT_REACH_CMD` ile işaret edebilmeli; var
+    olmayan yol "hazır" SAYILMAMALI ve bozuk tırnak PATH'e DÜŞMEMELİ.
+    """
+    from agent_core.capabilities.adapters_sensors import agent_reach_command
+
+    monkeypatch.delenv("PINEAL_AGENT_REACH_CMD", raising=False)
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    assert agent_reach_command() is None  # PATH'te yoksa ret
+
+    monkeypatch.setenv("PINEAL_AGENT_REACH_CMD", "/tmp/gercekten-yok/agent-reach")
+    assert agent_reach_command() is None  # var olmayan mutlak yol "hazır" sayılmaz
+
+    monkeypatch.setenv("PINEAL_AGENT_REACH_CMD", "'bozuk tırnak")
+    assert agent_reach_command() is None  # bozuk tırnak → PATH'e düşmez
+
+    monkeypatch.setenv("PINEAL_AGENT_REACH_CMD", "/bin/echo --json")
+    assert agent_reach_command() == ["/bin/echo", "--json"]
+
+    monkeypatch.undo()  # which yaması VE önceki env değerleri kalkar
+    monkeypatch.setenv("PINEAL_AGENT_REACH_CMD", "python3")
+    #: Depo kalıbı (PINEAL_HARVESTER_CMD ile aynı): PATH'te bulunan komut ADI
+    #: olduğu gibi döner — alt süreç onu kendi PATH'iyle çözer.
+    assert agent_reach_command() == ["python3"]

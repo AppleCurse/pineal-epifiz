@@ -165,7 +165,7 @@ async def _run_local_endpoint(text: str, finding: LanguageFinding, target: str, 
     if not url:
         return "", reason
     try:
-        import httpx
+        from agent_core.capabilities.egress import open_client
     except ImportError:
         return "", "dependency_missing:httpx"
 
@@ -173,7 +173,7 @@ async def _run_local_endpoint(text: str, finding: LanguageFinding, target: str, 
     if finding.language != "unknown":
         payload["source"] = finding.language
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with open_client(purpose="general", timeout=timeout) as client:
             response = await client.post(url, json=payload)
     except Exception as exc:  # ağ hatası gizlenmez, sınıflandırılır
         return "", f"endpoint_error:{type(exc).__name__}"

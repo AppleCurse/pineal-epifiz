@@ -12,9 +12,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-from httpx import AsyncClient, Timeout
-
-from agent_core.utils.security import build_secure_client
+from agent_core.capabilities.egress import open_client, httpx
 from pydantic import BaseModel, ConfigDict
 
 logger = logging.getLogger(__name__)
@@ -75,7 +73,7 @@ def extract_from_html(html: str, source_url: str = "") -> SocidRecord:
     return SocidRecord(source_url=source_url, available=True, fields=fields)
 
 
-async def extract_profile(url: str, client: Optional[AsyncClient] = None) -> SocidRecord:
+async def extract_profile(url: str, client: Optional[httpx.AsyncClient] = None) -> SocidRecord:
     """Profil URL'sini indirip yapılandırılmış kimlik kaydına çevirir."""
     if not url or not url.startswith("http"):
         return SocidRecord(source_url=url or "", available=False, reason="invalid_url")
@@ -86,7 +84,7 @@ async def extract_profile(url: str, client: Optional[AsyncClient] = None) -> Soc
         if client is not None:
             resp = await safe_get(client, url, headers={"User-Agent": USER_AGENT})
         else:
-            async with build_secure_client(timeout=Timeout(REQUEST_TIMEOUT)) as own:
+            async with open_client(purpose="osint", target=url, timeout=REQUEST_TIMEOUT, follow_redirects=False) as own:
                 resp = await safe_get(own, url, headers={"User-Agent": USER_AGENT})
     except UnsafeURLError:
         return SocidRecord(source_url=url, available=False, reason="ssrf_blocked")
@@ -119,7 +117,7 @@ async def enrich_urls(urls, limit: int = 3):
     targets = [u for u in (urls or []) if isinstance(u, str)][:limit]
     if not targets:
         return []
-    async with build_secure_client(timeout=Timeout(REQUEST_TIMEOUT)) as client:
+    async with open_client(purpose="osint", timeout=REQUEST_TIMEOUT, follow_redirects=False) as client:
         raw = await asyncio.gather(
             *(extract_profile(u, client=client) for u in targets),
             return_exceptions=True,

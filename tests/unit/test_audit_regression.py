@@ -126,6 +126,27 @@ def test_baseline_gate_passes_today(report):
     assert report["meta"]["gate_passed"] is True
 
 
+def test_committed_report_matches_fresh_generation(report):
+    """CI'ın tazelik kapısı (`git diff --exit-code`) yerelde de ısırsın.
+
+    Bekçinin kanıt dizeleri **mutlak satır numarası** gömüyor
+    (``agent_core/capabilities/adapters_web.py:161`` gibi). Bu yüzden satır
+    kaydıran masum bir düzenleme bile komutlu `reports/audit_regression.json`'ı
+    bayatlatır. 2026-10-14'te tam bu oldu: trafilatura yaması 12 satır ekledi,
+    bekçi adımı CI'da `git diff` kapısında düştü ve ardından gelen 3 doğrulama
+    adımı hiç koşmadı — yerelde ise bekçi "GEÇTİ" diyordu, çünkü burada
+    `git diff` koşulmuyor. Bu test aynı kapıyı yerelde kilitler: komutlu rapor
+    ile taze üretim BİREBİR aynı olmalı.
+    """
+    fresh = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
+    committed = ar.REPORT_OUT.read_text(encoding="utf-8")
+    assert committed == fresh, (
+        "reports/audit_regression.json BAYAT — kanıt satır numaraları kaymış "
+        "olabilir. Onarım: `python scripts/audit_regression.py` koş, çıkan "
+        "dosyayı commit et (CI tazelik kapısı da bunu ister)."
+    )
+
+
 def test_known_open_matches_the_measured_open_set_exactly(report):
     """KNOWN_OPEN ne iyimser ne karamsar — ölçülen açık kümeyle BİREBİR.
 
@@ -142,25 +163,21 @@ def test_known_open_matches_the_measured_open_set_exactly(report):
 
 
 def test_gate_bites_when_known_open_is_emptied(report, monkeypatch):
-    """Isırmayan kapı dekorasyondur: liste boşaltılınca her açık bulgu regresyon.
+    """Isırmayan kapı dekorasyondur: taban boş + bulgu açık → regresyon.
 
-    [GÜNCELLEME 2026-10-08] Eski sürüm gerçek açık bulgu sayısını (>=10) pine
-    bağlardı; bulgular onarıldıkça bu snapshot bayatlardı. Kapının ısırırlığı
-    artık SENTETİK açık bulguyla kanıtlanır — gerçek açık sayısı kaç olursa olsun.
+    (2026-10-14: A-yolu 11 bulgu kapanınca eski sürüm "≥10 açık" varsayımı
+    geçersizleşti; kapı, sahte bir açılma BULUNDUĞUNDA ısırıyor mu onu
+    ölçüyoruz — boş taban + açık bulgu = kesin kırmızı.)
     """
+    monkeypatch.setattr(ar, "KNOWN_OPEN", frozenset())
+    victim = "E-GÖZ1-2"
     monkeypatch.setattr(
         ar,
         "CHECKS",
-        {
-            **ar.CHECKS,
-            "E-GÖZ1-2": ar.Check(
-                "E-GÖZ1-2", "static", lambda: ar.CheckResult(ar.OPEN, ("sentetik açık bulgu",))
-            ),
-        },
+        {**ar.CHECKS, victim: ar.Check(victim, "static", lambda: ar.CheckResult(ar.OPEN, ("sahte açılma",)))},
     )
-    monkeypatch.setattr(ar, "KNOWN_OPEN", frozenset())
     rep = ar.build_report(ar.parse_findings(ar.AUDIT_REPORT.read_text(encoding="utf-8")))
-    assert "E-GÖZ1-2" in rep["meta"]["regressions"]
+    assert rep["meta"]["regressions"] == [victim]
     assert rep["meta"]["gate_passed"] is False
 
 
@@ -180,14 +197,15 @@ def test_gate_flags_a_single_new_regression(monkeypatch):
 def test_gate_flags_a_stale_baseline_entry(monkeypatch):
     """Onarılan bulgu listede bırakılırsa 'bayat taban' olarak yakalanır.
 
-    [GÜNCELLEME 2026-10-08] Eski sürüm sabit `E-GÖZ1-1` victim'ini açık ve listede
-    sanıyordu; bulgu onarılınca test kendi kendine kırılırdı. Senaryo şimdi
-    KAPALI bir bulgu (E-GÖZ1-2) listeye konularak üretilir — taban çizgisi temiz
-    kalsa da bayat kayıt yakalanır.
+    (2026-10-14: taban gerçeğe çekildi — gerçek açık liste BOŞ. Test artık
+    kapının bayat kaydı nasıl yakaladığını sahte kurulumla ölçer: liste +=
+    kapalı bulgu → stale.)
     """
-    victim = "E-GÖZ1-2"  # bugün kapalı
-    assert victim not in ar.KNOWN_OPEN  # gerçek taban çizgisi temiz
+    victim = "E-GÖZ1-1"
     monkeypatch.setattr(ar, "KNOWN_OPEN", frozenset({victim}))
+    monkeypatch.setattr(
+        ar, "CHECKS", {**ar.CHECKS, victim: ar.Check(victim, "static", lambda: ar.CheckResult(ar.CLOSED, ("onarıldı",)))}
+    )
     rep = ar.build_report(ar.parse_findings(ar.AUDIT_REPORT.read_text(encoding="utf-8")))
     assert victim in rep["meta"]["stale_known_open"]
     assert rep["meta"]["gate_passed"] is False
@@ -238,7 +256,12 @@ def test_main_exit_code_is_one_on_regression(monkeypatch, tmp_path):
         encoding="utf-8",
     )
     proc = subprocess.run(
-        [sys.executable, str(driver)], cwd=tmp_path, capture_output=True, text=True, timeout=300
+        [sys.executable, str(driver)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=300,
     )
     assert proc.returncode == 1, (
         f"beklenen 1 (regresyon), gelen {proc.returncode}\n"
@@ -365,13 +388,22 @@ async def _post(url):
 #: sahte kırmızısı üretti. Bu yüzden onarım programatik ve doğrulanabilir.
 WORKER_FIXED = re.sub(
     r"^([ \t]*)pass  # Backend yoksa sessizce devam$",
-    r'\1logger.warning("Backend REST fallback failed", exc_info=True)',
+    # Revize 1-1: onarım, ölçümün aradığı izi taşır (sonda logu + literal).
+    r'\1logger.warning("[%s] backend sondası başarısız — fallback: '
+    r'backend_link=False: %s", url, exc, exc_info=True)',
     WORKER_DEFECT,
     flags=re.MULTILINE,
 )
+# Revize 1-6: yasaklı set_wait KALDIRILIR; kapanış yayını arızası
+# KAPANIŞ İZİ literali + logger.error(exc_info) ile izlenir.
+WORKER_FIXED = re.sub(
+    r"await tracker\.set_wait\(agent_id\)",
+    "await _publish_close_trace()",
+    WORKER_FIXED,
+)
 WORKER_FIXED = re.sub(
     r"^([ \t]*)except Exception:\n[ \t]*pass$",
-    r'\1except Exception:\n\1    logger.error("set_wait failed on shutdown", exc_info=True)',
+    r'\1except Exception:\n\1    logger.error("KAPANIŞ İZİ YAYINLANAMADI: %s", agent_id, exc_info=True)',
     WORKER_FIXED,
     flags=re.MULTILINE,
 )
@@ -424,71 +456,20 @@ def test_goz1_1_separates_defect_from_fix(fake_worker):
     assert result.status == ar.CLOSED, result.evidence
 
 
-#: [GÜNCELLEME 2026-10-08] E-GÖZ1-6, 2026-10-07 işaretçi (beacon) tasarımı
-#: öncesindeki eski sözleşmeye göre yazılmıştı (`tracker.set_wait` kapanışı).
-#: İşaretçi artık ajan durumuna ASLA yazmaz (test-locked); kapanışta KENDİ
-#: kanalına `alive=False` yayınlar. Bu fixture yeni sözleşmeyi taklit eder.
-BEACON_DEFECT = '''\
-import asyncio
-import logging
-
-logger = logging.getLogger("agent_worker")
-
-
-async def run_worker(agent_id: str):
-    bus = None
-    try:
-        await asyncio.sleep(0)
-    except asyncio.CancelledError:
-        logger.info(f"[{agent_id}] Worker durduruluyor")
-        try:
-            await bus.publish("pineal:agent:beacon", {"beacon": {"alive": False}})
-        except Exception:
-            pass
-        raise
-'''
-
-#: Onarılmış sürüm — kapanış yayınındaki sessiz `pass` log ile değiştirilir.
-BEACON_FIXED = re.sub(
-    r"^([ \t]*)except Exception:\n[ \t]*pass$",
-    r'\1except Exception:\n\1    logger.warning("beacon kapanış yayını başarısız", exc_info=True)',
-    BEACON_DEFECT,
-    flags=re.MULTILINE,
-)
-
-
-def test_beacon_fixture_itself_is_well_formed():
-    """İşaretçi fixture'ı da denetlenir: kusur gerçekten sessiz, onarım gerçekten loglu."""
-    assert "except asyncio.CancelledError:" in BEACON_DEFECT
-    assert '{"alive": False}' in BEACON_DEFECT
-    assert re.search(r"except Exception:\n[ \t]*pass", BEACON_DEFECT)
-    assert not re.search(r"except Exception:\n[ \t]*pass", BEACON_FIXED)
-    assert BEACON_FIXED.count("exc_info=True") == 1
-    assert "logger.warning" in BEACON_FIXED
-
-
 def test_goz1_6_separates_defect_from_fix(fake_worker):
-    fake_worker(BEACON_DEFECT)
+    fake_worker(WORKER_DEFECT)
     assert ar.check_goz1_6().status == ar.OPEN
 
-    fake_worker(BEACON_FIXED)
+    fake_worker(WORKER_FIXED)
     assert ar.check_goz1_6().status == ar.CLOSED
 
 
 def test_goz1_6_flags_a_worse_regression_than_the_audit_found(fake_worker):
-    """Kapanışta `alive=False` yayını hiç yoksa (daha beter) kontrol kör kalmaz."""
-    no_publish = BEACON_DEFECT.replace(
-        '''        try:
-            await bus.publish("pineal:agent:beacon", {"beacon": {"alive": False}})
-        except Exception:
-            pass
-''',
-        "",
-    )
-    fake_worker(no_publish)
+    """set_wait çağrısı hiç yoksa (daha beter) kontrol kör kalmaz."""
+    fake_worker(WORKER_DEFECT.replace("await tracker.set_wait(agent_id)", "return"))
     result = ar.check_goz1_6()
     assert result.status == ar.OPEN
-    assert "yayını yok" in " ".join(result.evidence)
+    assert "hiç bulunamadı" in " ".join(result.evidence)
 
 
 def test_goz3_2_detects_the_production_gate_when_added(fake_worker):
@@ -497,20 +478,32 @@ def test_goz3_2_detects_the_production_gate_when_added(fake_worker):
 
     gated = WORKER_DEFECT.replace(
         "import asyncio",
-        'import asyncio\nimport os\n\n_PINEAL_ENV = os.getenv("PINEAL_ENV", "development")',
+        'import asyncio\nimport os\n\n_PINEAL_ENV = os.getenv("PINEAL_ENV", "development")\n'
+        'def _production_mode():\n    return _PINEAL_ENV == "production"',
     ).replace(
         "        pass  # Backend yoksa sessizce devam",
-        '        if _PINEAL_ENV == "production":\n            raise RuntimeError("Redis zorunlu")',
+        '        degraded_mode = True\n        "degraded_mode": degraded_mode\n'
+        '        if _production_mode():\n'
+        '            raise RuntimeError("PRODUCTION_REQUIRES_REDIS: Redis zorunlu")\n'
+        '        logger.error("DEGRADED_MODE: in-memory fallback devrede")',
     )
     fake_worker(gated)
     assert ar.check_goz3_2().status == ar.CLOSED
 
 
 def test_goz1_3_detects_spine_migration(tmp_path, monkeypatch):
-    """8 dosyalık bypass: bir dosya omurgaya alınınca sayı gerçekten düşer."""
+    """8 dosyalık bypass: bir dosya omurgaya alınınca sayı gerçekten düşer.
+
+    Revize ölçüm (E-GÖZ1-3): hem satır başı ``import httpx`` hem de
+    ``httpx.AsyncClient`` İNŞASI sayılır; kapanış ayrıca omurganın (egress)
+    varlığını ve dosyaların ``open_client``a bağlılığını ister.
+    """
     files = {
         f"agent_core/services/svc_{i}.py": "import httpx\n" for i in range(8)
     }
+    files["agent_core/capabilities/egress.py"] = (
+        "import httpx  # noqa: F401\n\ndef open_client(*args, **kwargs):\n    return None\n"
+    )
     _fake_root(tmp_path, files)
     monkeypatch.setattr(ar, "ROOT", tmp_path)
 
@@ -518,9 +511,9 @@ def test_goz1_3_detects_spine_migration(tmp_path, monkeypatch):
     assert result.status == ar.OPEN
     assert "8 dosya" in " ".join(result.evidence)
 
-    # Bir dosya omurgaya alındı (satır başı import kalktı).
+    # Bir dosya omurgaya alındı (satır başı import kalktı, open_client bağlı).
     (tmp_path / "agent_core/services/svc_0.py").write_text(
-        "from agent_core.capabilities.runner import run_capability\n", encoding="utf-8"
+        "from agent_core.capabilities.egress import open_client\n", encoding="utf-8"
     )
     result = ar.check_goz1_3()
     assert result.status == ar.OPEN
@@ -528,13 +521,19 @@ def test_goz1_3_detects_spine_migration(tmp_path, monkeypatch):
 
     for i in range(1, 8):
         (tmp_path / f"agent_core/services/svc_{i}.py").write_text(
-            "from agent_core.capabilities.runner import run_capability\n", encoding="utf-8"
+            "from agent_core.capabilities.egress import open_client\n", encoding="utf-8"
         )
     assert ar.check_goz1_3().status == ar.CLOSED
 
 
 def test_goz2_3_needs_a_real_gate_not_the_word_vault(tmp_path, monkeypatch):
-    """UYDURMA YASAĞI'nın somut hâli: 'vault' kelimesi kapı demek değildir."""
+    """UYDURMA YASAĞI'nın somut hâli: 'vault' kelimesi kapı ÇAĞRISI demek değildir.
+
+    Revize ölçüm: İKİ yaprak (scraper + holehe_scanner) da kapı çağrısını
+    (require_open/get_vault_status/VaultLockedError) içermek ZORUNDA —
+    tek dosyadaki kelime eşleşmesi kapanmaya yetmez (eski kontrolün
+    sahte-pozitif/sahte-negatif tuzağı).
+    """
     naive = (
         "def fetch():\n"
         "    # X scraper.py ile aynı mimari: Playwright, vault'tan cookie\n"
@@ -545,10 +544,24 @@ def test_goz2_3_needs_a_real_gate_not_the_word_vault(tmp_path, monkeypatch):
 
     result = ar.check_goz2_3()
     assert result.status == ar.OPEN, "'vault' geçen dosya kapalı sayıldı — sahte pozitif"
-    assert "sahte pozitif" in " ".join(result.evidence)
+    assert "KAPI çağrısı izi: 0" in " ".join(result.evidence)
 
-    gated = naive + "\ndef _preflight():\n    if get_vault_status()['locked']:\n        raise VaultLockedError()\n"
-    (tmp_path / "agent_core/scraper/ghost.py").write_text(gated, encoding="utf-8")
+    gate = (
+        "\ndef _preflight():\n"
+        "    if get_vault_status()['locked']:\n"
+        "        raise VaultLockedError()\n"
+    )
+    (tmp_path / "agent_core/scraper/ghost.py").write_text(naive + gate, encoding="utf-8")
+    # Yaprak yarısı hâlâ kapı taşımıyor → tek başına scraper kapalı DEĞİL.
+    assert ar.check_goz2_3().status == ar.OPEN
+
+    # İKİ yaprak da kapıya bağlanınca bulgu kapanır.
+    (tmp_path / "agent_core/services").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "agent_core/services/holehe_scanner.py").write_text(
+            "from agent_core.scraper.vault_gate import require_open\n"
+            "def scan_email():\n    require_open(purpose='osint')\n",
+            encoding="utf-8",
+        )
     assert ar.check_goz2_3().status == ar.CLOSED
 
 
@@ -733,6 +746,7 @@ def test_written_report_is_valid_and_matches_stdout_gate(tmp_path):
         cwd=ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=300,
     )
     assert out.returncode == 0, out.stdout[-3_000:] + out.stderr[-3_000:]

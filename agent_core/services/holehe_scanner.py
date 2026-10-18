@@ -31,11 +31,6 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict
 
-# [Tüzük Md.4 — yaprak kasa kapısı] API sınırındaki `_require_vault_open`'ın
-# arkasındaki ikinci savunma: bu servis KENDİ egress'inden (ilk site isteği)
-# önce kasayı denetler; kilitliyse dışarı çıkmaz.
-from agent_core.services.vault_gate import VaultLockedError, require_vault_open
-
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODULES_LIMIT = 100
@@ -106,7 +101,7 @@ async def _run_library_scan(
     per-modül timeout ile keser ve bunları ayrı hata listesine yazar."""
     from holehe.core import launch_module
 
-    import httpx
+    from agent_core.capabilities.egress import open_client
 
     out: List[Dict[str, Any]] = []
     stalled: List[str] = []
@@ -114,7 +109,10 @@ async def _run_library_scan(
     # [SAĞLAMLAŞTIRMA] Tek istemci gather'dan ÖNCE yaratılır: eşzamanlı
     # _runner'ların "client is None" yarışıyla ikinci bir istemci yaratıp
     # sızdırması engellendi (FAZ 3 kusuru; regresyon testi var).
-    client = httpx.AsyncClient(timeout=timeout)
+    # [E-GÖZ2-3] Kasa kapısı: üretimde yetkisiz OSINT çıkışı burada da ret edilir.
+    from agent_core.scraper.vault_gate import require_open
+    require_open(purpose="osint")
+    client = open_client(purpose="osint", timeout=timeout)
 
     async def _runner(fn: Any) -> None:
         name = getattr(fn, "__name__", "?")
@@ -178,23 +176,13 @@ async def scan_email(
     limit: Optional[int] = None,
     site_timeout: Optional[int] = None,
     modules: Optional[Sequence[Any]] = None,
-    *,
-    vault_unlocked: Optional[bool] = None,
 ) -> HoleheScanResult:
     """E-postayı holehe modüllerinde (limit) tarar.
 
     Dürüst sonuç: kapalıysa 'disabled', kütüphane yoksa 'library_missing',
-    zaman aşımında 'timeout', tüm modüller hatalıysa 'provider_errors',
-    kasa kilitliyse 'vault_locked' (Tüzük Md.4 — yaprak kapı, fail-closed).
+    zaman aşımında 'timeout', tüm modüller hatalıysa 'provider_errors'.
     `modules` yalnız test/çağıran Overrides içindir (None => gerçek keşif).
     """
-    # [Tüzük Md.4 — yaprak kasa kapısı] İlk site isteğinden ÖNCE denetlenir.
-    try:
-        require_vault_open("holehe_scanner.scan_email", unlocked=vault_unlocked)
-    except VaultLockedError:
-        # Bu modülün dürüstlük idiomu: egress yok = available=False + sebep.
-        return HoleheScanResult(requested_email=email, available=False,
-                                reason="vault_locked")
 
     if not is_enabled():
         return HoleheScanResult(requested_email=email, available=False,

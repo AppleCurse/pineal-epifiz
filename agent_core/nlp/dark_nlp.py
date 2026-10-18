@@ -1,3 +1,16 @@
+"""Dil kalıpları motoru — gömülü komut ve varsayım (presupposition) üretimi.
+
+``EmbeddedCommandEngine`` hedefin temsil sistemi (görsel/işitsel/dokunsal) ve
+profili üzerinden sıralı bir pace–komut–kapanış akışı kurar;
+``PresuppositionEngine`` verilen inançlardan varsayım zinciri üretir.
+
+Bu modül ETİK SINIRIN altındadır: manipülasyon değil, yalnız ifade biçimi
+üretir; çıktılar ``shadow_executor`` içinde "öneri" olarak taşınır ve kanıt
+yoksa hiç üretilmez.
+
+Test: ``tests/unit/test_dark_nlp_and_shadow.py``.
+"""
+
 from typing import List, Dict
 import re
 
@@ -9,20 +22,41 @@ class EmbeddedCommandEngine:
     }
     
     def generate_sequence(self, target_profile: Dict, desired_action: str) -> List[Dict]:
+        """Generate cues only when source text and a detectable cue exist."""
+        if not isinstance(target_profile, dict) or not isinstance(desired_action, str):
+            return []
+        if not desired_action.strip():
+            return []
         dominant = self._detect_rep_system(target_profile)
-        
+        if dominant == "unknown":
+            return []
+
         return [
             {'phase': 'pace', 'text': self._generate_pace(target_profile, dominant)},
             {'phase': 'command', 'text': self._embed_command(desired_action, dominant)},
             {'phase': 'closure', 'text': self._generate_closure(dominant)}
         ]
-    
+
     def _detect_rep_system(self, profile: Dict) -> str:
-        text = ' '.join(profile.get('posts', []) + [profile.get('bio', '')])
-        scores = {sys: sum(len(re.findall(rf'\b{w}', text, re.I)) for w in words) 
-                 for sys, words in self.TRIGGER_PATTERNS.items()}
-        return max(scores, key=scores.get) if scores else 'kinesthetic'
-    
+        posts = profile.get('posts', [])
+        if isinstance(posts, str):
+            posts = [posts]
+        if not isinstance(posts, (list, tuple)):
+            posts = []
+        bio = profile.get('bio', '')
+        if not isinstance(bio, str):
+            bio = ''
+        text = ' '.join([str(post) for post in posts if post] + [bio]).strip()
+        if not text:
+            return "unknown"
+        scores = {
+            system: sum(len(re.findall(rf'\b{re.escape(word)}', text, re.I)) for word in words)
+            for system, words in self.TRIGGER_PATTERNS.items()
+        }
+        if not scores or max(scores.values()) <= 0:
+            return "unknown"
+        return max(scores, key=scores.get)
+
     def _embed_command(self, action: str, system: str) -> str:
         templates = {
             'visual': f"O anı gördüğünde, {action} ve bunu fark edeceksin...",
@@ -32,7 +66,10 @@ class EmbeddedCommandEngine:
         return templates.get(system, templates['kinesthetic'])
     
     def _generate_pace(self, profile: Dict, system: str) -> str:
-        return f"Sen {system} bir insansın, detayları {system} olarak işliyorsun..."
+        return (
+            f"Sağlanan metinde {system} türünde anahtar ifadeler var; "
+            "bu tek başına kişinin bilişsel tarzını kanıtlamaz."
+        )
     
     def _generate_closure(self, system: str) -> str:
         closures = {

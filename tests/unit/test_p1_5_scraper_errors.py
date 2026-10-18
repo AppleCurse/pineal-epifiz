@@ -221,12 +221,22 @@ def test_extract_from_html_error_message_no_internal_leak():
 # TEST J: run_scraper.py — InsufficientEvidenceError üst katmana yayılır
 # ------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_scraper_error_propagates_not_swallowed():
+async def test_scraper_error_propagates_not_swallowed(monkeypatch, tmp_path):
     """
     InstagramGhostScraper hata fırlattığında run_scraper.py onu yakalamalı
     ve başarılı gibi boş JSON dönmemeli.
     """
     from agent_core.scraper import run_scraper
+
+    # [E-GÖZ2-3] CLI kapısı (strict) yetkili ortamda açılır: test GERÇEK
+    # kasa malzemesiyle yetkilendirilir (kapı devre dışı BIRAKILMAZ).
+    vault = tmp_path / "vault.json"
+    vault.write_text(
+        '{"pineal": {"vault": {"api_key": "sk-test-real-key-123"}}}',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PINEAL_VAULT_FILE", str(vault))
+    monkeypatch.delenv("PINEAL_ENV", raising=False)
 
     # scrape_async'ı direkt InsufficientEvidenceError atacak şekilde mock'la
     mock_scraper = AsyncMock()

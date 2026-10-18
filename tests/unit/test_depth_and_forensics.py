@@ -85,3 +85,56 @@ async def test_search_engine_fallback_duckduckgo(monkeypatch):
     assert outcome.status == "OK"
     assert len(outcome.results) == 1
     assert outcome.results[0].provider == "duckduckgo"
+
+
+@pytest.mark.asyncio
+async def test_paid_search_error_runs_free_fallback(monkeypatch):
+    monkeypatch.delenv("ENABLE_SEARXNG", raising=False)
+    monkeypatch.delenv("SEARXNG_BASE_URL", raising=False)
+    engine = SearchEngine(tavily_key="test-key", serpapi_key="", exa_key="")
+    engine.set_policy({"vault_locked": False})
+
+    async def fail_tavily(*args, **kwargs):
+        raise RuntimeError("provider down")
+
+    async def fallback_ddg(query, num, **kwargs):
+        return [SearchResult(
+            query=query, content="fallback result",
+            source_url="https://example.test/result", provider="duckduckgo",
+        )]
+
+    monkeypatch.setattr(engine, "_search_tavily", fail_tavily)
+    monkeypatch.setattr(engine, "_search_duckduckgo", fallback_ddg)
+
+    outcome = await engine.search("query")
+
+    assert outcome.status == "PARTIAL"
+    assert outcome.available is True
+    assert outcome.error == "PROVIDER_ERROR"
+    assert [row.provider for row in outcome.results] == ["duckduckgo"]
+
+
+@pytest.mark.asyncio
+async def test_successful_empty_paid_search_does_not_escalate(monkeypatch):
+    monkeypatch.delenv("ENABLE_SEARXNG", raising=False)
+    monkeypatch.delenv("SEARXNG_BASE_URL", raising=False)
+    engine = SearchEngine(tavily_key="test-key", serpapi_key="", exa_key="")
+    engine.set_policy({"vault_locked": False})
+    backup_called = False
+
+    async def empty_tavily(*args, **kwargs):
+        return []
+
+    async def fallback_ddg(*args, **kwargs):
+        nonlocal backup_called
+        backup_called = True
+        return []
+
+    monkeypatch.setattr(engine, "_search_tavily", empty_tavily)
+    monkeypatch.setattr(engine, "_search_duckduckgo", fallback_ddg)
+
+    outcome = await engine.search("query")
+
+    assert outcome.status == "NO_RESULTS"
+    assert outcome.available is True
+    assert backup_called is False

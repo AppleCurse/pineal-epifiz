@@ -1,3 +1,17 @@
+"""Taktik kod yorumlayıcısı (Open Interpreter köprüsü) — VARSAYILAN OLARAK KAPALI.
+
+``ENABLE_INTERPRETER=true`` iken yürütücü ajana eklenir; LLM'in ürettiği
+Python/Shell kodunu Open Interpreter üzerinden koşturur ve yapılandırılmış
+``InterpreterResult`` (prompt, code_blocks, output, status) döner.
+
+Güvenlik: ``auto_run`` ZORLA False'tur — model kendi kodunu kendi başına
+çalıştıramaz; her koşu insan onayı ister. Kimlik çözümlemesi gateway → env
+sırasını izler. Paket kurulu değilse açık hata verir; kurulu ama bozuk bir
+bağımlılık "paket yok" diye YANLIŞ etiketlenmez.
+
+Test: ``tests/test_interpreter_agent.py``, ``tests/unit/test_intervention_safety.py``.
+"""
+
 from pydantic import BaseModel, ConfigDict
 from typing import Dict, Any, List, Optional
 import asyncio

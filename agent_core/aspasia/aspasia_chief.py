@@ -1,6 +1,18 @@
-import logging
+"""ASPASIA — kullanıcıya bakan Sokratik şef katmanı (danışman, kanıt bekçisi).
 
-logger = logging.getLogger(__name__)
+``chat`` akışı: oda durumu (telemetri + kanıt zinciri) yapılandırılmış özet
+hâline getirilir (``build_telemetry_summary``), kaynak-destekli denetim bloğu
+eklenir (``_oversight_digest`` — okuma hatası sessiz boşluğa düşer, uydurmaya
+değil) ve model çağrısı gateway üzerinden yapılır.
+
+ASPASIA görev YÜRÜTMEZ; komutları ``AspasiaCommandGateway`` üzerinden
+yürütücüye devreder ve sonucu yorumlar. ``set_preferred_model`` ile model
+tercihi oda bazında değiştirilebilir.
+
+Tüketici: ``backend/api.py`` (``/api/aspasia/*``).
+Test: ``tests/unit/test_aspasia_chief_layer.py``, ``tests/integration/test_aspasia_chief.py``.
+"""
+
 from typing import Any, Optional
 from pydantic import BaseModel
 
@@ -76,10 +88,8 @@ class AspasiaChief:
             )
             if digest:
                 return digest
-        except Exception as exc:
-            logger.warning(
-                "[_oversight_digest] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
-            )
+        except Exception:
+            pass
         return ""
 
 
@@ -285,10 +295,8 @@ Cevabın kısa ve net olsun: sonuç, sonra gerekiyorsa neden ve tek bir sonraki 
                 if not decision.kept:
                     final_msg = decision.message
                     assessment = "filtered_generic"
-            except Exception as exc:  # filtre asla sohbeti düşürmez
-                logger.warning(
-                    "[chat] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
-                )
+            except Exception:  # filtre asla sohbeti düşürmez
+                pass
         except Exception as e:
             # Fallback Aspasia Response
             final_msg = (

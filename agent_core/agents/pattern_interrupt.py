@@ -1,3 +1,15 @@
+"""Kalıp kırma ve mesaj üretimi — kanıta bağlı, uydurmasız.
+
+Analiz çıktılarından EN SPESİFİK gözlemi (mikro sinyal, zamansal sinyal, somut
+ayrıntı) seçer ve senaryo yanıtı + açılış mesajı üretir. Ölçüm yoksa İFADE
+UYDURULMAZ: ``_unavailable(reason)`` dürüst ret döner.
+
+``shadow_executor`` (NLP katmanları) bu ajanın ürettiği temel mesajı
+zenginleştirir; zenginleştirme başarısızsa temel mesaj korunur.
+
+Test: ``tests/unit/test_dark_nlp_and_shadow.py``, ``tests/unit/test_intervention_safety.py``.
+"""
+
 import json
 from typing import Dict, List
 
@@ -5,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from agent_core.domain.message_context_models import MessageEvidenceContext
 from agent_core.services.upstream_findings import upstream_findings_block
+from agent_core.services.confidence import normalize_confidence
 
 
 class ScenarioResponse(BaseModel):
@@ -16,7 +29,7 @@ class ScenarioResponse(BaseModel):
 class GeneratedMessage(BaseModel):
     message: str
     strategy: str
-    confidence: float
+    confidence: float = Field(ge=0.0, le=1.0)
     compliance_score: float  # 0.0 - 100.0 (Kutsal Kural ihlal skoru)
     dialogue_tree: List[ScenarioResponse]
     # [022] fix: fail-closed default'lar. Model doğrudan kurulursa (LLM sonucu
@@ -134,6 +147,21 @@ class PatternInterrupt:
         result = await llm_gateway.query_json_chain(
             prompt, GeneratedMessage, task="dialogue", agent_name="pattern_interrupt"
         )
+        if not isinstance(result, GeneratedMessage):
+            raise TypeError("pattern_interrupt_schema_mismatch")
+        raw_message = getattr(result, "message", "")
+        message = raw_message if isinstance(raw_message, str) else ""
+        confidence, confidence_valid = normalize_confidence(getattr(result, "confidence", None))
+        if not message.strip():
+            return self._unavailable(
+                "empty_generated_message",
+                context_id=decision_context.context_id if decision_context else None,
+            )
+        if not confidence_valid or confidence <= 0.0:
+            return self._unavailable(
+                "invalid_model_confidence" if not confidence_valid else "model_confidence_zero",
+                context_id=decision_context.context_id if decision_context else None,
+            )
         if decision_context is not None:
             allowed_ids = {item.evidence_id for item in decision_context.items}
             used_ids = result.evidence_ids_used
@@ -142,7 +170,7 @@ class PatternInterrupt:
                     "unsupported_canonical_evidence_reference",
                     context_id=decision_context.context_id,
                 )
-            if result.message.strip() and not used_ids:
+            if message.strip() and not used_ids:
                 return self._unavailable(
                     "canonical_message_missing_evidence_reference",
                     context_id=decision_context.context_id,
@@ -156,6 +184,7 @@ class PatternInterrupt:
 
         # The LLM response has been parsed, and canonical references (when
         # present) have passed a deterministic allow-list check.
+        result.confidence = confidence
         result.data_confidence = True
         result.fallback_reason = None
         return result

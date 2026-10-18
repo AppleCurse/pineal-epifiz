@@ -16,6 +16,8 @@ from typing import Any
 from agent_core.domain.evidence_models import EvidenceItem, EpistemicType
 from agent_core.domain.pillar_models import EvidenceStatus
 from agent_core.domain.pillar_wave2_models import FullPillarBundle
+# [P0 · DENETİM 2026-10-16] Kanıt tipi ayrımı: corpus beyanı (gönderi ↔ snippet).
+from agent_core.domain.content_basis import content_basis
 from agent_core.engines.frequency_engine import parse_timestamp
 
 
@@ -102,6 +104,15 @@ def _profile_scope(target_profile: dict[str, Any] | None) -> dict[str, Any]:
         "time_window": window,
         "time_window_note": "Non-empty posts with aligned timestamps only; undated text may also be in the corpus.",
         "provenance_note": "Only source-provided references are carried; no missing source IDs are synthesized.",
+        # [P0 · DENETİM 2026-10-16] Corpus'un ne olduğu beyan edilir: gerçek
+        # platform gönderisi mi, arama sonucu (snippet) mi, karışık mı?
+        # "posts" alanı artık yalnız platform gönderilerini taşır.
+        "content_basis": content_basis(profile),
+        "search_snippet_count": len(
+            profile.get("search_snippets")
+            if isinstance(profile.get("search_snippets"), (list, tuple))
+            else []
+        ),
     }
 
 
@@ -148,15 +159,37 @@ def adapt_pillar_bundle(
     bundle: FullPillarBundle | dict[str, Any] | None,
     *,
     target_profile: dict[str, Any] | None = None,
+    extra_items: list[EvidenceItem | dict[str, Any]] | None = None,
 ) -> list[EvidenceItem]:
     """Adapt a ``FullPillarBundle`` without adding interpretation.
 
     The resulting list is stable for identical inputs. ``computed_at`` is not
     part of evidence identity, so rerunning the same deterministic analysis does
     not create new IDs solely because the wall clock changed.
+
+    ``extra_items`` (P1 · 2026-10-16): profil derin taramasının ürettiği
+    **gerçek** kanıtlar (yeteneğin ``make_evidence`` çıktısı) burada kanonik
+    kanıt listesine EKLENİR — böylece ``forensic_evidence`` ve
+    ``evidence_timeline`` zincirine girer. Geçersiz/eksik alanlı kayıtlar
+    sessizce yutulmaz: ``ValidationError`` fırlatılır (fail-closed).
     """
+    items: list[EvidenceItem] = []
+
+    # [P1] Dışarıdan gelen GERÇEK kanıtlar önce eklenir: pillar paketi boş
+    # olsa bile kanıt kaybolmaz (bundle None → aşağıda erken dönüş YOK).
+    for raw in extra_items or ():
+        if isinstance(raw, EvidenceItem):
+            items.append(raw)
+        elif isinstance(raw, dict):
+            items.append(EvidenceItem.model_validate(raw))
+        else:
+            raise TypeError(
+                "extra_items yalnız EvidenceItem veya sözlük kabul eder: "
+                f"{type(raw).__name__}"
+            )
+
     if bundle is None:
-        return []
+        return items
     if isinstance(bundle, FullPillarBundle):
         typed = bundle
     elif isinstance(bundle, dict):
@@ -165,7 +198,6 @@ def adapt_pillar_bundle(
         raise TypeError("bundle must be FullPillarBundle, dict, or None")
 
     profile_scope = _profile_scope(target_profile)
-    items: list[EvidenceItem] = []
 
     def add(
         *,

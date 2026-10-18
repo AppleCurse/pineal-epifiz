@@ -1,3 +1,18 @@
+"""Alan modelleri — görev, profil ve oturum verisinin TİPLİ sözleşmesi.
+
+Kanıt zinciri kayıtları (``AgentRun``), üç kişilik lensinin çıktıları
+(``PassionProfile``, ``FrictionProfile``, ``CognitiveStyle``), köprü
+(``AuthenticBridge``), 360° birleşik profil (``HolisticProfile``), görev anlık
+görüntüsü (``TaskSnapshot``) ve ASPASIA oturumu (``AspasiaSession``) burada
+tanımlanır.
+
+Kural: ajan çıktıları sözlük değil MODEL döner; alan eklemek şema değişikliğidir
+ve testlerle kilitlenir (``extra="forbid"`` kullanılan yerlerde sessiz alan
+şişmesi imkânsızdır).
+
+Tüketici: neredeyse tüm ajanlar, ``task_executor``, ``backend/api.py``.
+"""
+
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime, timezone
@@ -20,12 +35,17 @@ class AgentRun(BaseModel):
     completed_at: Optional[datetime] = None
     input_summary: Dict[str, Any] = {}
     output_summary: Dict[str, Any] = {}
-    confidence: Optional[float] = None
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     evidence_ids: List[str] = []
     call_ids: List[str] = []
     warnings: List[str] = []
     error_code: Optional[str] = None
     error_message: Optional[str] = None
+    #: [SORUMLULUK ZİNCİRİ] Koşunun mührü. Doğrulanmış ÇIKTILAR
+    #: evidence_chain'de taşınır; başarısız/düşük-güven koşuların dürüst
+    #: izi (attempted/blockers/next_action) BURADADIR — kanıt zinciri
+    #: uydurma kanıtla doldurulmaz (test_deferred_agent_evidence_gate).
+    responsibility: Optional[Dict[str, Any]] = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -38,7 +58,7 @@ class PassionProfile(BaseModel):
     flow_triggers: List[str] = []
     sentiment_polarity: float = 0.0  # -1.0 (karamsar) ile +1.0 (coşkulu) arası
     evidence_quotes: List[str] = []
-    confidence: float = 0.0
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     data_confidence: bool = False
     fallback_reason: Optional[str] = "unavailable"
 
@@ -50,7 +70,7 @@ class FrictionProfile(BaseModel):
     stress_triggers: List[str] = []
     boundary_signals: List[str] = []
     evidence_quotes: List[str] = []
-    confidence: float = 0.0
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     data_confidence: bool = False
     fallback_reason: Optional[str] = "unavailable"
 
@@ -62,7 +82,7 @@ class CognitiveStyle(BaseModel):
     complexity_level: str = "unknown"  # sade, teknik, kavramsal
     humor_style: Optional[str] = None  # hiciv, ironi, kuru mizah, yok
     social_orientation: str = "unknown"  # toplulukçu, bağımsız, gözlemci
-    confidence: float = 0.0
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     data_confidence: bool = False
     fallback_reason: Optional[str] = "unavailable"
 
@@ -76,7 +96,7 @@ class AuthenticBridge(BaseModel):
     authentic_opening_topic: str = ""
     conversation_starter_rationale: str = ""
     suggested_opening_message: str = ""
-    confidence: float = 0.0
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     data_confidence: bool = False
     fallback_reason: Optional[str] = "unavailable"
 
@@ -90,7 +110,7 @@ class HolisticProfile(BaseModel):
     cognitive: Optional[CognitiveStyle] = None
     bridge: Optional[AuthenticBridge] = None
     verified_claims: List[Dict[str, Any]] = []
-    overall_confidence: float = 0.0
+    overall_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = ConfigDict(extra="allow")
@@ -119,6 +139,16 @@ class TaskSnapshot(BaseModel):
     shadow_profile: Optional[Dict[str, Any]] = None
     osint_footprint: Optional[Dict[str, Any]] = None
     telemetry: Optional[Dict[str, Any]] = None
+    #: [P0 · DENETİM 2026-10-16] Kanal durumu defteri: her sensör/araştırma
+    #: "ok" | "not_run(+reason)" | "failed(+reason)" olarak kaydedilir. Boş
+    #: liste dönmek YASAK: "bulunamadı" ile "hiç çalışmadı" ayrımı buradan görünür.
+    channel_status: List[Dict[str, Any]] = []
+    #: [DESTEK AKIŞI] Desteğe açılan talepler (pending → resolved).
+    #: Ekleyici JSON alanı: eski istemciler için uyumlu.
+    support_requests: List[Dict[str, Any]] = []
+    #: [RESUME] Her tamamlanan ajanın input_data'ya yuttuğu anahtarlar —
+    #: görev kaldığı yerden devam ederken geri yüklenir.
+    ingested_outputs: Dict[str, Dict[str, Any]] = {}
 
     # Pineal deterministic 7-Pillar outputs
     frequency_map: Optional[Dict[str, Any]] = None

@@ -155,7 +155,10 @@ def test_unknown_quota_is_never_unlimited():
         ("openai/gpt-5.6-luna", "nous-research", (0.20, 1.20)),
         ("anthropic/claude-sonnet-5", "nous-research", (1.60, 8.00)),
         ("google/gemini-3.7-flash", "openrouter", (0.75, 3.75)),
-        ("openai/gpt-5.6-sol-pro", "openrouter", (2.0, 10.0)),
+        # [2026-10-14 · canlı teyit] CI'ın canlı OpenRouter çapraz kontrolü
+        # $2/$10 promo'sunun sona erdiğini gösterdi: $4/$20 (iki ardışık koşu).
+        # Bu satır fiyatın BEŞİNCİ kopyasıdır; pinlerle birlikte güncellenir.
+        ("openai/gpt-5.6-sol-pro", "openrouter", (4.0, 20.0)),
     ],
 )
 def test_effective_prices_match_decision_matrix(model, provider, expected):

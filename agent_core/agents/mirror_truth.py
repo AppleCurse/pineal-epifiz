@@ -1,18 +1,33 @@
+"""Ayna (Mirror of Truth) — kullanıcının çekirdek frekansı ile yüzey personası.
+
+Kullanıcının özel ritüelleri, gece listeleri ve gizli imrenmeleri üzerinden
+"çekirdek frekans"ı çıkarır, yüzeydeki persona ile hizalanma skorunu
+(``MirrorReflection``) üretir. Girdi yokluğunda skor uydurulmaz; dürüst
+``fallback_reason`` yazılır.
+
+Yöntem deterministiktir (arama/etiketleme); LLM yalnız anlatıya katkı verir.
+Diğer ajanların doğrulanmamış bulguları prompt'a yalnız
+``agent_core.services.upstream_findings`` üzerinden girer.
+
+Tüketici: ``agent_core/task_executor.py``.
+"""
+
 from typing import Any, Dict, List
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 import logging
 
 from agent_core.services.upstream_findings import upstream_findings_block
+from agent_core.services.confidence import normalize_confidence
 
 
 class MirrorReflection(BaseModel):
     user_core_frequency: str
     surface_persona: str
-    alignment_score: float
+    alignment_score: float = Field(ge=0.0, le=1.0)
     authentic_anchors: List[str]
-    confidence: float = 0.0
-    data_confidence: bool = True
-    fallback_reason: str | None = None
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    data_confidence: bool = False
+    fallback_reason: str | None = "unavailable"
 
     model_config = ConfigDict(extra="forbid")
 
@@ -28,8 +43,11 @@ class MirrorOfTruth:
     async def execute(self, input_data: Dict[str, Any]) -> MirrorReflection:
         log = logging.getLogger(__name__)
 
-        user_data = input_data.get("user_profile") or {}
-        user_ctx = input_data.get("user_context") or {}
+        input_data = input_data if isinstance(input_data, dict) else {}
+        raw_user_data = input_data.get("user_profile")
+        user_data = raw_user_data if isinstance(raw_user_data, dict) else {}
+        raw_user_ctx = input_data.get("user_context")
+        user_ctx = raw_user_ctx if isinstance(raw_user_ctx, dict) else {}
         sacred_rules = input_data.get("sacred_rules", "")
     # [BOSS-9] Diğer ajanların doğrulanmamış bulguları prompt'a referans olarak girer
     # (tek kaynak: agent_core.services.upstream_findings); boşsa metin boş kalır.
@@ -52,6 +70,22 @@ class MirrorOfTruth:
 
         core_freq = self._extract_core_frequency(merged_user)
         anchors = self._find_anchors(merged_user)
+        no_evidence_markers = {"", "-", "—", "…", "...", "?", "n/a", "na", "none", "unknown", "bilinmiyor", "yok"}
+        has_user_evidence = any(
+            isinstance(item, str) and item.strip().lower() not in no_evidence_markers
+            for values in merged_user.values()
+            for item in values
+        )
+        if not has_user_evidence:
+            return MirrorReflection(
+                user_core_frequency=core_freq,
+                surface_persona="bilinmiyor_veri_yok",
+                alignment_score=0.0,
+                authentic_anchors=[],
+                confidence=0.0,
+                data_confidence=False,
+                fallback_reason="no_user_evidence",
+            )
 
         prompt = (
             "Sen 'Mirror of Truth' ajanısın. "
@@ -79,19 +113,28 @@ class MirrorOfTruth:
                 task="dialogue",
                 agent_name="mirror_truth",
             )
+            alignment, alignment_valid = normalize_confidence(result.alignment_score)
             has_reflection = bool(
                 result.surface_persona
-                and result.surface_persona != "bilinmiyor_llm_kapali"
+                and result.surface_persona not in {"bilinmiyor_llm_kapali", "bilinmiyor_veri_yok"}
                 and result.authentic_anchors
-                and result.alignment_score > 0.0
+                and alignment_valid
+                and alignment > 0.0
             )
-            raw_conf = float(getattr(result, "confidence", 0.0) or 0.0)
-            conf = max(raw_conf, 0.75) if has_reflection else raw_conf
-            has_valid_evidence = has_reflection and (conf > 0.0)
+            conf, confidence_valid = normalize_confidence(getattr(result, "confidence", None))
+            has_valid_evidence = has_user_evidence and has_reflection and confidence_valid and conf > 0.0
+            reason = (
+                None if has_valid_evidence
+                else "invalid_model_confidence" if not confidence_valid
+                else "invalid_model_alignment" if not alignment_valid
+                else "insufficient_grounded_evidence" if not has_reflection
+                else "model_confidence_zero"
+            )
             return result.model_copy(update={
-                "confidence": conf,
+                "alignment_score": alignment if has_valid_evidence else 0.0,
+                "confidence": conf if has_valid_evidence else 0.0,
                 "data_confidence": has_valid_evidence,
-                "fallback_reason": None if has_valid_evidence else "insufficient_grounded_evidence",
+                "fallback_reason": reason,
             })
         except Exception as exc:
             log.warning(

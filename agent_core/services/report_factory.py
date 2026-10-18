@@ -150,7 +150,14 @@ def _line_text(entry: Any) -> str:
     )
 
 
-def render_markdown(title: str, subject: str, created_at: str, entries: list[Any], stats: dict[str, Any]) -> str:
+def render_markdown(
+    title: str,
+    subject: str,
+    created_at: str,
+    entries: list[Any],
+    stats: dict[str, Any],
+    channels: list[dict[str, Any]] | None = None,
+) -> str:
     head = [
         f"# {title}",
         "",
@@ -166,7 +173,27 @@ def render_markdown(title: str, subject: str, created_at: str, entries: list[Any
         "",
     ]
     body = [_line_text(entry) for entry in entries] or ["- (kanıt satırı yok)"]
-    return "\n".join(head + body) + "\n"
+    lines = head + body
+    # [P0 · DENETİM 2026-10-16] Koşmayan kanallar raporda da listelenir:
+    # "kanıt yok" ile "kanal hiç çalışmadı" ayrımı belgeye taşınır.
+    blocked = [
+        row for row in (channels or [])
+        if isinstance(row, dict) and str(row.get("status") or "") in ("not_run", "failed")
+    ]
+    if blocked:
+        lines += [
+            "",
+            "## Koşmayan kanallar",
+            "",
+            "Bu kanallar kanıt üretmedi; sebep raporda aynen yazılır.",
+            "",
+        ]
+        for row in blocked:
+            lines.append(
+                f"- `{row.get('channel', '?')}` — {row.get('status', 'not_run')}"
+                f" · {row.get('reason') or 'sebep yok'}"
+            )
+    return "\n".join(lines) + "\n"
 
 
 # ------------------------------------------------------------------- PDF
@@ -348,6 +375,7 @@ def build_report(
     formats: Iterable[str] = ("markdown", "pdf"),
     out_dir: Path | None = None,
     created_at: datetime | None = None,
+    channels: list[dict[str, Any]] | None = None,
 ) -> ReportPackage:
     """Kanıt satırlarından rapor paketi üretir (markdown + istenen formatlar).
 
@@ -407,7 +435,8 @@ def build_report(
     # markdown: her zaman
     markdown_path = target_dir / f"{stem}.md"
     markdown_path.write_text(
-        render_markdown(clean_title, subject, created, entries, stats), encoding="utf-8"
+        render_markdown(clean_title, subject, created, entries, stats, channels=channels),
+        encoding="utf-8",
     )
     _record("markdown", markdown_path)
 

@@ -25,10 +25,6 @@ Sözleşme (sahte veri YASAK):
 """
 from __future__ import annotations
 
-import logging
-
-logger = logging.getLogger(__name__)
-
 import asyncio
 import json
 import os
@@ -116,12 +112,23 @@ async def main() -> None:
     # Operatör CLI'si kasa bilmez; omurga politikası payload ile aynıdır.
     try:
         executor.search_engine.set_policy(payload.get("policy") or {})
-    except Exception as exc:
-        logger.warning(
-            "[main] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
-        )
+    except Exception:
+        pass
+    # [DESTEKLE DEVAM] stdin'de "resume" anahtarı (önceki TaskStatus JSON'u)
+    # varsa görev KALDIĞI YERDEN devam eder (tamamlanan ajanlar atlanır,
+    # destek talepleri çözülür). "resume" ASLA input_data'ya girmez.
+    resume_blob = req.get("resume") if isinstance(req, dict) else None
+    resume_from = None
+    if isinstance(resume_blob, dict):
+        try:
+            from agent_core.task_executor import TaskStatus as _TaskStatus
+
+            resume_from = _TaskStatus.model_validate(resume_blob)
+        except Exception as exc:
+            _log("WARNING", f"resume bloğu geçersiz, yok sayıldı: {exc}")
+            resume_from = None
     try:
-        status = await executor.execute_task(payload, task_id)
+        status = await executor.execute_task(payload, task_id, resume_from=resume_from)
     except Exception as e:
         _log("ERROR", f"executor hatası: {type(e).__name__}: {e}")
         _emit({"status": "failed", "error": f"{type(e).__name__}: {e}"[:300]}, 4)

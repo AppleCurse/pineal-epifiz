@@ -6,6 +6,12 @@ Röntgen bulguları (ölçüldü):
         "Kanıtlar incelendi / Fotoğraf analiz edildi / Doğal profil / Temiz"
         gibi UYDURMA başarı metinleri basıyordu; ASPASIA sohbeti 4 kurgu
         mesajla (Aegean shell entities senaryosu) açılıyordu.
+        [P6 · 2026-10-18] `UnifiedCompactPanel.svelte` ÜRETİME GİRMEYEN (ölü)
+        bir bileşendi: PR #143'te yenilen arayüzde hiç import edilmiyordu ve
+        2026-10-18'de silindi. Bu dosyadaki B10 kontratları artık CANLI
+        frontend ağacına uygulanır — aksi hâlde kontrat, üretime hiç girmeyen
+        bir dosyayı koruyup yeşil görünürdü (testin kendisi "çalışır gibi"
+        yanan yer olurdu).
   B12 — App.svelte: `telemetryEvents` hiç render edilmiyordu, NeuralTelemetryBoard
         import edilip basılmıyordu, fetchTelemetry/fetchTasks/deleteTask ölüydü,
         hata çerçevesi "OPERASYON TAMAMLANDI" diye INFO yazılıyordu.
@@ -19,17 +25,21 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-PANEL = Path("frontend/src/components/UnifiedCompactPanel.svelte")
 APP = Path("frontend/src/App.svelte")
 COCKPIT = Path("frontend/src/components/AtlasPinealCockpit.svelte")
+FRONTEND_SRC = Path("frontend/src")
 
 #: Ölçüm yokluğunun TEK metni — bileşendeki `INSUFFICIENT_EVIDENCE` ile aynı.
 #: (Statik kontrat testi olduğu için burada dize olarak tekrarlanır.)
 INSUFFICIENT_MARKER = "YETERSİZ KANIT"
 
 
-def _panel() -> str:
-    return PANEL.read_text(encoding="utf-8")
+def _live_frontend_text() -> str:
+    """CANLI frontend ağacının tamamı (ölü bileşenler silindi)."""
+    return "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted(FRONTEND_SRC.rglob("*.svelte"))
+    )
 
 
 def _app() -> str:
@@ -74,32 +84,46 @@ def _code_lines(source: str) -> list[str]:
 
 
 def test_dead_run_key_is_gone():
-    """`depth_forensics` anahtarını backend yazmıyor: fallback ölüydü."""
-    source = _panel()
-    assert "runs['depth_forensics']" not in source
-    assert "runs[agent.id]" in source
+    """`depth_forensics` anahtarını backend yazmıyor: fallback ölüydü.
+
+    Sözleşme artık CANLI ağaca uygulanır (ölü panel silindi).
+    """
+    from agent_core.services.agent_status_tracker import AGENT_DEFINITIONS
+
+    backend_ids = {agent["id"] for agent in AGENT_DEFINITIONS}
+    assert "depth_analyst" in backend_ids
+    assert "depth_forensics" not in backend_ids
+    source = _live_frontend_text()
+    assert "depth_forensics" not in source, (
+        "ölü koşu anahtarı canlı arayüzde kullanılıyor — ekranda hep boş kalır"
+    )
 
 
 def test_failure_states_are_not_rendered_as_success():
-    """Başarısız üretim, uydurma başarı metniyle bastırılamaz."""
-    source = _panel()
+    """Başarısız üretim, uydurma başarı metniyle bastırılamaz (CANLI ağaç)."""
+    source = _live_frontend_text()
     for fake in ("'Kanıtlar incelendi.'", "'Fotoğraf analiz edildi.'", "'Klasik'", "'Doğal profil'", "'Temiz'"):
         assert fake not in source, f"uydurma başarı metni hâlâ ekranda: {fake}"
-    # Hata hâli açıkça etiketlenmeli.
-    assert "ÜRETİLEMEDİ" in source
-    assert "GÖRSEL ANALİZ YOK" in source
-    assert "GÖLGE KATMANI VERİSİZ" in source
-    assert "OSINT VERİSİ YOK" in source
-    assert "veri yok" in source
+    # Ölçüm yokluğu bir DURUM olarak işaretlenmeli (canlı kokpit).
+    code = _cockpit_code()
+    assert INSUFFICIENT_MARKER in code, "YETERSİZ KANIT işareti yok"
+    assert "ÜRETİLEMEDİ" in source, "üretilemeyen durum açıkça etiketlenmiyor"
 
 
 def test_aspasia_chat_does_not_open_with_fabricated_scenario():
-    source = _panel()
+    """ASPASIA sohbeti kurgu senaryoyla açılmaz (canlı kokpit)."""
+    source = _live_frontend_text()
     for fake in ("Aegean shell", "AIS spoofing", "Risk score: 0.78", "Cyprus → Luxembourg"):
         assert fake not in source, f"kurgu sohbet içeriği: {fake}"
-    # Başlangıç boş; tek sistem satırı ne yapılacağını söyler.
-    assert "ASPASIA hazır" in source
-    assert re.search(r"let messages:[^=]*= \[\s*\n\s*\{ sender: 'SİSTEM'", source)
+    # Başlangıç TEK dürüst sistem satırı; sahte senaryo mesajı yok.
+    cockpit = _cockpit()
+    assert "let chatMessages" in cockpit
+    init = cockpit.split("let chatMessages", 1)[1].split("];", 1)[0]
+    seeded = [ln for ln in init.splitlines() if ln.strip().startswith("{ ts: nowTime()")]
+    assert len(seeded) == 1, (
+        f"ASPASIA sohbeti sahte senaryoyla açılıyor: {len(seeded)} mesaj"
+    )
+    assert "Sistem çevrimiçi" in seeded[0]
 
 
 def test_app_renders_telemetry_board_and_feeds_it():
@@ -183,6 +207,20 @@ def test_cockpit_does_not_fabricate_zero_metrics():
     # Ve `0`'ın kayıp sayılmaması kuralı kodda YAZILI.
     assert "Number.isFinite" in code, "hasEvidence sayı kuralı kaybolmuş"
     assert "function hasEvidence(" in code
+
+
+def test_shadow_ui_requires_explicit_trait_score_measurement():
+    """Gölge katmanı yalnız ÖLÇÜLMÜŞ özellik skorlarını gösterir (canlı ağaç)."""
+    atlas = Path("frontend/src/components/AtlasPinealCockpit.svelte").read_text(encoding="utf-8")
+    assert "trait_scores_measured === true" in atlas
+    assert "dark_profile?.narcissism" in atlas
+    live = _live_frontend_text()
+    assert "followerAudit.follower_count ?? 0" not in live, (
+        "takipçi sayısı ölçülmediyse 0 gibi gösteriliyor (uydurma sıfır)"
+    )
+    assert "hasEvidence(followerAudit.follower_count)" in live, (
+        "takipçi sayısı ölçüm kapısından geçmiyor (olmayan sayı 0 gibi görünür)"
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────

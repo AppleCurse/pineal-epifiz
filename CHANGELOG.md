@@ -1,5 +1,583 @@
 # Changelog
 
+## Unreleased — 2026-10-18 — P6: ölü kod / "çalışır gibi yapan" tespiti + düzeltmesi
+
+- **Yeni dedektör (gece bekçisi):** `scripts/dead_code_audit.py` — beş AST tabanlı
+  denetim: **C1** hiç import edilmemiş modül · **C1b** yalnız testlerden import
+  edilen modül · **C2** kendi gövdesi dışında referanssız ≥12 satırlık fonksiyon ·
+  **C3** kayıtlı ama çağrılmayan ajan · **C4** kayıtlı ama **düşürülemeyen**
+  yetenek · **C5** giriş noktalarından **ulaşılamayan** frontend dosyası.
+  CI'ya adım olarak eklendi (`ci.yml` → "Dead code guard"): bulgu varsa **exit 1**.
+- **Ölü P0 kopyası silindi:** `DeepScanResult.summary_row`
+  (`agent_core/services/profile_deep_scan.py:266`, 26 satır) hiç çağrılmıyordu;
+  canlı karşılığı `deep_profile_resolver._summary_row()` (P1'de değiştirilmiş).
+- **12 ölü frontend bileşeni silindi (4779 satır):** `UnifiedCompactPanel` (1990),
+  `CockpitEntry` (685), `PinealEye` (440), `LcdLogin` (501), `OrganikIrisCanvas` (228),
+  `irisRenderer.ts` (251) ve `diesel/*` + `PillarFeed` — PR #143'te yenilen
+  arayüzde **hiç import edilmiyordu** (ekranda asla görünmüyordu).
+  `svelte-check` 0/0 + `vite build` ✓ + paket hash'i **değişmedi** (kod zaten
+  pakette değildi).
+- **En kritik bulgu — testler de "çalışır gibi"ydi:** **6 test dosyası** ölü paneli
+  koruyordu (yeşil test, üretimde hiçbir şey garantisi yok). Hepsi **canlı yüzeye**
+  bağlandı: `test_ui_honesty_contract.py`, `test_frontend_agent_model_contract.py`,
+  `test_wiring_frontend.py`, `test_routing_shadows.py`, `test_aspasia_chief_layer.py`,
+  `test_p1_profile_routing.py`, `tests/e2e/test_cross_stack_runtime.py`.
+- **`generate_routing_shadows.py`:** Svelte hedefi (ölü panel) **opsiyonel** hâle
+  geldi — dosya yoksa üretici çökmez, RUNBOOK gölgesi (canlı) üretilmeye devam eder.
+- **AJAN KATMANI ÖLÇÜMÜ (kullanıcının sorusu):** `agent_core/agents/` içinde
+  **ölü ajan dosyası YOK** — 13 ajanın 13'ü de kayıtlı ve çağrılabilir
+  (10'u router üzerinden dinamik, 3'ü doğrudan). Kayıt defterindeki **26
+  yeteneğin 26'sı** da düşürülebilir. Kanıt: `scripts/dead_code_audit.py` → C3=0, C4=0.
+- **Yeni test:** `tests/unit/test_dead_code_audit.py` (**11 test**) — durumu kilitler
+  ve **revert-doğrulaması** içerir (geçici ölü modül/bileşen geri konunca
+  dedektör kırmızıya döner; silinen 12 bileşen geri gelirse test kırmızı).
+- **Ölçüm:** `pytest tests -q` → **2798 passed, 6 skipped** · `ruff check .` →
+  **All checks passed!** · `audit_regression.py` → **✓ BEKÇİ GEÇTİ** ·
+  `dead_code_audit.py` → **modül=0 test-only=0 fonksiyon=0 ajan=0 yetenek=0
+  frontend=0** · `npm run check` → 0/0 · `npm run build` → ✓ · envanter **742 → 732**
+  dosya.
+- **Kullanıcı kararına bırakılan iki ürün boşluğu** (ölü kod DEĞİL, raporda
+  kayıtlı): canlı arayüz `/api/aspasia/command` ucunu çağırmıyor (backend ucu
+  ayakta, README'de dokümante) · çağrı kimliği bağlayıcısı `_provenance.call_id`
+  yerine canlı `run.call_ids` alanından geliyor.
+- **Rapor:** `docs/reports/OLU_KOD_DENETIMI_2026-10-18.md`.
+
+## Unreleased — 2026-10-18 — P5: Faz 2 kapanış denetimi (18 bulgunun kilidi)
+
+- **Yeni düzeltme yok:** Denetimin (2026-10-16) **18** bulgusunun tamamı P0→P4'te
+  kapatılmıştı ve **bugün de** kapalı — her biri güncel kodda dosya:satır kanıtıyla
+  yeniden doğrulandı (`docs/reports/DUZELTME_FAZ2_KAPANIS_2026-10-18.md`).
+- **Yeni teslim — bulgu kilidi:** `tests/unit/test_p5_closing_audit.py` (**17 test**).
+  Her test bir **kod değişmezi** korur: 1 kopuk kablo · 2 snippet≠gönderi ·
+  3/3b socid omurgada · 4/4b maigret+holehe omurgada (reddedilen tarama mühürlü) ·
+  5b X sensörü boş havuzda `no_session_pool` · 6 Lilith CLI-only + ana hat gateway'i ·
+  7 çapraz profil deterministik (ağırlık toplamı 1.0, "kapsam") · 8/9/10 kapılar dürüst ·
+  11 UI'da "profil bağlandı" yok · 12/12b model matrisi + M-1 · 14/B-3 telemetri sebebi ·
+  B-4 `accounts.db` depo kökünü kirletmiyor.
+- **Ölçüm (PR #143 sonrası, `main` @ `7212657`):** `pytest tests -q` → **2765 passed,
+  6 skipped** · `ruff check .` → **All checks passed!** · `audit_regression.py` →
+  **✓ BEKÇİ GEÇTİ** · revert-doğrulama **P0 7/7 · P1 6/6 · P2 3/3 · P3 4/4 · P4 5/5 = 25/25**.
+- **Kapı tablosu ölçümü (mock'suz):** kasa kilitliyken 26/26 yetenek
+  `policy_allowed=False · vault_locked`; kasa açıkken 22 `gate_disabled` + 4 izinli →
+  **"kapalı"nın sebebi kaybolmuyor**.
+- **CI'da ölçülen fiyat salınımı:** PR #144'ün ilk `backend` koşusu **fiyat drift
+  bekçisi** yüzünden kırıldı (`deepseek-v4-pro` canlı $0.2088/$0.4176 — ölçülmüş
+  durum değil). Bekçi doğru davrandı; yeni okuma **ölçüldüğü** için
+  `OBSERVED_OPENROUTER_STATES` kümesine koşu kimliğiyle eklendi
+  (`39081581447`). Bilinmeyen fiyat hâlâ `FAIL` eder.
+- **Ortam notu:** platform çalışma ağacını sıfırladı (`.venv`/`node_modules` silindi) →
+  venv yeniden kuruldu (`ruff 0.17.1` doğrulandı).
+
+## Unreleased — 2026-10-16 — P4: dokümantasyon = kod (ölçülen ↔ DOĞRULANMADI)
+
+- **Denetim tespiti güncellendi:** "holehe ana hattan erişilemez" tespiti **P1
+  kablo düzeltmesiyle geçersizleşti**. Ölçüm (mock'suz prob): biyografideki
+  e-posta → `connected_emails` dolu → `sensor.identity.holehe` çağrılıyor →
+  kasa kilitliyken `policy:vault_locked` ile **dürüstçe** duruyor. Canlı tarama
+  **DOĞRULANMADI** (egress kapalı).
+- **Kod düzeltmesi (1 satır):** reddedilen holehe taraması artık **mühürlü
+  kayda** bağlanıyor (maigret ile simetri). Öncesinde profil yalnız
+  `email_scan.reason` taşıyordu; reddedilen tarama zincirde iz bırakmıyordu.
+  Reddedilen tarama kanıt **uydurmuyor** (giriş sayısı 0).
+- **README (md.13):** "ölçülen çalışma ↔ DOĞRULANMADI" durum tablosu eklendi —
+  11 ölçülebilir satır, 9 **sebebiyle** DOĞRULANMADI satırı.
+- **README_TECHNICAL (md.14):** OSINT bölümüne holehe'nin ölçülmüş durumu +
+  kapı listesi; Lilith başlığı **CLI-ONLY** olarak işaretlendi.
+- **RUNBOOK (md.15):** M-3 (9Router kasa anahtarında **`sk-pineal` önek şartı**)
+  ve M-1 (9Router kipinde **`dialogue_manager` kanonik zinciri yok** → bulut
+  model-id'lerine düşer) notları eklendi.
+- **Doğrulanan (düzeltme yok) README iddiaları:** 12 `beacon-*` servisi ✓ ·
+  13 görev ajanı ✓ · `localhost:8000` ✓ · tüm dosya yolu referansları ✓.
+- **Test:** 13 yeni test (12 doküman-kod kilidi + 1 kanıt) · **5/5
+  revert-doğrulama PASS** (`scripts/revert_verification_p4.py`).
+- **Ölçüm:** `pytest tests -q` → **2753 passed, 6 skipped** · `ruff check .` →
+  **All checks passed!** · `audit_regression.py` → **✓ BEKÇİ GEÇTİ**.
+
+## Unreleased — 2026-10-16 — P3: Lilith kararı (CLI-only) + ana hat kapıları (M-2)
+
+- **Bulgu (M-2):** Lilith CLI kendi `httpx` adaptörünü kullanıyordu
+  (`lilith_growth.py:254`), ana hattın `LLMGateway`'ini **bypass** ediyordu:
+  `NINEROUTER_*` taşıması yok, canlı çağrı kapısı yok, ölçülen maliyet
+  ana hattın spend sayacına **yazılmıyordu**.
+- **Bulgu (doküman):** `README_TECHNICAL.md:161` "ham profil metni prompt
+  bağlamına doğrudan eklenmez" diyordu; kod (`lilith_growth.py:586-593`) hedef
+  biyografiyi ve ilk 10 gönderiyi **düz metin olarak ekliyordu** → iddia yanlıştı.
+  `README.md:183` de dosyayı `scripts/run_lilith.py` diye gösteriyordu; dosya
+  **depo kökünde**.
+- **Karar:** Lilith **CLI-only** kalır (çıktısı *kanıt* değil *üretim*; kanıt
+  zincirine karışmamalı) — ancak çağrı yolu **ana hattın `LLMGateway`'ine**
+  bağlandı: taşıma sırası `NINEROUTER_* > PINEAL_LLM_* > OPENROUTER_*`, canlı
+  kapı (`LIVE_LLM_E2E=1` / `PINEAL_ROUTER_LIVE=1`), bütçe/spend sayacı ve
+  çağrı kaydı Lilith için de geçerli. Anahtar yoksa anahtar gerektirmeyen
+  `FreeTextGateway` kullanılır.
+- **Dürüstlük:** ana hattın kapısı reddederse CLI "başarılı" diye sunmaz —
+  `stderr`'e `[LILITH] ÇALIŞMADI: <hüküm>` yazar, **çıkış kodu 2** ile çıkar.
+- **Doküman:** README + README_TECHNICAL kararı, gerekçeyi ve kapı kurallarını
+  yazıyor; çelişen iddia ve yanlış yol düzeltildi.
+- **Test:** 10 yeni sözleşme testi (`tests/unit/test_p3_lilith_cli.py`); Lilith
+  gateway testi yeni sözleşmeye güncellendi; **4/4 revert-doğrulama PASS**
+  (`scripts/revert_verification_p3.py`).
+- **Ölçüm:** `pytest tests -q` → **2740 passed, 6 skipped** · `ruff check .` →
+  **All checks passed!** · `audit_regression.py` → **✓ BEKÇİ GEÇTİ**.
+
+## Unreleased — 2026-10-16 — Canlı fiyat: üçüncü ölçüm + salınım dayanıklı bekçi
+
+- **Üçüncü ölçüm:** canlı katalog `z-ai/glm-5.2` için çıktı $7.00 → **$9.00/1M**
+  okundu (girdi $0.037). İki günde dört ayrı fiyat ölçüldü → teşhis: ölçümün
+  kendisi değil, **tek pinli bekçinin tasarımı** sorunluydu (katalog adımı
+  art arda kırmızı; her seferinde yeni pin yazmak gerekti).
+- **Düzeltme (kapı zayıflatılmadan):** `scripts/verify_openrouter_catalog.py`
+  → `OBSERVED_OPENROUTER_STATES` (her model için **ölçülmüş** fiyat durumları,
+  her biri CI koşu kimliğiyle kayıtlı). Canlı fiyat bilinen bir durum ise
+  `PASS` + hangi durumun okunduğu `WARNING` olarak yazılır; **bilinmeyen yeni
+  fiyat yine `FAIL:`** eder. Girdi ve çıktı AYRI ayrı eşleşemez.
+- **Hizalama (ölçümle):** pin `(0.037, 9.0)` · `config/provider_catalog.json`
+  `0.037/9.0` · `llm_gateway.MODEL_PRICING` `{"in": 0.037, "out": 9.0}`.
+- **Test:** 5 yeni sözleşme testi (durum kümesi pini içerir · durumlar pozitif ·
+  bilinen durum geçer · bilinmeyen durum FAIL · karışık eşleşme geçmez).
+- **Kapsam sınırı:** harcama sayacı TEK değer taşır (son ölçülen durum);
+  canlı fiyatın periyodik tabloya alınması ayrı bir iş kalemi olarak açık.
+
+## Unreleased — 2026-10-16 — P2: çapraz profilleme deterministik ve dürüst
+
+- **Bulgu:** denetimde çapraz profilleme kodu **yoktu**; PR #138 ile `main`'e gelen
+  uygulama üç gerçek kusur taşıyordu: (a) biyografideki **alt dize** eşleşmesi
+  yanlış pozitif üretiyordu (en güçlü sinyalle!), (b) socid'in `user_id` alanı
+  **kullanıcı adı gibi** eşleştiriliyordu (rastgele sayı çakışması), (c) skor
+  "olasılık" gibi sunuluyordu ve `EvidenceItem.confidence` alanına yazılıyordu
+  (alan sözleşmesi ihlali: "source scores must remain in source_metrics").
+- **Düzeltme:** `agent_core/services/cross_profiler.py` yeniden yazıldı.
+  Sinyaller: `self_declared_link` (birebir bağlantı) · `exact_handle` ·
+  `normalized_handle` · `shared_platform_id` (socid ortak kimlik). Aynı platform
+  eşleşmesi, jenerik kullanıcı adları ve kısa adlar eşleşme üretmez.
+- **Skor artık "kapsam":** `coverage = Σ(yanan sinyallerin belgelenmiş
+  ağırlıkları)`; kanıtta `confidence=None`, `source_metrics.coverage_label="kapsam"`,
+  `scope.confidence_label="kapsam"`, metinde yüzde dili yok.
+- **UI:** profil kartında "ÇAPRAZ PROFİL (çıkarım · kapsam)" listesi.
+- **Test:** 13 yeni P2 sözleşme testi · revert-doğrulama **3/3** · tam koşu
+  `2730 passed, 6 skipped` · ruff temiz · svelte-check 0 hata.
+  Rapor: `docs/reports/DUZELTME_FAZ2_P2_2026-10-16.md`.
+
+## Unreleased — 2026-10-16 — P1: bulunan profiller artık gerçekten taranıyor (konsolide)
+
+- **Kopuk kablo kapatıldı (Bulgu 1):** `detected_urls` → `agent_core/services/profile_router.py`
+  (saf URL→yetenek sınıflandırması) → `agent_core/services/profile_deep_scan.py`
+  (tek geçit: `CapabilityRunner`) → kanal durumu + kanıt + kazanılan alan.
+  Instagram → `sensor.ig.instagrapi`, X/Twitter → `sensor.x.twscrape`,
+  LinkedIn/Facebook → `extractor.identity.socid`; diğer profil adresleri genel
+  kimlik çıkarıcıya (`socid`) gider. Profil OLMAYAN adres (gönderi/etiket/giriş/
+  rezerv yol) yola bağlanmaz; sebebiyle bildirilir.
+- **Konsolidasyon (main'de paralel bir P1 vardı):** PR #138 `main`'e merge
+  edilmişti (tek squash commit `d83c67b` → "unrelated histories"). İki ayrı
+  uygulama bırakılmadı: sınıflandırma `profile_router`'da TEK,
+  koşum `profile_deep_scan`'de TEK, giriş noktası
+  `deep_profile_resolver.resolve_deep_profiles` (üçlü sözleşmesi korundu),
+  **koşum yeri görev yürütücüsü** (API + CLI). PR #138'in P2 çapraz profillemesi
+  değiştirilmedi; kanıt zincirine `extra_items` ile bağlandı.
+- **Gerçek kusur düzeltildi:** API katmanı `payload["policy"]` içine
+  `rate_ok` yazmıyordu → hız kapısı "bilinmiyor" diye RET ediyor, sensörler
+  hiç koşamıyordu. Artık `rate_ok=True` taşınıyor (kasa/çocuk kilidi/`ENABLE_*`
+  bayrakları **dokunulmadan** aynı yerde).
+- **`socid` ölü kod değil (Bulgu 3):** yetenek artık gerçekten çağrılıyor; ölçüldü —
+  kasa kilitliyken `policy:vault_locked`, kapı kapalıyken `policy:gate_disabled`,
+  ağ yoksa `extract_unavailable:network_error`; hiçbir durumda kanıt uydurmuyor.
+  Ürettiği kanıt `forensic_evidence` / `evidence_timeline` zincirine giriyor.
+- **Dürüstlük korundu:** kapalı kapı `not_run` + makine-okunur sebep; snippet'a
+  sessiz düşüş yok; **bulunan profilin gönderileri hedefin `posts` alanına
+  yazılmaz** (kimlik karıştırması) — `scanned_urls`/`scanned_profiles` altında
+  ayrı durur.
+- **API-BÖLME 4:** public-web araştırma gövdesi `backend/services/web_research.py`
+  modülüne taşındı; `backend/api.py` 5908 → **5758 satır**; tavan **düşürüldü**.
+  Dış sözleşme (adlar, yollar, yanıt anahtarları) değişmedi.
+- **Ölçüm:** `2707 passed, 6 skipped` (0 failed) · P1 sözleşmeleri 37 + PR #138
+  sözleşmeleri 15 = **52 passed** · ruff `All checks passed!` · svelte-check
+  0 hata · revert-doğrulama **6/6** · envanter/audit/routing/skills taze.
+  Rapor: `docs/reports/DUZELTME_FAZ2_P1_2026-10-16.md`.
+- **DOĞRULANMADI:** canlı X/IG kazıma, canlı socid çıkarımı ve canlı
+  arama→derin tarama zinciri (bu ortamda dış ağ erişimi yok; sebepleri raporda).
+
+
+## Unreleased — 2026-10-16 — Canlı fiyat hizalaması: CI'ın üç kez birebir ölçtüğü değer
+
+- **Ölçüm (üç bağımsız CI koşusu, birebir aynı):**
+  [38833598719](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38833598719)
+  (Faz 1 denetim commit'i — katalog kodu YOK),
+  [38840573018](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38840573018)
+  (Faz 2 · P0) ve
+  [38843226709](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38843226709)
+  (`main`, PR #135 birleşimi) → `GET https://openrouter.ai/api/v1/models` yanıtında
+  `deepseek/deepseek-v4-pro` için **$0.95526/$1.91052**, `z-ai/glm-5.2` için
+  **$0.62/$2.42** per 1M okundu. Üç koşuda da dört `FAIL:` satırı birebir aynıydı.
+- **Hizalandı (tahminle değil, ölçümle):** `scripts/verify_openrouter_catalog.py`
+  pinleri, `config/provider_catalog.json` (`openrouter` bölümü) ve
+  `agent_core/services/llm_gateway.py` `MODEL_PRICING` (harcama sayacı) üçü birden
+  ölçülen değere alındı. `deepseek-v4-pro` girdi 2,76× YÜKSELDİ ($0.346434 → $0.95526);
+  `glm-5.2` girdi 16,8× yükseldi ($0.037 → $0.62), çıktı 2,9× düştü ($7.00 → $2.42) —
+  eski sayaç her iki yönde de yanlış sayıyordu.
+- **Kapsam notu:** bu düzeltme P0 "dürüst durum" değişikliğinin **devamı değil**,
+  ayrı bir canlı-veri hizalamasıdır (PR #135 birleşikti; katalog adımı o PR'da da
+  kırmızıydı ve PR'ın diff'i fiyat dosyalarına hiç dokunmuyordu).
+- **Kanıt sınırı:** ölçüm CI'ın canlı `/models` çağrısından gelir; bu ortamdan
+  `openrouter.ai` erişilemediği için canlı katalog **yerelde yeniden okunamadı**.
+  Fiyat snapshot'ı oynaktır; bir sonraki koşu yeni bir salınım ölçebilir.
+
+## Unreleased — 2026-10-15 — Geniş kaynak/test sözleşmesi denetimi
+
+- Güven skorları: ortak `normalize_confidence` sözleşmesi yalnız sonlu `[0,1]`
+  sayıları kabul eder; bool, aralık dışı ve bozuk değerler kırpılmaz.
+  Kanıt yokluğu, gerçek ölçüm ve modelden gelen iddia ayrı tutulur.
+- Ajanlar/motorlar/araçlar: upstream bulgular prompt'a doğrulama kökeniyle
+  taşınır; Shadow ölçülmemiş depth/trade sinyallerinde fail-closed kalır.
+  X profil verisi `posts`/`post_times` hizasını korur; takipçi alias'ları
+  açık `0` ölçümünü koruyup eksik değerde fallback yapar. Sensör, arama,
+  crawl, URL güvenliği, UI oturumu ve diyalog saklama sözleşmeleri için
+  deterministik testler eklendi/güncellendi.
+- Sağlayıcı/yürütme: `docs/PROVIDER_EXECUTION_BOUNDARIES.md` katalog,
+  yapılandırma ve yürütmeyi ayırır. 27 katalog girdisinin tamamı
+  `catalog_only`; runtime yalnız `openai_chat` + `api_key`/`local` yolunu
+  yürütür. Normal tool çağrıları taşınır ve yanıtı döner, fakat Pineal tool'u
+  çalıştırmaz; Fusion/Pipeline/Context Relay tool kabul etmez. JSON/audio
+  route kapıları request şeklinden türetilir. SDK iç tekrarları kapalıdır;
+  gateway sınıflandırılmamış ValueError'ı yeniden ücretli çağrıya çevirmeden
+  ve rezervi koruyarak sonuçlandırır.
+- Ses: `speak()` eski kesinti izini temizler; STT ham sesi/Whisper yan
+  dosyasını işlem sonunda siler ve yalnız SHA-256 referansı tutar. TTS cache
+  TTL/boyut sınırı, crash artığı temizliği ve yalnız tamamlanmış WAV sunan
+  ses rotası tanımlı. Speech API `backend/routes/speech.py` ve audio route
+  `backend/routes/speech_audio.py` modüllerindedir; `backend/api.py` 5.874
+  satıra düşerek 5.916 satırlık ratchet sınırının altındadır.
+- Canlı fiyat sapması: PR CI [38787820334](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38787820334)
+  `GET /api/v1/models` yanıtında `deepseek-v4-pro` için $0.395328/$0.790656,
+  `glm-5.2` için $0.65/$10.00 per 1M ölçtü. Sonraki live-check run'ları
+  [38789947274](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38789947274),
+  [38794722007](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38794722007),
+  [38821301808](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38821301808)
+  ve [38822647324](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38822647324)
+  deepseek fiyatını $0.392022/$0.784044, $0.386976/$0.773952, $0.348174/$0.696348 ve son canlı okumada $0.346434/$0.692868;
+  glm-5.2'yi $0.037/$7.00 per 1M ölçtü.
+  Gateway, katalog ve verifier son canlı ölçüme hizalandı. Bu kısa aralıklı fark,
+  fiyat snapshot'ının oynaklığını gösterir; katalog sorgusu inference/hesap
+  erişimini veya sonraki fiyat kararlılığını kanıtlamaz.
+- **Doğrulama:** Python **2.626 geçti, 6 atlandı, 0 başarısız**; frontend
+  `svelte-check` 0 hata/uyarı ve Vite production build başarılı. Envanter,
+  skill paketi ve audit raporu tazelik testleri ile `git diff --check` geçti.
+  Audit regresyon özeti: 20 kapalı, 1 kapalı-tasarım, 0 açık, 3 doğrulanamaz.
+- **Kanıt sınırı:** kaynak ve mock/yerel testler canlı çalışma kanıtı değildir.
+  Canlı LLM inference, X, SearXNG/uzak crawl, Piper/Whisper ve tarayıcıda ses
+  oynatma bu turda çalıştırılmadı; CI'nin OpenRouter `/models` sorgusu yalnızca
+  katalog/fiyat kanıtıdır. Bu sandbox'ta `cargo`/`rustc` yok; buna karşılık PR
+  CI [38789102103](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38789102103)
+  `cargo check` ve `cargo test` adımlarını geçti. Makine audit raporu üç eski
+  maddeyi hâlâ muhafazakâr biçimde “doğrulanamaz” sınıflandırır; özellikle
+  E-GÖZ3-8'in gerçek Redis/dosya sistemi/ağ dayanıklılığı bu CI ile ölçülmedi.
+
+## Unreleased — 2026-10-15 — Fiyat doğrulaması: kapsam, son ölçüm ve açıklar
+
+- OpenRouter katalog bölümündeki **9 fiyatlı modelin tamamı** pinli. Önceki
+  5 modele solar-pro4, ling-3.0-flash, glm-5.2 ve grok-4.6 eklendi.
+- Canlı kanıt: CI [38660006254](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38660006254)
+  deepseek-v4-pro **$0.95526/$1.91052**, solar-pro4 **$0.09/$0.36**,
+  glm-5.2 **$0.04/$7.00** okudu. CI
+  [38662205946](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38662205946)
+  GLM çıktısını **$4.40/1M** okudu; ardından CI
+  [38664381599](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38664381599)
+  girdiyi **$0.037/1M** okudu; ardından iki koşu
+  [38665669314](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38665669314)
+  ve [38665674379](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38665674379)
+  çıktıyı yeniden **$7/1M** okudu; son kayıt **$0.037/$7.00**.
+  Statik tablo, ölçümler arasındaki fiyat değişimini gerçek zamanlı izlemiyor;
+  her çağrının gerçek faturasıyla eşleştiği bu bekçiyle kanıtlanamaz.
+  Pin, OpenRouter katalog kaydı ve gateway harcama tablosu hizalandı.
+  Bu ölçümler fiyat farklılığını kanıtlar; kampanyanın bittiğini veya fiyatın
+  neden değiştiğini tek başına kanıtlamaz. Önceki açıklamalardaki nedensellik
+  iddiaları bu nedenle kesin hüküm değildir.
+- Hata mesajında token başına API değeri ile /1M değeri karıştırılıyordu:
+  artık iki taraf da **$/1M** gösterilir; karşılaştırma hesabı değişmedi.
+- Maliyet/atomik rezervasyon testlerindeki gömülü solar-pro4 fiyatları
+  `MODEL_PRICING`'ten türetilir; mekanizma testi fiyat kopyası taşımaz.
+- Yeni `catalog-drift.yml`: her gün **03:17 UTC / 06:17 İstanbul** ve elle
+  tetikleme. Anahtar yokluğu ve erişim kesintisi bu workflow'da başarısızdır;
+  kesinti "fiyat kayması" diye sunulmaz. Zamanlama main'e birleşince etkinleşir.
+  Shell davranışı başarı/anahtar yok/kesinti/kayma/beklenmeyen hata ile sınandı.
+  PR #130 birleşti (`5547cd2`). Elle tetikleme 403 (integration yetkisi yok)
+  döndü; aynı job artık fiyat dosyası değişikliklerinde push ile de çalışır.
+  Gecelik tetiklemenin gelecekteki sonucu ve elle başlatma yetkisi kanıtlanmadı.
+- Gerçek bekçi jobu [38665260977](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38665260977)
+  push ile çalıştı ve canlı 9-pin karşılaştırması geçti; SKIP/UNVERIFIED yeşil
+  dönemez. Bu sonuç yalnız o koşudaki OR fiyat eşleşmesini kanıtlar.
+- **Açık:** `openai/gpt-5.6-luna` ve `openai/gpt-oss-120b` ücretli legacy
+  muhasebesinde var, OR katalog/pin kapsamı dışında. İsimleri kilit testiyle
+  sabitlendi; canlı fiyatları doğrulanmış değildir.
+- **Açık:** Nous kanal fiyatları bu turda canlı doğrulanmadı. Sonnet-5
+  $1.60/$8.00 ve solar-pro4 $0.03/$0.12 tutuldu; OR fiyatı bu kanala kanıt
+  değildir. İndirimin hâlen geçerli olduğu da bu ölçümle kanıtlanmaz.
+- **Açık:** fiyat kopyaları hâlâ elle senkron. Tutarlılık testleri var ama tek
+  kaynaktan türetme yapılmadı. Bu çalışma tüm yeteneklerin çalıştığının kanıtı
+  değildir; kalan yetenek/ortam engelleri raporun §2 bölümünde duruyor.
+
+## Unreleased — 2026-10-14 — Katalog bekçisinin yakaladığı GERÇEK fiyat kayması
+
+Bekçi kırmızıyı hak ediyordu: düşüşün sebebi kesinti değil, **gerçek fiyat
+değişimi**. Teşhis mekanizması kurulur kurulmaz sebep makine-okunur hâle geldi:
+
+```
+FAIL: openai/gpt-5.6-sol-pro: live input price 4e-06 != 2.0/1M
+FAIL: openai/gpt-5.6-sol-pro: live output price 2e-05 != 10.0/1M
+```
+
+- **Ölçüm:** aynı ağaçta 18:2x koşusu GEÇTİ (SKIP uyarısı yok → canlı kontrol
+  gerçekten koştu ve eşleşti), 19:13 (main) ve 19:5x (dal) koşuları $4/$20
+  okudu. Yani fiyat o aralıkta gerçekten değişti; deponun pinlediği $2/$10
+  promosyon dönemine aitti (depoda bu desenin kaydı zaten var: "archived
+  $2/$10 promo").
+- **Etki:** aynı fiyat BEŞ yerde kopyalıydı (pin · `config/provider_catalog.json`
+  · `LLMGateway.MODEL_PRICING` · `ROUTES[<id>@openrouter]` · karar matrisi
+  testi) ve aralarında tutarlılık kilidi YOKTU. Harcama sayacı `MODEL_PRICING`'e
+  baktığı için, tablo güncellenmeden kalsaydı spend cap gerçek maliyeti **yarı
+  yarıya** sayardı.
+- **Onarım:** beş kopyanın tamamı canlı doğrulanan değere ($4/$20) hizalandı +
+  `test_pinned_prices_agree_in_every_copy` (kopyalar ayrışırsa kırmızı) ve
+  `test_pinned_live_coverage_includes_the_spend_cap_models` (kapsam sessizce
+  daraltılamaz) kilitleri eklendi.
+- **Kapsam genişletilince İKİ sapma daha çıktı:** `deepseek/deepseek-v4-flash`
+  (TIER_2 varsayılanı) depoda $0.09/$0.18 iken canlıda **$0.091/$0.182** (%1,1
+  eksik sayım); `deepseek/deepseek-v4-pro` $0.4679/$0.9358 iken **$0.386976/$0.773952**
+  (%17,3 fazla sayım). İkisi de pin + katalog + harcama tablosunda düzeltildi.
+  `anthropic/claude-sonnet-5` canlıda $2/$10 ile EŞLEŞTİ — depo değeri doğruydu
+  ve önden değiştirilmedi (ölçüm şartı).
+- **Kapsam genişletildi (inanç → doğrulama):** `deepseek/deepseek-v4-flash`
+  (TIER_2 varsayılanı), `deepseek/deepseek-v4-pro` ve `anthropic/claude-sonnet-5`
+  harcama tablosunda fiyatlıydı ama hiç canlı kontrol edilmiyordu; artık pinli
+  ve her CI koşusunda canlı katalogla karşılaştırılıyor. Bayat kopya da
+  düzeltildi: `openrouter/deepseek/deepseek-v4-flash` katalogda $0.0679/$0.168
+  kalmıştı, gateway 2026-09-08'de $0.09/$0.18'e düzeltmişti.
+- **AÇIK KALAN (doğrulanamaz burada):** `ROUTES[anthropic/claude-sonnet-5@nous-research]`
+  etkin fiyatı (1.60/8.00) $2/$10 promosuna göre hesaplanmıştı; promo bitti.
+  Nous kanalının kendi fiyat listesi olmadan güncellenemez — OpenRouter
+  kataloğu Nous'un kanıtı DEĞİLDİR (deponun kendi kuralı). Operatör teyidi
+  gerekir; sayılar raporda açık kalem olarak yazılı.
+- Sağlamlık: canlı kontrol artık 5 modeli doğrular; sahte test gövdesi pinlerden
+  TÜRETİLİR (kapsam büyüyünce yanlış kırmızı üretmez).
+
+## Unreleased — 2026-10-14 — Merge sonrası main kırmızısı: katalog adımı kör kaldı
+
+Kök neden ve onarım — "testler geçti" demek "iş bitti" değil, üçüncü kanıt:
+
+- **Olay:** PR #128 merge edildi; PR koşusunda backend yeşildi, merge sonrası
+  `main` koşusunda **adım 7–10 geçti, adım 11 ("Verify provider catalog
+  contract") düştü**. Aynı ağaç (`7f2c634…`), aynı adımlar, 15 dakika arayla
+  farklı sonuç → sebep kod değil dış bağımlılık. Ama sebep **hiçbir yerde
+  okunamadı**.
+- **Körlük (gerçek kusur 1):** betik hata satırlarını **stderr**'e yazıyordu
+  (`print(..., file=sys.stderr)`), CI adımı ise yalnız **stdout**'u yakalıyordu
+  (`OUT="$(python …)"`). Üstelik Actions logları Azure blob'da ve bu ortamdan
+  okunamıyor → "exit 1" dışında hiçbir iz yoktu. Düzeltme: adım `2>&1` ile
+  birleşik yakalar ve kırılma SEBEBİNİ `::error title=catalog-contract`
+  annotation'ı olarak yayınlar (denetim adımındaki desenin aynısı).
+- **Yanlış alarm (gerçek kusur 2):** dış servis kesintisi (ağ/5xx/429) bizim
+  kataloğumuz hakkında hiçbir şey söylemez, ama adım onu "FAIL" sayıp main'i
+  kırmızıya boyuyordu. Artık üç hüküm ayrı: `FAIL:` (canlı katalog okundu ve
+  pinlerle çelişiyor → exit 1) · `UNVERIFIED:` (ulaşılamadı → doğrulama
+  YAPILMADI, exit 0 + yüksek sesli `::warning`; asla "doğrulandı" denmez) ·
+  `SKIP:` (anahtar yok). Ayrıca tek DNS sarsıntısı için sınırlı yeniden deneme
+  (3 deneme, artan bekleme).
+- **Testsiz bekçi (gerçek kusur 3):** bu betiğin **hiç testi yoktu** — yalnız
+  CI'da koşuyordu, kırılınca yerelde kimse görmedi. Yeni kilit:
+  `tests/unit/test_openrouter_catalog_contract.py` (13 test): yerel kontrat
+  ısırıyor mu (fiyat kayması / model düşmesi / `:free` rotası $0'dan farklı /
+  yasaklı ölü kayıt), üç hüküm ayrı mı, geçici arıza yeniden deneniyor mu,
+  CI adımı sebebi yayınlıyor mu. Mutasyonla doğrulandı: eski davranış geri
+  konunca 3 test + workflow testi kırmızı oldu.
+- **Kalan zayıflık (açıkça):** canlı çapraz kontrol anahtara ve dış servise
+  bağlıdır; kesintide katalog kayması TESPİT EDİLEMEZ — "doğrulanamadı" bunu
+  gizlemez ama kapatmaz. Kalıcı çözüm canlı katalogun CI dışında düzenli
+  toplanıp commit edilmesidir (depo dışı artefakt); bu turda yapılmadı.
+- Envanter: o tarihteki tüm dosya evreni ölçümü yeni test dosyasıyla 234 → **235 test modülü** oldu
+  (CHANGELOG deyimi ve `docs/envanter.html` o sürüm için güncellendi).
+
+## Unreleased — 2026-10-14 — Kalan eksikler turu: yetenekler gerçekten koşturuldu
+
+Mutlak liste: `docs/reports/KALAN_EKSIKLER_2026-10-14.md` (kapananlar +
+KAPANMAYAN 9 yetenek + 2 kanıt kalemi; her satır ölçümle).
+
+### 1 · Kapatılan gerçek kusurlar (kod)
+- `extractor.web.trafilatura`: indirme tavanı (`DOWNLOAD_TIMEOUT`) yeteneğin
+  KENDİ bütçesiyle yarışıyordu → yavaş sayfada "timeout" dönüyordu (ölçüm:
+  indirme 6,5 sn'de başarıyordu). Tavan artık bütçenin altında; kilit testi
+  `test_trafilatura_download_timeout_stays_under_capability_budget`.
+- `sensor.web.agent_reach`: komut çözümü `PINEAL_AGENT_REACH_CMD` ile operatöre
+  açıldı. **Neden:** `npm i -g agent-reach` artık AYNI ADLI BAŞKA bir projeyi
+  kuruyor (ölçüm: npm agent-reach@0.3.4 = Nostr ajan ağı); PyPI'de de ilgisiz
+  bir `agent-reach` var. Kör PATH araması yanlış aracı "hazır" sayabilirdi.
+  Kilit testi `test_agent_reach_command_prefers_explicit_env_and_never_guesses`.
+- `requirements-retina.txt`: `browserforge` açıkça beyan edildi (scrapling 0.4.x
+  zorunlu kullanır ama metadata'sında yazmaz → yetenek `extract_error`
+  dönüyordu). RUNBOOK'a iki yanlış-paket uyarısı işlendi (agent-reach, searxng).
+
+### 2 · Kurulunca kapanan yetenekler (ölçüm, bu ortam)
+- `trafilatura` → gerçek metin (kanıt=1) · `scrapling` → **19.351 bayt** gerçek
+  metin · `twscrape` kurulu · `instagrapi` artık yalnız kimlik bekliyor ·
+  `renderer.report.video` → **gerçek video** (ffmpeg statik binary ile, kanıt=2).
+- Tüm-kapılar-açık senaryo: **13 açık / 13 kapalı → 17 açık / 9 kapalı**
+  (`reports/kapasite_opsiyonel_kurulu.json`).
+- Gerçek koşum listesi (runner üzerinden): **7/8**; tek başarısız `holehe`
+  uydurmadı (`scan_unavailable:provider_errors`).
+
+### 3 · Ses ve istek yolu — uçtan uca kanıt
+- **Ses:** yerel uç taklidiyle `/api/speech/say` → gerçek WAV (6.444 bayt, RIFF)
+  servis edildi; `/api/speech/listen` → metne çevrildi. Zincir tamam; eksik olan
+  gerçek motor (§KALAN-1/2).
+- **İstek yolu:** yerel taklit sağlayıcıya gerçek HTTP — doğru gövde, yetki
+  başlığı, `pineal-*` koridoru dâhil yanıt işleme; kapalı portta dürüst hata.
+  Bu, "tel kopuk mu, kimlik mi yok?" ayrımını kesinleştirir.
+
+### 3b · CI'da yakalanan kırık: bayat denetim bekçisi raporu (onarıldı)
+- Bekçinin kanıt dizeleri MUTLAK SATIR NUMARASI gömüyor; trafilatura yaması
+  `adapters_web.py`'de satır kaydırdı → `reports/audit_regression.json` bayat
+  kaldı → CI'ın `git diff` tazelik kapısı backend işini düşürdü ve sonraki 3
+  doğrulama adımı hiç koşmadı. Yerelde görünmüyordu çünkü o kapı yalnız CI'da
+  koşuyor.
+- Onarım: rapor tazelendi + `test_committed_report_matches_fresh_generation`
+  kilidi eklendi (komutlu rapor ↔ taze üretim birebir). Kalan tasarım zayıflığı
+  (satır-no gömülü kanıt gürültüsü) raporda açıkça kayıtlı.
+
+### 4 · Kapanmayanlar (özet; tam liste raporun §2'sinde)
+9 yetenek: TTS, STT, transcript (whisper), translate-local (`trans`), yerel jüri,
+SearXNG (servis), agent-reach (doğru CLI), theHarvester (**Python ≥3.14 istiyor,
+proje 3.11**), Instagram kimliği. + Canlı LLM doğrulaması (anahtar yok) ve dış
+platform taramaları (ortam dış ağa çıkamıyor). **Kod hatası nedeniyle kapalı
+yetenek: 0.**
+
+## Unreleased — 2026-10-14 — Canlı kanıt: uçlar ve motor gerçekten çalışıyor mu?
+
+Rapor: `docs/reports/CANLI_KANIT_RAPORU_2026-10-14.md` · sonda:
+`scripts/canli_calisirlik_probe.py` (`sunucu` / `kanit` modları) · kanıt:
+`reports/canli_calisirlik_sunucu.json`, `reports/canli_calisirlik_kanit.json`.
+
+- **Gerçek sunucu**: `uvicorn backend.api:app` ayağa kaldırıldı; üretim
+  duruşunda token yokken açılış REDDEDİLDİ (`PRODUCTION_AUTH_REQUIRED` —
+  fail-closed güvenlik kanıtı), geliştirme duruşunda `/health` 200 "ready".
+- **58 canlı HTTP isteği**: 24×200 · 32×422 (gövdesiz çağrı → sözleşme denetimi)
+  · 1×423 (kasa kilitli) · 1×400 · **0×500**. "37 uç ön yüzde yok" = bozuk değil,
+  arayüz düğmesi yok (ürün kararı; rapor §6.1/B9).
+- **Gerçek üretim koşumu**: kapılar açık + kasa mandalı (repo'nun onayladığı
+  desen; sahte anahtar YAZILMADI) → 4/5 yetenek gerçek çıktı üretti:
+  gerçek PDF (1.821 B) + PNG şema (4.549 B) + sha256'lı manifest, GitHub
+  sayfasından 8.000 bayt gerçek metin (crawl4ai, 1.8 sn), dil tespiti `tr/0.77`.
+  `holehe` uydurmadı: `scan_unavailable:provider_errors`.
+- **Dürüstlük sınavı**: rapora şema dışı iki kanıt satırı gönderildi; sistem
+  onları kabul etmedi, "reddedilen: 2" diye rapora YAZDI ve içerik uydurmadı.
+  LLM kimlik bilgisi yokken `REAL_LLM_CALL_NOT_EXECUTED` ile açıkça reddetti
+  (sahte yanıt üretmedi) — "beyin çalışıyor mu" sorusu ancak operatör anahtarıyla
+  sınanabilir; komut raporda (§3).
+- `.gitignore`: rapor fabrikasının ürettiği `memory/reports/` paketleri
+  (çalışma-zamanı çıktısı) artık izlenmez; kanıt JSON'unda yol + sha256 olarak
+  kayıtlıdır.
+
+## Unreleased — 2026-10-14 — Kapasite denetimi: omurga kapı tek kaynağı
+
+Denetim raporu: `docs/reports/KAPASITE_ACIGI_RAPORU_2026-10-14.md`; her sayının
+kanıtı `reports/kapasite_denetimi.json` ve onu üreten
+`scripts/kapasite_denetimi_probe.py` (tekrar çalıştırılabilir).
+
+### 1 · B1 — SES kapıları omurga dışıydı (UI ile çekirdek çelişiyordu)
+- `MANAGED_GATE_FLAGS` artık `agent_core/capabilities/policy.py` içinde TEK
+  kaynak (15 bayrak; `ENABLE_LOCAL_TTS`, `ENABLE_LOCAL_STT`, `ENABLE_CRAWL4AI`
+  dâhil) ve `state.py` onu yeniden ihraç eder. Önceden ikisi ayrı liste
+  tutuyordu: `ENABLE_LOCAL_TTS=true` iken yetenek "hazır" derken çekirdek
+  `gate_disabled` dönüyordu.
+
+### 2 · B2 — yazım hatalı/uydurma bayrak artık "kapalı" değil "tanınmıyor"
+- Yönetilmeyen bir `ENABLE_*` adı `gate_disabled` gibi görünüyordu; operatör onu
+  açmaya çalışıp başarısız oluyordu. Artık `unknown_gate` (fail-closed, kapı
+  önceliğinde en başta). Kapalı ama YÖNETİLEN bayrak da `gate_disabled` kalır.
+
+### 3 · B12 — `.env.example` ile omurga arasında fark kapandı
+- 15/15 yönetilen kapı örnekte belgeli; ölçüm: `managed_missing_from_example: []`
+  ve üretimde okunup belgesiz `ENABLE_*` yok (`read_but_undocumented: []`).
+
+### 4 · B15 — crawl4ai bayrağı servis üzerinden okunuyordu, omurgada beyansızdı
+- `Crawl4AICapability.gates` artık `{ENABLE_CRAWL4AI, vault}`; ayrıca yapısal
+  kilit testi: kaynakta `gate_disabled:ENABLE_X` diyen her adaptör sınıfı X'i
+  `gates`'te beyan etmek zorunda.
+
+### 5 · Test sırası bağımlılığı (ses durumu sızıntısı)
+- `tests/integration/test_speech_api_faz_c.py` oda mandalı fixture'ı artık
+  `speech` modül durumunu tohumlayıp geri yüklüyor: dosya tek başına veya
+  başka dosyalarla çalıştırıldığında aynı sonucu verir (önce `denied` sızıyordu).
+
+### 6 · B16 — envanter sayfası "git add" yüzünden bayatlıyordu (CI kök nedeni)
+- Üretici dosya listesini `tracked + untracked` diye kuruyordu: yeni bir dosya
+  commit'lendiği anda sayfadaki yeri değişiyor, `--check` "bayat" diyor ve CI
+  düşüyordu (sayfa kirli ağaçta üretilip temiz ağaçta doğrulanıyordu). Liste
+  artık `sorted(set(...))` — izleme durumundan bağımsız; ayrıca kilitleyen test
+  (`test_entry_order_is_independent_of_tracking_state`). Aynı sınıftan: envanter
+  testindeki sihirli `98` sayısı kaldırıldı; sayı kaynaktan sayılır ve sayfanın
+  kendi başlığıyla karşılaştırılır.
+
+### 7 · Kanıt
+- `tests/unit/test_capability_spine_faz0.py` **37/37** (B1/B2/B15 kilitleri dâhil),
+  tam takım CI komutuyla (coverage eşiği dâhil) yerelde yeşil, `ruff` temiz,
+  `docs/envanter.html` + `skills/` paketi yeniden üretildi (`--check` GÜNCEL).
+  Denetim sonucu: 26 kayıtlı yetenek, varsayılan 3 açık, tüm kapılar açıkken
+  bile 13'ü bağımlılık/ayar nedeniyle kapalı.
+
+## Unreleased — 2026-10-14 — Envanter/açıklama tamamlama ve API-BÖLME 2
+
+### 1 · Açıklamasız çekirdek dosyalar (A listesi, 30 dosya)
+- 12 ajan + 10 servis + 8 diğer modüle (aspasia, domain, scraper CLI, shadow, nlp,
+  chat, telemetry) **modül docstring'i** yazıldı; `agent_core/services/llm_gateway.py`
+  (3.210 satır) ve `agent_core/aspasia/aspasia_chief.py` dâhil.
+- Kural: docstring'ler dosyanın GERÇEK davranışını ve dürüstlük sözleşmesini yazar
+  (kanıt yoksa skor uydurulmaz, kullanılamazlık ≠ boş sonuç, hangi test kilitliyor).
+- Test: `tests/unit/test_inventory_page.py::test_every_category_a_file_has_a_module_docstring`.
+
+### 2 · Envanterde hiç görünmeyen dosyalar (B listesi, 31 dosya)
+- Kök girişler (`main.py`), `agent_core` kökü (`task_executor.py`, `config_loader.py`,
+  `version.py` zaten belgeliydi), `backend/` rota-güvenlik katmanı ve `scripts/`
+  (arşiv dâhil) açıklamaları yazıldı + sayfada listelendi.
+- En kritik ikisi: `agent_core/task_executor.py` (orkestra şefi) ve `backend/api.py`.
+
+### 3 · API-BÖLME 2 — `/api/language/*` ayrıldı (tavan çakışması çözümü)
+- Ölçüm: `backend/api.py` **tam 6.000 satırda** (ratchet tavanı) duruyordu; yukarıdaki
+  docstring'i eklemek bile `test_api_monolith_ratchet.py`'yi kırıyordu.
+- Depo kuralı işletildi ("yeni satır yerine MODÜL ÇIKAR"): 3 uç
+  `backend/routes/language.py` modülüne taşındı; uç gövdeleri DEĞİŞMEDİ,
+  bağımlılıklar enjekte edildi, `backend/api.py` payload modellerini yeniden ihraç eder.
+- `backend/api.py`: **6.000 → 5.916 satır**; tavan `MAX_LINES = 5916`'ya DÜŞÜRÜLDÜ.
+- Yeni kilitler: `test_language_split_module_exists_and_is_importable`,
+  `test_api_reexports_language_split_symbols`,
+  `test_language_routes_are_registered_on_the_app`,
+  `test_api_does_not_redefine_language_models`.
+- `docs/reports/API_MONOLITH_SPLIT_PLAN.md` §2.2 + §4 + §5 güncellendi.
+
+### 4 · Envanter arşivi depoya alındı + üretim künyesi deterministik yapıldı
+- `docs/pineal_envanter.zip` (4,2 MB, 686 KB'lık sayfanın yanında): 685 dosyanın **satır satır** dökümü
+  (`tam_metin/`), 21 metin dışı dosyanın **bayt düzeyinde** analizi (`ikili/`), 101 klasör JSON'u
+  (12 zorunlu alanlı tam kayıtlar), derin çözümlemeler (`derin/`), çapraz analizler (uç listesi, eşikler,
+  çağrı grafiği, ölü kod, tutarsızlıklar) ve tematik raporlar (test/doküman/ayar/config/altyapı/yetenek).
+  Arşiv yalnız envanter çıktısıdır; ürün kodu okumaz.
+- `scripts/generate_inventory_page.py`: künye artık **git hash/tarih yerine** `VERSION` + üretici imzasını
+  yazar. Gerekçe: sayfa, içine gömüldüğü commit'ten ÖNCE üretildiği için hash tabanlı künye kendine
+  referanslıydı ve CI'daki `--check` bayatlama kapısı her commit'te yanlış alarm verirdi; içerik tabanlı
+  künye commit'ten bağımsızdır (ölçüldü: üretim → `--check` ✅).
+
+### 4 · Envanter sayfası artık KAYNAKTAN üretiliyor
+- Yeni: `scripts/generate_inventory_page.py` → `docs/envanter.html` (tek dosya, çevrimdışı,
+  aranabilir). 680+ dosya (üretildiği andaki ağaç), klasör klasör; her satırda yol · satır · etiket · açıklama ·
+  semboller · (test ise) kilitlediği davranışlar.
+- Kaynak: `git ls-files` + AST docstring'leri, `SKILL.md` front-matter, `config/*._meta.purpose`,
+  Rust `//!` belgeleri, Markdown başlıkları; **`app.*` dekoratörlerinden sayılan 70 uç** ve
+  **`.env.example`'ın 98 ayarı (grup + yorum + örnek değer)**.
+- Çok satırlık klasörler açıklama kazandı: `rust_core/` (48), `android/` (49, parite sınırı
+  etiketli), `frontend/` (47), `functions/` (2), `skills/` (26), `config/` (6), 235 test modülü
+  (`tests/` altındaki `test_*.py` — 2026-10-14 tarihli tüm dosya evreni ölçümü) ve 41 tarihli rapor.
+- Determinizm: künye tarihi "şimdi" değil son commit'tir ve sayfa KENDİNİ saymaz — bu yüzden
+  `--check` kararlıdır. CI'ya "Verify inventory page committed fresh" adımı eklendi.
+- Test: `tests/unit/test_inventory_page.py` (15 test): bayatlama, A docstring'leri, B görünürlüğü,
+  env/uç sayılarının kaynaktan gelmesi, mükerrer satır yasağı, API-BÖLME izi.
+
+
 ## Unreleased — 2026-10-07 — Üretim denetimi (audit) düzeltmeleri
 
 Kullanıcı denetim raporunun (2026-10-07) maddelerinin tamamı uygulandı. Her
@@ -1449,7 +2027,62 @@ düşürüldü) · CI kapsam kapısı → **%85.04 ≥ %80** (CI aralığı öl�
 
 - `rust_core/` and the Tauri draft are not product-integrated.
 - X scraping and experimental OSINT/code-execution routes remain disabled or explicit opt-ins.
-- A live third-party OpenRouter credential gate remains operator-triggered; the mandatory hermetic E2E uses the actual HTTP/SDK/runtime path against a deterministic local provider and does not claim external-provider availability.## [Unreleased] - 2026-09-04 (routing-hardening)
+- A live third-party OpenRouter credential gate remains operator-triggered; the mandatory hermetic E2E uses the actual HTTP/SDK/runtime path against a deterministic local provider and does not claim external-provider availability.## [CI kırmızı kök nedeni] — 2026-10-14 · envanter sayfası + rapor bayatlığı (bulgu 5 kapandı)
+
+Denetim raporunun 5. maddesi "CI gerçekten doğruluyor mu?" idi. CI BİREBİR yeniden
+üretildi (`requirements.lock` + pytest yığını, tam koşu) ve gerçek tablo ölçüldü:
+**2491 test geçiyor, CI'nın düşme nedeni test değil, bayat üretilmiş dosyalardı.**
+
+- **Kök neden 1 — evren kilidi:** `docs/pineal_envanter.zip` `.gitignore` kapsamındayken
+  üretilen sayfa arşivi LİSTELEMİYORDU; `git add` ile izlenir olunca dosya evrene girdi →
+  sayfa bayatladı → `test_inventory_page.py::test_generator_exists_and_page_is_not_stale`
+  ve CI'daki `--check` adımı kırmızı. Kilit: `test_page_lists_exactly_the_repo_universe`
+  (sayfanın dosya listesi, üretim anındaki evrenle BİREBİR eşit olmalı).
+- **Kök neden 2 — sahte satır sayısı:** arşiv/ikili dosyalar `loc_of` ile "satır"
+  sayılıyordu (4 MB zip → "14.965 satır", `toplam satır` da şişiyordu). Artık
+  `BINARY_SUFFIXES` + `is_binary_path()` var; ikili dosyaların satır hücresi `ikili`
+  yazar. Kilit: `test_binary_files_carry_no_fake_line_count`.
+- **Kök neden 3 — kaçış dizili dosya adı:** `git ls-files` ASCII dışı adı
+  `"UX_Kullan\304\261labilirlik_Raporu.md"` diye döndürüyordu; sayfa dosyayı OKUNMAZ
+  bir adla listeliyordu (gerçek adıyla hiç görünmüyordu). `git()` artık
+  `-c core.quotepath=false` ile çağrılıyor.
+- **Ayrıca:** `reports/audit_regression.json` bu daldaki docstring eklemelerinden
+  sonra bayatlamıştı (satır kaymaları) — CI'da "audit-report-stale" adımı düşerdi;
+  rapor yeniden üretilip depolandı. Kapsam kapısı ölçüldü: **%86 ≥ %80**; yeni
+  `backend/routes/language.py` **%100** kaplı.
+
+## [Denetim düzeltmeleri] — 2026-10-14 · üç bulgu, üçü de doğrulandı ve kapatıldı
+
+Dış denetim raporundaki üç bulgu ÖNCE koddan doğrulandı (iddia değil, ölçüm), sonra düzeltildi:
+
+- **[Yüksek] `/api/language/status` hız sınırsızdı.** (`backend/routes/language.py`) Modül
+  açıklaması "her üç uç da `language:{client_id}` kovasını paylaşır" diyordu; ama `status`
+  hiç `rate_limit` çağırmıyordu — yazılanla koşan ayrışmıştı. Düzeltme: `status` artık
+  `?client_id=` (varsayılan `default`) alır ve `detect`/`translate` ile **aynı kovayı** paylaşır;
+  aşımda aynı gövdeyle 429 döner. Gerekçe: `status` bedava değil (`translation.status()` →
+  `resolve_engine()` PATH taraması `shutil.which`). Kilit: `tests/unit/../language_transport_contract.py`
+  (paylaşım iki yönlü kanıtlanır) + `test_language_api_faz_d.py`.
+- **[Orta] Test sayısı üç yerde üç farklı değerdi: 234 / 235 / 233.** Kök neden: üç ayrı tanım
+  (tests/ ağacındaki tüm dosyalar = 235, tests/ altındaki `.py` = 234, repo geneli `test_*.py`
+  = 235) ve elle yazılmış sayılar. Düzeltme: kanonik tanım üreticide TEK yerde
+  (`generate_inventory_page.canonical_test_modules`); `inventory_notes.json` artık `{test_modulu}`
+  yer tutucusu taşır ve üretici doldurur; sayfa statı tanımını satır içinde gösterir; testler
+  gerçek `git` taramasıyla karşılaştırır (`test_page_test_count_is_the_canonical_measure`,
+  `test_changelog_uses_the_same_definition`). Güncel kanonik ölçü: **234**.
+- **[Orta] Üreticinin `git()` fonksiyonu dönüş kodunu yok sayıyordu.** (`scripts/generate_inventory_page.py`)
+  `git` başarısız olunca çıktı boş dönüyor ve üretici EKSİK dosya listesiyle yine de "geçerli"
+  görünen bir sayfa yazıyordu. Düzeltme: `git()` artık `GitError` yükseltir; `main()` hatayı
+  yakalar, sayfayı HİÇ yazmaz ve çıkış kodu 2 döner. Kilit: `test_git_raises_instead_of_returning_empty_on_failure`,
+  `test_main_returns_2_and_writes_nothing_when_git_fails`.
+
+Ek: `tests/integration/test_language_transport_contract.py` (20 test) üç ucun TAŞIMA sözleşmesini
+kilitler — paylaşılan kova (iki yön), 429 gövdesi, kasa mandalı, `status`'un kasaya bağlı
+OLMAMASI (açık sözleşme: yalnız okuma raporu), yetenek yokken dürüst ret, geçersiz `client_id`'de
+fail-closed davranışı ve gövde sınırları (422).
+Doğrulama: `backend/routes/language.py` + `scripts/generate_inventory_page.py` + 3 test dosyası;
+`pytest` yeşil; `python scripts/generate_inventory_page.py --check` → GÜNCEL.
+
+## [Unreleased] - 2026-09-04 (routing-hardening)
 - O-1: substitution denials now carry structured requested_model/actual_model call-log
   fields in BOTH query() and legacy chat_completion (single-log doctrine kept);
   ModelSubstitutionDeniedError introduced; Aspasia TelemetryReader reads fields first,

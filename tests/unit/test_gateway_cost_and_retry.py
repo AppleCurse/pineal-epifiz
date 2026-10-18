@@ -14,7 +14,7 @@ import pytest
 from openai import AsyncOpenAI
 from unittest.mock import AsyncMock
 
-from agent_core.services.llm_gateway import LLMGateway, SpendCapExceeded
+from agent_core.services.llm_gateway import LLMGateway, ProviderResponseError, SpendCapExceeded
 
 
 def _gateway_with_mock(handler, monkeypatch) -> LLMGateway:
@@ -28,6 +28,7 @@ def _gateway_with_mock(handler, monkeypatch) -> LLMGateway:
         base_url="https://openrouter.ai/api/v1",
         api_key="sk-or-v1-test",
         http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        max_retries=0,  # LLMGateway owns retries; do not let the SDK retry internally.
     )
     return gw
 
@@ -83,7 +84,11 @@ async def test_priced_model_still_accounts_spend(monkeypatch):
 
     gw = _gateway_with_mock(handler, monkeypatch)
     await gw.query("ping", model="upstage/solar-pro4")
-    assert gw.spend_usd == pytest.approx(0.03)  # 1M in-token * $0.03/M
+    # [2026-10-14] Fiyat BURAYA gömülmez: beklenen değer tablodan türetilir.
+    # Gömülü $0.03, tablo canlı ölçümle $0.09'a güncellenince bu testi
+    # kırmıştı — test maliyet MEKANİZMASINI sınar, fiyat sabitini değil.
+    rate_in = LLMGateway.MODEL_PRICING["upstage/solar-pro4"]["in"]
+    assert gw.spend_usd == pytest.approx(rate_in)  # 1M girdi token * tablo fiyatı
 
 
 @pytest.mark.asyncio
@@ -124,6 +129,25 @@ async def test_bad_request_400_is_not_retried(monkeypatch):
         await gw.query("ping")
     assert calls["n"] == 1, "[018] 400 retry edilmemeli (eski davranış 3 kez deniyordu)"
     assert any("NON_RETRYABLE" in (e.get("error") or "") for e in gw.call_log)
+
+
+@pytest.mark.asyncio
+async def test_unclassified_provider_value_error_is_not_retried_and_keeps_reserve(monkeypatch):
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        raise ValueError("provider response decoder failed")
+
+    gw = _gateway_with_mock(handler, monkeypatch)
+    with pytest.raises(ProviderResponseError):
+        await gw.query("ping", model="upstage/solar-pro4")
+
+    assert calls["n"] == 1, "unknown provider failures must not trigger another paid request"
+    assert gw.spend_usd > 0, "the request may have been accepted before decoding failed"
+    assert gw.budget_status()["active_reservations"] == 0
+    assert gw.call_log[-1]["error"] == "ProviderResponseError"
+    assert gw.call_log[-1]["cost_usd"] == gw.spend_usd
 
 
 @pytest.mark.asyncio

@@ -4,18 +4,21 @@
 - Kapı (ENABLE_CRAWL4AI) kapalıyken davranış ESKİSİ GİBİ (pipeline değişmez).
 - Kütüphane/tarayıcı/ağ/timeout hatalarında dürüst `available:false` + sebep;
   ASLA uydurma içerik yok.
-- renderer=http (default) tarayıcı binary'si gerektirmez; renderer=browser
-  binary yoksa dürüst `browser_missing`.
+- HTML fetch pinned transport ile yapılır; parser haricî ağ açmaz.
+- renderer=browser, ağ adresi sabitlenemediği için dürüstçe kapalıdır.
 - Public-web araştırma zenginleştirmesi: yalnız available=True sonuçlar
   `crawl` alanına girer; kapalıyken matched sonuçlar birebir aynı kalır.
 - quote_guard korpusu: yalnız gerçek çekilmiş metin (`public_web_sources`)
   eklenir; alan yoksa korpus birebir aynı kalır.
 """
 import asyncio
+import importlib.util
 
 import pytest
 
-from agent_core.services import crawl_enricher
+from agent_core.services import crawl_enricher, safe_web_fetch
+from agent_core.services.safe_web_fetch import SafeHTML
+from agent_core.utils import security
 from agent_core.services.crawl_enricher import (
     CrawlFetchResult,
     _classify_error,
@@ -34,6 +37,24 @@ def _res(url="https://example.com/a", available=True, markdown="içerik", **kw):
     )
 
 
+def _mock_safe_stack(monkeypatch, *, html="<html><title>Başlık</title><p>İçerik</p></html>", markdown="# İçerik", title="Başlık"):
+    monkeypatch.setattr(importlib.util, "find_spec", lambda _name: object())
+    monkeypatch.setattr(security, "is_safe_url", lambda _url: True)
+
+    async def _fetch(url, **_kwargs):
+        return SafeHTML(
+            requested_url=url,
+            final_url=url,
+            html=html,
+            content_type="text/html",
+            status_code=200,
+            bytes_read=len(html.encode("utf-8")),
+        )
+
+    monkeypatch.setattr(safe_web_fetch, "fetch_safe_html", _fetch)
+    monkeypatch.setattr(crawl_enricher, "_parse_html", lambda *_args: (markdown, title))
+
+
 class TestGate:
     @pytest.mark.asyncio
     async def test_disabled_by_default(self, monkeypatch):
@@ -44,20 +65,23 @@ class TestGate:
         assert res.markdown == ""
 
     @pytest.mark.asyncio
-    async def test_gate_on_runs_crawler(self, monkeypatch):
+    async def test_gate_on_uses_pinned_fetch_then_local_markdown_parser(self, monkeypatch):
         monkeypatch.setenv("ENABLE_CRAWL4AI", "true")
+        _mock_safe_stack(monkeypatch)
         called = {}
+        real_parse = crawl_enricher._parse_html
 
-        async def _fake(url, renderer, timeout):
-            called["ran"] = (url, renderer)
-            return (True, url, "Başlık", "# İçerik", 200, "")
+        def _parse(html, url):
+            called["parse"] = (html, url)
+            return real_parse(html, url)
 
-        monkeypatch.setattr(crawl_enricher, "_crawl_once", _fake)
+        monkeypatch.setattr(crawl_enricher, "_parse_html", _parse)
         res = await fetch_readable("https://example.com/a")
-        assert called["ran"][0] == "https://example.com/a"
-        assert called["ran"][1] == "http"  # default renderer tarayıcı istemez
+        assert called["parse"][0].startswith("<html>")
+        assert called["parse"][1] == "https://example.com/a"
         assert res.available is True
         assert res.title == "Başlık"
+        assert res.markdown == "# İçerik"
 
 
 class TestHonestContract:
@@ -72,58 +96,57 @@ class TestHonestContract:
     @pytest.mark.asyncio
     async def test_ssrf_blocked(self, monkeypatch):
         monkeypatch.setenv("ENABLE_CRAWL4AI", "true")
+        monkeypatch.setattr(importlib.util, "find_spec", lambda _name: object())
+        monkeypatch.setattr(security, "is_safe_url", lambda _url: False)
         res = await fetch_readable("http://127.0.0.1:8000/secret")
         assert res.available is False
         assert res.reason == "ssrf_blocked"
 
     @pytest.mark.asyncio
-    async def test_library_missing(self, monkeypatch):
+    async def test_library_missing_is_reported_before_network(self, monkeypatch):
         monkeypatch.setenv("ENABLE_CRAWL4AI", "true")
-
-        async def _boom(url, renderer, timeout):
-            raise ModuleNotFoundError("crawl4ai yok", name="crawl4ai")
-
-        monkeypatch.setattr(crawl_enricher, "_crawl_once", _boom)
+        monkeypatch.setattr(importlib.util, "find_spec", lambda _name: None)
+        monkeypatch.setattr(
+            safe_web_fetch,
+            "fetch_safe_html",
+            lambda *_args, **_kwargs: pytest.fail("network must not run without parser"),
+        )
         res = await fetch_readable("https://example.com/a")
         assert res.available is False
         assert res.reason == "library_missing"
 
     @pytest.mark.asyncio
-    async def test_installed_library_import_failure_is_not_called_missing(self, monkeypatch):
+    async def test_installed_parser_import_failure_is_not_called_missing(self, monkeypatch):
         monkeypatch.setenv("ENABLE_CRAWL4AI", "true")
+        _mock_safe_stack(monkeypatch)
 
-        async def _boom(url, renderer, timeout):
+        def _broken_parser(*_args):
             raise ImportError("installed crawl4ai runtime is broken")
 
-        monkeypatch.setattr(crawl_enricher, "_crawl_once", _boom)
+        monkeypatch.setattr(crawl_enricher, "_parse_html", _broken_parser)
         res = await fetch_readable("https://example.com/a")
         assert res.available is False
         assert res.reason == "dependency_broken"
         assert res.error_detail.startswith("ImportError:")
 
     @pytest.mark.asyncio
-    async def test_browser_missing_classified(self, monkeypatch):
+    async def test_browser_renderer_fails_closed_without_pinned_browser_transport(self, monkeypatch):
         monkeypatch.setenv("ENABLE_CRAWL4AI", "true")
         monkeypatch.setenv("CRAWL4AI_RENDERER", "browser")
-
-        async def _boom(url, renderer, timeout):
-            raise RuntimeError(
-                "Executable doesn't exist at .../chromium. Please run playwright install")
-
-        monkeypatch.setattr(crawl_enricher, "_crawl_once", _boom)
+        _mock_safe_stack(monkeypatch)
         res = await fetch_readable("https://example.com/a")
         assert res.available is False
-        assert res.reason == "browser_missing"
-        assert res.error_detail  # insan-notu mevcut ama makine sebep ayrı
+        assert res.reason == "browser_renderer_disabled_safe_transport_unavailable"
 
     @pytest.mark.asyncio
     async def test_generic_error_is_fetch_error(self, monkeypatch):
         monkeypatch.setenv("ENABLE_CRAWL4AI", "true")
+        _mock_safe_stack(monkeypatch)
 
-        async def _boom(url, renderer, timeout):
+        async def _boom(url, **_kwargs):
             raise ConnectionError("bağlantı reddedildi (dürüst ağ yokluğu)")
 
-        monkeypatch.setattr(crawl_enricher, "_crawl_once", _boom)
+        monkeypatch.setattr(safe_web_fetch, "fetch_safe_html", _boom)
         res = await fetch_readable("https://example.com/a")
         assert res.reason == "fetch_error"
         assert res.available is False
@@ -131,27 +154,32 @@ class TestHonestContract:
     @pytest.mark.asyncio
     async def test_timeout_is_honest(self, monkeypatch):
         monkeypatch.setenv("ENABLE_CRAWL4AI", "true")
+        _mock_safe_stack(monkeypatch)
 
-        async def _slow(url, renderer, timeout):
+        async def _slow(url, **_kwargs):
             raise asyncio.TimeoutError()
 
-        monkeypatch.setattr(crawl_enricher, "_crawl_once", _slow)
+        monkeypatch.setattr(safe_web_fetch, "fetch_safe_html", _slow)
         res = await fetch_readable("https://example.com/a")
         assert res.reason == "timeout"
 
     @pytest.mark.asyncio
-    async def test_failed_result_classified_not_fabricated(self, monkeypatch):
+    async def test_failed_http_fetch_is_not_fabricated_as_empty_content(self, monkeypatch):
+        from httpx import HTTPStatusError, Request, Response
+
         monkeypatch.setenv("ENABLE_CRAWL4AI", "true")
+        _mock_safe_stack(monkeypatch)
+        response = Response(403, request=Request("GET", "https://example.com/a"))
 
-        async def _fail(url, renderer, timeout):
-            return (False, url, "", "", 403, "Access denied")
+        async def _fail(url, **_kwargs):
+            raise HTTPStatusError("Access denied", request=response.request, response=response)
 
-        monkeypatch.setattr(crawl_enricher, "_crawl_once", _fail)
+        monkeypatch.setattr(safe_web_fetch, "fetch_safe_html", _fail)
         res = await fetch_readable("https://example.com/a")
         assert res.available is False
-        assert res.reason == "fetch_error"
+        assert res.reason == "http_error"
+        assert res.status_code == 403
         assert res.markdown == ""
-        assert res.error_detail == "Access denied"
 
     def test_classify_error_markers(self):
         assert _classify_error("Executable doesn't exist at /x") == "browser_missing"
@@ -163,11 +191,7 @@ class TestHonestContract:
     async def test_markdown_capped_by_env(self, monkeypatch):
         monkeypatch.setenv("ENABLE_CRAWL4AI", "true")
         monkeypatch.setenv("CRAWL4AI_MAX_CHARS", "100")
-
-        async def _fake(url, renderer, timeout):
-            return (True, url, "T", "x" * 30000, 200, "")
-
-        monkeypatch.setattr(crawl_enricher, "_crawl_once", _fake)
+        _mock_safe_stack(monkeypatch, markdown="x" * 30000, title="T")
         res = await fetch_readable("https://example.com/a")
         assert len(res.markdown) == 100
 
@@ -189,14 +213,38 @@ def _engine(*urls):
 
 
 class TestResearchWiring:
-    """[FAZ A] Zenginleştirme artık TEK crawl4ai çağrısı değil, üç kademeli
-    temiz-metin omurgası: trafilatura → crawl4ai → scrapling
-    (`capabilities.extract_web_text`). Sözleşme AYNEN korunur: çekilemeyen
-    sonuca `crawl` alanı EKLENMEZ (dürüst boş), uydurma metin YOK.
+    """The API preserves search availability separately from a successful empty result."""
 
-    Kasa kapalıyken hiçbir kademe koşmaz: bu yüzden testler kendi odasının
-    kasanı açar (`client_id`), interlock gerçeği tahmin edilmez.
-    """
+    @pytest.mark.asyncio
+    async def test_unavailable_search_is_distinct_from_successful_empty_search(self):
+        failed = await _run_public_web_research(
+            "https://x.com/alper",
+            _FakeSearch(SearchOutcome(
+                results=[], status="UNAVAILABLE", error="TIMEOUT", available=False
+            )),
+        )
+        assert failed["status"] == "unavailable"
+        assert failed["available"] is False
+        assert failed["search_outcome"] == {
+            "status": "UNAVAILABLE", "available": False, "error": "TIMEOUT"
+        }
+
+        empty = await _run_public_web_research(
+            "https://x.com/alper",
+            _FakeSearch(SearchOutcome(results=[], status="NO_RESULTS", available=True)),
+        )
+        assert empty["status"] == "no_results"
+        assert empty["available"] is True
+        assert empty["search_outcome"]["status"] == "NO_RESULTS"
+        assert empty["search_outcome"]["available"] is True
+
+        class _ExplodingSearch:
+            async def search(self, *_args, **_kwargs):
+                raise RuntimeError("provider detail must not be exposed")
+
+        raised = await _run_public_web_research("https://x.com/alper", _ExplodingSearch())
+        assert raised["status"] == "unavailable"
+        assert raised["search_outcome"]["error"] == "RuntimeError"
 
     @staticmethod
     def _open_vault(client_id="crawl-test") -> str:
@@ -242,7 +290,14 @@ class TestResearchWiring:
 
     @pytest.mark.asyncio
     async def test_gate_on_attaches_only_available_crawls(self, monkeypatch):
+        from agent_core.capabilities import adapters_web
+
         monkeypatch.setenv("ENABLE_CRAWL4AI", "true")
+        monkeypatch.setattr(
+            adapters_web,
+            "_module_available",
+            lambda name: name == "crawl4ai.markdown_generation_strategy",
+        )
 
         async def _fake(url, renderer=None, timeout=None):
             if "secret-error" in url:

@@ -34,10 +34,17 @@ def _depth(react=0.0, rep=0.0, nrup=0, kinds=None, verdict="ok", comp=0.1):
         "compensation_index": comp,
         "reaction_formation_index": react,
         "channels": {
-            "declaration": {"signals": {"repetition_score": rep}},
-            "rhythm": {"signals": {
-                "n_ruptures": nrup, "rupture_kinds": list(kinds or []),
-            }},
+            "declaration": {
+                "completeness": 0.7,
+                "signals": {"repetition_score": rep},
+            },
+            "staging": {"completeness": 0.6, "signals": {}},
+            "rhythm": {
+                "completeness": 0.5,
+                "signals": {
+                    "n_ruptures": nrup, "rupture_kinds": list(kinds or []),
+                },
+            },
         },
     }
 
@@ -135,7 +142,26 @@ async def test_shadow_uses_depth_as_primary_source():
     })
     assert result.strategy == "mirroring"
     assert result.data_confidence is True
+    assert result.confidence == 0.6  # depth source completeness, not legacy trait score count
+    assert result.trait_scores_measured is False
+    assert result.dark_profile["narcissism"] is None
     assert isinstance(result.message, str) and len(result.message) > 0
+
+
+async def test_shadow_depth_strategy_rejects_invalid_confidence_before_synthesis():
+    executor = ShadowExecutor()
+    depth = _depth(react=0.61)
+    depth["confidence"] = float("nan")
+    result = await executor.execute({
+        "target_profile": {"bio": "A supplied target profile"},
+        "psychodynamic_depth": depth,
+    })
+    assert result.data_confidence is False
+    assert result.confidence == 0.0
+    assert result.fallback_reason == "invalid_depth_confidence"
+    assert result.message == ""
+    assert result.strategy == "unavailable"
+    assert result.dark_profile["narcissism"] is None
 
 
 async def test_shadow_without_usable_depth_falls_back_to_legacy():

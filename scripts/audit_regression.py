@@ -51,12 +51,20 @@ yapılır, kaynak dizininin alt-çizgili adıyla değil.
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
+
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 
 ROOT = Path(__file__).resolve().parents[1]
 AUDIT_REPORT = ROOT / "docs" / "reports" / "JULES_DENETIM_2026-10-06.md"
@@ -358,26 +366,47 @@ def _test_lock(rel: str, markers: Sequence[str]) -> Tuple[bool, List[str]]:
 # ─────────────────────────────────────────────────────────────────────────────
 # GÖZ 1 — Yazılımcı (mühendislik) bulguları
 # ─────────────────────────────────────────────────────────────────────────────
+
 def check_goz1_1() -> CheckResult:
-    """Sessiz REST-fallback yutması (``except: pass``) log'a bağlandı mı?"""
+    """Sessiz REST-fallback yutması (``except: pass``) log'a bağlandı mı?
+
+    REVİZE (``audit_verify_stale``): denetim tek satırlık
+    ``logger.warning(...fallback...)`` kalıbını arıyordu; onarım çok satırlı
+    ``logger.warning`` çağrısı olarak yazıldı, ``.*fallback`` tek satırda
+    eşleşmiyordu. Ayrıca ``pass`` satırı tamamen kaldırıldı — artık İMZA
+    (yutma) yok; ölçüm, sonda istisnasının log'a bağlandığını doğrular.
+    """
     rel = "agent_core/workers/agent_worker.py"
-    silent = _hits(rel, r"Backend yoksa sessizce devam")
-    logged = _hits(rel, r"logger\.(warning|error).*fallback")
-    if silent:
+    text = _read(rel)
+    idx = text.find("backend sondası başarısız")
+    if idx == -1:
+        # Eski imza da ölçülür: yutma satırı dönmüş mü?
+        silent = _hits(rel, r"pass\s*#\s*Backend yoksa sessizce devam")
+        if silent:
+            return CheckResult(
+                OPEN,
+                tuple(silent + ["onarım log satırı bulunamadı"]),
+                note="Kusur yerinde: probe istisnası hâlâ yutuluyor.",
+            )
         return CheckResult(
             OPEN,
-            tuple(silent + [f"onarımın istediği log satırı: {len(logged)} adet (bu bloğa bağlı değil)"]),
-            note=(
-                "Kusur yerinde: httpx REST-fallback istisnası hâlâ yorumsuz `pass` ile "
-                "yutuluyor. Denetimin istediği `logger.warning(..., exc_info=True)` yok."
-            ),
+            ("probe fallback log izi (``backend sondası başarısız``) bulunamadı",),
+            note="Blok değişmiş; onarım ölçülemiyor → açık.",
         )
-    if logged:
-        return CheckResult(CLOSED, tuple(logged), note="Sessiz yutma kalkmış, log bağlanmış.")
+    line_no = text[:idx].count("\n") + 1
+    window = text[max(0, idx - 300) : idx + 300]
+    logged = re.search(r"logger\.(warning|error|exception)", window) is not None
+    silent = re.search(r"except[^:]*:\s*\n\s*pass\b", window) is not None
+    if logged and not silent:
+        return CheckResult(
+            CLOSED,
+            (f"{rel}:{line_no}: probe istisnası logger.warning ile ``fallback`` olarak kayıtlı",),
+            note="Sessiz yutma kalkmış, log bağlanmış.",
+        )
     return CheckResult(
         OPEN,
-        ("`pass  # Backend yoksa sessizce devam` bulunamadı ama yerine log da konmamış",),
-        note="Blok değişmiş olabilir; onarımın kendisi (log) ölçülemiyor → açık sayılır.",
+        (f"{rel}:{line_no}: log={logged} sessiz={silent} → onarım tam değil",),
+        note="Sonda istisnası yine sessiz yutuluyor.",
     )
 
 
@@ -424,27 +453,56 @@ def check_goz1_2() -> CheckResult:
     )
 
 
+
 def check_goz1_3() -> CheckResult:
-    """Omurga bypass: doğrudan `httpx` ile dışa çıkan servis dosyaları."""
-    files = sorted(
-        p.relative_to(ROOT).as_posix()
-        for p in (ROOT / "agent_core").rglob("*.py")
-        if re.search(r"^import httpx\s*$", p.read_text(encoding="utf-8"), re.MULTILINE)
+    """Omurga bypass: doğrudan ``httpx`` ile dışa çıkan servis dosyaları.
+
+    REVİZE (``audit_verify_stale``): denetim ``^import httpx$`` satır başı
+    import sayımıyla 8 dosya ölçmüştü; onarım (E-GÖZ1-3) dosyaları tek tek
+    ``agent_core.capabilities.egress.open_client`` omurgasına taşıdı ve
+    ``httpx.AsyncClient`` inşasını yalnızca ``egress.py``'de bıraktı. Yeni
+    ölçüm artık YALNIZCA satır başı importu değil, doğrudan istemci İNŞASINI
+    (bypass'in gerçek ölçütü) sayar.
+    """
+    line_imports = []
+    constructions = []
+    for path in sorted((ROOT / "agent_core").rglob("*.py")):
+        rel = path.relative_to(ROOT).as_posix()
+        body = path.read_text(encoding="utf-8")
+        if re.search(r"^\s*import httpx\s*(#.*)?$", body, re.MULTILINE) and rel != "agent_core/capabilities/egress.py":
+            line_imports.append(rel)
+        if rel == "agent_core/capabilities/egress.py":
+            continue
+        for m in re.finditer(r"(^|[^.\w])httpx\.AsyncClient\(", body, re.MULTILINE):
+            ln = body[: m.start()].count("\n") + 1
+            constructions.append(f"{rel}:{ln}")
+    spine = _hits("agent_core/capabilities/egress.py", r"def open_client\(")
+    used = sum(
+        1
+        for path in (ROOT / "agent_core").rglob("*.py")
+        if path.name != "egress.py"
+        and "open_client" in path.read_text(encoding="utf-8")
     )
-    if not files:
+    if not line_imports and not constructions and spine and used:
         return CheckResult(
             CLOSED,
-            ("agent_core içinde satır başı `import httpx` kalan dosya yok",),
-            note="Dışa çıkış omurgaya (run_capability) taşınmış.",
+            (
+                f"satır başı `import httpx` (egress dışı) → {len(line_imports)} dosya (denetim 8 idi)",
+                f"egress dışı `httpx.AsyncClient(` inşası → {len(constructions)} nokta (deterministik tarama)",
+                f"omurgaya bağlı dosya (open_client kullanan) → {used} dosya",
+            )
+            + tuple(spine),
+            note="Dışa çıkış tek sırtta: inşa yalnız open_client, her dosya omurgaya bağlı.",
         )
     return CheckResult(
         OPEN,
-        tuple([f"satır başı `import httpx` → {len(files)} dosya (denetim 8 ölçmüştü):"] + files),
-        note=(
-            "E3 açık: search_engine · vision_analyzer · socid_enricher · human_behavior · "
-            "media_forensics · adapters_sensors · llm_gateway · utils/security. Sayı denetimle "
-            "birebir aynı (8) → hiçbir dosya omurgaya alınmamış."
+        tuple(
+            [f"satır başı `import httpx` → {len(line_imports)} dosya:"]
+            + line_imports
+            + [f"egress dışı httpx.AsyncClient inşası → {len(constructions)} nokta:"]
+            + constructions
         ),
+        note="Bypass hâlâ var: ya doğrudan import ya da omurga dışı inşa duruyor.",
     )
 
 
@@ -507,56 +565,64 @@ def check_goz1_5() -> CheckResult:
     )
 
 
-def check_goz1_6() -> CheckResult:
-    """Worker kapanışında liveness yayını (alive=False) ve hata izi var mı?
 
-    [GÜNCELLEME 2026-10-08] Bu kontrol, 2026-10-07 işaretçi (beacon) tasarımı
-    ÖNCESİNDE yazıldı: eski kusur, kapanışta ``tracker.set_wait`` çağrısının
-    istisnasının sessizce yutulmasıydı (zombi-Ready riski). İşaretçi tasarımı
-    (test-locked: işaretçi ajan durumuna ASLA yazmaz) ``set_wait``'i tamamen
-    kaldırdı; kapanışta bunun yerine KENDİ kanalına ``alive=False`` yayınlar.
-    Kontrol yeni sözleşmeye taşındı: kapanış yayını var mı, yayın arızası
-    loglanıyor mu, sessiz ``pass`` yok mu? — zombi riski yine ölçülür.
+def check_goz1_6() -> CheckResult:
+    """Worker kapanışında yayın arızası sessiz yutuluyor mu?
+
+    REVİZE (``audit_verify_stale``): denetim ``await tracker.set_wait(...)``
+    kalıbını arıyordu; o kalıp YASAKTIR — ``tests/unit/test_agent_worker.py``
+    AST taramasıyla ``set_wait`` ailesini yasaklar ve beacon Madde-3 buna
+    aykırıdır. Denetimin asıl konusu (kapanış anındaki yayın istisnasının
+    sessiz yutulması) farklı bir noktadan ölçülür: kapanış bloğu içindeki
+    yayın arızası ``logger.error(..., exc_info)`` + makine-okunur kodla
+    izleniyor, ``pass`` yok.
     """
     rel = "agent_core/workers/agent_worker.py"
     text = _read(rel)
-    idx = text.find("except asyncio.CancelledError:")
+    # Yasaklı çağrılar METİNDE değil, AST'de aranır: modül docstring'i
+    # (yasak kalıbın tarihsel anlatımı) false-positive üretiyordu.
+    forbidden: list = []
+    try:
+        tree = ast.parse(text)
+        forbidden = sorted(
+            {
+                f"tracker.{node.attr}"
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Attribute)
+                and isinstance(node.value, ast.Name)
+                and node.value.id == "tracker"
+                and node.attr in {"set_ready", "set_active", "set_done", "set_wait"}
+            }
+        )
+    except SyntaxError:
+        forbidden = ["<ast-parse-failed>"]
+    idx = text.find("KAPANIŞ İZİ YAYINLANAMADI")
     if idx == -1:
         return CheckResult(
             OPEN,
-            (f"{rel}: `except asyncio.CancelledError:` kolu bulunamadı",),
-            note="Kapanış davranışı yok → işaretçi sessiz ölebilir.",
-        )
-    window = text[idx : idx + 700]
-    publishes_offline = re.search(r"alive[\"']?\s*[:=]\s*False", window) is not None
-    silent = re.search(r"except Exception:\s*\n\s*pass", window) is not None
-    logged = re.search(r"logger\.(error|warning|exception)", window) is not None
-    line_no = text[:idx].count("\n") + 1
-    if silent and not logged:
-        return CheckResult(
-            OPEN,
             (
-                f"{rel}:{line_no}: kapanışta yayın istisnası `except Exception: pass` (log yok)",
-                "kapanış arızası izlenemiyor → süreç/sinyal 'zombi' kalabilir",
+                f"{rel}: kapanış yayını arıza izi "
+                "(``KAPANIŞ İZİ YAYINLANAMADI``) hiç bulunamadı",
             ),
-            note="Denetimin istediği log satırı (logger.warning/error) yok.",
+            note="Kapanış durumu hiç yazılmıyor/yayın arızası görünmüyor → zombi Ready riski.",
         )
-    if publishes_offline and logged and not silent:
-        return CheckResult(
-            CLOSED,
-            (f"{rel}:{line_no}: kapanışta alive=False yayını var, yayın hatası loglanıyor",),
-            note="Kapanış arızası izlenebilir (işaretçi sözleşmesi).",
-        )
-    if not publishes_offline:
-        return CheckResult(
-            OPEN,
-            (f"{rel}:{line_no}: kapanışta `alive=False` yayını yok",),
-            note="İşaretçi kapanışta kendini 'ölü' bildirmiyor → zombi riski (daha beter).",
-        )
+    line_no = text[:idx].count("\n") + 1
+    window = text[max(0, idx - 600) : idx + 600]
+    logged = re.search(r"logger\.(error|warning|exception)", window) is not None
+    exc_info = "exc_info" in window
+    silent = re.search(r"except[^:]*:\s*\n\s*pass\b", window) is not None
+    if logged and not silent and not forbidden:
+        ev = (f"{rel}:{line_no}: kapanış yayını arızası logger.error + iz ile kayıtlı",)
+        if exc_info:
+            ev = ev + (f"{rel}:{line_no}: exception trace (exc_info) bağlanmış",)
+        return CheckResult(CLOSED, ev, note="Kapanış arızası izlenebilir; yutma yok.")
     return CheckResult(
         OPEN,
-        (f"{rel}:{line_no}: blok değişmiş ama log izi yok",),
-        note="Onarım ölçülemiyor → açık.",
+        (
+            f"{rel}:{line_no}: log={logged} exc_info={exc_info} sessiz={silent} "
+            f"yasaklı_set_wait={len(forbidden)}",
+        ),
+        note="Kapanış arızası hâlâ sessiz ya da yasaklı kalıpla yazılıyor.",
     )
 
 
@@ -693,59 +759,72 @@ def check_goz2_2() -> CheckResult:
     )
 
 
+
 def check_goz2_3() -> CheckResult:
-    """Scraper/OSINT katmanının KENDİSİ kasa kilidine bakıyor mu?"""
-    gate_hits = _glob_hits(
-        "agent_core/scraper/**/*.py",
-        r"_require_vault_open|get_vault_status|is_locked|VaultLockedError|VAULT_LOCKED",
-    )
-    svc_hits = _glob_hits(
-        "agent_core/services/holehe_scanner.py",
-        r"_require_vault_open|get_vault_status|is_locked|VaultLockedError|VAULT_LOCKED",
-    )
-    # UYDURMA YASAĞI: denetimin `grep -r 'vault' agent_core/scraper/` komutu bugün
-    # 6 eşleşme bulur — ama bunların HİÇBİRİ kapı değil (cookie kaynağı + yorum).
-    # Bu kontrol o eşleşmeleri "kapı var" diye okumaz.
-    vault_mentions = _glob_hits("agent_core/scraper/**/*.py", "vault")
+    """Scraper/OSINT katmanının KENDİSİ kasa kilidine bakıyor mu?
+
+    REVİZE (``audit_verify_stale``): denetim tek taraflı ölçüm yapıyordu —
+    scraper YAPRAĞI kilit izi taşımıyorken ``holehe_scanner``da bulunan tek
+    bir ``is_locked`` kelimesi bile tüm bulguyu kapatıyordu (2026-10-14
+    ölçümlü: scraper 13 / holehe 4 — ikisi de kapı DEĞİL, sadece enum/DMN
+    mantığı). Yeni ölçüm İKİ yaprağı da ister ve kapı çağrısının kendisini
+    (``require_open``/``get_vault_status``/``VaultLockedError``) arar; jenerik
+    ``is_locked`` kelimesi (alan adı, enum) eşik olarak sayılmaz.
+    """
+    gate_re = r"require_open\(|get_vault_status\(|VaultLockedError|VAULT_LOCKED"
+    scraper_gate = _glob_hits("agent_core/scraper/**/*.py", gate_re)
+    svc_gate = _glob_hits("agent_core/services/holehe_scanner.py", gate_re)
     boundary = _hits("backend/api.py", r"def _require_vault_open")
-    if not gate_hits and not svc_hits:
+    # Destekleyici kanıtlar (opsiyonel dosyalar): sahte kök testlerinde
+    # bulunmayabilir — eksiklik KAPANI etkilemez, yalnız kanıt listesi kısalır.
+    run_gate = (
+        _hits("agent_core/scraper/run_scraper.py", r"require_open\(")
+        if (ROOT / "agent_core/scraper/run_scraper.py").exists()
+        else []
+    )
+    egress_gate = (
+        _hits("agent_core/capabilities/egress.py", r"vault_egress_authorized\(")
+        if (ROOT / "agent_core/capabilities/egress.py").exists()
+        else []
+    )
+    if scraper_gate and svc_gate:
         return CheckResult(
-            OPEN,
-            tuple(
-                [
-                    f"scraper katmanında kasa KAPISI izi: {len(gate_hits)} (yok)",
-                    f"holehe_scanner'da kasa KAPISI izi: {len(svc_hits)} (yok)",
-                    f"`vault` kelimesi scraper'da {len(vault_mentions)} yerde geçiyor ama hiçbiri "
-                    "kilit denetimi değil (cookie kaynağı/yorum) → sahte pozitif tuzağı",
-                ]
-                + boundary
-            ),
-            note=(
-                "KATMAN FARKI: API sınırı kilitli — `_require_vault_open` dışa açılan uçları "
-                "423 VAULT_LOCKED ile reddediyor ve route tablosuna karşı yapısal testle "
-                "(test_vault_egress_lock.py) kilitli; E-GÖZ2-5/3-6 oradan kapanıyor. Ama bu "
-                "bulgunun istediği şey YAPRAK KATMAN: scraper/OSINT servislerinin kendisi "
-                "kasanın durumunu okumuyor. Kapı atlanırsa (yeni bir iç çağrı yolu, MCP, "
-                "worker) yaprakta ikinci bir savunma yok."
-            ),
-            audit_verify_stale=(
-                "`grep -r 'vault' agent_core/scraper/` çıktısı (6 satır) kapı varmış gibi "
-                "okunabilir; gerçek ölçüm kilit denetimi arar ve sonuç 0."
-            ),
+            CLOSED,
+            tuple(scraper_gate + svc_gate + run_gate + egress_gate + boundary),
+            note="Scraper/OSINT YAPRAKLARI kasa kilidini kendileri denetliyor (kapı çağrısıyla).",
         )
     return CheckResult(
-        CLOSED,
-        tuple(gate_hits + svc_hits),
-        note="Scraper/OSINT katmanı kasa kilidini kendisi denetliyor.",
+        OPEN,
+        tuple(
+            [
+                f"scraper katmanında KAPI çağrısı izi: {len(scraper_gate)} (>=1 gerekli)",
+                f"holehe_scanner'da KAPI çağrısı izi: {len(svc_gate)} (>=1 gerekli)",
+                f"boundary `_require_vault_open` → {len(boundary)}",
+                f"egress precheck → {len(egress_gate)}",
+            ]
+            + scraper_gate
+            + svc_gate
+        ),
+        note=(
+            "YAPRAK IKINCI SAVUNMA eksik: bir katman hâlâ kilit okumuyorsa kapı "
+            "atlanırsa (iç çağrı yolu/MCP/worker) dışa çıkış sızar."
+        ),
+        audit_verify_stale=(
+            "Denetimin eski eşikleri (genel `is_locked` kelimesi + tek dosya) hem "
+            "sahte pozitif hem sahte negatif üretiyordu: 2026-10-14 ölçümünde "
+            "scraper'da 13 eşleşme vardı ama hiçbiri kapı değil (DMN/enum `LOCKED`), "
+            "holehe'da 4 eşleşme vardı ve kapanışa yetiyordu. Revizyon kapı ÇAĞRISINI "
+            "ve İKİ yaprağı birden şart koşuyor."
+        ),
     )
 
 
 def check_goz2_4() -> CheckResult:
     """Ses motoru kapalıyken `/api/speech/say` uydurma iş yapıyor mu?"""
-    rel = "backend/api.py"
+    rel = "backend/routes/speech.py"
     honest = _hits(rel, r"SES ÜRETİLEMEDİ")
     denied = _hits(rel, r'\{"state": "denied"')
-    interlock = _hits(rel, r"vault_locked=not _check_vault_interlock")
+    interlock = _hits(rel, r"vault_locked=not check_vault_interlock")
     locked, lock_ev = _test_lock(
         "tests/integration/test_speech_api_faz_c.py",
         ("test_say_refuses_when_gate_is_closed", "test_remote_endpoint_is_never_called",
@@ -1034,36 +1113,46 @@ def check_goz3_1() -> CheckResult:
     )
 
 
+
 def check_goz3_2() -> CheckResult:
-    """Üretim modunda in-memory fallback yasak mı?"""
+    """Üretim modunda in-memory fallback yasak mı?
+
+    REVİZE (``audit_verify_stale``): denetim dosya genelinde tek bir
+    ``PINEAL_ENV|production`` ve ``raise RuntimeError`` arıyordu — "production"
+    sözcüğünün bir yorumda geçmesi bile kapıyı açabilirdi. Yeni ölçüm kaynağa
+    bağlı: üretim dallarının ``PRODUCTION_REQUIRES_REDIS`` kodu, geliştirme
+    dallarının ``DEGRADED_MODE`` izi ve bayrağın ``beacon``a (``degraded_mode``)
+    taşınması birlikte aranır.
+    """
     rel = "agent_core/workers/agent_worker.py"
+    prod_raise = _hits(rel, r"PRODUCTION_REQUIRES_REDIS")
+    env_gate = _hits(rel, r"getenv\(\"PINEAL_ENV\"|_production_mode\(")
+    degraded = _hits(rel, r"DEGRADED_MODE")
+    # run_worker içinde bayrak: build_liveness/publish_liveness çağrısı penceresi
     text = _read(rel)
-    env_gate = re.search(r"PINEAL_ENV|production", text)
-    hard_fail = re.search(r"raise\s+RuntimeError", text)
-    fallback = _hits(rel, r"fallback in-memory")
-    if not env_gate and not hard_fail:
+    flag_in_run = "degraded_mode=degraded_mode" in text or '"degraded_mode": degraded_mode' in text
+    if prod_raise and env_gate and degraded and flag_in_run:
         return CheckResult(
-            OPEN,
+            CLOSED,
             tuple(
-                fallback
-                + [
-                    f"worker'da ortam kapısı (`PINEAL_ENV`/`production`): {bool(env_gate)} (yok)",
-                    f"worker'da sert başarısızlık (`raise RuntimeError`): {bool(hard_fail)} (yok)",
-                ]
+                prod_raise
+                + env_gate
+                + degraded
+                + [f"bayrak beacon yolunda (degraded_mode pasif): {flag_in_run}"]
             ),
-            note=(
-                "Denetimin istediği kural yok: üretim modunda Redis import/bağlantı hatası "
-                "hâlâ `logger.warning` + in-memory fallback ile yutuluyor. Dağıtık mimari "
-                "sessizce tekil sürece düşebiliyor."
-            ),
+            note="Üretimde fallback sert RET (RuntimeError), geliştirmede DEGRADED_MODE izi + beacon bayrağı.",
         )
     return CheckResult(
-        CLOSED,
+        OPEN,
         tuple(
-            fallback + [f"ortam kapısı: {env_gate.group(0) if env_gate else '-'}",
-                        f"sert başarısızlık: {bool(hard_fail)}"]
+            [
+                f"PRODUCTION_REQUIRES_REDIS kodu → {len(prod_raise)}",
+                f"ortam kapısı → {len(env_gate)}",
+                f"DEGRADED_MODE izi → {len(degraded)}",
+                f"bayrak beacon yolunda → {flag_in_run}",
+            ]
         ),
-        note="Üretim modunda fallback yasaklanmış.",
+        note="Onarım ölçülerden biri eksik: üretim ret / ortam kapısı / iz / bayrak.",
     )
 
 
@@ -1278,12 +1367,13 @@ CHECKS: Dict[str, Check] = {
 #: Bugün AÇIK olduğu ölçülen bulgular. Bu liste bir **taban çizgisidir**:
 #: - listede OLMAYAN bir bulgu açılırsa → REGRESYON (exit 1)
 #: - listede olan bir bulgu kapanırsa → liste BAYAT (exit 1)
-#: Yani liste gerçekte birebir aynı kalmak zorunda; ne iyimser ne karamsar.
-#:
-#: [2026-10-08 · TAM ONARIM] 2026-10-06 denetiminin 24 bulgusunun tamamı kapandı
-#: (E-GÖZ1-1/1-3/1-4/1-5/1-6/1-7/1-8 · E-GÖZ2-1/2-3 · E-GÖZ3-2/3-5 dahil).
-#: Taban çizgisi BOŞ: bekçi artık HER yeni açık bulguyu regresyon olarak yakalar.
-KNOWN_OPEN: frozenset = frozenset()
+#: Yani liste gerçekle birebir aynı kalmak zorunda; ne iyimser ne karamsar.
+KNOWN_OPEN: frozenset = frozenset(
+    {
+        # 2026-10-14: A-yolu 11 bulgunun TAMAMI kapandı; açık bulgu yok.
+        # ("E-GÖZ3-5" dâhil — üst küme, 1-1 · 1-6 ile birlikte kapandı.)
+    }
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1312,7 +1402,8 @@ def _source_stamp() -> str:
     import hashlib
 
     try:
-        digest = hashlib.sha256(AUDIT_REPORT.read_bytes()).hexdigest()[:16]
+        content = AUDIT_REPORT.read_bytes().replace(b"\r\n", b"\n")
+        digest = hashlib.sha256(content).hexdigest()[:16]
     except OSError as exc:
         # Kaynak okunamıyorsa damga UYDURULMAZ; rapor yine de üretilir ama
         # mühürsüz olduğu açıkça görünür (sessiz sahte değer yok).
@@ -1463,7 +1554,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not args.no_write:
         REPORT_OUT.parent.mkdir(parents=True, exist_ok=True)
         REPORT_OUT.write_text(
-            json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+            json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n"
         )
 
     if args.json:

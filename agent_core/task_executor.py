@@ -1,6 +1,37 @@
-import logging
+"""PINEAL yürütücüsü — 360° boru hattının orkestra şefi (sistemin kalbi).
 
-logger = logging.getLogger(__name__)
+``execute_task(input_data, task_id)`` çağrısı, önce plan (``CognitiveRouter``)
+sonra ajan sırası olacak şekilde TÜM görevi yönetir:
+
+  1. **Plan**: hangi ajanların koşacağı girdiye göre belirlenir.
+  2. **Bellek**: kanonik bellek + kristal hatırlama (``_recall_memory_crystal``);
+     görev sonunda kanıt hedef profiliyle birlikte kalıcı yazılır
+     (``_merge_task_memory``).
+  3. **Ajan koşusu**: her ajan AYRI duvar saati sınırıyla koşar
+     (``_execute_with_timeout`` → ``AgentTimeoutError``); ajan başına girdi
+     özeti, çıktı kanıt kaydı ve hash üretilir (``_evidence_record``,
+     ``_hash_evidence_result``).
+  4. **Deterministik motor**: 7-sütun (``PillarOrchestrator``) LLM'siz çalışır;
+     çıktısı ``pillar_evidence_adapter`` ile kanonik kanıta ve nötr zaman
+     çizelgesine dönüştürülür.
+  5. **Kapılar**: ``claim_decision_gate`` engelli iddiayı bastırır; ``quote_guard``
+     alıntıyı kaynağa bağlar; Tier-2 alanlar allowlist ile yazılır.
+  6. **Sorumluluk zinciri**: her ajan için açılan egress denemeleri ve kanıt
+     hash'i mühürlenir (``_responsibility_trail``); Agent Rack durumu YALNIZ
+     adı taşıdığı ajanın koşusundan yayınlanır (ödünç slot yasak).
+  7. **Destek & devam**: kanıt yetmezse ``ResumeBlockedError``/destek talebi
+     üretilir; destek hâlâ açıkken devam REDDEDİLİR. Bitmiş adımlar
+     ``_resume_done`` ile atlanır (yan etki tekrarı yok).
+
+Her çıkış yolunda geçici görseller silinir. Hata gizlenmez: loglanır, olay
+olarak yayınlanır ve yukarı iletilir.
+
+Tüketici: ``backend/api.py``, ``main.py``, CLI scriptleri.
+Test: ``tests/integration/test_task_executor_flow.py``, ``tests/unit/test_execute_with_timeout.py``,
+``tests/unit/test_evidence_hash_and_fallback_gate.py``.
+"""
+
+import copy
 import inspect
 import os
 import tempfile
@@ -12,6 +43,7 @@ from datetime import datetime, timezone
 from pydantic import BaseModel
 
 from agent_core.agents.authenticity_auditor import AuthenticityAuditorAgent
+from agent_core.capabilities.egress import egress_attempts, open_client
 from agent_core.agents.autonomous_verifier import AutonomousVerifier
 from agent_core.agents.cognitive_profiler import CognitiveProfilerAgent
 from agent_core.agents.depth_analyst import DepthAnalyst
@@ -62,6 +94,18 @@ class AgentTimeoutError(Exception):
     """[BOSS-8] Ajan kendi duvar saati sınırını aştı (ayrı terminal durum)."""
 
 
+class ResumeBlockedError(RuntimeError):
+    """[B0] Resume REDDEDİLDİ: bloklayan destek talebi hâlâ açık/doğrulanmadı.
+
+    ``support_ids`` hangi taleplerin kapatılmadığını taşır (UI/API 409 için).
+    """
+
+    def __init__(self, task_id: str, support_ids):
+        self.task_id = task_id
+        self.support_ids = [str(s) for s in support_ids]
+        super().__init__("RESUME_BLOCKED: " + ", ".join(self.support_ids))
+
+
 class TaskStatus(TaskSnapshot):
     pass
 
@@ -80,6 +124,17 @@ def _canonical_message_context_enabled() -> bool:
         "yes",
         "on",
     }
+
+
+def _channel_from_engine(channel: str, scan: Any) -> Dict[str, Any]:
+    """Tarayıcı/kapasite sonucunu kanal durumu sözlüğüne çevirir.
+
+    [P0 · DENETİM 2026-10-16] Boş liste dönmek yerine "koştu / ÇALIŞMADI /
+    hata" + sebep yazar.
+    """
+    from agent_core.domain.channel_status import from_engine_result
+
+    return from_engine_result(channel, scan).to_dict()
 
 
 def _append_upstream_finding(input_data: dict, agent: str, core: str) -> None:
@@ -601,7 +656,6 @@ class PinealExecutor:
             return ""
 
     async def _download_images(self, urls: List[str]) -> List[str]:
-        import httpx
         import asyncio
 
         def _write_file(content):
@@ -624,8 +678,8 @@ class PinealExecutor:
                 self._log("WARNING", "Gorsel indirilemedi: " + type(e).__name__)
                 return None
 
-        # Use a shared httpx.AsyncClient to enable connection pooling
-        async with httpx.AsyncClient(follow_redirects=False, timeout=15.0) as client:
+        # [E-GÖZ1-3] Tek sırt (egress) üzerinden paylaşımlı HTTP havuzu
+        async with open_client(purpose="media", follow_redirects=False, timeout=15.0) as client:
             # [E7-muaf] `fetch_image` her istisnayı yakalar, loglar ve None
             # döner; kalan görsel yine indirilir (`paths` filtresi).
             results = await asyncio.gather(*(fetch_image(client, u) for u in urls[:2]))
@@ -645,6 +699,151 @@ class PinealExecutor:
         )
         verified = await self.llm_gateway.query(prompt, temperature=0.1, tier=1)
         return VerifiedNote(note=verified)
+
+    @staticmethod
+    def _resume_done(status: Any, agent_name: str) -> bool:
+        """[RESUME] Bu ajan önceki koşuda tamamlanmış mı? (yan etki tekrarı yok)"""
+        run = (getattr(status, "agent_runs", None) or {}).get(agent_name)
+        return bool(run and run.status in {"completed", "completed_no_decision"})
+
+    @staticmethod
+    def _record_ingested(
+        status: Any, agent_name: str, before: Dict[str, Any], input_data: Dict[str, Any]
+    ) -> None:
+        """[RESUME] Bu ajanın input_data'ya yuttuğu anahtarları kaydet."""
+        chunk: Dict[str, Any] = {}
+        for key, value in input_data.items():
+            if key not in before or before[key] != value:
+                chunk[key] = value
+        if chunk:
+            status.ingested_outputs[agent_name] = chunk
+
+    def _request_support(
+        self,
+        status: Any,
+        *,
+        task_id: str,
+        agent_name: str,
+        reason: str,
+        options: list[str],
+        next_action: str,
+        kind: str = "operator_response",
+        blocks_resume: bool = False,
+    ) -> dict:
+        """[DESTEK AKIŞI] Destek talebini GERÇEKTEN oluşturur.
+
+        Üç zorunlu bağlantı: (1) ``status.support_requests`` kaydı (sahipli),
+        (2) ``AwaitingHumanEvent`` → backend ``sync_event`` → WS operatör
+        olayı, (3) görünür WARNING logu. Sadece kayıt ALANI değil.
+        """
+        from agent_core.schemas.telemetry import AwaitingHumanEvent
+
+        entry = {
+            "support_id": f"sup_{task_id}_{len(status.support_requests) + 1}",
+            "task_id": task_id,
+            "agent_name": agent_name,
+            "owner": agent_name,
+            "reason": str(reason).replace("\n", " ")[:200],
+            "options": list(options),
+            "next_action": str(next_action)[:200],
+            "status": "pending",
+            # [B0] Talep TÜRÜ ve resume'u bloklayıp bloklamadığı ayrı ayrı
+            # izlenir: birden fazla açık talep birbirine karışmaz; yalnız
+            # ``blocks_resume`` talepleri kapana kadar resume engellenir.
+            "kind": kind,
+            "requires": (
+                "vault_open" if kind == "vault_open"
+                else "budget_authority" if kind == "spend_cap"
+                else "operator_response"
+            ),
+            "blocks_resume": bool(blocks_resume),
+            "responses": [],
+            "approved": False,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        status.support_requests.append(entry)
+        self._emit(AwaitingHumanEvent(
+            task_id=task_id,
+            agent_name=agent_name,
+            reason=entry["reason"],
+            options=list(options),
+        ))
+        self._log(
+            "WARNING",
+            f"[{task_id}] DESTEK TALEBİ: {agent_name} → {entry['reason']} "
+            f"seçenekler={entry['options']} sonraki_adım={entry['next_action']}",
+        )
+        # Destek GÖRÜNÜR ve KALICI olsun: kayıt anında checkpoint'e yazılır
+        # (snapshot kancası → backend/checkpoint_store); kritik yükselme anında
+        # kayıt kaybolmaz.
+        self._snapshot(status)
+        return entry
+
+    def _egress_slice(self, attempt_mark: int) -> list[str]:
+        """[SORUMLULUK] Bu ajanın açtığı egress denemeleri (dürüst iz)."""
+        try:
+            attempts = egress_attempts()[attempt_mark:]
+        except Exception:  # ölçüm arızası zinciri KIRMAZ ama kayıt düşer
+            return []
+        return [
+            f"egress:{a.purpose}:{a.target}" if a.target else f"egress:{a.purpose}"
+            for a in attempts
+        ]
+
+    @staticmethod
+    def _next_agent_action(route: Any, agent_name: str) -> str:
+        agents = list(getattr(route, "agents", None) or [])
+        try:
+            idx = agents.index(agent_name)
+        except ValueError:
+            return "pipeline_continue"
+        if idx + 1 < len(agents):
+            return f"next_agent:{agents[idx + 1]}"
+        return "deferred_message_steps_or_finalize"
+
+    def _responsibility_trail(
+        self,
+        *,
+        agent_name: str,
+        run: Any,
+        claimed: str,
+        attempted_paths: tuple | list = (),
+        blockers: tuple | list = (),
+        support_requested: tuple | list = (),
+        missing: tuple | list = (),
+        next_action: str | None = None,
+        evidence_recorded: bool = True,
+    ) -> dict:
+        """[SORUMLULUK ZİNCİRİ] Ajan koşusunu mühürler.
+
+        Mühür ``seal_trail`` kurallarını uygular: sahte başarı ve desteksiz
+        pes GİZLENMEZ — ``integrity.violation`` alanına yazılır ve ERROR
+        olarak izlenir; ``completed`` + eksik kanıt ``InsufficientEvidenceError``
+        ile görevi durdurur (execütor çağrısında).
+        """
+        from agent_core.domain.responsibility import build_trail
+
+        trail = build_trail(
+            claimed=claimed,
+            evidence_recorded=evidence_recorded,
+            attempted_paths=[f"agent:{agent_name}", *attempted_paths],
+            blockers=list(blockers),
+            support_requested=list(support_requested),
+            missing=list(missing),
+            next_action=next_action,
+            extra_integrity={
+                "run_status": getattr(run, "status", None),
+                "confidence": getattr(run, "confidence", None),
+                "error_code": getattr(run, "error_code", None),
+            },
+        )
+        if trail.integrity.get("violation"):
+            self._log(
+                "ERROR",
+                f"SORUMLULUK İHLALİ: {agent_name} \u2192 {trail.integrity['violation']} "
+                "(mühür reddetti; zincirde görünür)",
+            )
+        return trail.model_dump(mode="json")
 
     @staticmethod
     def _evidence_record(agent_name: str, result: BaseModel, *, evidence_type: str,
@@ -808,14 +1007,30 @@ class PinealExecutor:
             task_id, status.evidence_chain, metadata={"target_profile": profile}
         )
 
-    async def execute_task(self, input_data: Dict[str, Any], task_id: str) -> TaskStatus:
+    async def execute_task(
+        self,
+        input_data: Dict[str, Any],
+        task_id: str,
+        *,
+        resume_from: Any = None,
+    ) -> TaskStatus:
         """Public entry: impl'i saran güvenli yaşam döngüsü.
+
+        ``resume_from`` (ek uyumlu): destek/güç sağlandıktan sonra ÖNCEKİ
+        ``TaskStatus`` ile görev KALDIĞI YERDEN devam eder: tamamlanan
+        ajanlar atlanır (yan etki tekrarı yok), yutulan çıktılar input_data'ya
+        geri yüklenir, pending destek talepleri ``resolved`` işaretlenir.
+        
 
         [035] fix: göreve ait geçici görseller başarı/halt/exception HER
         durumunda temizlenir; hedefin kişisel görselleri temp dizinde kalıcı
         artefakt olarak bırakılamaz (retention sözleşmesi).
         """
         try:
+            if resume_from is not None:
+                return await self._execute_task_impl(
+                    input_data, task_id, resume_from=resume_from
+                )
             return await self._execute_task_impl(input_data, task_id)
         except MemoryCorruptedError as exc:
             # A corrupt canonical record is not equivalent to an absent record.
@@ -854,11 +1069,12 @@ class PinealExecutor:
         for path in (input_data.pop("_downloaded_temp_images", None) or []):
             try:
                 os.remove(path)
-            except OSError as exc:
-                # Geçici dosya temizliği: dosya zaten yoksa/erişilemezse atlanır.
-                logger.debug("[_cleanup_temp_images] geçici dosya silinemedi: %s -> %s", path, exc)
+            except OSError:
+                pass
 
-    async def _execute_task_impl(self, input_data: Dict[str, Any], task_id: str) -> TaskStatus:
+    async def _execute_task_impl(
+        self, input_data: Dict[str, Any], task_id: str, resume_from: Any = None
+    ) -> TaskStatus:
         from agent_core.schemas.telemetry import (
             TaskStartedEvent, StepCompletedEvent, ErrorHaltEvent, TaskCompletedEvent, Severity
         )
@@ -866,7 +1082,95 @@ class PinealExecutor:
         # izleme + ilişki grafı için kararlı hedef anahtarı).
         self._current_target_profile = input_data.get("target_profile") or {}
         status = TaskStatus(task_id=task_id, status="processing", created_at=datetime.now(timezone.utc))
+        # [P0 · DENETİM 2026-10-16] Hedef kanal durumu (X sensörü, web araması,
+        # Instagram kazıma...) görev payload'ından devralınır; görev içinde
+        # koşan kanallar buna eklenir. Böylece "ÇALIŞMADI: sebep" telemetriye
+        # ve UI'a taşınır.
+        _inherited_channels = input_data.get("channel_status") or []
+        if isinstance(_inherited_channels, list):
+            status.channel_status = [c for c in _inherited_channels if isinstance(c, dict)]
         _task_wall_start = datetime.now(timezone.utc)
+
+        # [RESUME · DESTEKLE DEVAM] Önceki koşudan devralma: tamamlanan
+        # ajanlar & kanıtlar & yutulan çıktılar taşınır; destek talepleri
+        # çözümlenir. Durum makinesi DEĞİŞMEZ (processing → ... aynı akış).
+        if resume_from is not None:
+            status.completed_agents = list(resume_from.completed_agents or [])
+            status.agent_runs = dict(resume_from.agent_runs or {})
+            status.evidence_chain = list(resume_from.evidence_chain or [])
+            status.planned_agents = list(resume_from.planned_agents or [])
+            status.resonance_score = resume_from.resonance_score
+            status.ingested_outputs = {
+                k: dict(v) for k, v in (resume_from.ingested_outputs or {}).items()
+            }
+            status.support_requests = [
+                dict(r) for r in (resume_from.support_requests or [])
+            ]
+            # Döngü-dışı blokların (osint/depth/shadow/sütunlar) alanları da
+            # devredilir — yeniden üretildiğinde aynı değere düşerdi.
+            for _fld in (
+                "osint_footprint", "depth_report", "psychodynamic_depth",
+                "shadow_profile", "follower_audit", "timing_forensics",
+                "holistic_profile", "frequency_map", "seismos_events",
+                "void_map", "strata_map", "gravity_map", "pulse_map",
+                "key_matrix", "visual_evidence",
+            ):
+                _prior = getattr(resume_from, _fld, None)
+                if _prior is not None:
+                    setattr(status, _fld, _prior)
+            # [B0 · OTOMATİK KAPATMA YOK] Yalnızca İLGİLİ talebin
+            # gerektirdiği destek SAĞLANMIŞ ve engel CANLI doğrulanmışsa o
+            # talep kapanır; açık talepler ayrı ayrı izlenir. Bloklayan bir
+            # talep hâlâ doğrulanmamışsa resume REDDEDİLİR.
+            _resolved = 0
+            _unresolved_blocking: list = []
+            for _req in status.support_requests:
+                if _req.get("status") != "pending":
+                    continue
+                _requires = _req.get("requires") or "operator_response"
+                _kind = _req.get("kind") or "operator_response"
+                _verified = False
+                if _kind == "vault_open":
+                    _state = getattr(self.search_engine, "_vault_state", None)
+                    try:
+                        _verified = bool(_state()) if callable(_state) else False
+                    except Exception:
+                        _verified = False
+                elif _kind == "spend_cap":
+                    try:
+                        _budget = self.llm_gateway.budget_status()
+                        _cap = float(_budget.get("cap_usd") or 0.0)
+                        _verified = _cap <= 0 or (
+                            float(_budget.get("spend_usd") or 0.0)
+                            + float(_budget.get("reserved_usd") or 0.0)
+                            < _cap
+                        )
+                    except Exception:
+                        _verified = False
+                else:
+                    _verified = bool(_req.get("approved")) and bool(
+                        _req.get("responses")
+                    )
+                if _verified:
+                    _req["status"] = "resolved"
+                    _req["resolved_at"] = datetime.now(timezone.utc).isoformat()
+                    _req["resolution"] = f"verified_{_requires}"
+                    _resolved += 1
+                elif _req.get("blocks_resume"):
+                    _unresolved_blocking.append(
+                        str(_req.get("support_id") or _req.get("agent_name") or "?")
+                    )
+            for _agent, _chunk in status.ingested_outputs.items():
+                input_data.update(_chunk)
+            self._log(
+                "WARNING",
+                f"[{task_id}] RESUME: {len(status.completed_agents)} tamamlanmış ajan devralındı, "
+                f"{_resolved} destek doğrulandı/kapandı, "
+                f"{len(_unresolved_blocking)} bloklayan talep açık — "
+                "görev kaldığı yerden sürüyor.",
+            )
+            if _unresolved_blocking:
+                raise ResumeBlockedError(task_id, _unresolved_blocking)
 
         # Only concrete memory engines participate in the health contract; test
         # doubles without the method retain their existing behavior.
@@ -907,9 +1211,15 @@ class PinealExecutor:
             from agent_core.services.follower_audit import audit_followers
             from agent_core.services.timing_forensics import analyze_timing
             tp_info = input_data.get("target_profile", {})
-            fol_cnt = tp_info.get("followers", 0)
+            # Canonical platform payload uses followers/following; accept the
+            # scraper model spellings too. Missing counts remain None (never 0).
+            fol_cnt = tp_info.get("followers")
+            if fol_cnt is None:
+                fol_cnt = tp_info.get("follower_count")
             # [024] fix: following=None "ölçülmedi" demektir; 0'a çevrilmez.
             fing_cnt = tp_info.get("following")
+            if fing_cnt is None:
+                fing_cnt = tp_info.get("following_count")
             # [027] fix: sahte 1-post sentinel'i kaldırıldı. Boş posts_meta
             # olduğu gibi iletilir; audit "İncelenen Post: 0" der, 1 demez.
             posts_meta = tp_info.get("posts_meta") or []
@@ -965,7 +1275,9 @@ class PinealExecutor:
         # promptlarını besler. Ajan username/name sürücülüdür (ilk veri
         # gerektirmez), taşımak güvenli.
         _tp = input_data.get("target_profile", {}) or {}
-        if _tp.get("username") or _tp.get("name"):
+        if (_tp.get("username") or _tp.get("name")) and not self._resume_done(
+            status, "osint_investigator"
+        ):
             self._rack_update("osint_investigator", "active")
             try:
                 with self._capture_llm_calls(task_id, "osint_investigator") as osint_scope:
@@ -976,6 +1288,23 @@ class PinealExecutor:
                 )
                 data_conf = getattr(osint_result, "data_confidence", True)
                 fallback = getattr(osint_result, "fallback_reason", None)
+                # [P0 · DENETİM 2026-10-16] OSINT kanallarının (maigret/holehe)
+                # koşu durumu görev telemetrisine yazılır: "koştu" / "ÇALIŞMADI
+                # (sebep)" / "hata". "Bulunamadı" ile "hiç çalışmadı" ayrımı
+                # buradan okunur. Kanal görevin parçası DEĞİLSE satır yazılmaz
+                # (olmayan kanal "koşmadı" diye raporlanmaz).
+                _osint_channels = []
+                _username_scan = status.osint_footprint.get("username_scan")
+                if _username_scan is not None:
+                    _osint_channels.append(
+                        _channel_from_engine("sensor.identity.maigret", _username_scan)
+                    )
+                _email_scan = status.osint_footprint.get("email_scan")
+                if _email_scan is not None:
+                    _osint_channels.append(
+                        _channel_from_engine("sensor.identity.holehe", _email_scan)
+                    )
+                status.channel_status = list(status.channel_status or []) + _osint_channels
                 status.agent_runs["osint_investigator"] = AgentRun(
                     task_id=task_id, agent_name="osint_investigator", status="completed",
                     started_at=datetime.now(timezone.utc), completed_at=datetime.now(timezone.utc),
@@ -1004,6 +1333,60 @@ class PinealExecutor:
                     error_message=str(e)[:200],
                 )
                 self._log("WARNING", f"[{task_id}] OSINT taraması atlandı: {e}")
+
+        # [P1 · DERİN PROFİL ÇÖZÜMLEME] detected_urls yetenek omurgasına bağlanır.
+        # KOŞUM TEK YERDE: `deep_profile_resolver` → `profile_router` (saf
+        # sınıflandırma) → `CapabilityRunner` (kapılar, çocuk kilidi, timeout).
+        # API katmanı yalnız adresleri taşır; ikinci bir koşum yolu açılsaydı
+        # aynı yetenek iki kez çağrılırdı.
+        _deep_items: list[Any] = []
+        _detected_urls = list((input_data.get("target_profile") or {}).get("detected_urls") or [])
+        if _detected_urls:
+            try:
+                from agent_core.services.deep_profile_resolver import (
+                    resolve_deep_profiles_detailed,
+                )
+                _resolution = await resolve_deep_profiles_detailed(
+                    _detected_urls, payload=input_data
+                )
+                _deep_items = list(_resolution.items)
+                if _resolution.channel_runs:
+                    _cur_channels = [c for c in (status.channel_status or []) if (c.get("channel") if isinstance(c, dict) else getattr(c, "channel", "")) != "profile.deep_scan"]
+                    status.channel_status = _cur_channels + [c.to_dict() if hasattr(c, "to_dict") else c for c in _resolution.channel_runs]
+                _tp = input_data.setdefault("target_profile", {})
+                if _resolution.identities:
+                    _tp["socid_identities"] = _resolution.identities
+                # [P1] KAZANAN ALAN DEFTERİ: hangi profil tarandı, kaç gönderi
+                # geldi, neden koşmadı. UI rozeti bu defterden okur.
+                _tp["scanned_urls"] = list(_resolution.scanned_urls)
+                _tp["scanned_profiles"] = dict(_resolution.profiles)
+                self._log(
+                    "INFO",
+                    f"[{task_id}] DERİN PROFİL: {len(_resolution.scanned_urls)} profil tarandı, "
+                    f"{len(_resolution.identities)} kimlik kaydı, {len(_deep_items)} kanıt",
+                )
+            except Exception as _d_exc:
+                self._log("WARNING", f"[{task_id}] Derin profil çözümleme atlandı: {_d_exc}")
+
+        # [P2 · ÇAPRAZ PROFİLLEME] Farklı platform hesaplarını deterministik eşleştirir
+        _cross_items: list[Any] = []
+        try:
+            from agent_core.services.cross_profiler import correlate_profiles
+            _corr = correlate_profiles(
+                input_data.get("target_profile"),
+                status.osint_footprint or input_data.get("public_osint"),
+            )
+            _cross_items = _corr.items
+            if _corr.matches:
+                _matches = [m.model_dump() for m in _corr.matches]
+                input_data["cross_profile_matches"] = _matches
+                # [P2] Eşleşmeler hedef profilin içinde de taşınır: UI rozeti
+                # "kapsam" etiketiyle okur (olasılık olarak sunulmaz).
+                _tp2 = input_data.setdefault("target_profile", {})
+                _tp2["cross_profile_matches"] = _matches
+                self._log("INFO", f"[{task_id}] ÇAPRAZ PROFİL: {len(_corr.matches)} platform hesabı eşleştirildi")
+        except Exception as _c_exc:
+            self._log("WARNING", f"[{task_id}] Çapraz profilleme atlandı: {_c_exc}")
 
         # GÖREV 2.3/2.4: psikodinamik derinlik motoru (deterministik).
         # Metin yoksa agirlik otomatik gorsel+zamansala kayar; motor ASLA
@@ -1097,9 +1480,13 @@ class PinealExecutor:
             try:
                 from agent_core.services.pillar_evidence_adapter import adapt_pillar_bundle
 
+                # [P1 · 2026-10-16] Derin tarama ve çapraz profilleme
+                # kanıtları adaptörün `extra_items` kanalıyla kanonik kanıt
+                # zincirine girer (pillar paketi boş olsa bile kanıt kaybolmaz).
                 canonical_items = adapt_pillar_bundle(
                     input_data["pillar_bundle"],
                     target_profile=input_data.get("target_profile"),
+                    extra_items=[*_deep_items, *_cross_items],
                 )
                 input_data["forensic_evidence"] = [
                     item.model_dump(mode="json") for item in canonical_items
@@ -1337,6 +1724,12 @@ class PinealExecutor:
         deferred = []
         try:
             for agent_name in route.agents:
+                if self._resume_done(status, agent_name):
+                    self._log(
+                        "INFO",
+                        f"[{task_id}] RESUME: {agent_name} atlandı — yan etki tekrarı yok.",
+                    )
+                    continue
                 if agent_name in ["pattern_interrupt", "resonance_synthesizer"]:
                     deferred.append(agent_name)
                     continue
@@ -1364,6 +1757,8 @@ class PinealExecutor:
                 agent_cfg = self.config.get_agent_config(agent_name)
                 
                 agent_llm_calls: list[dict[str, Any]] = []
+                attempt_mark = len(egress_attempts())
+                resume_marker = copy.deepcopy(input_data)
                 try:
                     agent = self.agents[agent_name]
                     with self._capture_llm_calls(task_id, agent_name) as agent_scope:
@@ -1393,6 +1788,58 @@ class PinealExecutor:
                     run.error_message = str(e)[:200]
                     self._rack_update(agent_name, "wait")
 
+                    # [SORUMLULUK ZİNCİRİ] Hata GİZLENMEZ: koşunun dürüst izi
+                    # agent_runs'taki run.responsibility alanına yazılır
+                    # (kanıt zinciri uydurma kanıtla doldurulmaz).
+                    run.responsibility = self._responsibility_trail(
+                        agent_name=agent_name,
+                        run=run,
+                        claimed=("timed_out" if isinstance(e, AgentTimeoutError) else "failed"),
+                        attempted_paths=self._egress_slice(attempt_mark),
+                        blockers=[f"{run.error_code}: {run.error_message}"],
+                        next_action=(
+                            "task_halted_critical"
+                            if (agent_name in self.config.critical_agents
+                                or not agent_cfg.graceful_degradation)
+                            else "graceful_degradation_continue"
+                        ),
+                        evidence_recorded=False,
+                    )
+                    _fail_next = (
+                        "task_halted_critical"
+                        if (agent_name in self.config.critical_agents
+                            or not agent_cfg.graceful_degradation)
+                        else "graceful_degradation_continue"
+                    )
+                    if (
+                        _fail_next == "task_halted_critical"
+                        or run.error_code in {"VaultLockedError", "SpendCapExceeded"}
+                        or isinstance(e, AgentTimeoutError)
+                    ):
+                        _fail_opts = (
+                            ["open_vault", "grant_boundary_authority"]
+                            if run.error_code == "VaultLockedError"
+                            else ["raise_spend_cap", "operator_budget_review"]
+                            if run.error_code == "SpendCapExceeded"
+                            else ["extend_timebox", "operator_review"]
+                            if isinstance(e, AgentTimeoutError)
+                            else ["retry_task", "operator_review"]
+                        )
+                        self._request_support(
+                            status,
+                            task_id=task_id,
+                            agent_name=agent_name,
+                            reason=f"{run.error_code}: {run.error_message}",
+                            options=_fail_opts,
+                            next_action=_fail_next,
+                            kind=(
+                                "vault_open" if run.error_code == "VaultLockedError"
+                                else "spend_cap" if run.error_code == "SpendCapExceeded"
+                                else "timebox" if isinstance(e, AgentTimeoutError)
+                                else "operator_response"
+                            ),
+                            blocks_resume=True,
+                        )
                     if agent_name in self.config.critical_agents or not agent_cfg.graceful_degradation:
                         status.status = "halted_critical"
                         status.completed_at = datetime.now(timezone.utc)
@@ -1455,7 +1902,41 @@ class PinealExecutor:
                     run.error_code = "LOW_CONFIDENCE"
                     run.error_message = halt_reason
                     self._rack_update(agent_name, "wait")
-                    
+
+                    # [SORUMLULUK ZİNCİRİ] Düşük güven = kanıt yetersiz;
+                    # "tamamlanmış" gibi gösterilmez, zincirde izi kalır.
+                    run.responsibility = self._responsibility_trail(
+                        agent_name=agent_name,
+                        run=run,
+                        claimed="halted_evidence",
+                        attempted_paths=self._egress_slice(attempt_mark),
+                        blockers=[f"LOW_CONFIDENCE: {halt_reason}"],
+                        next_action=(
+                            "task_halted_critical"
+                            if (agent_name in self.config.critical_agents
+                                or not agent_cfg.graceful_degradation)
+                            else "evidence_degradation_continue"
+                        ),
+                        evidence_recorded=False,
+                    )
+                    self._request_support(
+                        status,
+                        task_id=task_id,
+                        agent_name=agent_name,
+                        reason=f"LOW_CONFIDENCE: {halt_reason}",
+                        options=["deep_verify", "operator_input", "defer_agent"],
+                        blocks_resume=(
+                            agent_name in self.config.critical_agents
+                            or not agent_cfg.graceful_degradation
+                        ),
+                        next_action=(
+                            "task_halted_critical"
+                            if (agent_name in self.config.critical_agents
+                                or not agent_cfg.graceful_degradation)
+                            else "evidence_degradation_continue"
+                        ),
+                    )
+
                     if agent_name in self.config.critical_agents or not agent_cfg.graceful_degradation:
                         status.halted_reason = halt_reason
                         status.status = "halted_critical"
@@ -1479,11 +1960,37 @@ class PinealExecutor:
                             finally:
                                 _deep_llm_calls = list(research_scope.records)
                     except Exception as e:
+                        # [DESTEK AKIŞI] Zombi koşu YOK: durum + mühür + talep.
+                        run.status = "halted"
+                        run.error_code = "SUSPICIOUS_EVIDENCE"
+                        run.error_message = str(e)[:200]
+                        run.completed_at = datetime.now(timezone.utc)
+                        run.responsibility = self._responsibility_trail(
+                            agent_name=agent_name,
+                            run=run,
+                            claimed="halted_evidence",
+                            attempted_paths=self._egress_slice(attempt_mark),
+                            blockers=[f"SUSPICIOUS_EVIDENCE: {run.error_message}"],
+                            support_requested=["uncertainty:deep_research"],
+                            next_action="rerun_deep_research_or_operator_review",
+                            evidence_recorded=False,
+                        )
+                        self._request_support(
+                            status,
+                            task_id=task_id,
+                            agent_name=agent_name,
+                            reason=f"Şüpheli kanıt doğrulanamadı: {run.error_message}",
+                            options=["rerun_deep_research", "operator_review"],
+                            blocks_resume=(
+                                agent_name in self.config.critical_agents
+                                or not agent_cfg.graceful_degradation
+                            ),
+                            next_action="rerun_deep_research_or_operator_review",
+                        )
                         if agent_name in self.config.critical_agents or not agent_cfg.graceful_degradation:
                             raise InsufficientEvidenceError("Supheli kanit dogrulanamadi: " + str(e)[:80])
-                        else:
-                            self._log("WARNING", f"[{task_id}] Non-critical agent {agent_name} deep research failed. Continuing.")
-                            continue
+                        self._log("WARNING", f"[{task_id}] Non-critical agent {agent_name} deep research failed. Continuing.")
+                        continue
 
                 # [BOSS-6] Authentic vector çağrıları ayrı bir yakalama kapsamında
                 # koşar: aksi hâlde LLM harcaması HİÇBİR kayıtta görünmüyordu
@@ -1521,14 +2028,31 @@ class PinealExecutor:
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
 
-                status.evidence_chain.append(self._evidence_record(
+                _output_record = self._evidence_record(
                     agent_name,
                     result,
                     evidence_type="agent_output",
                     uncertainty=check,
                     llm_calls=agent_llm_calls,
                     aux_llm_calls=aux_call_records,
-                ))
+                )
+                # [SORUMLULUK ZİNCİRİ] Çıktı = koşu + kanıt birlikte mühürlenir.
+                _output_record["responsibility"] = self._responsibility_trail(
+                    agent_name=agent_name,
+                    run=run,
+                    claimed=("completed_no_decision" if no_decision else "completed"),
+                    attempted_paths=self._egress_slice(attempt_mark),
+                    support_requested=(["uncertainty:deep_research"]
+                                        if research_note is not None else []),
+                    next_action=self._next_agent_action(route, agent_name),
+                    evidence_recorded=bool(_output_record.get("result")),
+                )
+                if _output_record["responsibility"]["integrity"].get("violation"):
+                    # Eksik kanıt başarı değildir: mühür görevi durdurur.
+                    raise InsufficientEvidenceError(
+                        f"{agent_name}: sorumluluk mührü reddetti (eksik kanıt)"
+                    )
+                status.evidence_chain.append(_output_record)
                 if claim_gate_record is not None:
                     status.evidence_chain.append(claim_gate_record)
                 self._append_tier2_canonical_output(status, agent_name, result)
@@ -1560,6 +2084,7 @@ class PinealExecutor:
 
                 if agent_name == "resonance_calc":
                     status.resonance_score = getattr(result, "compatibility_score", None)
+                self._record_ingested(status, agent_name, resume_marker, input_data)
                 self._snapshot(status)
                 
                 self._emit(StepCompletedEvent(
@@ -1588,6 +2113,12 @@ class PinealExecutor:
             # evidence contract.  Ordering must never bypass validation,
             # uncertainty thresholds, or graceful-degradation policy.
             for agent_name in deferred:
+                if self._resume_done(status, agent_name):
+                    self._log(
+                        "INFO",
+                        f"[{task_id}] RESUME: {agent_name} atlandı — yan etki tekrarı yok.",
+                    )
+                    continue
                 if agent_name not in self.agents:
                     raise KeyError("Bilinmeyen yetenek: " + agent_name)
                 status.current_agent = agent_name
@@ -1656,6 +2187,8 @@ class PinealExecutor:
                     )
 
                 agent_llm_calls: list[dict[str, Any]] = []
+                attempt_mark = len(egress_attempts())
+                resume_marker = copy.deepcopy(input_data)
                 try:
                     agent = self.agents[agent_name]
                     with self._capture_llm_calls(task_id, agent_name) as agent_scope:
@@ -1684,6 +2217,56 @@ class PinealExecutor:
                         self._log("ERROR", f"[{task_id}] AGENT {agent_name} BASTARISIZ: {type(e).__name__}: {str(e)[:200]}")
                     run.error_message = str(e)[:200]
                     self._rack_update(agent_name, "wait")
+                    # [SORUMLULUK ZİNCİRİ] Geciken ajan hatası da zincire girer.
+                    run.responsibility = self._responsibility_trail(
+                        agent_name=agent_name,
+                        run=run,
+                        claimed=("timed_out" if isinstance(e, AgentTimeoutError) else "failed"),
+                        attempted_paths=self._egress_slice(attempt_mark),
+                        blockers=[f"{run.error_code}: {run.error_message}"],
+                        next_action=(
+                            "task_halted_critical"
+                            if (agent_name in self.config.critical_agents
+                                or not agent_cfg.graceful_degradation)
+                            else "graceful_degradation_continue"
+                        ),
+                        evidence_recorded=False,
+                    )
+                    _fail_next = (
+                        "task_halted_critical"
+                        if (agent_name in self.config.critical_agents
+                            or not agent_cfg.graceful_degradation)
+                        else "graceful_degradation_continue"
+                    )
+                    if (
+                        _fail_next == "task_halted_critical"
+                        or run.error_code in {"VaultLockedError", "SpendCapExceeded"}
+                        or isinstance(e, AgentTimeoutError)
+                    ):
+                        _fail_opts = (
+                            ["open_vault", "grant_boundary_authority"]
+                            if run.error_code == "VaultLockedError"
+                            else ["raise_spend_cap", "operator_budget_review"]
+                            if run.error_code == "SpendCapExceeded"
+                            else ["extend_timebox", "operator_review"]
+                            if isinstance(e, AgentTimeoutError)
+                            else ["retry_task", "operator_review"]
+                        )
+                        self._request_support(
+                            status,
+                            task_id=task_id,
+                            agent_name=agent_name,
+                            reason=f"{run.error_code}: {run.error_message}",
+                            options=_fail_opts,
+                            next_action=_fail_next,
+                            kind=(
+                                "vault_open" if run.error_code == "VaultLockedError"
+                                else "spend_cap" if run.error_code == "SpendCapExceeded"
+                                else "timebox" if isinstance(e, AgentTimeoutError)
+                                else "operator_response"
+                            ),
+                            blocks_resume=True,
+                        )
                     if agent_name in self.config.critical_agents or not agent_cfg.graceful_degradation:
                         status.status = "halted_critical"
                         status.completed_at = datetime.now(timezone.utc)
@@ -1732,6 +2315,39 @@ class PinealExecutor:
                     run.error_message = halt_reason
                     self._log("ERROR", f"[{task_id}] COGNITIVE ROUTER: {halt_reason}")
                     self._rack_update(agent_name, "wait")
+                    # [SORUMLULUK ZİNCİRİ] Geciken ajan düşük-güven izi.
+                    run.responsibility = self._responsibility_trail(
+                        agent_name=agent_name,
+                        run=run,
+                        claimed="halted_evidence",
+                        attempted_paths=self._egress_slice(attempt_mark),
+                        blockers=[f"LOW_CONFIDENCE: {halt_reason}"],
+                        next_action=(
+                            "task_halted_critical"
+                            if (agent_name in self.config.critical_agents
+                                or not agent_cfg.graceful_degradation)
+                            else "evidence_degradation_continue"
+                        ),
+                        evidence_recorded=False,
+                    )
+                    self._request_support(
+                        status,
+                        task_id=task_id,
+                        agent_name=agent_name,
+                        reason=f"LOW_CONFIDENCE: {halt_reason}",
+                        options=["deep_verify", "operator_input", "defer_agent"],
+                        blocks_resume=(
+                            agent_name in self.config.critical_agents
+                            or not agent_cfg.graceful_degradation
+                        ),
+                        next_action=(
+                            "task_halted_critical"
+                            if (agent_name in self.config.critical_agents
+                                or not agent_cfg.graceful_degradation)
+                            else "evidence_degradation_continue"
+                        ),
+                    )
+
                     if agent_name in self.config.critical_agents or not agent_cfg.graceful_degradation:
                         status.halted_reason = halt_reason
                         status.status = "halted_critical"
@@ -1752,11 +2368,34 @@ class PinealExecutor:
                             finally:
                                 _deep_llm_calls = list(research_scope.records)
                     except Exception as e:
-                        if agent_name in self.config.critical_agents or not agent_cfg.graceful_degradation:
-                            raise InsufficientEvidenceError("Supheli kanit dogrulanamadi: " + str(e)[:80])
                         run.status = "halted"
                         run.error_code = "SUSPICIOUS_EVIDENCE"
                         run.error_message = str(e)[:200]
+                        run.completed_at = datetime.now(timezone.utc)
+                        run.responsibility = self._responsibility_trail(
+                            agent_name=agent_name,
+                            run=run,
+                            claimed="halted_evidence",
+                            attempted_paths=self._egress_slice(attempt_mark),
+                            blockers=[f"SUSPICIOUS_EVIDENCE: {run.error_message}"],
+                            support_requested=["uncertainty:deep_research"],
+                            next_action="rerun_deep_research_or_operator_review",
+                            evidence_recorded=False,
+                        )
+                        self._request_support(
+                            status,
+                            task_id=task_id,
+                            agent_name=agent_name,
+                            reason=f"Şüpheli kanıt doğrulanamadı: {run.error_message}",
+                            options=["rerun_deep_research", "operator_review"],
+                            blocks_resume=(
+                                agent_name in self.config.critical_agents
+                                or not agent_cfg.graceful_degradation
+                            ),
+                            next_action="rerun_deep_research_or_operator_review",
+                        )
+                        if agent_name in self.config.critical_agents or not agent_cfg.graceful_degradation:
+                            raise InsufficientEvidenceError("Supheli kanit dogrulanamadi: " + str(e)[:80])
                         self._log("WARNING", f"[{task_id}] Non-critical deferred agent {agent_name} deep research failed.")
                         self._rack_update(agent_name, "wait")
                         self._snapshot(status)
@@ -1775,6 +2414,21 @@ class PinealExecutor:
                         "claim_ids": claim_gate_blocked_ids,
                         "policy": "exact_claim_only",
                     }
+                # [SORUMLULUK ZİNCİRİ] Geciken ajanların da koşusu mühürlenir.
+                output_record["responsibility"] = self._responsibility_trail(
+                    agent_name=agent_name,
+                    run=run,
+                    claimed=("completed_no_decision" if no_decision else "completed"),
+                    attempted_paths=self._egress_slice(attempt_mark),
+                    support_requested=(["uncertainty:deep_research"]
+                                        if research_note is not None else []),
+                    next_action="deferred_message_steps_or_finalize",
+                    evidence_recorded=bool(output_record.get("result")),
+                )
+                if output_record["responsibility"]["integrity"].get("violation"):
+                    raise InsufficientEvidenceError(
+                        f"{agent_name}: sorumluluk mührü reddeti (eksik kanıt)"
+                    )
                 status.evidence_chain.append(output_record)
                 self._append_tier2_canonical_output(status, agent_name, result)
                 if research_note is not None:
@@ -1815,6 +2469,7 @@ class PinealExecutor:
                         "agent": "pattern_interrupt",
                         "source": "route",
                     }
+                self._record_ingested(status, agent_name, resume_marker, input_data)
                 self._snapshot(status)
                 self._emit(StepCompletedEvent(
                     task_id=task_id,
@@ -1860,73 +2515,76 @@ class PinealExecutor:
             # depth_analyst ana döngü dışında çalışır; success/failure must be
             # recorded on status.agent_runs so DecisionEngine sees the gap
             # instead of silently treating depth as unused.
-            depth_start = datetime.now(timezone.utc)
-            self._rack_update("depth_analyst", "active")
-            try:
-                depth_agent = self.agents.get("depth_analyst") or DepthAnalyst(self.llm_gateway)
-                # [FAZ B · B2/B3] Geçmiş hafıza: kristalden çağrılan hatıralar
-                # prompt'a kafesli girer (boşsa hiçbir şey eklenmez).
-                input_data["memory_crystal"] = self._recall_memory_crystal(task_id, input_data, status)
-                with self._capture_llm_calls(task_id, "depth_analyst") as depth_scope:
-                    depth_rep = await self._bounded(
-                        depth_agent.analyze(input_data, status.evidence_chain),
-                        self.config.get_agent_config("depth_analyst").timeout_seconds,
-                        "depth_analyst",
+            if self._resume_done(status, "depth_analyst"):
+                self._log("INFO", f"[{task_id}] RESUME: depth_analyst atlandı — LLM turu tekrarlanmadı.")
+            else:
+                depth_start = datetime.now(timezone.utc)
+                self._rack_update("depth_analyst", "active")
+                try:
+                    depth_agent = self.agents.get("depth_analyst") or DepthAnalyst(self.llm_gateway)
+                    # [FAZ B · B2/B3] Geçmiş hafıza: kristalden çağrılan hatıralar
+                    # prompt'a kafesli girer (boşsa hiçbir şey eklenmez).
+                    input_data["memory_crystal"] = self._recall_memory_crystal(task_id, input_data, status)
+                    with self._capture_llm_calls(task_id, "depth_analyst") as depth_scope:
+                        depth_rep = await self._bounded(
+                            depth_agent.analyze(input_data, status.evidence_chain),
+                            self.config.get_agent_config("depth_analyst").timeout_seconds,
+                            "depth_analyst",
+                        )
+                    depth_end = datetime.now(timezone.utc)
+                    status.depth_report = depth_rep.model_dump()
+                    status.depth_report["_provenance"] = self._provenance_for(
+                        "depth_analyst", depth_rep, depth_scope.records
                     )
-                depth_end = datetime.now(timezone.utc)
-                status.depth_report = depth_rep.model_dump()
-                status.depth_report["_provenance"] = self._provenance_for(
-                    "depth_analyst", depth_rep, depth_scope.records
-                )
-                _depth_summary = dict(status.depth_report)
-                status.agent_runs["depth_analyst"] = AgentRun(
-                    task_id=task_id, agent_name="depth_analyst", status="completed",
-                    started_at=depth_start, completed_at=depth_end,
-                    output_summary=_depth_summary, call_ids=list(depth_scope.call_ids),
-                    confidence=(
-                        getattr(depth_rep, "reality_index", None)
-                        if isinstance(getattr(depth_rep, "reality_index", None), (int, float))
-                        else None
-                    ),
-                )
-                q_stats = depth_rep.quote_guard or {}
-                kept = q_stats.get("kept", len(depth_rep.reality_findings))
-                checked = q_stats.get("checked", kept + q_stats.get("dropped_fake_quote", 0))
-                self._log("INFO", f"[{task_id}] DERİNLİK TURU: gerçeklik endeksi %{int(depth_rep.reality_index * 100)}")
-                self._log("INFO", f"[{task_id}] KALKAN: {kept}/{checked} bulgu kanıtla ayakta")
-                # [A-KAPANIŞ] Hakem → DepthReport izi: hangi claim_id hangi bulguyu etkiledi.
-                trace = getattr(depth_rep, "verification_trace", None) or {}
-                if trace.get("claims_available"):
-                    self._log(
-                        "INFO",
-                        f"[{task_id}] HAKEM İZİ: {len(trace.get('linked_findings') or [])} bulgu "
-                        f"{trace.get('claims_available')} iddiadan {len(trace.get('claim_ids_used') or [])} kimliğe bağlı; "
-                        f"reddedilen kimlik={trace.get('rejected_claim_ids', 0)}",
+                    _depth_summary = dict(status.depth_report)
+                    status.agent_runs["depth_analyst"] = AgentRun(
+                        task_id=task_id, agent_name="depth_analyst", status="completed",
+                        started_at=depth_start, completed_at=depth_end,
+                        output_summary=_depth_summary, call_ids=list(depth_scope.call_ids),
+                        confidence=(
+                            getattr(depth_rep, "reality_index", None)
+                            if isinstance(getattr(depth_rep, "reality_index", None), (int, float))
+                            else None
+                        ),
                     )
-                self._rack_update("depth_analyst", "ready")
-            except Exception as e:
-                self._rack_update("depth_analyst", "wait")
-                depth_end = datetime.now(timezone.utc)
-                error_code = "AGENT_TIMEOUT" if isinstance(e, AgentTimeoutError) else type(e).__name__
-                status.agent_runs["depth_analyst"] = AgentRun(
-                    task_id=task_id, agent_name="depth_analyst", status="failed",
-                    started_at=depth_start, completed_at=depth_end,
-                    error_code=error_code,
-                    error_message=str(e)[:200],
-                )
-                status.evidence_chain.append({
-                    "agent": "depth_analyst",
-                    "evidence_type": "execution_failure",
-                    "result": {"error_code": error_code, "error_message": str(e)[:250]},
-                    "timestamp": depth_end.isoformat(),
-                })
-                status.depth_report = {
-                    "available": False,
-                    "reason": "DEPTH_ANALYSIS_UNAVAILABLE",
-                    "error_code": error_code,
-                    "error_message": str(e)[:250],
-                }
-                self._log("WARNING", f"[{task_id}] Derinlik analizi atlandı: {e}")
+                    q_stats = depth_rep.quote_guard or {}
+                    kept = q_stats.get("kept", len(depth_rep.reality_findings))
+                    checked = q_stats.get("checked", kept + q_stats.get("dropped_fake_quote", 0))
+                    self._log("INFO", f"[{task_id}] DERİNLİK TURU: gerçeklik endeksi %{int(depth_rep.reality_index * 100)}")
+                    self._log("INFO", f"[{task_id}] KALKAN: {kept}/{checked} bulgu kanıtla ayakta")
+                    # [A-KAPANIŞ] Hakem → DepthReport izi: hangi claim_id hangi bulguyu etkiledi.
+                    trace = getattr(depth_rep, "verification_trace", None) or {}
+                    if trace.get("claims_available"):
+                        self._log(
+                            "INFO",
+                            f"[{task_id}] HAKEM İZİ: {len(trace.get('linked_findings') or [])} bulgu "
+                            f"{trace.get('claims_available')} iddiadan {len(trace.get('claim_ids_used') or [])} kimliğe bağlı; "
+                            f"reddedilen kimlik={trace.get('rejected_claim_ids', 0)}",
+                        )
+                    self._rack_update("depth_analyst", "ready")
+                except Exception as e:
+                    self._rack_update("depth_analyst", "wait")
+                    depth_end = datetime.now(timezone.utc)
+                    error_code = "AGENT_TIMEOUT" if isinstance(e, AgentTimeoutError) else type(e).__name__
+                    status.agent_runs["depth_analyst"] = AgentRun(
+                        task_id=task_id, agent_name="depth_analyst", status="failed",
+                        started_at=depth_start, completed_at=depth_end,
+                        error_code=error_code,
+                        error_message=str(e)[:200],
+                    )
+                    status.evidence_chain.append({
+                        "agent": "depth_analyst",
+                        "evidence_type": "execution_failure",
+                        "result": {"error_code": error_code, "error_message": str(e)[:250]},
+                        "timestamp": depth_end.isoformat(),
+                    })
+                    status.depth_report = {
+                        "available": False,
+                        "reason": "DEPTH_ANALYSIS_UNAVAILABLE",
+                        "error_code": error_code,
+                        "error_message": str(e)[:250],
+                    }
+                    self._log("WARNING", f"[{task_id}] Derinlik analizi atlandı: {e}")
 
 
 
@@ -1934,65 +2592,68 @@ class PinealExecutor:
             # Bu iki ajan ana döngünün dışında çalıştığı için, başarılı/başarısız
             # durumlarını da status.agent_runs'a kaydediyoruz ki DecisionEngine
             # onları görsün ve sessizce "COMPLETED" damgalanmasınlar.
-            self._rack_update("shadow_executor", "active")
-            try:
-                with self._capture_llm_calls(task_id, "shadow_executor") as shadow_scope:
-                    shadow_result = await self._bounded(
-                        self.agents["shadow_executor"].execute(input_data),
-                        self.config.get_agent_config("shadow_executor").timeout_seconds,
-                        "shadow_executor",
+            if self._resume_done(status, "shadow_executor"):
+                self._log("INFO", f"[{task_id}] RESUME: shadow_executor atlandı — LLM turu tekrarlanmadı.")
+            else:
+                self._rack_update("shadow_executor", "active")
+                try:
+                    with self._capture_llm_calls(task_id, "shadow_executor") as shadow_scope:
+                        shadow_result = await self._bounded(
+                            self.agents["shadow_executor"].execute(input_data),
+                            self.config.get_agent_config("shadow_executor").timeout_seconds,
+                            "shadow_executor",
+                        )
+                    shadow_result, shadow_gate_blocked_ids = self._apply_claim_decision_gate(
+                        shadow_result, input_data.get("claim_gate")
                     )
-                shadow_result, shadow_gate_blocked_ids = self._apply_claim_decision_gate(
-                    shadow_result, input_data.get("claim_gate")
-                )
-                if (
-                    not shadow_gate_blocked_ids
-                    and getattr(shadow_result, "fallback_reason", None) == "claim_gate_blocked_same_claim"
-                ):
-                    routed_pattern = input_data.get("_pattern_interrupt") or {}
-                    ids = routed_pattern.get("claim_gate_blocked_ids")
-                    if isinstance(ids, list):
-                        shadow_gate_blocked_ids = [str(item) for item in ids]
-                status.shadow_profile = shadow_result.model_dump()
-                if shadow_gate_blocked_ids:
-                    status.shadow_profile["claim_gate"] = {
-                        "decision_state": "BLOCKED_SAME_CLAIM",
-                        "claim_ids": shadow_gate_blocked_ids,
-                        "policy": "exact_claim_only",
-                    }
-                status.shadow_profile["_provenance"] = self._provenance_for(
-                    "shadow_executor", shadow_result, shadow_scope.records
-                )
-                _shadow_summary = shadow_result.model_dump() if hasattr(shadow_result, "model_dump") else {}
-                _shadow_summary["_provenance"] = status.shadow_profile["_provenance"]
-                if shadow_gate_blocked_ids:
-                    _shadow_summary["claim_gate"] = status.shadow_profile["claim_gate"]
-                status.agent_runs["shadow_executor"] = AgentRun(
-                    task_id=task_id, agent_name="shadow_executor", status="completed",
-                    started_at=datetime.now(timezone.utc), completed_at=datetime.now(timezone.utc),
-                    output_summary=_shadow_summary, call_ids=list(shadow_scope.call_ids),
-                    confidence=(
-                        getattr(shadow_result, "confidence", None)
-                        if isinstance(getattr(shadow_result, "confidence", None), (int, float))
-                        and getattr(shadow_result, "data_confidence", True)
-                        else None
-                    ),
-                    warnings=[] if getattr(shadow_result, "data_confidence", True) else [
-                        getattr(shadow_result, "fallback_reason", None) or "data_unavailable"
-                    ],
-                )
-                self._log("INFO", f"[{task_id}] GÖLGE FORENSİĞİ: Manipülasyon ve NLP dizisi eklendi")
-                self._rack_update("shadow_executor", "ready")
-            except Exception as e:
-                self._rack_update("shadow_executor", "wait")
-                status.agent_runs["shadow_executor"] = AgentRun(
-                    task_id=task_id, agent_name="shadow_executor",
-                    status="timed_out" if isinstance(e, AgentTimeoutError) else "failed",
-                    started_at=datetime.now(timezone.utc), completed_at=datetime.now(timezone.utc),
-                    error_code="AGENT_TIMEOUT" if isinstance(e, AgentTimeoutError) else None,
-                    error_message=str(e)[:200],
-                )
-                self._log("WARNING", f"[{task_id}] Gölge forensiği atlandı: {e}")
+                    if (
+                        not shadow_gate_blocked_ids
+                        and getattr(shadow_result, "fallback_reason", None) == "claim_gate_blocked_same_claim"
+                    ):
+                        routed_pattern = input_data.get("_pattern_interrupt") or {}
+                        ids = routed_pattern.get("claim_gate_blocked_ids")
+                        if isinstance(ids, list):
+                            shadow_gate_blocked_ids = [str(item) for item in ids]
+                    status.shadow_profile = shadow_result.model_dump()
+                    if shadow_gate_blocked_ids:
+                        status.shadow_profile["claim_gate"] = {
+                            "decision_state": "BLOCKED_SAME_CLAIM",
+                            "claim_ids": shadow_gate_blocked_ids,
+                            "policy": "exact_claim_only",
+                        }
+                    status.shadow_profile["_provenance"] = self._provenance_for(
+                        "shadow_executor", shadow_result, shadow_scope.records
+                    )
+                    _shadow_summary = shadow_result.model_dump() if hasattr(shadow_result, "model_dump") else {}
+                    _shadow_summary["_provenance"] = status.shadow_profile["_provenance"]
+                    if shadow_gate_blocked_ids:
+                        _shadow_summary["claim_gate"] = status.shadow_profile["claim_gate"]
+                    status.agent_runs["shadow_executor"] = AgentRun(
+                        task_id=task_id, agent_name="shadow_executor", status="completed",
+                        started_at=datetime.now(timezone.utc), completed_at=datetime.now(timezone.utc),
+                        output_summary=_shadow_summary, call_ids=list(shadow_scope.call_ids),
+                        confidence=(
+                            getattr(shadow_result, "confidence", None)
+                            if isinstance(getattr(shadow_result, "confidence", None), (int, float))
+                            and getattr(shadow_result, "data_confidence", True)
+                            else None
+                        ),
+                        warnings=[] if getattr(shadow_result, "data_confidence", True) else [
+                            getattr(shadow_result, "fallback_reason", None) or "data_unavailable"
+                        ],
+                    )
+                    self._log("INFO", f"[{task_id}] GÖLGE FORENSİĞİ: Manipülasyon ve NLP dizisi eklendi")
+                    self._rack_update("shadow_executor", "ready")
+                except Exception as e:
+                    self._rack_update("shadow_executor", "wait")
+                    status.agent_runs["shadow_executor"] = AgentRun(
+                        task_id=task_id, agent_name="shadow_executor",
+                        status="timed_out" if isinstance(e, AgentTimeoutError) else "failed",
+                        started_at=datetime.now(timezone.utc), completed_at=datetime.now(timezone.utc),
+                        error_code="AGENT_TIMEOUT" if isinstance(e, AgentTimeoutError) else None,
+                        error_message=str(e)[:200],
+                    )
+                    self._log("WARNING", f"[{task_id}] Gölge forensiği atlandı: {e}")
 
             # [FIX #1] OSINT artık discovery fazında çalışıyor (derinlik
             # motorundan ÖNCE). Eski sondaki blok KALDIRILDI: çıktı
@@ -2068,12 +2729,17 @@ class PinealExecutor:
 
     @staticmethod
     def _holistic_confidence(agent_runs: Dict[str, AgentRun]) -> float:
-        """Aggregate only measured confidence values; absence is not neutral confidence."""
+        """Aggregate finite [0,1] model scores; absence is not neutral confidence."""
+        from agent_core.services.confidence import normalize_confidence
+
         profile_agents = ("passion_mapper", "friction_detector", "cognitive_profiler", "resonance_synthesizer")
-        values = [
-            run.confidence for name, run in agent_runs.items()
-            if name in profile_agents and run.status == "completed" and isinstance(run.confidence, (int, float))
-        ]
+        values = []
+        for name, run in agent_runs.items():
+            if name not in profile_agents or run.status != "completed":
+                continue
+            score, valid = normalize_confidence(run.confidence)
+            if valid:
+                values.append(score)
         return round(sum(values) / len(values), 3) if values else 0.0
 
     async def _calculate_authentic_vector(self, data_dict: dict) -> dict | None:

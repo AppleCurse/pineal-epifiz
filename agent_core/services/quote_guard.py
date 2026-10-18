@@ -1,6 +1,18 @@
-import logging
+"""Alıntı bekçisi — "doğrulandı" statüsünü YALNIZ kod yazar.
 
-logger = logging.getLogger(__name__)
+Derinlik raporundaki her alıntı, kaynak korpusla normalize edilmiş benzerlik
+skoruyla eşleştirilir (``best_score``/``quote_matches``). Hakem raporundan
+``claim_id → truth_status`` indeksi (``verification_claim_index``) ve yalnız
+KESİN statülü + alıntılı iddiaların çapaları (``verification_quote_anchors``)
+çıkarılır.
+
+``_link_finding_to_claim`` bulguyu iddiaya DETERMİNİSTİK bağlar; LLM'in
+"doğrulandı" demesi yetmez, eşleşme şarttır. ``guard_report`` eşleşmeyen
+alıntıları damgalar/düşürür.
+
+Test: ``tests/unit/test_claim_decision_gate.py``, ``tests/unit/test_quote_guard*.py``.
+"""
+
 import re
 from difflib import SequenceMatcher
 from typing import Dict, List, Tuple, Any, Optional
@@ -90,10 +102,8 @@ def quote_matches(
                 claim_id=claim_id,
                 note=f"eşik={threshold:.2f}",
             )
-        except Exception as exc:  # noqa: BLE001 - kalibrasyon kaydı kararı bozamaz
-            logger.warning(
-                "[quote_matches] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
-            )
+        except Exception:  # noqa: BLE001 - kalibrasyon kaydı kararı bozamaz
+            pass
     return score >= threshold
 
 

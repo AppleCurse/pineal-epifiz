@@ -139,7 +139,7 @@ async def test_missing_terminal_event_settles_once_without_zeroing(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_stream_failure_before_first_chunk_releases_reservation(monkeypatch):
+async def test_stream_failure_before_first_chunk_retains_ambiguous_reservation(monkeypatch):
     class Completions:
         async def create(self, **kwargs):
             raise RuntimeError("upstream refused")
@@ -161,3 +161,115 @@ async def test_stream_failure_before_first_chunk_releases_reservation(monkeypatc
             route=_route(),
         )
     assert gateway.budget_status()["active_reservations"] == 0
+    assert gateway.budget_status()["reserved_usd"] == 0
+    assert gateway.spend_usd > 0, "ambiguous transport failure may have been billable"
+    assert gateway.call_log[-1]["cost_usd"] == gateway.spend_usd
+
+
+@pytest.mark.asyncio
+async def test_stream_failure_before_first_event_retains_reservation(monkeypatch):
+    async def upstream():
+        raise RuntimeError("first SSE event failed")
+        yield _chunk()
+
+    gateway, _ = _gateway(monkeypatch, upstream)
+    with pytest.raises(RuntimeError, match="first SSE event failed"):
+        await gateway.start_chat_stream(
+            messages=_messages(),
+            model="stepfun/step-3.7-flash",
+            route=_route(),
+        )
+
+    assert gateway.budget_status()["active_reservations"] == 0
+    assert gateway.spend_usd > 0
+    assert gateway.call_log[-1]["error"] == "RuntimeError"
+    assert gateway.call_log[-1]["cost_usd"] == gateway.spend_usd
+
+
+@pytest.mark.asyncio
+async def test_stream_model_substitution_is_rejected_and_reserved_cost_retained(monkeypatch):
+    async def upstream():
+        yield SimpleNamespace(
+            model="provider/default-model",
+            usage=None,
+            choices=[SimpleNamespace(delta=SimpleNamespace(content="not delivered"))],
+        )
+        yield _chunk(content="must not be read")
+
+    gateway, state = _gateway(monkeypatch, upstream)
+    with pytest.raises(RuntimeError, match="MODEL_SUBSTITUTION_DENIED"):
+        await gateway.start_chat_stream(
+            messages=_messages(),
+            model="stepfun/step-3.7-flash",
+            route=_route(),
+        )
+
+    assert state["calls"] == 1
+    assert gateway.budget_status()["active_reservations"] == 0
+    assert gateway.spend_usd > 0
+    record = gateway.call_log[-1]
+    assert record["error"].startswith("MODEL_SUBSTITUTION_DENIED::")
+    assert record["requested_model"] == "stepfun/step-3.7-flash"
+    assert record["actual_model"] == "provider/default-model"
+    assert record["cost_usd"] == gateway.spend_usd
+
+
+@pytest.mark.asyncio
+async def test_stream_rejects_model_change_after_first_chunk(monkeypatch):
+    async def upstream():
+        yield SimpleNamespace(
+            model="stepfun/step-3.7-flash",
+            usage=None,
+            choices=[SimpleNamespace(delta=SimpleNamespace(content="delivered"))],
+        )
+        yield SimpleNamespace(
+            model="provider/other-model",
+            usage=None,
+            choices=[SimpleNamespace(delta=SimpleNamespace(content="must not be delivered"))],
+        )
+
+    gateway, _ = _gateway(monkeypatch, upstream)
+    stream = await gateway.start_chat_stream(
+        messages=_messages(),
+        model="stepfun/step-3.7-flash",
+        route=_route(),
+    )
+    delivered = []
+    with pytest.raises(RuntimeError, match="MODEL_SUBSTITUTION_DENIED"):
+        async for chunk in stream.chunks:
+            delivered.append(chunk.choices[0].delta.content)
+
+    assert delivered == ["delivered"]
+    record = gateway.call_log[-1]
+    assert record["error"].startswith("MODEL_SUBSTITUTION_DENIED::")
+    assert record["requested_model"] == "stepfun/step-3.7-flash"
+    assert record["actual_model"] == "provider/other-model"
+    assert gateway.budget_status()["active_reservations"] == 0
+    assert gateway.spend_usd > 0
+
+
+@pytest.mark.asyncio
+async def test_explicit_provider_4xx_before_stream_open_releases_reservation(monkeypatch):
+    class BadRequest(Exception):
+        status_code = 400
+
+    class Completions:
+        async def create(self, **kwargs):
+            raise BadRequest("invalid payload")
+
+    gateway = LLMGateway()
+    gateway.set_key("nk-test", unlock_live=True)
+    monkeypatch.setattr(
+        gateway,
+        "_client_for_route",
+        lambda route: SimpleNamespace(chat=SimpleNamespace(completions=Completions())),
+    )
+    with pytest.raises(BadRequest):
+        await gateway.start_chat_stream(
+            messages=_messages(),
+            model="stepfun/step-3.7-flash",
+            route=_route(),
+        )
+
+    assert gateway.budget_status()["active_reservations"] == 0
+    assert gateway.spend_usd == 0

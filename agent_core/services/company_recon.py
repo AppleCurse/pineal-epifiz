@@ -437,13 +437,13 @@ async def seo_snapshot(
         return SeoSnapshot(available=False, reason="private_address_rejected")
 
     try:
-        import httpx
+        from agent_core.capabilities.egress import open_client
     except ImportError:
         return SeoSnapshot(available=False, reason="dependency_missing:httpx")
 
     checks: list[SeoCheck] = []
     scheme = ""
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+    async with open_client(purpose="osint", timeout=timeout, follow_redirects=True) as client:
         base = (base_url or "").rstrip("/")
         if base:
             candidates = [base]
@@ -617,7 +617,7 @@ async def people_scan(
         return PeopleScan(available=False, reason="private_address_rejected")
 
     try:
-        import httpx
+        from agent_core.capabilities.egress import open_client
     except ImportError:
         return PeopleScan(available=False, reason="dependency_missing:httpx")
 
@@ -642,7 +642,7 @@ async def people_scan(
     errors: list[str] = []
     checked: list[str] = []
 
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+    async with open_client(purpose="osint", timeout=timeout, follow_redirects=True) as client:
         for page in pages:
             status, text, _headers, error = await _fetch(client, page)
             if status and 200 <= status < 400:

@@ -9,17 +9,36 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 import cv2
 import asyncio
+from agent_core.capabilities.egress import open_client, httpx
 import numpy as np
-from httpx import AsyncClient, HTTPError, Timeout
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 from urllib.parse import urlparse
 
 from agent_core.services.upstream_findings import upstream_findings_block
-from agent_core.utils.security import build_secure_client
+from agent_core.services.confidence import normalize_confidence
+# [P0 · DENETİM 2026-10-16] Kanıt tipi ayrımı: yazım tarzı ↔ arama sonucu.
+from agent_core.domain.content_basis import EVIDENCE_PLATFORM_POST, extract_public_text
+
+
+class HumanBehaviorPayload(BaseModel):
+    """[AUDIT E-GÖZ1-5] ``execute()`` girdi şeması.
+
+    Bilinen alanlar TİP doğrulamasından geçer; ek alanlar korunur
+    (``extra="allow"`` — executor'ın görev bağlamı silinmez). Doğrulama
+    başarısızlık ÜRETMEDEN ajanı görünür şekilde ``failed`` taşır
+    (``ValidationError`` yukarıya yükselir; sessiz yutma yok).
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    target_profile: Optional[Dict[str, Any]] = None
+    user_profile: Optional[Dict[str, Any]] = None
+    sacred_rules: Optional[str] = ""
+    user_authenticity_score: Optional[float] = None
 
 
 class MicroSignal(BaseModel):
@@ -31,48 +50,6 @@ class MicroSignal(BaseModel):
     psychological_weight: float  # Aşil Tendonu ağırlığı; legacy integrations may use 0-100 scale
 
 
-class TargetProfile(BaseModel):
-    """Kazınmış hedef profili — yapısal kontrat (gevşek dict yerine)."""
-
-    model_config = ConfigDict(extra="allow")
-
-    bio: str = ""
-    posts: List[Any] = Field(default_factory=list)
-    post_times: List[Any] = Field(default_factory=list)
-    images: List[Any] = Field(default_factory=list)
-
-    @field_validator("bio", mode="before")
-    @classmethod
-    def _bio_text(cls, value: Any) -> str:
-        return value if isinstance(value, str) else str(value)
-
-    @field_validator("posts", "post_times", "images", mode="before")
-    @classmethod
-    def _as_list(cls, value: Any) -> list:
-        if isinstance(value, list):
-            return value
-        return [value] if value else []
-
-
-class HumanBehaviorInput(BaseModel):
-    """``execute`` girdisi — kritik veri akışı için NET şema (E8 / E-GÖZ1-5).
-
-    Ham dict çağıranlar (executor) içeride doğrulanır; şema dışı alanlar
-    (örn. ``_upstream_findings``, ``user_authenticity_score``) `extra="allow"`
-    ile taşınır — veri kaybı yok, tip güvenliği var.
-    """
-
-    model_config = ConfigDict(extra="allow")
-
-    target_profile: TargetProfile = Field(default_factory=TargetProfile)
-    sacred_rules: str = ""
-
-    @field_validator("sacred_rules", mode="before")
-    @classmethod
-    def _rules_text(cls, value: Any) -> str:
-        return value if isinstance(value, str) else str(value or "")
-
-
 class DigitalColdReading(BaseModel):
     observations: List[str] = Field(description="Somut gözlemler")
     possible_interpretations: List[str] = Field(description="Gözlemlerin olası psikolojik anlamları")
@@ -82,7 +59,7 @@ class DigitalColdReading(BaseModel):
     micro_signals: List[MicroSignal]
     achilles_score: float = Field(ge=0.0, le=100.0)
     resonance_potential: float = Field(ge=0.0, le=1.0)
-    data_confidence: bool = True
+    data_confidence: bool = False
     fallback_reason: Optional[str] = None
 
     model_config = ConfigDict(extra="forbid")
@@ -101,21 +78,29 @@ class HumanBehaviorAnalyzer:
     # Public entrypoint
     # ------------------------------------------------------------------ #
     async def execute(
-        self, input_data: HumanBehaviorInput, memory: Any, llm_gateway: Any
+        self, input_data: Mapping[str, Any], memory: Any, llm_gateway: Any
     ) -> DigitalColdReading:
-        # [E-GÖZ1-5] Sınır: ham dict → net şema; doğrulama burada fail-closed.
-        if isinstance(input_data, dict):
-            input_data = HumanBehaviorInput.model_validate(input_data)
-        profile = input_data.target_profile
-        sacred_rules = input_data.sacred_rules
+        # [AUDIT E-GÖZ1-5] Şema kapısı: bilinen alanlar doğrulanır, bilinmeyen
+        # alanlar korunur. dict(...) başarısızsa / ValidationError çıkarsa
+        # ajan görünür şekilde failed olur — uydurma varsayılanla devam yok.
+        input_data = HumanBehaviorPayload.model_validate(dict(input_data)).model_dump()
+        profile = input_data.get("target_profile") or {}
+        sacred_rules = input_data.get("sacred_rules") or ""
     # [BOSS-9] Diğer ajanların doğrulanmamış bulguları prompt'a referans olarak girer
     # (tek kaynak: agent_core.services.upstream_findings); boşsa metin boş kalır.
-        upstream_block = upstream_findings_block(input_data.model_dump())
+        upstream_block = upstream_findings_block(input_data)
 
-        bio = self._as_text(profile.bio)
-        posts = [self._as_text(p) for p in (profile.posts or [])]
-        post_times = profile.post_times or []
-        images = profile.images or []
+        bio = self._as_text(profile.get("bio", ""))
+        # [P0 · DENETİM 2026-10-16] Dilbilimsel/ritmik analiz HEDEFİN KENDİ
+        # YAZDIĞI metne bakar. Arama sonucu (snippet) üçüncü taraf metnidir →
+        # "hedefin yazım tarzı" iddiası için kullanılmaz. Kanıt tipi etiketi
+        # kaybolmaz.
+        posts = [
+            item.text
+            for item in extract_public_text(profile, kinds=(EVIDENCE_PLATFORM_POST,))
+        ]
+        post_times = profile.get("post_times") or []
+        images = profile.get("images") or []
 
         # 1. Temporal forensics
         temporal_signals = self._temporal_forensics(post_times)
@@ -129,7 +114,7 @@ class HumanBehaviorAnalyzer:
 
         from agent_core.utils.security import UnsafeURLError, safe_get
 
-        async def _fetch_and_analyze_image(client: AsyncClient, image_url: str) -> List[MicroSignal]:
+        async def _fetch_and_analyze_image(client: httpx.AsyncClient, image_url: str) -> List[MicroSignal]:
             if not self._is_http_url(image_url):
                 return []
             response = None
@@ -176,9 +161,11 @@ class HumanBehaviorAnalyzer:
                     await response.aclose()
 
         try:
-            # [E-GÖZ1-3] İstemci merkezi fabrikadan; SSRF kapısı (safe_get)
-            # içeride her URL'yi doğrular.
-            async with build_secure_client(timeout=Timeout(10.0, connect=5.0)) as client:
+            async with open_client(
+                purpose="media",
+                follow_redirects=False,
+                timeout=httpx.Timeout(10.0, connect=5.0),
+            ) as client:
                 # Use a shared httpx.AsyncClient to enable connection pooling for concurrent requests
                 tasks = [_fetch_and_analyze_image(client, url) for url in images[: self.MAX_IMAGES]]
                 # [E7-muaf] İç coroutine (`_fetch_and_analyze_image`) her
@@ -186,7 +173,7 @@ class HumanBehaviorAnalyzer:
                 results = await asyncio.gather(*tasks)
                 for res in results:
                     visual_signals.extend(res)
-        except HTTPError as exc:
+        except httpx.HTTPError as exc:
             logging.warning("Unable to initialize visual analysis client: %s", exc)
 
         # 4. Combine and mine contradictions
@@ -269,13 +256,19 @@ class HumanBehaviorAnalyzer:
         # [059] fix: data_confidence körü körüne True yapılmaz. Gerçek gözlem
         # veya biyografi verisi varsa True olur, yoksa fail-closed kalır.
         has_real_evidence = bool(all_signals or contradictions or (bio and bio.strip()))
-        raw_conf = float(getattr(result, "confidence", 0.0) or 0.0)
-        conf = max(raw_conf, 0.75) if has_real_evidence else raw_conf
+        # Presence of observations does not calibrate or raise model confidence.
+        conf, confidence_valid = normalize_confidence(getattr(result, "confidence", None))
+        has_valid_evidence = has_real_evidence and confidence_valid
+        reason = (
+            None if has_valid_evidence
+            else "invalid_model_confidence" if not confidence_valid
+            else "insufficient_behavioral_evidence"
+        )
         return result.model_copy(update={
-            "confidence": conf,
+            "confidence": conf if has_valid_evidence else 0.0,
             "achilles_score": min(max(float(final_achilles), 0.0), 100.0),
-            "data_confidence": has_real_evidence,
-            "fallback_reason": None if has_real_evidence else "insufficient_behavioral_evidence"
+            "data_confidence": has_valid_evidence,
+            "fallback_reason": reason,
         })
 
     # ------------------------------------------------------------------ #
@@ -553,15 +546,10 @@ class HumanBehaviorAnalyzer:
         )
 
     def _calculate_resonance_potential(
-        self, wound: Dict[str, Any], input_data: HumanBehaviorInput
+        self, wound: Mapping[str, Any], input_data: Mapping[str, Any]
     ) -> float:
-        payload = (
-            input_data
-            if isinstance(input_data, HumanBehaviorInput)
-            else HumanBehaviorInput.model_validate(input_data)
-        )
         authenticity = min(
-            max(float(payload.model_dump().get("user_authenticity_score", 0.5)), 0.0), 1.0
+            max(float(input_data.get("user_authenticity_score", 0.5)), 0.0), 1.0
         )
         defense_strength = float(wound.get("defense_strength", 0.5))
         openness = 1.0 - min(max(defense_strength, 0.0), 1.0)

@@ -39,6 +39,7 @@ from agent_core.capabilities.adapters_osint import (
     SocidCapability,
 )
 from agent_core.capabilities.runner import CapabilityRunner
+from agent_core.capabilities.state import MANAGED_GATE_FLAGS
 
 EVIDENCE_ID_RE = re.compile(r"^ev_[0-9a-f]{20}$")
 
@@ -168,11 +169,88 @@ def test_policy_denies_vault_locked():
 
 
 def test_policy_denies_disabled_env_flag():
+    """YÖNETİLEN bir bayrak kapalıysa ret sebebi `gate_disabled`'dır."""
     kernel = PolicyKernel()
-    denied = kernel.evaluate(frozenset({"ENABLE_X"}), PolicyState())
+    denied = kernel.evaluate(frozenset({"ENABLE_MAIGRET"}), PolicyState())
     assert denied.allowed is False and denied.reason == "gate_disabled"
-    allowed = kernel.evaluate(frozenset({"ENABLE_X"}), PolicyState(enabled_flags={"ENABLE_X": True}))
+    allowed = kernel.evaluate(
+        frozenset({"ENABLE_MAIGRET"}), PolicyState(enabled_flags={"ENABLE_MAIGRET": True})
+    )
     assert allowed.allowed is True
+
+
+def test_policy_typo_flag_is_unknown_gate_not_disabled():
+    """[DENETİM 2026-10-14 · B2] Yazım hatalı/uydurma bayrak 'kapalı' gibi görünemez.
+
+    Eskiden yönetilmeyen bir `ENABLE_*` adı da `gate_disabled` dönüyordu;
+    operatör onu açmaya çalışıp başarısız oluyordu ve denetim izi yanlış
+    sınıflanıyordu. Artık `unknown_gate` (fail-closed) ve bu karar kapı
+    önceliğinde en başta verilir — kasa kilidi bile onu maskelemez.
+    """
+    kernel = PolicyKernel()
+    for typo in ("ENABLE_TAMAMEN_UYDURMA", "ENABLE_MAIGRET_TYPO"):
+        decision = kernel.evaluate(frozenset({typo}), PolicyState())
+        assert decision.allowed is False, typo
+        assert decision.reason == "unknown_gate", (typo, decision.reason)
+        # Açık kasa + açık hız durumu bile yönetilmeyen bayrağı kurtaramaz.
+        decision = kernel.evaluate(
+            frozenset({typo, "vault"}),
+            PolicyState(vault_locked=False, rate_ok=True),
+        )
+        assert decision.reason == "unknown_gate", (typo, decision.reason)
+
+
+def test_voice_gates_are_managed_so_state_can_express_them():
+    """[DENETİM 2026-10-14 · B1] SES kapıları omurgada TANIMLI olmalı.
+
+    Önceden `ENABLE_LOCAL_TTS=true` iken yetenek "hazır" derken çekirdek
+    yönetilmeyen bayrağı `unknown_gate` sayıyordu (UI ile çekirdek çelişiyordu).
+    """
+    from agent_core.capabilities.adapters_voice import LocalSTTCapability, LocalTTSCapability
+
+    kernel = PolicyKernel()
+    for cap in (LocalTTSCapability(), LocalSTTCapability()):
+        env_gates = {g for g in cap.gates if g.startswith("ENABLE_")}
+        assert env_gates, f"{cap.id} bayrak kapısı taşımıyor"
+        for gate in env_gates:
+            assert gate in MANAGED_GATE_FLAGS, f"{gate} omurgada yönetilmiyor"
+            assert gate in kernel.KNOWN_GATE_FLAGS, gate
+        # Kapı açıkken yalnız kasa kuralı kalır; bayrak artık ret sebebi değil.
+        decision = kernel.evaluate(
+            cap.gates,
+            PolicyState(
+                vault_locked=False,
+                rate_ok=True,
+                enabled_flags={g: True for g in env_gates},
+            ),
+        )
+        assert decision.allowed is True, (cap.id, decision.reason)
+
+
+def test_capability_availability_and_kernel_agree_when_gate_open(monkeypatch):
+    """[DENETİM 2026-10-14 · B1] Kapı açıkken availability ile çekirdek AYNI dili konuşur."""
+    from agent_core.capabilities.adapters_voice import LocalTTSCapability
+
+    monkeypatch.delenv("PINEAL_TTS_URL", raising=False)
+    monkeypatch.delenv("PINEAL_PIPER_MODEL", raising=False)
+
+    cap = LocalTTSCapability()
+    kernel = PolicyKernel()
+
+    monkeypatch.delenv("ENABLE_LOCAL_TTS", raising=False)
+    assert cap.availability().available is False
+    kapali = kernel.evaluate(cap.gates, PolicyState(vault_locked=False, rate_ok=True))
+    assert kapali.reason == "gate_disabled"
+
+    monkeypatch.setenv("ENABLE_LOCAL_TTS", "true")
+    state = PolicyState(
+        vault_locked=False, rate_ok=True, enabled_flags={"ENABLE_LOCAL_TTS": True}
+    )
+    assert kernel.evaluate(cap.gates, state).allowed is True
+    # Motor yok → yine de "hazır" denmez: dürüst sebep motor tarafından gelir.
+    avail = cap.availability()
+    assert avail.available is False
+    assert "no_local_endpoint" in (avail.reason or "") or "no_engine" in (avail.reason or "")
 
 
 def test_policy_rate_unknown_is_denied():
@@ -462,3 +540,68 @@ async def test_vault_lock_blocks_every_registered_capability():
         )
         assert result.denied_by == "vault", f"{cap.id} kasa kilidini atladı"
         assert result.items == ()
+
+
+# ------------------------------------------- 6 · kapı BEYANI ↔ availability
+def _gate_disabled_flags_in_source() -> dict[str, set[str]]:
+    """`adapters_*.py` içinde `gate_disabled:ENABLE_X` diyen sınıf → bayraklar.
+
+    [DENETİM 2026-10-14 · B15] Bir yetenek `availability()` içinde bir env
+    bayrağı okuyup "kapalı" diyorsa, o bayrağı `gates` kümesinde de BEYAN
+    ETMEK zorundadır; aksi hâlde çekirdek "izinli" derken yetenek "kapalı"
+    der ve iki dil birbirini tutmaz.
+    """
+    import ast
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2] / "agent_core" / "capabilities"
+    found: dict[str, set[str]] = {}
+    for path in sorted(root.glob("adapters_*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for cls in [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]:
+            flags = {
+                node.value.removeprefix("gate_disabled:")
+                for node in ast.walk(cls)
+                if isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and node.value.startswith("gate_disabled:ENABLE_")
+            }
+            if flags:
+                found[cls.name] = flags
+    return found
+
+
+def test_every_declared_gate_disabled_flag_is_in_the_capability_gates():
+    """Kaynakta `gate_disabled:ENABLE_X` diyen sınıf, X'i `gates`'te beyan etmeli."""
+    registry = CapabilityRegistry()
+    bootstrap(registry)
+    by_class = {type(cap).__name__: cap for cap in registry}
+
+    offenders: list[str] = []
+    checked = 0
+    for cls_name, flags in _gate_disabled_flags_in_source().items():
+        cap = by_class.get(cls_name)
+        if cap is None:  # kayıtlı değilse bu testin konusu değil
+            continue
+        checked += 1
+        missing = sorted(flags - set(cap.gates))
+        if missing:
+            offenders.append(f"{cap.id} ({cls_name}): beyansız {missing}")
+
+    assert checked >= 5, f"beklenen sınıf sayısı bulunamadı (taranan={checked})"
+    assert not offenders, "kapı beyanı eksik: " + "; ".join(offenders)
+
+
+def test_crawl4ai_gate_is_expressed_by_the_kernel():
+    """B15: crawl4ai bayrağı artık omurgada — kernel ve availability aynı dili konuşur."""
+    registry = CapabilityRegistry()
+    bootstrap(registry)
+    cap = registry.get("extractor.web.crawl4ai")
+    assert "ENABLE_CRAWL4AI" in cap.gates, cap.gates
+
+    kernel = PolicyKernel()
+    kapali = PolicyState(enabled_flags={}, vault_locked=False, rate_ok=True)
+    acik = PolicyState(enabled_flags={"ENABLE_CRAWL4AI": True}, vault_locked=False, rate_ok=True)
+    assert kernel.evaluate(cap.gates, kapali).allowed is False
+    assert kernel.evaluate(cap.gates, kapali).reason == "gate_disabled"
+    assert kernel.evaluate(cap.gates, acik).allowed is True

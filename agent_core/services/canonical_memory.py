@@ -1,3 +1,24 @@
+"""Kanonik kanıt deposu — bozulmada FAIL-CLOSED davranan tek kaynak.
+
+Bir görevin kanıt zinciri ``storage_path`` altındaki görev başına JSON
+dosyasında tutulur. Her okuma bir DURUM üretir: ``EMPTY`` (dosya yok, geçerli
+boş), ``READY`` (okunabilir) veya ``CORRUPTED`` (var ama güvenilmez).
+
+Sözleşmeler:
+  * Bozuk dosya sessizce ÜZERİNE YAZILMAZ: ``merge_evidence`` reddeder
+    (``MemoryCorruptedError``); açık kurtarma için ``quarantine_and_reset``
+    bozuk baytları arşivleyip geçerli boş belge kurar.
+  * Yazım atomiktir (``_atomic_write``); görev başına kilit + bekleyen sayacı
+    ile eşzamanlı erişim serileştirilir.
+  * Çakışan iddialar kanıt kaynağı korunarak işaretlenir
+    (``_resolve_conflicts``); genel güven yalnız GERÇEK ajan çıktılarından
+    hesaplanır (eksiklik nötr güven sayılmaz).
+
+Tüketici: ``backend/api.py``, ``agent_core/task_executor.py``.
+Test: ``tests/unit/test_canonical_memory_conflicts.py``,
+``tests/unit/test_canonical_memory_recovery.py``, ``tests/integration/test_canonical_memory.py``.
+"""
+
 import asyncio
 import json
 import logging

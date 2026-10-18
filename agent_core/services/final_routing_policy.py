@@ -120,7 +120,7 @@ ROUTES: Dict[str, RouteSpec] = {
     # aynı endpoint, 2. anahtar (429/limit → otomatik rotasyon).
     "gemini-3.7-flash@google-gemini": RouteSpec("gemini-3.7-flash", "google-gemini", "paid", 0.75, 3.75, 1_048_576, frozenset({"chat","streaming","vision","tools"}), "verified", note="Google direkt; free-tier canlı teyit bekler"),
     "gemini-3.7-flash@google-gemini-backup": RouteSpec("gemini-3.7-flash", "google-gemini-backup", "paid", 0.75, 3.75, 1_048_576, frozenset({"chat","streaming","vision","tools"}), "verified", note="429 sonrası backup key (aynı endpoint)"),
-    "openai/gpt-5.6-sol-pro@openrouter": RouteSpec("openai/gpt-5.6-sol-pro", "openrouter", "frontier", 2.00, 10.00, 1_048_576, frozenset({"chat","streaming","tools","reasoning"}), "verified", note="Frontier explicit"),
+    "openai/gpt-5.6-sol-pro@openrouter": RouteSpec("openai/gpt-5.6-sol-pro", "openrouter", "frontier", 4.00, 20.00, 1_048_576, frozenset({"chat","streaming","tools","reasoning"}), "verified", note="Frontier explicit; [2026-10-14] canlı OR teyidi: $2/$10 promo sona erdi -> $4/$20"),
     # 9Router yerel rotaları (v0.5.81 local proxy 127.0.0.1:20128)
     "pineal-deep-reasoning@openrouter": RouteSpec("pineal-deep-reasoning", "openrouter", "free", 0.0, 0.0, 1_048_576, frozenset({"chat","streaming","tools","reasoning"}), "verified", note="9Router deep reasoning combo"),
     "pineal-general-reasoning@openrouter": RouteSpec("pineal-general-reasoning", "openrouter", "free", 0.0, 0.0, 1_048_576, frozenset({"chat","streaming","tools"}), "verified", note="9Router general reasoning combo"),

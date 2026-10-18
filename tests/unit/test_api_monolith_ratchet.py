@@ -16,6 +16,18 @@ bu yüzden iki mekanizma birlikte uygulanır:
    ayrıştırıldı" gerçeğini de kilitler (bkz. test_api_reexports_split_module).
 
 Bölme planı (uç nokta envanteri ve sıra): `docs/reports/API_MONOLITH_SPLIT_PLAN.md`.
+
+[API-BÖLME 2 · 2026-10-14] İkinci adım: `/api/language/*` üç ucu
+`backend/routes/language.py` modülüne taşındı ve tavan DÜŞÜRÜLDÜ. Gerekçe:
+`/api/language` bloğuna modül docstring'i yazılırken dosyanın tavanın TAM
+ÜSTÜNDE (6.000 satır) durduğu görüldü — yani envanter/açıklama işi bile
+gerçekten `api.py` içine satır ekleyemiyor. Kural işledi: satır eklemek yerine
+düşük-bağımlılıklı modül çıkarıldı (§4/1. adım) ve uç sözleşmeleri değişmedi.
+
+[API-BÖLME 3 · 2026-10-16] Üçüncü adım: P0 dürüstlük düzeltmeleri
+(`/api/telemetry` yetenek tablosu + web dosyası kural kuralları) iki yeni
+modül çıkardı — `backend/routes/telemetry.py` ve
+`backend/services/web_dossier.py` — ve tavan 5.916 → 5.907 DÜŞÜRÜLDÜ.
 """
 
 from __future__ import annotations
@@ -25,16 +37,30 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 API = REPO_ROOT / "backend/api.py"
 BODY_LIMIT_MODULE = REPO_ROOT / "backend/middleware/body_size_limit.py"
+LANGUAGE_MODULE = REPO_ROOT / "backend/routes/language.py"
+WEB_RESEARCH_MODULE = REPO_ROOT / "backend/services/web_research.py"
 
 #: Denetim öncesi ÖLÇÜLEN değer: 6.034 satır.
 #: İlk bölme (gövde tavanı middleware'i taşındı) sonrası: 5.937 satır.
+#: İkinci bölme (`/api/language/*` → `backend/routes/language.py`) sonrası:
+#: modül docstring'i dâhil 5.916 satır (ölçüldü 2026-10-14).
+#: Üçüncü bölme (2026-10-16, API-BÖLME 3): P0 düzeltmeleri iki yeni modül
+#: çıkardı — `backend/routes/telemetry.py` (`/api/telemetry`) ve
+#: `backend/services/web_dossier.py` (web dosyası kuralları) — 5.907 satır.
 MEASURED_AT_AUDIT = 6034
 MEASURED_AFTER_FIRST_SPLIT = 5937
+MEASURED_AFTER_SECOND_SPLIT = 5916
+MEASURED_AFTER_THIRD_SPLIT = 5908
+#: Dördüncü bölme (2026-10-16, API-BÖLME 4): public-web araştırma gövdesi
+#: `backend/services/web_research.py` modülüne taşındı → 5.805 satır.
+MEASURED_AFTER_FOURTH_SPLIT = 5805
 
 #: Tavan. Yeni uç nokta eklemek yerine MODÜL ÇIKAR. Tavana dayanınca
 #: `docs/reports/API_MONOLITH_SPLIT_PLAN.md` sırasındaki bir sonraki
 #: düşük-bağımlılıklı alanı taşı ve bu sayıyı DÜŞÜR.
-MAX_LINES = 6000
+#: Üçüncü bölmeden sonra ölçülen değere indirildi (ratchet: geri çıkış yok).
+#: [API-BÖLME 4] Dördüncü bölmeden sonra 5.805'e indirildi.
+MAX_LINES = 5805
 
 
 def _line_count() -> int:
@@ -112,6 +138,111 @@ def test_api_does_not_redefine_the_middleware():
     assert not redefinitions, (
         "gövde-tavanı middleware'i hem taşınmış hem api.py içinde yeniden "
         "tanımlanmış: iki kopya birbirinden sapar"
+    )
+
+
+def test_language_split_module_exists_and_is_importable():
+    """İkinci ayrıştırılan katman yerinde ve ``backend.api``'siz kullanılabilir."""
+    assert LANGUAGE_MODULE.is_file(), (
+        "ayrıştırılan dil hattı modülü bulunamadı: backend/routes/language.py"
+    )
+    from backend.routes.language import (
+        LanguageDetectPayload,
+        LanguageTranslatePayload,
+        register_language_routes,
+    )
+
+    assert callable(register_language_routes)
+    assert LanguageDetectPayload(text="merhaba").text == "merhaba"
+    assert LanguageTranslatePayload(text="hi", target="tr").target == "tr"
+
+
+def test_api_reexports_language_split_symbols():
+    """Geriye dönük uyumluluk: `from backend.api import LanguageDetectPayload` çalışır."""
+    import backend.api as api
+    from backend.routes.language import LanguageDetectPayload as Canonical
+
+    assert api.LanguageDetectPayload is Canonical
+    assert api.LanguageTranslatePayload is not None
+    assert api.register_language_routes is not None
+
+
+def test_language_routes_are_registered_on_the_app():
+    """Taşıma sırasında uç sözleşmesi bozulmadı: üç yol da app'te KAYITLI."""
+    import backend.api as api
+
+    paths = {getattr(route, "path", None) for route in api.app.routes}
+    for path in ("/api/language/status", "/api/language/detect", "/api/language/translate"):
+        assert path in paths, f"{path} kayıtlı değil — taşıma uç noktayı düşürdü"
+
+
+def test_api_does_not_redefine_language_models():
+    """Kopya bırakılmamalı: payload modelleri api.py içinde yeniden tanımlanamaz."""
+    import ast
+
+    tree = ast.parse(API.read_text(encoding="utf-8"))
+    redefinitions = [
+        node.name
+        for node in tree.body
+        if isinstance(node, ast.ClassDef)
+        and node.name in {"LanguageDetectPayload", "LanguageTranslatePayload"}
+    ]
+    assert not redefinitions, (
+        "dil hattı payload modelleri hem taşınmış hem api.py içinde yeniden "
+        "tanımlanmış: iki kopya birbirinden sapar"
+    )
+
+
+def test_web_research_split_module_exists_and_is_importable():
+    """[API-BÖLME 4] Public-web araştırma gövdesi ayrı modülde yaşar."""
+    assert WEB_RESEARCH_MODULE.is_file(), (
+        "ayrıştırılan public-web araştırma modülü bulunamadı: "
+        "backend/services/web_research.py"
+    )
+    from backend.services.web_research import (
+        extract_handle_from_url,
+        run_public_web_research,
+    )
+
+    assert callable(extract_handle_from_url)
+    assert callable(run_public_web_research)
+
+
+def test_api_reexports_web_research_split_symbols():
+    """[API-BÖLME 4] Geriye dönük uyumluluk: `from backend.api import ...` çalışır."""
+    import backend.api as api
+    from backend.services.web_research import (
+        extract_handle_from_url as CanonicalExtract,
+        run_public_web_research as CanonicalRun,
+    )
+
+    assert api._extract_handle_from_url is CanonicalExtract
+    assert api._run_public_web_research is CanonicalRun
+
+
+def test_api_does_not_redefine_web_research_body():
+    """[API-BÖLME 4] Kopya bırakılmamalı: gövde api.py içinde yeniden yazılamaz."""
+    import ast
+
+    tree = ast.parse(API.read_text(encoding="utf-8"))
+    definitions = [
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name in {"_run_public_web_research", "_extract_handle_from_url"}
+    ]
+    assert not definitions, (
+        "public-web araştırma gövdesi hem taşınmış hem api.py içinde yeniden "
+        "tanımlanmış: iki kopya birbirinden sapar"
+    )
+
+
+def test_api_shrank_after_fourth_split():
+    """[API-BÖLME 4] Ölçülebilir ilerleme: tavan 5.805'e indi."""
+    current = _line_count()
+    assert current <= MEASURED_AFTER_FOURTH_SPLIT, (
+        f"backend/api.py {current} satır — dördüncü bölme tavanı "
+        f"{MEASURED_AFTER_FOURTH_SPLIT}"
     )
 
 

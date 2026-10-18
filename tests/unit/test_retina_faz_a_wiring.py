@@ -312,8 +312,8 @@ async def test_searxng_blocked_when_vault_locked(monkeypatch):
         async def post(self, *a, **kw):
             raise AssertionError("kasa kapalıyken dışarı HTTP isteği çıktı")
 
-    monkeypatch.setattr(adapters_sensors, "build_secure_client", _BoomClient)
-    monkeypatch.setattr(search_mod, "build_secure_client", _BoomClient)
+    monkeypatch.setattr(adapters_sensors.httpx, "AsyncClient", _BoomClient)
+    monkeypatch.setattr(search_mod.httpx, "AsyncClient", _BoomClient)
     monkeypatch.setenv("ENABLE_SEARXNG", "true")
     monkeypatch.setenv("SEARXNG_BASE_URL", "http://127.0.0.1:8080")
 
@@ -351,11 +351,9 @@ async def test_searxng_path_is_live_when_vault_open(monkeypatch):
         async def get(self, *a, **kw):
             raise AssertionError("http_request_made")
 
-    monkeypatch.setattr(adapters_sensors, "build_secure_client", _BoomClient)
+    monkeypatch.setattr(adapters_sensors.httpx, "AsyncClient", _BoomClient)
     monkeypatch.setenv("ENABLE_SEARXNG", "true")
     monkeypatch.setenv("SEARXNG_BASE_URL", "http://127.0.0.1:8080")
-    # Özel adres (127.0.0.1): operatör açıkça izin vermiş sayılır (net_hygiene kapısı).
-    monkeypatch.setenv("PINEAL_SEARXNG_ALLOW_PRIVATE", "true")
 
     engine = SearchEngine()
     engine.set_policy({"vault_locked": False})
@@ -365,9 +363,11 @@ async def test_searxng_path_is_live_when_vault_open(monkeypatch):
 
     monkeypatch.setattr(SearchEngine, "_search_duckduckgo", _no_dd)
     outcome = await engine.search("hedef", num_results=3)
-    # Yetenek koştu ama servis yok -> dürüst "yok", uydurma bulgu değil.
+    # Servis hatası boş arama sonucu gibi raporlanmamalı.
     assert outcome.results == []
-    assert outcome.status == "NO_RESULTS"
+    assert outcome.status == "UNAVAILABLE"
+    assert outcome.available is False
+    assert "SEARXNG_SERVICE_UNREACHABLE" in (outcome.error or "")
 
 
 # ==================== A7 · Scrapling: kırılganlık kademesi ====================

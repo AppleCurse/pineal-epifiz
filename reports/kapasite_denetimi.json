@@ -1,0 +1,1206 @@
+{
+  "sema_surumu": 1,
+  "olcum": "scripts/kapasite_denetimi_probe.py",
+  "python": "3.11.2",
+  "kapilar": {
+    "managed_gate_flags": [
+      "ENABLE_MAIGRET",
+      "ENABLE_HOLEHE",
+      "ENABLE_CRAWL4AI",
+      "ENABLE_SCRAPLING",
+      "ENABLE_X_SENSOR",
+      "ENABLE_IG_SECONDARY",
+      "ENABLE_AGENT_REACH",
+      "ENABLE_SEARXNG",
+      "ENABLE_LOCAL_TRANSLATE",
+      "ENABLE_LOCAL_JURY",
+      "ENABLE_COMPANY_TARGETING",
+      "ENABLE_REPORT_FACTORY",
+      "ENABLE_MEDIA_FORENSICS",
+      "ENABLE_LOCAL_TTS",
+      "ENABLE_LOCAL_STT"
+    ],
+    "managed_count": 15,
+    "known_gate_flags": [
+      "ENABLE_AGENT_REACH",
+      "ENABLE_COMPANY_TARGETING",
+      "ENABLE_CRAWL4AI",
+      "ENABLE_HOLEHE",
+      "ENABLE_IG_SECONDARY",
+      "ENABLE_LOCAL_JURY",
+      "ENABLE_LOCAL_STT",
+      "ENABLE_LOCAL_TRANSLATE",
+      "ENABLE_LOCAL_TTS",
+      "ENABLE_MAIGRET",
+      "ENABLE_MEDIA_FORENSICS",
+      "ENABLE_REPORT_FACTORY",
+      "ENABLE_SCRAPLING",
+      "ENABLE_SEARXNG",
+      "ENABLE_X_SENSOR"
+    ],
+    "state_reexports_same_object": true,
+    "env_example_gates": [
+      "ENABLE_AGENT_REACH",
+      "ENABLE_COMPANY_TARGETING",
+      "ENABLE_CRAWL4AI",
+      "ENABLE_CROSS_PLATFORM",
+      "ENABLE_HOLEHE",
+      "ENABLE_IG_SECONDARY",
+      "ENABLE_INTERPRETER",
+      "ENABLE_LOCAL_JURY",
+      "ENABLE_LOCAL_STT",
+      "ENABLE_LOCAL_TRANSLATE",
+      "ENABLE_LOCAL_TTS",
+      "ENABLE_MAIGRET",
+      "ENABLE_MEDIA_FORENSICS",
+      "ENABLE_REPORT_FACTORY",
+      "ENABLE_SCRAPLING",
+      "ENABLE_SEARXNG",
+      "ENABLE_X_SENSOR"
+    ],
+    "env_example_gate_count": 17,
+    "read_in_code": [
+      "ENABLE_AGENT_REACH",
+      "ENABLE_COMPANY_TARGETING",
+      "ENABLE_CRAWL4AI",
+      "ENABLE_CROSS_PLATFORM",
+      "ENABLE_HOLEHE",
+      "ENABLE_IG_SECONDARY",
+      "ENABLE_INTERPRETER",
+      "ENABLE_LOCAL_JURY",
+      "ENABLE_LOCAL_STT",
+      "ENABLE_LOCAL_TRANSLATE",
+      "ENABLE_LOCAL_TTS",
+      "ENABLE_MAIGRET",
+      "ENABLE_MEDIA_FORENSICS",
+      "ENABLE_REPORT_FACTORY",
+      "ENABLE_SCRAPLING",
+      "ENABLE_SEARXNG",
+      "ENABLE_X_SENSOR"
+    ],
+    "code_read_count": 17,
+    "read_in_tests_only": [
+      "ENABLE_EXAMPLE",
+      "ENABLE_MAIGRET_TYPO",
+      "ENABLE_TAMAMEN_UYDURMA",
+      "ENABLE_X"
+    ],
+    "managed_missing_from_example": [],
+    "example_gates_not_managed": [
+      "ENABLE_CROSS_PLATFORM",
+      "ENABLE_INTERPRETER"
+    ],
+    "read_but_undocumented": []
+  },
+  "interpreter_okuma_noktalari": {
+    "read_points": [
+      {
+        "file": "agent_core/agents/interpreter_agent.py",
+        "line": 3,
+        "text": "``ENABLE_INTERPRETER=true`` iken yürütücü ajana eklenir; LLM'in ürettiği"
+      },
+      {
+        "file": "agent_core/services/cognitive_router.py",
+        "line": 110,
+        "text": "# /api/experimental/interpreter/execute when ENABLE_INTERPRETER=true"
+      },
+      {
+        "file": "agent_core/services/cognitive_router.py",
+        "line": 114,
+        "text": "if os.getenv(\"ENABLE_INTERPRETER\", \"false\").lower() == \"true\" and os.getenv("
+      },
+      {
+        "file": "agent_core/services/dependency_health.py",
+        "line": 67,
+        "text": "DependencyRequirement(\"open-interpreter\", \"interpreter\", \"ENABLE_INTERPRETER\"),"
+      },
+      {
+        "file": "agent_core/task_executor.py",
+        "line": 225,
+        "text": "if _os2.getenv(\"ENABLE_INTERPRETER\", \"false\").lower() == \"true\":"
+      },
+      {
+        "file": "backend/api.py",
+        "line": 3424,
+        "text": "# ENABLE_INTERPRETER kapalıyken zaten 403; kasa kilitliyken 423."
+      },
+      {
+        "file": "backend/api.py",
+        "line": 4676,
+        "text": "if os.getenv(\"ENABLE_INTERPRETER\", \"false\").lower() != \"true\":"
+      },
+      {
+        "file": "backend/api.py",
+        "line": 4689,
+        "text": "detail=\"ENABLE_INTERPRETER açık ama ajan bu odada kayıtlı değil.\","
+      },
+      {
+        "file": "scripts/kapasite_denetimi_probe.py",
+        "line": 24,
+        "text": "7. BAYRAK OKUMA    — `ENABLE_INTERPRETER` gibi ayarların OKUNDUĞU satırlar."
+      },
+      {
+        "file": "scripts/kapasite_denetimi_probe.py",
+        "line": 100,
+        "text": "\"\"\"`ENABLE_INTERPRETER` gerçekten NEREDE okunuyor (satır numaralı).\"\"\""
+      },
+      {
+        "file": "scripts/kapasite_denetimi_probe.py",
+        "line": 110,
+        "text": "if \"ENABLE_INTERPRETER\" in line:"
+      }
+    ],
+    "count": 11
+  },
+  "yetenekler": {
+    "varsayilan": {
+      "registered": 26,
+      "open": [
+        {
+          "id": "extractor.identity.socid",
+          "kind": "extractor",
+          "license": "MIT",
+          "available": true,
+          "reason": null,
+          "gates": [
+            "vault"
+          ]
+        },
+        {
+          "id": "extractor.text.language",
+          "kind": "extractor",
+          "license": "yerel/deterministik (kod içi, harici bağımlılık yok)",
+          "available": true,
+          "reason": null,
+          "gates": [
+            "vault"
+          ]
+        },
+        {
+          "id": "voice.report.script",
+          "kind": "renderer",
+          "license": "dahili (deterministik metin kurucu)",
+          "available": true,
+          "reason": null,
+          "gates": [
+            "vault"
+          ]
+        }
+      ],
+      "closed": [
+        {
+          "id": "analyzer.media.frames",
+          "kind": "analyzer",
+          "license": "OpenCV (Apache-2.0) — harici bağımlılık",
+          "available": false,
+          "reason": "gate_disabled:ENABLE_MEDIA_FORENSICS",
+          "gates": [
+            "ENABLE_MEDIA_FORENSICS",
+            "vault"
+          ]
+        },
+        {
+          "id": "analyzer.media.similarity",
+          "kind": "analyzer",
+          "license": "OpenCV + kendi pHash uygulaması (dahili)",
+          "available": false,
+          "reason": "gate_disabled:ENABLE_MEDIA_FORENSICS",
+          "gates": [
+            "ENABLE_MEDIA_FORENSICS",
+            "vault"
+          ]
+        },
+        {
+          "id": "extractor.media.transcript",
+          "kind": "extractor",
+          "license": "yerel motor (whisper CLI ya da yerel uç) — kod gömülmez",
+          "available": false,
+          "reason": "gate_disabled:ENABLE_MEDIA_FORENSICS",
+          "gates": [
+            "ENABLE_MEDIA_FORENSICS",
+            "vault"
+          ]
+        },
+        {
+          "id": "extractor.text.translate_local",
+          "kind": "extractor",
+          "license": "harici süreç/yerel uç (kod gömülmez)",
+          "available": false,
+          "reason": "gate_disabled:ENABLE_LOCAL_TRANSLATE",
+          "gates": [
+            "ENABLE_LOCAL_TRANSLATE",
+            "vault"
+          ]
+        },
+        {
+          "id": "extractor.web.crawl4ai",
+          "kind": "extractor",
+          "license": "Apache-2.0",
+          "available": false,
+          "reason": "gate_disabled:ENABLE_CRAWL4AI",
+          "gates": [
+            "ENABLE_CRAWL4AI",
+            "vault"
+          ]
+        },
+        {
+          "id": "extractor.web.scrapling",
+          "kind": "extractor",
+          "license": "BSD-3-Clause",
+          "available": false,
+          "reason": "gate_disabled:ENABLE_SCRAPLING",
+          "gates": [
+            "ENABLE_SCRAPLING",
+            "vault"
+          ]
+        },
+        {
+          "id": "extractor.web.trafilatura",
+          "kind": "extractor",
+          "license": "Apache-2.0",
+          "available": false,
+          "reason": "dependency_missing:trafilatura",
+          "gates": [
+            "vault"
+          ]
+        },
+        {
+          "id": "renderer.report.diagram",
+          "kind": "renderer",
+          "license": "dahili (reportlab/Pillow/ffmpeg harici araçlar)",
+          "available": false,
+          "reason": "gate_disabled:ENABLE_REPORT_FACTORY",
+          "gates": [
+            "ENABLE_REPORT_FACTORY",
+            "vault"
+          ]
+        },
+        {
+          "id": "renderer.report.pdf",
+          "kind": "renderer",
+          "license": "dahili (reportlab/Pillow/ffmpeg harici araçlar)",
+          "available": false,
+          "reason": "gate_disabled:ENABLE_REPORT_FACTORY",
+          "gates": [
+            "ENABLE_REPORT_FACTORY",
+            "vault"
+          ]
+        },
+        {
+          "id": "renderer.report.video",
+          "kind": "renderer",
+          "license": "dahili (reportlab/Pillow/ffmpeg harici araçlar)",
+          "available": false,
+          "reason": "gate_disabled:ENABLE_REPORT_FACTORY",
+          "gates": [
+            "ENABLE_REPORT_FACTORY",
+            "vault"
+          ]
+        },
+        {
+          "id": "sensor.company.harvester",
+          "kind": "sensor",
+          "license": "GPL-2.0 (harici CLI — kod gömülmez)",
+          "available": false,
+          "reason": "gate_disabled:ENABLE_COMPANY_TARGETING",
+          "gates": [
+            "ENABLE_COMPANY_TARGETING",
+            "rate",
+            "vault"
+          ]
+        },
+        {
+          "id": "sensor.company.people",
+          "kind": "sensor",
+          "license": "dahili (yalnız HTTP GET + stdlib ayrıştırma)",
+          "available": false,
+          "reason": "gate_disabled:ENABLE_COMPANY_TARGETING",
+          "gates": [
+            "ENABLE_COMPANY_TARGETING",
+            "vault"
+          ]
+        },
+        {
+          "id": "sensor.company.seo",
+          "kind": "sensor",
+          "license": "dahili (yalnız HTTP GET + stdlib ayrıştırma)",
+          "available": false,
+          "reason": "gate_disabled:ENABLE_COMPANY_TARGETING",
+          "gates": [
+            "ENABLE_COMPANY_TARGETING",
+            "vault"
+          ]
+        },
+        {
+          "id": "sensor.identity.holehe",
+          "kind": "sensor",
+          "license": "GPL-3.0 (harici süreç/bağımlılık — kod gömülmez)",
+          "available": false,
+          "reason": "gate_disabled:ENABLE_HOLEHE",
+          "gates": [
+            "ENABLE_HOLEHE",
+            "vault"
+          ]
+        },
+        {
+          "id": "sensor.identity.maigret",
+          "kind": "sensor",
+          "license": "MIT",
+          "available": false,
+          "reason": "gate_disabled:ENABLE_MAIGRET",
+          "gates": [
+            "ENABLE_MAIGRET",
+            "vault"
+          ]
+        },
+        {
+          "id": "sensor.ig.instagrapi",
+          "kind": "sensor",
+          "license": "NOASSERTION (yalnız ikinci kaynak; hukuki inceleme notu)",
+          "available": false,
+          "reason": "gate_disabled:ENABLE_IG_SECONDARY",
+          "gates": [
+            "ENABLE_IG_SECONDARY",
+            "rate",
+            "vault"
+          ]
+        },
+        {
+          "id": "sensor.media.fetch",
+          "kind": "sensor",
+          "license": "yt-dlp (Unlicense) · httpx (BSD) — harici araç, kod gömülmez",
+          "available": false,
+          "reason": "gate_disabled:ENABLE_MEDIA_FORENSICS",
+          "gates": [
+            "ENABLE_MEDIA_FORENSICS",
+            "rate",
+            "vault"
+          ]
+        },
+        {
+          "id": "sensor.search.searxng",
+          "kind": "sensor",
+          "license": "AGPL-3.0 (ayrı servis — kod gömülmez, HTTP ile çağrılır)",
+          "available": false,
+          "reason": "gate_disabled:ENABLE_SEARXNG",
+          "gates": [
+            "ENABLE_SEARXNG",
+            "vault"
+          ]
+        },
+        {
+          "id": "sensor.web.agent_reach",
+          "kind": "extractor",
+          "license": "MIT (harici CLI süreci)",
+          "available": false,
+          "reason": "gate_disabled:ENABLE_AGENT_REACH",
+          "gates": [
+            "ENABLE_AGENT_REACH",
+            "vault"
+          ]
+        },
+        {
+          "id": "sensor.x.twscrape",
+          "kind": "sensor",
+          "license": "MIT",
+          "available": false,
+          "reason": "gate_disabled:ENABLE_X_SENSOR",
+          "gates": [
+            "ENABLE_X_SENSOR",
+            "rate",
+            "vault"
+          ]
+        },
+        {
+          "id": "verifier.jury.local",
+          "kind": "verifier",
+          "license": "yerel uç (ollama/llama.cpp/vLLM); kod gömülmez",
+          "available": false,
+          "reason": "no_local_models",
+          "gates": [
+            "ENABLE_LOCAL_JURY",
+            "vault"
+          ]
+        },
+        {
+          "id": "voice.stt.local",
+          "kind": "extractor",
+          "license": "harici süreç/yerel uç (kod gömülmez)",
+          "available": false,
+          "reason": "no_local_endpoint",
+          "gates": [
+            "ENABLE_LOCAL_STT",
+            "vault"
+          ]
+        },
+        {
+          "id": "voice.tts.local",
+          "kind": "renderer",
+          "license": "harici süreç/yerel uç (kod gömülmez)",
+          "available": false,
+          "reason": "no_local_endpoint",
+          "gates": [
+            "ENABLE_LOCAL_TTS",
+            "vault"
+          ]
+        }
+      ],
+      "open_count": 3,
+      "closed_count": 23
+    },
+    "tum_kapilar_acik": {
+      "registered": 26,
+      "open": [
+        {
+          "id": "analyzer.media.frames",
+          "kind": "analyzer",
+          "license": "OpenCV (Apache-2.0) — harici bağımlılık",
+          "available": true,
+          "reason": null,
+          "gates": [
+            "ENABLE_MEDIA_FORENSICS",
+            "vault"
+          ]
+        },
+        {
+          "id": "analyzer.media.similarity",
+          "kind": "analyzer",
+          "license": "OpenCV + kendi pHash uygulaması (dahili)",
+          "available": true,
+          "reason": null,
+          "gates": [
+            "ENABLE_MEDIA_FORENSICS",
+            "vault"
+          ]
+        },
+        {
+          "id": "extractor.identity.socid",
+          "kind": "extractor",
+          "license": "MIT",
+          "available": true,
+          "reason": null,
+          "gates": [
+            "vault"
+          ]
+        },
+        {
+          "id": "extractor.text.language",
+          "kind": "extractor",
+          "license": "yerel/deterministik (kod içi, harici bağımlılık yok)",
+          "available": true,
+          "reason": null,
+          "gates": [
+            "vault"
+          ]
+        },
+        {
+          "id": "extractor.web.crawl4ai",
+          "kind": "extractor",
+          "license": "Apache-2.0",
+          "available": true,
+          "reason": null,
+          "gates": [
+            "ENABLE_CRAWL4AI",
+            "vault"
+          ]
+        },
+        {
+          "id": "renderer.report.diagram",
+          "kind": "renderer",
+          "license": "dahili (reportlab/Pillow/ffmpeg harici araçlar)",
+          "available": true,
+          "reason": null,
+          "gates": [
+            "ENABLE_REPORT_FACTORY",
+            "vault"
+          ]
+        },
+        {
+          "id": "renderer.report.pdf",
+          "kind": "renderer",
+          "license": "dahili (reportlab/Pillow/ffmpeg harici araçlar)",
+          "available": true,
+          "reason": null,
+          "gates": [
+            "ENABLE_REPORT_FACTORY",
+            "vault"
+          ]
+        },
+        {
+          "id": "sensor.company.people",
+          "kind": "sensor",
+          "license": "dahili (yalnız HTTP GET + stdlib ayrıştırma)",
+          "available": true,
+          "reason": null,
+          "gates": [
+            "ENABLE_COMPANY_TARGETING",
+            "vault"
+          ]
+        },
+        {
+          "id": "sensor.company.seo",
+          "kind": "sensor",
+          "license": "dahili (yalnız HTTP GET + stdlib ayrıştırma)",
+          "available": true,
+          "reason": null,
+          "gates": [
+            "ENABLE_COMPANY_TARGETING",
+            "vault"
+          ]
+        },
+        {
+          "id": "sensor.identity.holehe",
+          "kind": "sensor",
+          "license": "GPL-3.0 (harici süreç/bağımlılık — kod gömülmez)",
+          "available": true,
+          "reason": null,
+          "gates": [
+            "ENABLE_HOLEHE",
+            "vault"
+          ]
+        },
+        {
+          "id": "sensor.identity.maigret",
+          "kind": "sensor",
+          "license": "MIT",
+          "available": true,
+          "reason": null,
+          "gates": [
+            "ENABLE_MAIGRET",
+            "vault"
+          ]
+        },
+        {
+          "id": "sensor.media.fetch",
+          "kind": "sensor",
+          "license": "yt-dlp (Unlicense) · httpx (BSD) — harici araç, kod gömülmez",
+          "available": true,
+          "reason": null,
+          "gates": [
+            "ENABLE_MEDIA_FORENSICS",
+            "rate",
+            "vault"
+          ]
+        },
+        {
+          "id": "voice.report.script",
+          "kind": "renderer",
+          "license": "dahili (deterministik metin kurucu)",
+          "available": true,
+          "reason": null,
+          "gates": [
+            "vault"
+          ]
+        }
+      ],
+      "closed": [
+        {
+          "id": "extractor.media.transcript",
+          "kind": "extractor",
+          "license": "yerel motor (whisper CLI ya da yerel uç) — kod gömülmez",
+          "available": false,
+          "reason": "no_engine",
+          "gates": [
+            "ENABLE_MEDIA_FORENSICS",
+            "vault"
+          ]
+        },
+        {
+          "id": "extractor.text.translate_local",
+          "kind": "extractor",
+          "license": "harici süreç/yerel uç (kod gömülmez)",
+          "available": false,
+          "reason": "no_engine",
+          "gates": [
+            "ENABLE_LOCAL_TRANSLATE",
+            "vault"
+          ]
+        },
+        {
+          "id": "extractor.web.scrapling",
+          "kind": "extractor",
+          "license": "BSD-3-Clause",
+          "available": false,
+          "reason": "dependency_missing:scrapling",
+          "gates": [
+            "ENABLE_SCRAPLING",
+            "vault"
+          ]
+        },
+        {
+          "id": "extractor.web.trafilatura",
+          "kind": "extractor",
+          "license": "Apache-2.0",
+          "available": false,
+          "reason": "dependency_missing:trafilatura",
+          "gates": [
+            "vault"
+          ]
+        },
+        {
+          "id": "renderer.report.video",
+          "kind": "renderer",
+          "license": "dahili (reportlab/Pillow/ffmpeg harici araçlar)",
+          "available": false,
+          "reason": "dependency_missing:ffmpeg",
+          "gates": [
+            "ENABLE_REPORT_FACTORY",
+            "vault"
+          ]
+        },
+        {
+          "id": "sensor.company.harvester",
+          "kind": "sensor",
+          "license": "GPL-2.0 (harici CLI — kod gömülmez)",
+          "available": false,
+          "reason": "dependency_missing:theHarvester",
+          "gates": [
+            "ENABLE_COMPANY_TARGETING",
+            "rate",
+            "vault"
+          ]
+        },
+        {
+          "id": "sensor.ig.instagrapi",
+          "kind": "sensor",
+          "license": "NOASSERTION (yalnız ikinci kaynak; hukuki inceleme notu)",
+          "available": false,
+          "reason": "dependency_missing:instagrapi",
+          "gates": [
+            "ENABLE_IG_SECONDARY",
+            "rate",
+            "vault"
+          ]
+        },
+        {
+          "id": "sensor.search.searxng",
+          "kind": "sensor",
+          "license": "AGPL-3.0 (ayrı servis — kod gömülmez, HTTP ile çağrılır)",
+          "available": false,
+          "reason": "config_missing:SEARXNG_BASE_URL",
+          "gates": [
+            "ENABLE_SEARXNG",
+            "vault"
+          ]
+        },
+        {
+          "id": "sensor.web.agent_reach",
+          "kind": "extractor",
+          "license": "MIT (harici CLI süreci)",
+          "available": false,
+          "reason": "dependency_missing:agent-reach",
+          "gates": [
+            "ENABLE_AGENT_REACH",
+            "vault"
+          ]
+        },
+        {
+          "id": "sensor.x.twscrape",
+          "kind": "sensor",
+          "license": "MIT",
+          "available": false,
+          "reason": "dependency_missing:twscrape",
+          "gates": [
+            "ENABLE_X_SENSOR",
+            "rate",
+            "vault"
+          ]
+        },
+        {
+          "id": "verifier.jury.local",
+          "kind": "verifier",
+          "license": "yerel uç (ollama/llama.cpp/vLLM); kod gömülmez",
+          "available": false,
+          "reason": "no_local_models",
+          "gates": [
+            "ENABLE_LOCAL_JURY",
+            "vault"
+          ]
+        },
+        {
+          "id": "voice.stt.local",
+          "kind": "extractor",
+          "license": "harici süreç/yerel uç (kod gömülmez)",
+          "available": false,
+          "reason": "no_local_endpoint",
+          "gates": [
+            "ENABLE_LOCAL_STT",
+            "vault"
+          ]
+        },
+        {
+          "id": "voice.tts.local",
+          "kind": "renderer",
+          "license": "harici süreç/yerel uç (kod gömülmez)",
+          "available": false,
+          "reason": "no_local_endpoint",
+          "gates": [
+            "ENABLE_LOCAL_TTS",
+            "vault"
+          ]
+        }
+      ],
+      "open_count": 13,
+      "closed_count": 13
+    },
+    "kapali_sebep_siniflari": {
+      "config_missing": 1,
+      "dependency_missing": 7,
+      "no_engine": 2,
+      "no_local_endpoint": 2,
+      "no_local_models": 1
+    },
+    "kapali_detay": [
+      {
+        "id": "extractor.media.transcript",
+        "reason": "no_engine"
+      },
+      {
+        "id": "extractor.text.translate_local",
+        "reason": "no_engine"
+      },
+      {
+        "id": "extractor.web.scrapling",
+        "reason": "dependency_missing:scrapling"
+      },
+      {
+        "id": "extractor.web.trafilatura",
+        "reason": "dependency_missing:trafilatura"
+      },
+      {
+        "id": "renderer.report.video",
+        "reason": "dependency_missing:ffmpeg"
+      },
+      {
+        "id": "sensor.company.harvester",
+        "reason": "dependency_missing:theHarvester"
+      },
+      {
+        "id": "sensor.ig.instagrapi",
+        "reason": "dependency_missing:instagrapi"
+      },
+      {
+        "id": "sensor.search.searxng",
+        "reason": "config_missing:SEARXNG_BASE_URL"
+      },
+      {
+        "id": "sensor.web.agent_reach",
+        "reason": "dependency_missing:agent-reach"
+      },
+      {
+        "id": "sensor.x.twscrape",
+        "reason": "dependency_missing:twscrape"
+      },
+      {
+        "id": "verifier.jury.local",
+        "reason": "no_local_models"
+      },
+      {
+        "id": "voice.stt.local",
+        "reason": "no_local_endpoint"
+      },
+      {
+        "id": "voice.tts.local",
+        "reason": "no_local_endpoint"
+      }
+    ]
+  },
+  "stealth": {
+    "None": {
+      "selected": "playwright_stealth",
+      "available": true,
+      "reason": null
+    },
+    "": {
+      "selected": "playwright_stealth",
+      "available": true,
+      "reason": null
+    },
+    "playwright_stealth": {
+      "selected": "playwright_stealth",
+      "available": true,
+      "reason": null
+    },
+    "invisible": {
+      "selected": "invisible",
+      "available": false,
+      "reason": "binary_missing"
+    },
+    "cloak": {
+      "selected": "cloak",
+      "available": false,
+      "reason": "binary_missing"
+    },
+    "none": {
+      "selected": "none",
+      "available": true,
+      "reason": null
+    },
+    "SELENIUM?!": {
+      "selected": "playwright_stealth",
+      "available": true,
+      "reason": "invalid_provider:SELENIUM?!"
+    }
+  },
+  "saglayicilar": {
+    "route_count": 28,
+    "per_provider": {
+      "9router": 7,
+      "cerebras": 1,
+      "google-gemini": 1,
+      "google-gemini-backup": 1,
+      "groq": 1,
+      "nous-research": 8,
+      "openrouter": 9
+    },
+    "free_per_provider": {
+      "9router": 7,
+      "groq": 1,
+      "nous-research": 3,
+      "openrouter": 7
+    },
+    "keys": [
+      "anthropic/claude-sonnet-5@nous-research",
+      "gemini-3.7-flash@google-gemini",
+      "gemini-3.7-flash@google-gemini-backup",
+      "google/gemini-3.7-flash@openrouter",
+      "gpt-oss-120b@cerebras",
+      "inclusionai/ling-3.0-flash-fin:free@nous-research",
+      "meituan/longcat-2.0@nous-research",
+      "openai/gpt-5.6-luna@nous-research",
+      "openai/gpt-5.6-sol-pro@openrouter",
+      "openai/gpt-oss-120b@groq",
+      "pineal-deep-reasoning@9router",
+      "pineal-deep-reasoning@openrouter",
+      "pineal-fast-extract@9router",
+      "pineal-fast-extract@openrouter",
+      "pineal-general-reasoning@9router",
+      "pineal-general-reasoning@openrouter",
+      "pineal-juror-claude@9router",
+      "pineal-juror-claude@openrouter",
+      "pineal-juror-google@9router",
+      "pineal-juror-google@openrouter",
+      "pineal-juror-open@9router",
+      "pineal-juror-open@openrouter",
+      "pineal-vision@9router",
+      "pineal-vision@openrouter",
+      "poolside/laguna-s-2.1:free@nous-research",
+      "poolside/laguna-xs-2.1:free@nous-research",
+      "stepfun/step-3.7-flash@nous-research",
+      "upstage/solar-pro4@nous-research"
+    ]
+  },
+  "saglayici_katalog_acigi": {
+    "routed_providers": [
+      "9router",
+      "cerebras",
+      "google-gemini",
+      "google-gemini-backup",
+      "groq",
+      "nous-research",
+      "openrouter"
+    ],
+    "diagnostic_only_providers": [
+      "anthropic",
+      "azure-openai",
+      "cohere",
+      "google-gemini-vertex",
+      "iflow",
+      "openai",
+      "xai"
+    ],
+    "direct_catalog_providers": [
+      "alibaba-dashscope",
+      "cerebras",
+      "deepinfra",
+      "deepseek",
+      "fireworks",
+      "google-gemini",
+      "google-gemini-backup",
+      "groq",
+      "huggingface",
+      "mistral",
+      "nous-research",
+      "nvidia-nim",
+      "perplexity",
+      "sambanova",
+      "together"
+    ],
+    "direct_without_routes": [
+      "alibaba-dashscope",
+      "deepinfra",
+      "deepseek",
+      "fireworks",
+      "huggingface",
+      "mistral",
+      "nvidia-nim",
+      "perplexity",
+      "sambanova",
+      "together"
+    ],
+    "diagnostic_with_routes": [],
+    "expected_env_name_rule": "PINEAL_PROVIDER_MODELS_<SAĞLAYICI>"
+  },
+  "ag_gecidi": {
+    "route_keys": [
+      "anthropic/claude-sonnet-5@nous-research",
+      "gemini-3.7-flash@google-gemini",
+      "gemini-3.7-flash@google-gemini-backup",
+      "google/gemini-3.7-flash@openrouter",
+      "gpt-oss-120b@cerebras",
+      "inclusionai/ling-3.0-flash-fin:free@nous-research",
+      "meituan/longcat-2.0@nous-research",
+      "openai/gpt-5.6-luna@nous-research",
+      "openai/gpt-5.6-sol-pro@openrouter",
+      "openai/gpt-oss-120b@groq",
+      "pineal-deep-reasoning@9router",
+      "pineal-deep-reasoning@openrouter",
+      "pineal-fast-extract@9router",
+      "pineal-fast-extract@openrouter",
+      "pineal-general-reasoning@9router",
+      "pineal-general-reasoning@openrouter",
+      "pineal-juror-claude@9router",
+      "pineal-juror-claude@openrouter",
+      "pineal-juror-google@9router",
+      "pineal-juror-google@openrouter",
+      "pineal-juror-open@9router",
+      "pineal-juror-open@openrouter",
+      "pineal-vision@9router",
+      "pineal-vision@openrouter",
+      "poolside/laguna-s-2.1:free@nous-research",
+      "poolside/laguna-xs-2.1:free@nous-research",
+      "stepfun/step-3.7-flash@nous-research",
+      "upstage/solar-pro4@nous-research"
+    ],
+    "tier_violations": [
+      {
+        "agent": "cognitive_profiler",
+        "rule": "heavy_without_frontier",
+        "detail": "zincirde frontier (claude/pro/grok) yok: ['openai/gpt-oss-120b', 'google/gemini-3.7-flash', 'deepseek/deepseek-v4-flash']"
+      },
+      {
+        "agent": "human_behavior",
+        "rule": "heavy_without_frontier",
+        "detail": "zincirde frontier (claude/pro/grok) yok: ['openai/gpt-oss-120b', 'google/gemini-3.7-flash']"
+      },
+      {
+        "agent": "shadow_executor",
+        "rule": "heavy_without_frontier",
+        "detail": "zincirde frontier (claude/pro/grok) yok: ['deepseek/deepseek-v4-flash', 'google/gemini-3.7-flash']"
+      }
+    ],
+    "agents": 21
+  },
+  "uclar": {
+    "total": 80,
+    "api_total": 71,
+    "documented": 74,
+    "undocumented": [
+      "",
+      "/docs",
+      "/docs/oauth2-redirect",
+      "/openapi.json",
+      "/redoc",
+      "/ws/{client_id}"
+    ],
+    "paths": [
+      "/api/agents/status",
+      "/api/agents/status/{agent_id}",
+      "/api/aspasia/chat",
+      "/api/aspasia/command",
+      "/api/aspasia/state",
+      "/api/browser/back",
+      "/api/browser/click",
+      "/api/browser/close",
+      "/api/browser/open",
+      "/api/browser/press",
+      "/api/browser/save",
+      "/api/browser/shot",
+      "/api/browser/state",
+      "/api/browser/type",
+      "/api/calibration",
+      "/api/calibration/adjudicate",
+      "/api/calibration/observations",
+      "/api/company/scan",
+      "/api/company/status",
+      "/api/dialogue/sessions",
+      "/api/executor/intervene",
+      "/api/experimental/chat/respond",
+      "/api/experimental/crawl/fetch",
+      "/api/experimental/holehe/scan",
+      "/api/experimental/interpreter/execute",
+      "/api/experimental/maigret/scan",
+      "/api/experimental/shadow/analyze",
+      "/api/experimental/shadow/generate",
+      "/api/experimental/socid/extract",
+      "/api/experimental/stealth",
+      "/api/initiate",
+      "/api/jury/status",
+      "/api/jury/vote",
+      "/api/language/detect",
+      "/api/language/status",
+      "/api/language/translate",
+      "/api/mcp/status",
+      "/api/media/analyze",
+      "/api/media/status",
+      "/api/memory/{target}",
+      "/api/memory/{target}/recall",
+      "/api/minor/case",
+      "/api/minor/clear",
+      "/api/minor/state",
+      "/api/override",
+      "/api/report/build",
+      "/api/report/status",
+      "/api/scraper/authorize-alternative",
+      "/api/speech/audio/{name}",
+      "/api/speech/listen",
+      "/api/speech/report",
+      "/api/speech/say",
+      "/api/speech/status",
+      "/api/speech/stop",
+      "/api/tasks",
+      "/api/tasks/{task_id}",
+      "/api/tasks/{task_id}/cancel",
+      "/api/tasks/{task_id}/changes",
+      "/api/tasks/{task_id}/graph",
+      "/api/tasks/{task_id}/halt",
+      "/api/tasks/{task_id}/memory",
+      "/api/tasks/{task_id}/resume",
+      "/api/tasks/{task_id}/support",
+      "/api/tasks/{task_id}/support/{support_id}",
+      "/api/telemetry",
+      "/api/telemetry/taste",
+      "/api/vault",
+      "/api/vault/lock",
+      "/api/vault/status",
+      "/api/vault/status",
+      "/api/vault/unlock"
+    ]
+  },
+  "cagri_yerleri": {
+    "capability_ids": [
+      "analyzer.media.frames",
+      "analyzer.media.similarity",
+      "extractor.identity.socid",
+      "extractor.media.transcript",
+      "extractor.text.language",
+      "extractor.text.translate_local",
+      "extractor.web.crawl4ai",
+      "extractor.web.scrapling",
+      "extractor.web.trafilatura",
+      "renderer.report.diagram",
+      "renderer.report.pdf",
+      "renderer.report.video",
+      "sensor.company.harvester",
+      "sensor.company.people",
+      "sensor.company.seo",
+      "sensor.identity.holehe",
+      "sensor.identity.maigret",
+      "sensor.ig.instagrapi",
+      "sensor.media.fetch",
+      "sensor.search.searxng",
+      "sensor.web.agent_reach",
+      "sensor.x.twscrape",
+      "verifier.jury.local",
+      "voice.report.script",
+      "voice.stt.local",
+      "voice.tts.local"
+    ],
+    "id_to_modules": {
+      "analyzer.media.frames": [
+        "backend/api.py"
+      ],
+      "analyzer.media.similarity": [
+        "backend/api.py"
+      ],
+      "extractor.identity.socid": [],
+      "extractor.media.transcript": [
+        "backend/api.py"
+      ],
+      "extractor.text.language": [
+        "backend/routes/language.py"
+      ],
+      "extractor.text.translate_local": [
+        "backend/routes/language.py"
+      ],
+      "extractor.web.crawl4ai": [],
+      "extractor.web.scrapling": [],
+      "extractor.web.trafilatura": [],
+      "renderer.report.diagram": [
+        "backend/api.py"
+      ],
+      "renderer.report.pdf": [
+        "backend/api.py"
+      ],
+      "renderer.report.video": [
+        "backend/api.py"
+      ],
+      "sensor.company.harvester": [
+        "backend/api.py"
+      ],
+      "sensor.company.people": [
+        "backend/api.py"
+      ],
+      "sensor.company.seo": [
+        "backend/api.py"
+      ],
+      "sensor.identity.holehe": [
+        "agent_core/agents/osint_investigator.py"
+      ],
+      "sensor.identity.maigret": [
+        "agent_core/agents/osint_investigator.py",
+        "agent_core/mcp/tools.py"
+      ],
+      "sensor.ig.instagrapi": [],
+      "sensor.media.fetch": [
+        "backend/api.py"
+      ],
+      "sensor.search.searxng": [
+        "agent_core/services/search_engine.py"
+      ],
+      "sensor.web.agent_reach": [
+        "agent_core/services/platform_registry.py"
+      ],
+      "sensor.x.twscrape": [
+        "agent_core/services/platform_registry.py",
+        "backend/api.py",
+        "scripts/run_task.py"
+      ],
+      "verifier.jury.local": [
+        "backend/api.py"
+      ],
+      "voice.report.script": [
+        "agent_core/services/speech.py"
+      ],
+      "voice.stt.local": [
+        "agent_core/services/speech.py"
+      ],
+      "voice.tts.local": [
+        "agent_core/services/speech.py"
+      ]
+    }
+  },
+  "omurga_router_bagi": {
+    "router_mentions_registry": 51,
+    "registry_mentions_router": 0,
+    "router_files": [
+      "agent_core/task_executor.py",
+      "agent_core/aspasia/aspasia_chief.py",
+      "agent_core/aspasia/interface.py",
+      "agent_core/services/cognitive_router.py",
+      "backend/api.py",
+      "scripts/generate_inventory_page.py",
+      "scripts/kapasite_denetimi_probe.py",
+      "tests/unit/test_aspasia_chief_layer.py",
+      "tests/unit/test_osint_execution_ownership.py",
+      "tests/unit/test_p1_6_interpreter_registry.py",
+      "tests/unit/test_router_readiness.py"
+    ]
+  },
+  "depo": {
+    "tracked_files": 687,
+    "py_files": 410,
+    "test_modules": 234,
+    "head": "7096954"
+  }
+}

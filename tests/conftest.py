@@ -10,6 +10,9 @@ Bu otomatik fixture, her test için cache'i geçici, izole bir veritabanına yö
 Cache davranışını özel olarak test edenler (tests/unit/test_response_cache.py)
 PINEAL_RESPONSE_CACHE / PINEAL_CACHE_PATH değişkenlerini kendileri ayarlayabilir.
 """
+import os
+import tempfile
+
 import dotenv
 import pytest
 
@@ -18,9 +21,73 @@ import pytest
 dotenv.load_dotenv = lambda *args, **kwargs: False
 
 
+# --- İTHALAT-ANI (import-time) DİSK YAN ETKİSİ -------------------------------
+#
+# `backend.api` içe aktarılırken ResponseCache varsayılan yolu
+# (`cache/responses.db`, WAL modu) diske yazılır (os.makedirs +
+# sqlite3.connect). Bu yan etki autouse fixture'lar KOŞMADAN ÖNCE
+# gerçekleştiği için yalnız fixture içinde ortam değişkeni ayarlamak yetmez.
+#
+# Bu yüzden izolasyon CONFTEST MODÜL SEVİYESİNDE kurulur: conftest.py test
+# modüllerinden ÖNCE içe aktarılır, dolayısıyla aşağıdaki değerler ithalat-anı
+# yan etkisini de kapsar. Oturum boyunca tek geçici kök kullanılır; tekil
+# testler kendi `tmp_path` değerleriyle bunu fixture içinde EZEBİLİR.
+_SESSION_ROOT = tempfile.mkdtemp(prefix="pineal-test-isolation-")
+os.environ.setdefault("PINEAL_CACHE_PATH", os.path.join(_SESSION_ROOT, "cache", "responses.db"))
+os.environ.setdefault("PINEAL_MEMORY_PATH", os.path.join(_SESSION_ROOT, "memory"))
+os.environ.setdefault(
+    "PINEAL_MINOR_LEDGER_PATH",
+    os.path.join(_SESSION_ROOT, "memory", "ledger", "minor-cases.jsonl"),
+)
+# GÖREV SAHİPLİĞİ KAYDI da izole edilir: `backend/security/task_ownership.py`
+# varsayılanını PINEAL_MEMORY_PATH'ten TÜRETİR (memory/task_owners.db), ama
+# modül ilk kullanımda DİSKTE dosya açar. Fixture yetişemeyecek import-time
+# yan etkisi olmasa da, depo köküne kalıcı bir .db düşmesin diye hem oturum
+# kökünde hem fixture içinde tmp_path'e bağlanır.
+os.environ.setdefault(
+    "PINEAL_TASK_OWNERS_DB",
+    os.path.join(_SESSION_ROOT, "memory", "task_owners.db"),
+)
+
+
 @pytest.fixture(autouse=True)
 def _isolate_response_cache(tmp_path, monkeypatch):
     monkeypatch.setenv("PINEAL_CACHE_PATH", str(tmp_path / "test_responses.db"))
+    # KALICI KANIT DEPOSU DA İZOLE EDİLİR: tek başına PINEAL_CACHE_PATH yetmez,
+    # PINEAL_MEMORY_PATH (varsayılan "./memory/") de tmp_path'e taşınır — aksi
+    # halde test koşusu depo kökündeki memory/ dizinine görev kayıtları yazar
+    # ve bunlar backend tarafından canlı kayıt gibi servis edilebilir.
+    #
+    # PINEAL_MEMORY_DB ayrıca sabitlenir: hindsight_memory.py onu
+    # PINEAL_MEMORY_PATH'ten TÜRETİR; çağıran açıkça override etmişse eski
+    # değer kalmasın diye ikisi birlikte tmp_path'e bağlanır.
+    # Dizin adı bilerek "memory" DEĞİL: tests/unit/test_security_hardening.py
+    # kendi `tmp_path / "memory"` dizinini `mkdir()` (exist_ok=False) ile
+    # kuruyor; aynı ad FileExistsError ile çakışır. "pineal_memory" ayırır.
+    _memory_root = tmp_path / "pineal_memory"
+    _memory_root.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("PINEAL_MEMORY_PATH", str(_memory_root))
+    monkeypatch.setenv("PINEAL_MEMORY_DB", str(_memory_root / "hindsight.db"))
+
+    # PINEAL_MEMORY_PATH YETERLİ DEĞİL: bazı kalıcı yazıcılar varsayılan
+    # yollarını ondan TÜRETMEZ, doğrudan CWD'ye göre BAĞIL kurar (ör.
+    # memory/ledger/minor-cases.jsonl — çocuk kilidi denetim defteri). Bu
+    # yüzden bağıl varsayılanı olan HER kalıcı yol tek tek tmp_path'e bağlanır.
+    # Testler kendi değerlerini monkeypatch ile sonradan kurarsa ÖNCELİK
+    # ONLARINDIR (autouse fixture önce koşar) — hiçbir testin niyeti bozulmaz.
+    monkeypatch.setenv(
+        "PINEAL_MINOR_LEDGER_PATH", str(_memory_root / "ledger" / "minor-cases.jsonl")
+    )
+    # Görev sahipliği kaydı testler arasında SIZMASIN: Alice'in görevini
+    # sahiplenen kayıt Bob'un testine kalırsa sahiplik kararı yanlış ölçülür.
+    monkeypatch.setenv("PINEAL_TASK_OWNERS_DB", str(_memory_root / "task_owners.db"))
+    monkeypatch.setenv("PINEAL_MEDIA_DIR", str(_memory_root / "media"))
+    monkeypatch.setenv("PINEAL_REPORT_DIR", str(_memory_root / "reports"))
+    monkeypatch.setenv("PINEAL_CALIB_DIR", str(_memory_root / "calibration"))
+    monkeypatch.setenv("PINEAL_TELEMETRY_DIR", str(_memory_root / "telemetry"))
+    monkeypatch.setenv("PINEAL_CRYSTAL_DIR", str(_memory_root / "crystals"))
+    monkeypatch.setenv("PINEAL_SPEECH_DIR", str(_memory_root / "speech"))
+    monkeypatch.setenv("PINEAL_MAIGRET_DB", str(_memory_root / "maigret_db_refreshed.json"))
     # Tests are hermetic even when invoked from a production-configured shell;
     # individual auth tests explicitly opt back into production/token modes.
     monkeypatch.setenv("PINEAL_ENV", "development")
@@ -165,22 +232,6 @@ def _clear_provider_catalog_cache():
     yield
     load_builtin_catalog.cache_clear()
 
-
-@pytest.fixture(autouse=True)
-def _vault_gate_open_for_tests():
-    """Test süreci API sınırını taklit eder: yaprak kasa kapısı (vault_gate) açık.
-
-    Scraper/OSINT testleri kazıma/extraction MANTIĞINI sınar — gerçek dış egress
-    içermez. Bu fixture, API sınırının (``_check_vault_interlock``) açık kararını
-    süreç içinde taklit eder. Kapının KENDİSİ (kilitli → VaultLockedError /
-    ``vault_locked``) tests/unit/test_vault_gate.py ile ayrı kilitlenir; bu
-    fixture onu kör etmez — kapı yine çağrılır, sadece durum kaynağı "açık" olur.
-    """
-    from agent_core.services import vault_gate
-
-    vault_gate.mark_vault_unlocked(True)
-    yield
-    vault_gate.mark_vault_unlocked(None)
 
 
 @pytest.fixture(autouse=True)

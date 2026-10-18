@@ -1,9 +1,25 @@
+"""Belirsizlik motoru — veri kalitesini ayrıştırarak puanlar.
+
+``evaluate(result, agent_name)`` her ajan çıktısı için alan alan veri skoru
+üretir (``UncertaintyReport``). Placeholder/boş metin kanıt SAYILMAZ
+(``_is_non_evidence_text``); ``None``/yer tutucu değerler skora katkı vermez
+(``_value_bears_evidence``).
+
+Amaç: "ajan koştu" ile "ajan kanıt üretti" arasındaki farkı ölçülebilir kılmak.
+Eşikler ``config/decision_config.yaml``'dan gelir.
+
+Tüketici: ``task_executor`` + ``decision_engine``.
+Test: ``tests/unit/test_executor_confidence_semantics.py``.
+"""
+
 import json
 import logging
+import math
 from typing import Any, Dict, Tuple
 from pydantic import BaseModel, ConfigDict
 
 from agent_core.config_loader import DecisionConfig
+from agent_core.services.confidence import normalize_confidence
 
 
 class UncertaintyReport(BaseModel):
@@ -82,8 +98,15 @@ class UncertaintyEngine:
             return any(cls._value_bears_evidence(v) for v in value.values())
         if isinstance(value, BaseModel):
             return any(cls._value_bears_evidence(v) for v in value.model_dump().values())
-        # sayı/bool/vb. tipli değerler: kanıt olarak sayılır (0.0 gibi
-        # anlamlı ölçümler silinmez).
+        # Finite sayı/bool tipli değerler ölçüm olabilir (0.0 silinmez);
+        # NaN/sonsuz ise bozuk veridir ve kanıt sayılmaz.
+        if isinstance(value, bool):
+            return True
+        if isinstance(value, (int, float)):
+            try:
+                return math.isfinite(float(value))
+            except (TypeError, ValueError, OverflowError):
+                return False
         return True
 
     def __init__(self):
@@ -204,16 +227,36 @@ class UncertaintyEngine:
             # Dolu ve şema-geçerli string -> sabit katkı; uzunluk fark yaratmaz.
             return 1.0
         
-        if isinstance(value, (int, float, bool)):
-            return 0.8  # Primitives are moderate confidence
+        if isinstance(value, bool):
+            return 0.8  # Boolean measurements are moderate confidence
+        if isinstance(value, (int, float)):
+            try:
+                return 0.8 if math.isfinite(float(value)) else 0.0
+            except (TypeError, ValueError, OverflowError):
+                return 0.0
         
         return 0.5  # Default for other types
 
     def evaluate(self, result: Any, agent_name: str) -> UncertaintyReport:
         result_text = str(result)
         has_absolutes = any(marker in result_text.lower() for marker in self.HALUCINATION_MARKERS)
-        llm_confidence = getattr(result, 'confidence', None)
-        data_conf_flag = getattr(result, 'data_confidence', True)
+        raw_llm_confidence = (
+            result.get("confidence") if isinstance(result, dict)
+            else getattr(result, "confidence", None)
+        )
+        if raw_llm_confidence is None:
+            llm_confidence, confidence_valid = None, True
+        else:
+            llm_confidence, confidence_valid = normalize_confidence(raw_llm_confidence)
+        missing_flag = object()
+        raw_data_confidence = getattr(
+            result,
+            "data_confidence",
+            result.get("data_confidence", missing_flag) if isinstance(result, dict) else missing_flag,
+        )
+        # Preserve legacy typed results that predate the flag, but do not treat
+        # truthy strings/integers as an explicit evidence assertion.
+        data_conf_flag = True if raw_data_confidence is missing_flag else raw_data_confidence is True
         
         agent_config = self.config.get_agent_config(agent_name)
         
@@ -237,6 +280,15 @@ class UncertaintyEngine:
                 is_empty = True
         elif 'evidence' in result_text and 'bulunamadı' in result_text:
             is_empty = True
+
+        if raw_llm_confidence is not None and not confidence_valid and data_conf_flag:
+            return UncertaintyReport(
+                is_suspicious=True,
+                confidence=0.0,
+                reason="Model confidence alanı geçersiz veya [0,1] dışında; çıktı karar-grade sayılmadı.",
+                data_score=data_score,
+                breakdown=breakdown,
+            )
 
         # Calculate combined confidence
         if llm_confidence is None:
@@ -271,7 +323,9 @@ class UncertaintyEngine:
                 _raw_score = getattr(result, 'compatibility_score', None)
                 if _raw_score is None and isinstance(result, dict):
                     _raw_score = result.get('compatibility_score')
-                comp_score = float(_raw_score or 0.0)
+                comp_score, _ = normalize_confidence(
+                    0.0 if _raw_score is None else _raw_score
+                )
                 _raw_state = getattr(result, 'state', None)
                 if _raw_state is None and isinstance(result, dict):
                     _raw_state = result.get('state')

@@ -49,6 +49,13 @@ def test_python_product_path_has_no_rust_import_or_invocation():
     allowed_status_surfaces = {
         ROOT / "agent_core/services/runtime_status.py",
         ROOT / "backend/api.py",
+        # [API-BÖLME 3 · 2026-10-16] `/api/telemetry` ucu ayrı modüle
+        # taşındı (`backend/routes/telemetry.py`); uç yanıtı `rust_core`
+        # durumunu AYNEN aktarır. Bu bir "durum yüzeyi"dir, çağrı değil:
+        # modül rust çekirdeğini İÇE AKTARMAZ, çağırmaz — değer
+        # `backend/api.py`'den ENJEKTE edilir. AST kapıları (import/invoke
+        # yasağı) bu dosya için DEĞİŞMEDEN çalışır.
+        ROOT / "backend/routes/telemetry.py",
     }
 
     for path in product_sources:

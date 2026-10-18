@@ -58,6 +58,44 @@ def effective_scraper_type(url: str, requested: Optional[str] = None) -> str:
     return "unsupported_web"
 
 
+def classify_profile_url(url: str) -> dict[str, Any]:
+    """Profil URL'ini platform ve ilgili yetenek kimliğine eşler.
+
+    Sözleşme (P1):
+    - URL platformunu sınıflandırır (x, instagram, web).
+    - İlgili sensör kimliğini seçer:
+        * X -> sensor.x.twscrape
+        * Instagram -> sensor.ig.instagrapi
+        * Diğer/Web -> None (yalnız identity extractor)
+    - Kimlik çıkarıcı her zaman extractor.identity.socid'dir.
+
+    [P1 · 2026-10-16 KONSOLİDASYON] Sınıflandırma artık TEK kaynaktan gelir:
+    ``agent_core.services.profile_router.classify_url`` (saf, host tabanlı).
+    Buradaki fonksiyon yalnız **dış sözleşme biçimini** korur (platform /
+    handle / sensor_id / extractor_id). Döngüsel import'u önlemek için
+    ``profile_router`` fonksiyon içinde import edilir (``profile_router``
+    bu modülün ``extract_*`` yardımcılarını kullanır).
+    """
+    from agent_core.services.profile_router import (
+        CAPABILITY_INSTAGRAM,
+        CAPABILITY_SOCID,
+        CAPABILITY_X,
+        classify_url,
+    )
+
+    route = classify_url(url)
+    sensor_id = None
+    if route.capability_id in (CAPABILITY_INSTAGRAM, CAPABILITY_X):
+        sensor_id = route.capability_id
+    platform = route.platform if route.platform in ("instagram", "x") else "web"
+    return {
+        "platform": platform,
+        "handle": route.handle,
+        "sensor_id": sensor_id,
+        "extractor_id": CAPABILITY_SOCID,
+    }
+
+
 # [AUDIT P1-6] Yalnız GERÇEK profil URL'lerinden kullanıcı adı çıkarılır.
 # Eskiden URL'nin SON path segmenti körlemesine hedef sanılıyordu:
 # /p/CxYz123Ab/ -> "CxYz123Ab", /explore/tags/kedi/ -> "kedi",
@@ -207,8 +245,14 @@ def ig_target_profile_update(ig_data: Any) -> dict:
             for p in posts
         ],
         "post_types": [p.post_type or "unknown" for p in posts],
+        # [P0 · DENETİM 2026-10-16] Kanıt tipi: bunlar platformdan KAZINMIŞ
+        # gönderilerdir → `platform_post`. (Arama sonucu snippet'ları `posts`
+        # alanına yazılmaz; `search_snippets` altında tip etiketiyle durur.)
+        "post_evidence_types": ["platform_post" for _ in posts],
+        "search_snippets": [],
+        "content_basis": "platform_post",
         "images": [p.display_url for p in posts],
-        "followers": ig_data.follower_count or 0,
+        "followers": ig_data.follower_count,  # None = ölçülmedi; 0 ölçümdür.
         "following": ig_data.following_count,  # None = ölçülmedi ([024])
         "is_private": ig_data.is_private,
     }
@@ -218,17 +262,12 @@ async def scrape_instagram(
     url: str,
     cookie: str = "",
     log: Optional[Callable[[str, str], None]] = None,
-    *,
-    vault_unlocked: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """Instagram profilini kazır ve target_profile güncellemesini döndürür.
 
     Kanıt yoksa (private/login duvarı/rate-limit) InsufficientEvidenceError
     yükseltir — asla boş veya sentetik profil ÜRETİLMEZ.
     `log(level, msg)` isteğe bağlı telemetri callback'idir (WS broadcast / CLI stderr).
-    `vault_unlocked`: API sınırının (``_check_vault_interlock``) oda-bazlı kasa
-    kararı — yaprak kasa kapısına (Tüzük Md.4) aktarılır. None = karar açıkça
-    verilmemiş, kapı kendi kaynaklarına (override/dosya kasası) bakar.
     """
     emit = log or (lambda level, msg: None)
     username = extract_username(url)
@@ -304,10 +343,7 @@ async def scrape_instagram(
                 applied, note = await apply_page_stealth(selection, page)
                 if not applied:
                     emit("WARNING", f"STEALTH apply başarısız: {note}")
-            ig_scraper = InstagramGhostScraper(
-                vault_cookies={"sessionid": cookie} if cookie else None,
-                vault_unlocked=vault_unlocked,
-            )
+            ig_scraper = InstagramGhostScraper(vault_cookies={"sessionid": cookie} if cookie else None)
             ig_data = await ig_scraper.scrape_async(username, playwright_page=page)
 
             # [AUDIT P1-7] Anti-halüsinasyon kapısı ÜRETİMDE devrede (bkz.
@@ -394,9 +430,14 @@ async def scrape_x(
         if fallback is not None:
             return fallback
 
-        raise InsufficientEvidenceError(
+        error = InsufficientEvidenceError(
             f"X sensörü kanıt üretemedi ({reason}); profil uydurulmadı."
         )
+        # [P0 · DENETİM 2026-10-16] Makine-okunur sebep istisnaya taşınır:
+        # çağıran taraf "user_not_found" / "no_session_pool" ayrımını metin
+        # ayrıştırmak zorunda kalmaz.
+        setattr(error, "channel_reason", str(reason))
+        raise error
 
     series = list((result.payload or {}).get("series") or [])
     if not series:
@@ -444,6 +485,10 @@ async def _x_via_agent_reach(
     emit("INFO", f"SCRAPER X: agent-reach ile kamuya açık okuma ({len(text)} karakter)")
     profile = x_target_profile_update(username, [{"text": text, "created_at": ""}])
     profile["sensor"] = "agent_reach"
+    # [P0 · DENETİM 2026-10-16] agent-reach metni platform gönderisi DEĞİLDİR:
+    # doğrudan okunan sayfa metnidir → kanıt tipi `agent_reach_text`.
+    profile["post_evidence_types"] = ["agent_reach_text" for _ in profile.get("posts") or []]
+    profile["content_basis"] = "agent_reach_text"
     profile["sensor_note"] = (
         "X akışı twscrape ile okunamadı; agent-reach ikinci yolu kullanıldı "
         "(zaman damgası yok — frequency motoru için veri üretilmedi)."
@@ -488,6 +533,10 @@ def x_target_profile_update(username: str, series: List[Dict[str, Any]]) -> Dict
         "post_times": post_times,
         "posts_meta": posts_meta,
         "post_types": ["text" for _ in posts],
+        # [P0 · DENETİM 2026-10-16] Kanıt tipi: gerçek gönderi → platform_post.
+        "post_evidence_types": ["platform_post" for _ in posts],
+        "search_snippets": [],
+        "content_basis": "platform_post",
         "images": [],
         "followers": None,   # ölçülmedi — uydurma sayı YOK
         "following": None,   # ölçülmedi

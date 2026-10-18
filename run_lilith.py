@@ -5,6 +5,13 @@ LILITH CLI - Ultra-Lightweight Social Media Growth & Viral Content Runner.
 Bu dosya SADECE komut satırı I/O'su ve kimlik bilgisi çözümlemesi yapar.
 Tüm nörobilişsel iş mantığı, formüller ve rapor formatlama
 `agent_core.agents.lilith_growth.LilithGrowthAgent` içinde TEK yerde toplanmıştır (DRY).
+
+[P3 · 2026-10-16] KARAR: Lilith **CLI-only** kalır (ana görev hattına
+bağlanmaz) — çünkü girdisi profil metnidir ve çıktısı bir **kanıt** değil,
+**üretimdir**; kanıt zincirine karışmamalıdır. Buna karşılık CLI artık
+**ana hattın** `LLMGateway`'ini kullanır: NINEROUTER_*/PINEAL_LLM_*/OPENROUTER_*
+taşıma sırası, canlı çağrı kapısı (LIVE_LLM_E2E) ve bütçe/spend sayacı Lilith
+için de geçerlidir (M-2 düzeltmesi).
 """
 
 import logging
@@ -27,6 +34,42 @@ if sys.platform == "win32":
         )
 
 from agent_core.agents.lilith_growth import LilithGrowthAgent
+
+
+def inject_vault_key_fallback() -> str | None:
+    """Kasa dosyasındaki anahtarı **yalnız ana hat çözümü boşsa** ortama taşır.
+
+    Ana hattın taşıma sırası (`NINEROUTER_* > PINEAL_LLM_* > OPENROUTER_*`)
+    korunur: o sırada bir anahtar varsa burada HİÇBİR ŞEY değiştirilmez.
+    Vault anahtarı yalnızca hiçbir kanal tanımlı değilse `OPENROUTER_API_KEY`
+    olarak eklenir — böylece `LLMGateway` aynı anahtarı kullanır.
+    """
+    if (
+        os.getenv("NINEROUTER_API_KEY")
+        or os.getenv("PINEAL_LLM_API_KEY")
+        or os.getenv("OPENROUTER_API_KEY")
+    ):
+        return None
+    if not os.path.exists(".pineal_vault.json"):
+        return None
+    try:
+        with open(".pineal_vault.json", "r", encoding="utf-8") as vf:
+            vdata = json.load(vf)
+    except Exception:
+        return None
+    key = vdata.get("api_key") or vdata.get("openrouter_key") or vdata.get("nous_key")
+    if not key:
+        # KASA SEMASI: providers.{ad}.api_key (yerel envanter).
+        _provs = vdata.get("providers") if isinstance(vdata.get("providers"), dict) else {}
+        _or_entry = _provs.get("openrouter") or _provs.get("nous_portal") or _provs.get("nous-research")
+        if isinstance(_or_entry, dict):
+            key = _or_entry.get("api_key")
+        elif isinstance(_or_entry, str):
+            key = _or_entry
+    if key:
+        os.environ["OPENROUTER_API_KEY"] = key
+        return key
+    return None
 
 
 def resolve_credentials(model: str) -> tuple[str | None, str | None, str]:
@@ -98,14 +141,27 @@ def main() -> None:
     args = parser.parse_args()
 
     api_key, base_url, model = resolve_credentials(args.model)
-    agent = LilithGrowthAgent.from_cli_credentials(api_key=api_key, base_url=base_url, model=model)
+    # [P3 · 2026-10-16] Kasa anahtarı, ana hattın taşıma sırası boşsa ortam
+    # anahtarı olarak taşınır (ana hat gateway'i onu kendisi kullansın).
+    injected = inject_vault_key_fallback()
+    if injected and not api_key:
+        api_key = injected
+    agent = LilithGrowthAgent.from_cli_credentials(
+        api_key=api_key, base_url=base_url, model=model
+    )
     payload = build_payload(args)
 
     print(f"\n[LILITH] İçerik üretiliyor... (Konu: {args.topic} | Platform: {args.platform})")
 
     # execute() KENDİ İÇİNDE fallback'i yönetir; burada ayrı bir try/except
     # fallback bloğuna GEREK YOK — tek çıktı tipi (LilithContentPackage) garanti.
-    result = asyncio.run(agent.execute(payload))
+    try:
+        result = asyncio.run(agent.execute(payload))
+    except RuntimeError as exc:
+        # Ana hattın kapıları (canlı çağrı kapalı, bütçe, taşıma) CLI için de
+        # geçerlidir: hüküm dürüstçe yazılır, SESSİZCE "başarılı" sayılmaz.
+        print(f"[LILITH] ÇALIŞMADI: {exc}", file=sys.stderr)
+        raise SystemExit(2)
     print(LilithGrowthAgent.render_console_report(result))
 
 

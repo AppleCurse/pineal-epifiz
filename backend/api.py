@@ -1,9 +1,43 @@
+"""FastAPI yüzeyi — HTTP, WS ve OpenAI-uyumlu uçların TEK montaj noktası.
+
+Kapsam (büyük API montaj modülü; bilinçli olarak satır tavanına tabidir):
+  * **Yaşam döngüsü**: ``lifespan`` açılışta bağımlılık sağlığını denetler
+    (``check_startup_dependencies``), üretimde fail-closed kapıları uygular.
+  * **Güvenlik**: kimlik doğrulama middleware'i, oda (room) sahipliği ve
+    görev sahipliği kapıları, gövde boyutu tavanı (``backend/middleware``),
+    hız sınırı kovaları (``_RateBucket``, kayar pencere + TTL süpürme), CORS
+    allowlist (``PINEAL_ALLOWED_ORIGINS``).
+  * **Kasa (vault) mandalı**: anahtar malzemesi yalnız GERÇEK sırla "açık"
+    sayılır (``_is_real_key``/``_vault_file_has_key_material``); placeholder
+    metin asla kasa açmaz.
+  * **Odalar**: oda başına yürütücü, kasa, tarayıcı ve görev kayıtları;
+    TTL + tavan + budama ile geri kazanım (``_prune_room_stale_state``).
+  * **Gerçek zamanlı**: ``/ws/{client_id}`` telemetrisi (``backend/routes/websocket.py``),
+    kuyruk/bırakma sayaçları; çerçeve hatası sessiz yutulmaz.
+  * **OpenAI uyumluluğu**: ``/v1/models`` ve ``/v1/chat/completions`` (stream
+    dahil) UnifiedRouter üzerinden; hata gövdesi OpenAI biçimindedir.
+  * **Özellik uçları**: tarayıcı oturumu, deney motorları (maigret/holehe/crawl/
+    shadow/media/jury/report/company/mcp/language/speech), kalibrasyon,
+    ASPASIA, destek akışı (``/api/support/*`` — ``backend/routes/support.py``),
+    görev geçmişi (``backend/routes/tasks.py``).
+
+Ayrıştırma durumu: yeni uçlar monoliti büyütmesin diye modül tavanı bir testle
+sayılır (``tests/unit/test_api_monolith_ratchet.py``); bölünen parçalar
+``backend/routes/`` ve ``backend/security/`` altındadır.
+
+Test: ``tests/unit/test_api_monolith_ratchet.py``, ``tests/unit/test_body_size_limit.py``,
+``tests/unit/`` (çocuk kilidi uç sözleşmeleri), ``tests/integration/test_ws_ordering.py``.
+"""
+
 from dotenv import load_dotenv
 
 load_dotenv()
 
 from fastapi import FastAPI, HTTPException, Path, Request, WebSocket
-from fastapi.responses import FileResponse
+from backend.routes.speech_audio import api_speech_audio as api_speech_audio, router as _speech_audio_router  # noqa: F401
+from backend.routes.speech import (
+    build_speech_router,
+)
 from fastapi.exceptions import RequestValidationError
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.staticfiles import StaticFiles
@@ -32,9 +66,13 @@ if sys.platform == 'win32':
 
 from agent_core.aspasia.aspasia_chief import AspasiaChief
 from agent_core.aspasia.interface import AspasiaCommandGateway
-from agent_core.chat.dialogue_manager import DialogueManager
+from agent_core.chat.dialogue_manager import (
+    DialogueInputError,
+    DialogueManager,
+    DialogueSessionCapacityError,
+    MAX_DIALOGUE_MESSAGE_CHARS,
+)
 from agent_core.scraper.instagram_ghost import InstagramGhostScraper
-from agent_core.services import crawl_enricher, socid_enricher
 from agent_core.services.browser_session import BrowserSession
 from agent_core.services.dependency_health import (
     StartupDependencyError,
@@ -53,15 +91,43 @@ from agent_core.services.unified_router import RoutingStrategy
 from agent_core.shadow.shadow_executor import ShadowExecutor
 from agent_core.utils.security import (
     SecurityConfigurationError,
+    principal_of_request,
     redact_structure,
     redact_text,
-    safe_child_path,
     security_posture,
     token_matches,
     validate_identifier,
 )
 from agent_core.task_executor import PinealExecutor, InsufficientEvidenceError
 from agent_core.version import VERSION
+# [P0 · DENETİM 2026-10-16] Kanal durumu sözleşmesi: "koştu / ÇALIŞMADI
+# (sebep) / hata" — boş liste değil. Dosya kuralları `backend/services/
+# web_dossier.py` modülünde (API-BÖLME 3).
+from agent_core.domain.channel_status import (
+    ChannelRun,
+    failed as channel_failed,
+    serialize as serialize_channel_status,
+)
+from backend.services.web_dossier import (
+    build_dossier_failure_profile,
+    build_dossier_profile,
+    build_snippets,
+    dossier_channel_rows,
+    instagram_channel_rows,
+    x_sensor_channel_rows,
+)
+# [API-BÖLME 4 · 2026-10-16] Public-web araştırma gövdesi ayrı modüle taşındı;
+# ad + dış sözleşme korunur (yeniden ihraç).
+from backend.services.web_research import (  # noqa: F401 (yeniden ihraç, dış sözleşme)
+    extract_handle_from_url as _extract_handle_from_url,
+    run_public_web_research as _run_public_web_research,
+)
+# [API-BÖLME 3] `/api/telemetry` ucu ayrı modüle taşındı; ad + yol korunur.
+from backend.routes.telemetry import (  # noqa: E402,F401 (yeniden ihraç, dış sözleşme)
+    TelemetryDeps,
+    build_telemetry_endpoint,
+    capability_status_table as _capability_status_table,
+)
 # [FIX #8] Scraper'ın KENDİNE ÖZLÜ InsufficientEvidenceError'ı (başka bir
 # Exception hiyerarşisi) da yakalanmalı; ayrı sınıflar olduğundan
 # isinstance ile ayrım yapılır, str(type) kontrolü ile değil.
@@ -84,7 +150,6 @@ except ImportError:
     get_tracker = None
     init_tracker = None
     AGENT_DEFINITIONS = []
-
 
 # [AUDIT 2026-10-08] İşaretçi (beacon) filosu canlılık hesabı + dinamik staleness
 # eşikleri `backend/agent_rack.py`'ye taşındı (api.py monolit tavanı, 6000 satır).
@@ -173,7 +238,10 @@ async def lifespan(application: FastAPI):
         logger.critical("Startup security/dependency gate failed: %s", exc.error_code)
         raise
 
+    speech_cache_task = asyncio.create_task(_speech_cache_sweeper())
     yield
+    speech_cache_task.cancel()
+    await asyncio.gather(speech_cache_task, return_exceptions=True)
     # Kapanista odalari TEK bir yoldan kapat
     for client_id in list(application.state.rooms):
         room = application.state.rooms.get(client_id)
@@ -195,6 +263,7 @@ async def lifespan(application: FastAPI):
 # kendini yanlış sürüm olarak tanıttı. Sürüm artık kopyalanmıyor; VERSION
 # dosyasından OKUNUYOR. Böylece "sürüm kimliği" sorusunun tek bir cevabı var.
 app = FastAPI(title=f"PINEAL-HERETIC v{VERSION} API", lifespan=lifespan)
+app.include_router(_speech_audio_router)
 app.state.llm_backend_mode = "legacy"
 app.state.openai_router = None
 app.state.startup_health = {
@@ -280,6 +349,21 @@ def _openai_error(message: str, error_type: str, code: str, param: Optional[str]
     }
 
 
+def _openai_upstream_error_details(status_code: Any) -> tuple[int, str, str, str]:
+    """Map upstream failures without misreporting the caller's own credentials."""
+    if not isinstance(status_code, int) or isinstance(status_code, bool):
+        return 502, "Upstream provider returned an invalid response", "server_error", "upstream_provider_error"
+    if status_code in {401, 403}:
+        return 502, "Upstream provider authentication or permission check failed", "server_error", "upstream_authentication_error"
+    if status_code == 429:
+        return 429, "Upstream provider rate limit exceeded", "rate_limit_error", "upstream_rate_limited"
+    if status_code == 408:
+        return 504, "Upstream provider timed out", "server_error", "upstream_timeout"
+    if status_code in {400, 404, 413, 415, 422}:
+        return status_code, "Upstream provider rejected the chat completion request", "invalid_request_error", f"upstream_{status_code}"
+    return 502, "Upstream provider failed to complete the request", "server_error", "upstream_provider_error"
+
+
 def _secure_path(request: Request) -> str:
     """Güvenlik kararları için TEK GERÇEK kaynak: ham ASGI path.
 
@@ -340,34 +424,57 @@ async def auth_middleware(request: Request, call_next):
         # client_id'yi anahtar olarak kullanıyordu; client_id her istekte
         # değiştirilince sınır hiç devreye girmiyordu (ölçülen: 200/200 geçti).
         request.state.rate_identity = identity_hash
-        if path.startswith("/api/experimental/"):
-            if not rate_limit(f"experimental:{identity_hash}", "experimental"):
-                return JSONResponse(
-                    {"error": {"code": "RATE_LIMITED", "message": "Experimental endpoint rate limit exceeded"}},
-                    status_code=429,
-                )
-        elif is_openai and not rate_limit(f"openai:{identity_hash}", "openai"):
+        # OPERATÖR KİMLİĞİ: token -> principal. Oda sahipliği mührü (get_room)
+        # bu değeri ContextVar'dan okur. Kimlik doğrulama kapalıysa None ->
+        # mühür uygulanmaz (development).
+        request.state.principal = principal_of_request(presented_token)
+        _principal_token = _set_principal(request.state.principal)
+        try:
+            return await _authorized_call_next(
+                request, call_next, path, is_api, is_openai, identity_hash
+            )
+        finally:
+            _reset_principal(_principal_token)
+    return await call_next(request)
+
+
+async def _authorized_call_next(
+    request: Request, call_next, path: str, is_api: bool, is_openai: bool,
+    identity_hash: str,
+):
+    """Hız sınırı kovası + handler çağrısı.
+
+    Ayrı fonksiyon: ContextVar ömrü. principal, handler çalışırken BAĞLI
+    kalmalı, istek bitince GERİ ALINMALIDIR (çağırandaki try/finally).
+    """
+    if path.startswith("/api/experimental/"):
+        if not rate_limit(f"experimental:{identity_hash}", "experimental"):
             return JSONResponse(
-                _openai_error(
-                    "OpenAI-compatible endpoint rate limit exceeded",
-                    "rate_limit_error",
-                    "rate_limit_exceeded",
-                ),
+                {"error": {"code": "RATE_LIMITED", "message": "Experimental endpoint rate limit exceeded"}},
                 status_code=429,
             )
-        # [AUDIT P1-18b] Genel kova yalnızca MUTASYON yöntemlerine uygulanır.
-        # Tek kova tüm yöntemleri paylaşsaydı ucuz GET'ler (telemetri, görev
-        # listesi) mutasyonlar için gereken bütçeyi tüketiyordu — ölçülen:
-        # 305 GET sonrası aynı kimlik POST'larında erken 429.
-        if (
-            is_api
-            and request.method not in ("GET", "HEAD", "OPTIONS")
-            and not rate_limit(f"api:{identity_hash}", "api")
-        ):
-            return JSONResponse(
-                {"error": {"code": "RATE_LIMITED", "message": "API rate limit exceeded"}},
-                status_code=429,
-            )
+    elif is_openai and not rate_limit(f"openai:{identity_hash}", "openai"):
+        return JSONResponse(
+            _openai_error(
+                "OpenAI-compatible endpoint rate limit exceeded",
+                "rate_limit_error",
+                "rate_limit_exceeded",
+            ),
+            status_code=429,
+        )
+    # [AUDIT P1-18b] Genel kova yalnızca MUTASYON yöntemlerine uygulanır.
+    # Tek kova tüm yöntemleri paylaşsaydı ucuz GET'ler (telemetri, görev
+    # listesi) mutasyonlar için gereken bütçeyi tüketiyordu — ölçülen:
+    # 305 GET sonrası aynı kimlik POST'larında erken 429.
+    if (
+        is_api
+        and request.method not in ("GET", "HEAD", "OPTIONS")
+        and not rate_limit(f"api:{identity_hash}", "api")
+    ):
+        return JSONResponse(
+            {"error": {"code": "RATE_LIMITED", "message": "API rate limit exceeded"}},
+            status_code=429,
+        )
     return await call_next(request)
 
 
@@ -442,6 +549,10 @@ RATE_LIMITS = {
     # [FAZ D · D4] Dil tespiti/çeviri: tespit saf hesaptır ama çeviri yerel
     # motor çalıştırır; ikisi de sınırsız istek kabul etmez.
     "language": (60, 60),
+    # WebSocket EL SIKIŞMA kovası: YENİ BAĞLANTI hızını sınırlar (açık soket
+    # sayısını değil). Meşru arayüz tek soket açar, kopmada yeniden bağlanır;
+    # kapı accept()'ten önce çalışır. Ayrıntı: backend/routes/websocket.py.
+    "ws": (30, 60),
 }  # (request count, window seconds)
 class _RateBucket:
     """Kayan pencere olayları + BU kovaya ait pencere süresi.
@@ -570,6 +681,43 @@ def rate_limit(key: str, bucket: str) -> bool:
     return True
 
 app.state.rooms = {}  # client_id -> {"executor": PinealExecutor, "vault": {}, "websockets": set()}
+
+# --- ODA SAHİPLİĞİ -----------------------------------------------------------
+# Oda (client_id) bir operatör kimliğine mühürlenir; client_id tek başına
+# güvenlik sınırı DEĞİLDİR. Kural kümesi: `backend/security/principal.py`.
+# İsimler buradan YENİDEN İHRAÇ edilir ki
+# `from backend.api import RoomForbiddenError` bozulmasın.
+from backend.routes.websocket import run_telemetry_socket
+from backend.security.principal import (  # noqa: F401  (geriye dönük ihracat)
+    forbidden_body as forbidden_body,
+    RoomForbiddenError as RoomForbiddenError,
+    bind_principal as _set_principal,
+    check_room_seal as _check_room_seal,
+    current_principal as _get_principal,
+    enforce_room_ownership as _enforce_room_ownership,
+    reset_principal as _reset_principal,
+)
+# --- GÖREV SAHİPLİĞİ ---------------------------------------------------------
+# Oda mührü tek başına YETMİYORDU: kanıt deposu (`CanonicalMemory`) yalnız
+# `task_id` ile anahtarlanmış DÜZ bir dosya alanıdır ve `PINEAL_MEMORY_PATH`
+# tüm odalarca paylaşılır. Ölçülen sonuç (GO_LIVE.md §4): operatör B, KENDİ
+# client_id'siyle A'nın görevini listeleyip `DELETE` ile kanıtını diskten
+# kalıcı silebiliyordu. Kalıcı `task_id -> principal` kaydı bu deliği kapatır;
+# semantik oda mührüyle birebir aynıdır (kayıt yoksa ilk erişen sahiplenir).
+from backend.routes.tasks import delete_task, list_visible_tasks; from backend.routes.support import register_support_routes  # noqa: E702,E401
+from backend.routes.language import (  # noqa: E402,F401 (API-BÖLME 2: yeniden ihraç, dış sözleşme)
+    LanguageDetectPayload,
+    LanguageTranslatePayload,
+    register_language_routes,
+)
+from backend.routes.speech_state import speech_cache_sweeper as _speech_cache_sweeper, speech_finished as _speech_finished  # noqa: E402,F401
+from backend.security.task_ownership import (  # noqa: F401  (geriye dönük ihracat)
+    TaskForbiddenError as TaskForbiddenError,
+    adopt as _adopt_task,
+    record_owner as _record_task_owner,
+    task_access as _task_access,
+)
+
 # [ÇOCUK KİLİDİ — API girişi] Operatörün çocuk BEYANI burada yaşar: oda
 # YAŞAM DÖNGÜSÜNDEN BAĞIMSIZDIR. Bilinçli: kilit "küresel ve istisnasız"dır;
 # odaya bağlansaydı boşta kalan oda tahliye edilince (30 dk) beyan sessizce
@@ -911,7 +1059,7 @@ _MAX_CLIENT_ID_LENGTH = _bounded_env_int("PINEAL_MAX_CLIENT_ID_LENGTH", 64, 8, 4
 # task_id giriş noktalarına taşınmadı (ChatPayload.task_id gövdede SINIRSIZ,
 # /api/tasks/{task_id}/cancel|halt path param'ı doğrulanmıyordu). Sunucu
 # ürettiği task_id 27 karakter (op_YYYYMMDDHHMMSS_<8hex>); 128 geniş paydır.
-_MAX_TASK_ID_LENGTH = _bounded_env_int("PINEAL_MAX_TASK_ID_LENGTH", 128, 8, 4_096)
+from backend.security.task_access import MAX_TASK_ID_LENGTH as _MAX_TASK_ID_LENGTH
 _MAX_TERMINATE_REASON_LENGTH = 500
 _ROOM_TTL_SECONDS = float(os.getenv("PINEAL_ROOM_TTL_SECONDS", "1800"))
 #: Çocuk beyanı deposunun üst sınırı (sınırsız büyüme yok; aşımda dürüst 503).
@@ -937,6 +1085,42 @@ async def room_capacity_handler(request: Request, exc: RoomCapacityExceeded):
         else {"error": {"code": "ROOM_CAPACITY_EXCEEDED", "message": str(exc)}}
     )
     return JSONResponse(body, status_code=503)
+
+
+@app.exception_handler(RoomForbiddenError)
+async def room_forbidden_handler(request: Request, exc: RoomForbiddenError):
+    """Oda sahipliği reddi -> 403 (gövde oda adı İÇERMEZ).
+
+    403 bilinçli (404 değil): operatör kendi client_id'sini yanlış yazdığında
+    sessizce YENİ bir oda yaratıldığını sanmasın. Gövde/kod üretimi
+    `backend/security/principal.py::forbidden_body` içindedir (tek sözleşme).
+    """
+    logger.warning("ROOM_FORBIDDEN path=%s", _secure_path(request))
+    return JSONResponse(
+        forbidden_body(
+            openai_style=_secure_path(request).startswith("/v1/"),
+            error_factory=_openai_error,
+        ),
+        status_code=403,
+    )
+
+
+@app.exception_handler(TaskForbiddenError)
+async def task_forbidden_handler(request: Request, exc: TaskForbiddenError):
+    """Görev sahipliği reddi -> 403 (aynı gövde sözleşmesi; task_id İÇERMEZ).
+
+    Oda mührüyle AYNI kod ve AYNI gövde kullanılır: saldırgan "oda benim ama
+    görev başkasının" ayrımını yanıt üzerinden ÖĞRENEMEZ. 403/404 farkı da
+    görevin VARLIĞINI doğrulamaz.
+    """
+    logger.warning("TASK_FORBIDDEN path=%s", _secure_path(request))
+    return JSONResponse(
+        forbidden_body(
+            openai_style=_secure_path(request).startswith("/v1/"),
+            error_factory=_openai_error,
+        ),
+        status_code=403,
+    )
 
 
 # [FIX #7] _close_room senkron bir helper (evictor/sweeper'dan await
@@ -1017,6 +1201,16 @@ def get_room(client_id: str) -> dict:
     now = time.monotonic()
     _evict_rooms(now)
     _rooms_last_seen[client_id] = now
+    # ODA SAHİPLİĞİ MÜHRÜ. Kural kümesi
+    # `backend/security/principal.py::enforce_room_ownership`:
+    #   principal None -> auth kapalı (development): mühür uygulanmaz.
+    #   oda sahipsiz   -> çağıran mühürler (eski sürümden geçiş).
+    #   oda başkasına  -> RoomForbiddenError (403; gövde oda adı İÇERMEZ).
+    principal = _get_principal()
+    if _enforce_room_ownership(
+        client_id, app.state.rooms.get(client_id), principal
+    ) == "forbidden":
+        raise RoomForbiddenError(client_id)
     if client_id not in app.state.rooms:
         if len(app.state.rooms) >= _MAX_ROOMS:
             raise RoomCapacityExceeded(
@@ -1135,6 +1329,7 @@ def get_room(client_id: str) -> dict:
             # [KASA MANDALI] Oda kendi kimliğini taşır: tarayıcı oturumu ve
             # arama motoru mandalı bu kimlikle interlock'a bağlanır.
             "client_id": client_id,
+            "_owner": principal,  # [P0] odayı oluşturan OPERATÖR KİMLİĞİ
             "executor": executor,
             "vault": vault,
             "websockets": set(),
@@ -1533,28 +1728,38 @@ async def openai_chat_completions(payload: OpenAIChatCompletionPayload, request:
             status_code = 400
             message = "Requested model has no verified pricing record"
             error_type = "invalid_request_error"
+            error_code = code.lower()
         else:
-            status_code = 503
-            message = "Configured LLM provider is unavailable"
-            error_type = "server_error"
+            upstream_status = getattr(exc, "status_code", None)
+            if isinstance(upstream_status, int) and 400 <= upstream_status <= 599:
+                status_code, message, error_type, error_code = _openai_upstream_error_details(
+                    upstream_status
+                )
+            elif "api key rejected" in str(exc).lower() or "auth_failed" in code.lower():
+                status_code = 502
+                message = "Configured upstream provider credentials were rejected"
+                error_type = "server_error"
+                error_code = "upstream_authentication_error"
+            elif "model_substitution_denied" in str(exc).lower():
+                status_code = 502
+                message = "Upstream provider returned a different model than requested"
+                error_type = "server_error"
+                error_code = "model_substitution_denied"
+            else:
+                status_code = 503
+                message = "Configured LLM provider is unavailable"
+                error_type = "server_error"
+                error_code = code.lower()
         return JSONResponse(
-            _openai_error(message, error_type, code.lower()),
+            _openai_error(message, error_type, error_code),
             status_code=status_code,
         )
     except Exception as exc:
-        upstream_status = getattr(exc, "status_code", None)
-        if upstream_status in {400, 404, 408, 413, 422, 429}:
-            status_code = upstream_status
-            error_type = "rate_limit_error" if upstream_status == 429 else "invalid_request_error"
-        else:
-            status_code = 502
-            error_type = "server_error"
+        status_code, message, error_type, error_code = _openai_upstream_error_details(
+            getattr(exc, "status_code", None)
+        )
         return JSONResponse(
-            _openai_error(
-                "Upstream provider rejected the chat completion request",
-                error_type,
-                f"upstream_{upstream_status or 'error'}",
-            ),
+            _openai_error(message, error_type, error_code),
             status_code=status_code,
         )
 
@@ -2102,42 +2307,28 @@ def broadcast_snapshot(client_id: str, snapshot: Any):
         _enqueue(client_id, ("snapshot", snapshot))
 
 def sync_snapshot(client_id: str, snapshot: Any):
+    (app.state.ckpt_persist(client_id, snapshot) if hasattr(app.state, "ckpt_persist") else None)
     broadcast_snapshot(client_id, snapshot)
 
 @app.websocket("/ws/{client_id}")
 async def websocket_endpoint(websocket: WebSocket, client_id: str):
-    try:
-        posture = security_posture()
-    except SecurityConfigurationError:
-        await websocket.close(code=1013)
-        return
+    """Canlı telemetri soketi — ince rota sarmalayıcısı.
 
-    await websocket.accept()
-    if posture["auth_required"]:
-        try:
-            auth_message = await asyncio.wait_for(websocket.receive_json(), timeout=5.0)
-        except (asyncio.TimeoutError, ValueError):
-            await websocket.close(code=1008)
-            return
-        if auth_message.get("type") != "auth" or not token_matches(auth_message.get("token")):
-            await websocket.close(code=1008)
-            return
-        await websocket.send_json({"type": "auth_ok"})
+    Oturum mantığı `backend/routes/websocket.py` modülündedir
+    (API_MONOLITH_SPLIT_PLAN §3 satır 66'nın öngördüğü modül); ölçülen üç
+    kusur — /ws/* hız sınırı yoktu, oda sahipliği yoktu, auth_ok sahiplikten
+    önce gidiyordu — orada kapatılır. Bağımlılıklar ENJEKTE edilir: modül
+    `backend.api`'yi içe aktarmaz (dairesel bağımlılık yok).
+    """
+    await run_telemetry_socket(
+        websocket,
+        client_id,
+        get_room=get_room,
+        rate_limit=rate_limit,
+        room_capacity_error=RoomCapacityExceeded,
+        http_exception=HTTPException,
+    )
 
-    room = get_room(client_id)
-    room["websockets"].add(websocket)
-    try:
-        while True:
-            await websocket.receive_text()
-    except Exception:
-        # [AUDIT P1-18c] Eskiden bare `except:` idi. Ölçülen: bare except
-        # BaseException'ı da yakaladığı için asyncio.CancelledError yutuluyor
-        # ve görev iptal edilmiş sayılmıyordu (task.cancelled() == False).
-        # `except Exception:`'a geçmek tek başına YETMEZ: kontrol ölçümünde
-        # iptal durumunda temizlik kayboldu. Bu yüzden temizlik finally'de.
-        logger.debug("WebSocket bağlantısı koptu: %s", client_id)
-    finally:
-        room["websockets"].discard(websocket)
 
 class InitiatePayload(BaseModel):
     # [AUDIT 2026-09-11 P2] Public /api/initiate gövdesi sınırsız string
@@ -2211,6 +2402,71 @@ def _new_task_id() -> str:
     return f"op_{datetime.now().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}"
 
 
+def _summarize_osint_search_results(search_results: list[Any]) -> tuple[list[Any], dict[str, Any]]:
+    """Keep provider failures distinct from a successful empty web search."""
+    if not search_results:
+        return [], {
+            "status": "NOT_REQUESTED",
+            "available": False,
+            "queries_requested": 0,
+            "queries_available": 0,
+            "result_count": 0,
+            "errors": [],
+        }
+    all_results: list[Any] = []
+    seen_urls: set[str] = set()
+    errors: list[str] = []
+    available_queries = 0
+    for outcome in search_results:
+        if isinstance(outcome, asyncio.CancelledError):
+            raise outcome
+        if isinstance(outcome, BaseException):
+            if isinstance(outcome, Exception):
+                errors.append(type(outcome).__name__)
+                continue
+            raise outcome
+        if not getattr(outcome, "available", False):
+            errors.append(
+                str(getattr(outcome, "error", None) or getattr(outcome, "status", "unavailable"))
+            )
+            continue
+        available_queries += 1
+        if getattr(outcome, "error", None):
+            errors.append(str(outcome.error))
+        for result in getattr(outcome, "results", []) or []:
+            source_url = getattr(result, "source_url", None)
+            content = getattr(result, "content", None)
+            if (
+                not isinstance(source_url, str)
+                or not source_url.strip()
+                or not isinstance(content, str)
+                or not content.strip()
+            ):
+                errors.append("INVALID_PROVIDER_RESULT")
+                continue
+            source_url = source_url.strip()
+            if source_url in seen_urls:
+                continue
+            seen_urls.add(source_url)
+            all_results.append(result)
+
+    unique_errors = sorted(set(errors))
+    if available_queries == 0:
+        status = "UNAVAILABLE"
+    elif unique_errors:
+        status = "PARTIAL"
+    else:
+        status = "OK" if all_results else "NO_RESULTS"
+    return all_results, {
+        "status": status,
+        "available": available_queries > 0,
+        "queries_requested": len(search_results),
+        "queries_available": available_queries,
+        "result_count": len(all_results),
+        "errors": unique_errors,
+    }
+
+
 async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
     client_id = req.client_id
     executor = get_executor(client_id)
@@ -2279,6 +2535,9 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
         # olduğu gibi işaretlenerek devam edilir (aşağıdaki web dosyası yolu).
         x_sensor_reason = ""
         x_profile: dict = {}
+        # [P0 · DENETİM 2026-10-16] Kanal durumu defteri: her sensör/araştırma
+        # "koştu / ÇALIŞMADI(sebep) / hata" üretir. Boş liste dönmek YASAK.
+        channel_runs: list[ChannelRun] = []
         if req.url and effective_type == "x":
             from agent_core.services.platform_registry import extract_x_username
             clean_u = extract_x_username(req.url) or ""
@@ -2290,12 +2549,28 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                     vault_locked=not _check_vault_interlock(client_id),
                     rate_ok=True,
                 )
+                channel_runs.extend(
+                    x_sensor_channel_rows(
+                        ok_detail=(
+                            f"{len(x_profile.get('post_times') or [])} zaman damgalı gönderi"
+                        )
+                    )
+                )
                 broadcast_log(
                     client_id, "INFO",
                     f"TELEMETRİ: X akışı ele geçirildi — {len(x_profile['post_times'])} gerçek zaman damgalı gönderi.",
                 )
             except (InsufficientEvidenceError, ScraperInsufficientEvidenceError) as exc:
                 x_sensor_reason = str(exc)[:200]
+                # [P0] Sensör koşmadı → sebep kanıt defterine yazılır. "Bulunamadı"
+                # ile "hiç çalışmadı" ARTIK AYRI görünür. Makine-okunur sebep
+                # (örn. `no_session_pool`) istisna üzerinde taşınıyorsa o kullanılır.
+                channel_runs.extend(
+                    x_sensor_channel_rows(
+                        reason=x_sensor_reason,
+                        machine_reason=str(getattr(exc, "channel_reason", None) or ""),
+                    )
+                )
                 broadcast_log(
                     client_id, "WARNING",
                     f"X SENSÖRÜ KANIT ÜRETEMEDİ ({x_sensor_reason}); "
@@ -2329,17 +2604,21 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                 search_tasks = [executor.search_engine.search(q, num_results=6) for q in queries]
                 search_results = await asyncio.gather(*search_tasks, return_exceptions=True)
 
-                all_raw_results = []
-                seen_urls = set()
-                for s_res in search_results:
-                    if isinstance(s_res, Exception):
-                        continue
-                    for r in getattr(s_res, "results", []):
-                        u = r.source_url or ""
-                        if u and u in seen_urls:
-                            continue
-                        seen_urls.add(u)
-                        all_raw_results.append(r)
+                all_raw_results, web_search_status_record = _summarize_osint_search_results(
+                    search_results
+                )
+                web_search_status = web_search_status_record["status"]
+                unique_search_errors = web_search_status_record["errors"]
+                available_queries = web_search_status_record["queries_available"]
+                if web_search_status in {"UNAVAILABLE", "PARTIAL"}:
+                    broadcast_log(
+                        client_id,
+                        "WARNING",
+                        f"WEB ARAMA: {web_search_status}; "
+                        f"{available_queries}/{len(search_tasks)} sorgu kullanılabilir, "
+                        f"{len(all_raw_results)} kaynak; hata kodları: "
+                        f"{', '.join(unique_search_errors[:5]) or 'yok'}.",
+                    )
 
                 # Katmanlı alaka sıralaması: Tam ad eşleşmesi > parça eşleşmesi > genel
                 target_parts = [p.lower() for p in clean_u.split() if len(p) > 1]
@@ -2358,12 +2637,11 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
 
                 ordered_results = (tier1 + tier2 + tier3) or all_raw_results
 
-                # Anlamlı içerikleri filtrele
-                snippets = []
-                for r in ordered_results:
-                    c = (r.content or "").strip()
-                    if c and len(c) > 20:
-                        snippets.append(f"[{r.provider.upper()}] {c}")
+                # Anlamlı içerikleri filtrele.
+                # [P0 · DENETİM 2026-10-16 · Bulgu 2] Snippet'lar ARAMA SONUCUDUR;
+                # "gönderi" değildir. Yapılandırılmış olarak tutulur ve `posts`
+                # alanına YAZILMAZ — kanıt tipi `search_snippet` olarak korunur.
+                snippets = build_snippets(ordered_results)
 
                 # Tespit edilen doğrudan sosyal medya profilleri
                 found_profiles = []
@@ -2376,47 +2654,50 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                 if found_profiles:
                     broadcast_log(client_id, "INFO", f"HEDEF PROFİLLERİ TESPİT EDİLDİ: {', '.join(found_profiles[:3])}")
 
+                # [P1 · 2026-10-16] Bulunan profiller GERÇEKTEN kazınır — ama
+                # KOŞUM TEK YERDE olur: görev yürütücüsü
+                # (`agent_core/services/deep_profile_resolver.py` → `profile_router`
+                # → `CapabilityRunner`). Burada yalnız adresler taşınır; ikinci bir
+                # koşum yolu açmak aynı yeteneği iki kez çağırırdı.
+
                 display_user = f"@{clean_u.replace(' ', '_').lower()}" if " " in clean_u else f"@{clean_u}"
-                # [FAZ A] Dürüst dosya: arama snippet'i BİYOGRAPHİ diye
-                # sunulmaz, takipçi sayısı UYDURULMAZ (eski kod profil
-                # bulunduğunda sabit 150 yazıyordu). Ölçülmeyen alan None.
-                payload["target_profile"].update({
-                    "username": display_user,
-                    "name": clean_u,
-                    "bio": "",
-                    "posts": snippets or [],
-                    "post_times": [],
-                    "posts_meta": [],
-                    "post_types": ["text" for _ in snippets] if snippets else [],
-                    "images": [],
-                    "followers": None,
-                    "following": None,
-                    "is_private": None,
-                    "detected_urls": found_profiles,
-                    "platform": "web_dossier",
-                    "sensor_note": (
-                        f"X sensörü kanıt üretemedi: {x_sensor_reason}" if x_sensor_reason
-                        else "Açık kaynak dosyası: platform sensörüyle kazınmadı."
-                    ),
-                })
-                broadcast_log(client_id, "INFO", f"TELEMETRİ: {len(snippets)} açık kaynak verisi ve {len(found_profiles)} profil hedefe bağlandı.")
+                # [P0 · DENETİM 2026-10-16] Dosya kuralları ve kanal durumu
+                # `backend/services/web_dossier.py` modülünde (API-BÖLME 3).
+                payload["target_profile"].update(
+                    build_dossier_profile(
+                        display_user=display_user,
+                        clean_u=clean_u,
+                        snippets=snippets,
+                        found_profiles=found_profiles,
+                        web_search=web_search_status_record,
+                        x_sensor_reason=x_sensor_reason,
+                    )
+                )
+                channel_runs.extend(
+                    dossier_channel_rows(
+                        web_search_status=web_search_status,
+                        snippet_count=len(snippets),
+                        found_profile_count=len(found_profiles),
+                        queries_available=available_queries,
+                        queries_requested=len(search_tasks),
+                    )
+                )
+                broadcast_log(
+                    client_id, "INFO",
+                    f"TELEMETRİ: {len(snippets)} arama sonucu (snippet) bulundu, "
+                    f"{len(found_profiles)} profil URL'si tespit edildi — "
+                    "derin tarama görev sırasında koşacak (kanal defteri orada yazılır).",
+                )
             except Exception as se:
                 broadcast_log(client_id, "WARNING", f"OSINT ARAMA UYARISI: {se}")
-                payload["target_profile"].update({
-                    "username": f"@{clean_u}",
-                    "name": clean_u,
-                    "bio": "",
-                    "posts": [],
-                    "post_times": [],
-                    "posts_meta": [],
-                    "post_types": [],
-                    "images": [],
-                    "followers": None,
-                    "following": None,
-                    "is_private": None,
-                    "platform": "web_dossier",
-                    "sensor_note": f"Açık kaynak araması başarısız: {type(se).__name__}",
-                })
+                channel_runs.append(
+                    channel_failed("search.web", reason=type(se).__name__)
+                )
+                payload["target_profile"].update(
+                    build_dossier_failure_profile(
+                        clean_u=clean_u, error_type=type(se).__name__
+                    )
+                )
         if x_profile:
             payload["target_profile"].update(x_profile)
         if req.url and effective_type == "instagram":
@@ -2436,10 +2717,12 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                     payload["target_profile"].update(await scrape_instagram(
                         req.url, cookie,
                         log=lambda lvl, msg: broadcast_log(client_id, lvl, msg),
-                        # [Tüzük Md.4] Oda-bazlı kasa kararı yaprağa aktarılır;
-                        # yaprak kapısı (vault_gate) egress'ten önce zorlar.
-                        vault_unlocked=_check_vault_interlock(client_id),
                     ))
+                    channel_runs.extend(
+                        instagram_channel_rows(
+                            post_count=len(payload["target_profile"].get("posts") or [])
+                        )
+                    )
                     broadcast_log(client_id, "INFO", "TELEMETRİ: Veri ele geçirildi.")
                     last_err = None
                     break
@@ -2479,7 +2762,15 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
         payload["policy"] = {
             "vault_locked": not _check_vault_interlock(client_id),
             "minor_case": _minor_case_for(client_id),
+            # [P1 · 2026-10-16] Hız kapısı bilinmiyorsa RET eder (fail-closed).
+            # Bu görev yolunda hız durumu ölçülmüyor; repo konvansiyonu (aynı
+            # dosyanın X kazıma yolu) `rate_ok=True` verir. Kasa kapısı ve
+            # ENABLE_* bayrakları ETKİLENMEZ.
+            "rate_ok": True,
         }
+        # [P0 · DENETİM 2026-10-16] Kanal durumu defteri görev payload'ına taşınır;
+        # görev yürütücüsü bunu görev durumuna (WS telemetrisi) kopyalar.
+        payload["channel_status"] = serialize_channel_status(channel_runs)
         # Arama motoru da aynı gerçeği görür. [KASA MANDALI] Eskiden burada
         # "ücretsiz DuckDuckGo yolu bugünkü davranışını korur" yazıyordu — yani
         # kasa kilitli olsa bile DuckDuckGo'ya istek ÇIKIYORDU. Bu delik
@@ -2497,6 +2788,7 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                 "ARAMA MOTORU POLİTİKASI AKTARILAMADI — dar taraf: kasa KİLİTLİ "
                 "(dış arama reddedilecek)", exc_info=True,
             )
+        (app.state.ckpt_input(task_id, payload, (app.state.rooms.get(client_id) or {}).get("_owner")) if hasattr(app.state, "ckpt_input") else None)
         max_attempts = _bounded_env_int("PINEAL_TASK_MAX_ATTEMPTS", 3, 1, 3)
         task_timeout = _bounded_env_int("PINEAL_TASK_TIMEOUT_SECONDS", 300, 1, 1800)
         for attempt in range(1, max_attempts + 1):
@@ -2605,7 +2897,7 @@ def broadcast_result(client_id, res):
         return
     # [BOSS-2] Snapshot nesnesi terminal duruma geçmemişse (ör. iptal/istisna
     # sonrası geç gelen sonuç) oda kaydı burada kapatılır.
-    _close_active_task(room, getattr(res, "task_id", None), getattr(res, "status", None))
+    _close_active_task(room, getattr(res, "task_id", None), getattr(res, "status", None)); (app.state.ckpt_persist(client_id, res) if hasattr(app.state, "ckpt_persist") else None)
 
     def find(chain, name):
         for e in chain:
@@ -2644,6 +2936,8 @@ def broadcast_result(client_id, res):
         "shadow_profile": _dump_field(getattr(res, "shadow_profile", None)),
         "osint_footprint": _dump_field(getattr(res, "osint_footprint", None)),
         "target_profile": getattr(res, "target_profile", None),
+        # [P0 · DENETİM 2026-10-16] Kanal durumu: "koştu / ÇALIŞMADI(sebep)".
+        "channel_status": getattr(res, "channel_status", None) or [],
         **_pillar_payload_fields(res),
         "telemetry": getattr(res, "telemetry", None)
     }
@@ -2778,6 +3072,10 @@ async def api_initiate(req: InitiatePayload, request: Request):
             status_code=503,
         )
     task_id = _new_task_id()
+    # GÖREV SAHİPLİĞİ KAYDI: kanıt dosyası üretilmeden ÖNCE yazılır; aksi halde
+    # kayıt ile dosya arasındaki pencerede görev sahipsiz görünür ve başka bir
+    # operatör sahiplenebilirdi. `_owner` oda mühründen gelir (`get_room`).
+    _record_task_owner(task_id, room.get("_owner") or _get_principal())
     _lifecycle(room).transition(task_id, "processing")
     # Agent Rack: görev başladı — tüm slotlar BEKLEMEDE (Wait).
     # [RÖNTGEN 2026-09-23] Eskiden burada "tahmini plan" bahanesiyle
@@ -3034,53 +3332,23 @@ async def api_override(req: OverridePayload):
         broadcast_log(req.client_id, "INFO", f"HAFIZA: Yeni konsept mühürlendi [{req.tag.strip()}]")
     return {"status": "sealed", "quarantined": quarantined}
 
-@app.get("/api/telemetry")
-async def api_telemetry(client_id: str = "default"):
-    room = get_room(client_id)
-    executor = room["executor"]
-    vault = room["vault"]
-    capability = await _scraper_capability()
-    budget_reader = getattr(type(executor.llm_gateway), "budget_status", None)
-    budget = budget_reader(executor.llm_gateway) if callable(budget_reader) else {}
-    # Agent Rack status
-    agent_statuses = {}
-    if HAS_AGENT_RACK:
-        try:
-            tracker = get_tracker() if get_tracker else None
-            if tracker:
-                agent_statuses = tracker.get_all_statuses()
-        except Exception:
-            agent_statuses = {}
-    # [FORENSIC VAULT-INTERLOCK] Telemetri, kilidin GERÇEK durumunu söyler:
-    # placeholder anahtar "hazır" sayılmaz; `vault_locked` interlock ile birebir.
-    vault_open = _check_vault_interlock(client_id)
-    search_keys = getattr(executor, "search_engine", None)
-    return {
-        "core": True,
-        "gateway": _is_real_key(getattr(executor.llm_gateway, 'api_key', None)),
-        "scraper": capability["instagram"],
-        "vault": vault_open,
-        "search_engine": bool(vault.get("search_keys", False)) or any(
-            _is_real_key(getattr(search_keys, attr, None))
-            for attr in ("tavily_key", "serpapi_key", "exa_key")
-        ),
-        # [FAZ A] Artık SABİT False değil: X sensörü gerçekten var mı, kapıları
-        # açık mı? Cevap capability spine'ın TEK kaynağından gelir.
-        "x_scraper": _x_sensor_ready(),
-        "instagram_scraper": capability["instagram"],
-        "instagram_session": _is_real_key(vault.get("ig_sessionid")),
-        "browser_installed": capability["browser"],
-        "llm_spend_usd": round(float(budget.get("spend_usd", 0.0)), 6),
-        "llm_reserved_spend_usd": round(float(budget.get("reserved_usd", 0.0)), 6),
-        "llm_spend_cap_usd": float(budget.get("cap_usd", 0.0)),
-        "llm_active_reservations": int(budget.get("active_reservations", 0)),
-        "telemetry_delivery": _delivery_status(room),
-        "task_lifecycle": _lifecycle(room).metrics(),
-        "rust_core": rust_core_status(),
-        "llm_unpriced_calls": int(getattr(executor.llm_gateway, "unpriced_calls", 0)),
-        "agent_statuses": agent_statuses,
-        "vault_locked": not vault_open,
-    }
+# [API-BÖLME 3 · 2026-10-16] `/api/telemetry` ucu `backend/routes/telemetry.py`
+# modülüne taşındı (api.py tek-modül tavanı; bkz. API_MONOLITH_SPLIT_PLAN §4).
+# Dış sözleşme korunur: ad, yol ve gövde aynen; yalnız bağımlılıklar ENJEKTE
+# edilir. `api_telemetry` adı dışarıdan yeniden ihraç edilir. Kayıt, bağımlılık
+# tanımları TAMAMlandıktan sonra yapılır (aşağıda `app.include_router` bloğu).
+def _agent_statuses_snapshot() -> dict:
+    """Agent Rack durum anlık görüntüsü (hata halinde boş sözlük)."""
+    if not HAS_AGENT_RACK or not get_tracker:
+        return {}
+    try:
+        tracker = get_tracker()
+        return tracker.get_all_statuses() if tracker else {}
+    except Exception:
+        return {}
+
+
+
 
 
 # ─── v5.0: Agent Rack + Vault + Dialogue Manager canlı köprüleri ─────────
@@ -3289,13 +3557,40 @@ def _check_vault_interlock(client_id: str) -> bool:
             client_id, exc_info=True,
         )
         unlocked = False
-    # [AUDIT 2026-10-08 · E-GÖZ2-3] Karar, süreç içindeki yaprak kasa kapısına
-    # (agent_core.services.vault_gate) bildirilir — executor ile aynı süreçte
-    # koşan scraper/OSINT yaprakları, açık parametre almadığında bu kararı
-    # buradan okur. Kararın tek sahibi burasıdır; yaprak uydurmaz.
-    from agent_core.services import vault_gate
-    vault_gate.mark_vault_unlocked(unlocked)
+    # [E-GÖZ2-3 · YAPRAK HAT] Karar, `_require_vault_open` içinde yaprak kasa
+    # kapısına (agent_core.scraper.vault_gate) bildirilir — sınır kapısı
+    # atlanırsa yaprak katmanı ikinci savunmadır. Kararın tek sahibi
+    # `_check_vault_interlock`'tür; yaprak uydurmaz.
     return unlocked
+
+
+app.include_router(
+    build_speech_router(
+        rate_limit=rate_limit,
+        check_vault_interlock=_check_vault_interlock,
+        broadcast_speech=broadcast_speech,
+        broadcast_log=broadcast_log,
+        speech_finished=_speech_finished,
+    )
+)
+
+# [API-BÖLME 3 · 2026-10-16] `/api/telemetry` ucu ayrı modüle taşındı; kayıt
+# burada yapılır çünkü bağımlılıklar (`_check_vault_interlock` vb.) yukarıda
+# tanımlanır. Yol ve gövde değişmedi.
+api_telemetry = build_telemetry_endpoint(
+    TelemetryDeps(
+        get_room=get_room,
+        check_vault_interlock=_check_vault_interlock,
+        scraper_capability=_scraper_capability,
+        delivery_status=_delivery_status,
+        lifecycle_metrics=lambda room: _lifecycle(room).metrics(),
+        x_sensor_ready=_x_sensor_ready,
+        is_real_key=_is_real_key,
+        agent_statuses_provider=_agent_statuses_snapshot,
+        runtime_status_provider=rust_core_status,
+    )
+)
+app.get("/api/telemetry")(api_telemetry)
 
 
 # ─── KASA MANDALI (Tüzük Md.4) — dış dünyaya açılan HER kapının tek kilidi ───
@@ -3392,6 +3687,12 @@ def _require_vault_open(client_id: str) -> Optional[JSONResponse]:
         )
         return _vault_locked_response(client_id)
     if unlocked:
+        # [E-GÖZ2-3 · YAPRAK HAT] Sınır kapısı açıldı → aynı istek görevi
+        # işaretlenir: egress/holehe/scraper yaprak katmanı bu yetkiyi okur
+        # (üretimde kapı atlanırsa ikinci savunma devrededir).
+        from agent_core.scraper.vault_gate import mark_vault_egress_authorized
+
+        mark_vault_egress_authorized()
         return None
     logger.warning(
         "KASA MANDALI: dış-çıkış isteği reddedildi (client_id=%s, kasa kilitli)",
@@ -3445,6 +3746,18 @@ class ClientRefPayload(BaseModel):
     """Yalnız oda kimliği taşıyan gövde (beyan kaldırma vb.)."""
 
     client_id: str = Field(default="default", max_length=_MAX_CLIENT_ID_LENGTH)
+
+
+
+def _require_room_seal(client_id: str):
+    """Oda mührü — ama odayı OLUŞTURMADAN (salt-okunur/beyan uçları için).
+
+    Ret durumunda ``RoomForbiddenError`` fırlatır; gövde oda reddiyle birebir
+    aynıdır (oda adı ve beyanın varlığı doğrulanmaz). ``None`` -> serbest.
+    """
+    if _check_room_seal(client_id, app.state.rooms, _get_principal()) == "forbidden":
+        raise RoomForbiddenError(client_id)
+    return None
 
 
 def _minor_case_for(client_id: str):
@@ -3587,6 +3900,9 @@ async def api_minor_case_register(req: MinorCasePayload):
             {"error": {"code": "INVALID_CLIENT_ID", "message": "Geçersiz client_id"}},
             status_code=400,
         )
+    # ÇAPRAZ OPERATÖR YAZMASI KAPANDI: başka operatörün odasına beyan
+    # KONULAMAZ (kilidi kilitleyerek DoS ya da sahte "onaylı vaka" üretme).
+    _require_room_seal(req.client_id)
     if (
         req.client_id not in app.state.minor_cases
         and len(app.state.minor_cases) >= _MINOR_CASE_MAX_ENTRIES
@@ -3631,6 +3947,9 @@ async def api_minor_case_register(req: MinorCasePayload):
 @app.post("/api/minor/clear")
 async def api_minor_case_clear(req: ClientRefPayload):
     """Çocuk beyanını KALDIRIR (vaka kapandı) — kilidi zaman aşımı açmaz."""
+    # EN KRİTİK MÜHÜR: beyanı silmek çocuk KİLİDİNİ AÇAR. Başka bir operatör
+    # bunu yapabiliyordu; artık 403 (GO_LIVE.md §5.1).
+    _require_room_seal(req.client_id)
     had = app.state.minor_cases.pop(req.client_id, None) is not None
     if had:
         logger.info("ÇOCUK KİLİDİ: beyan operatör tarafından kaldırıldı (client_id=%s)", req.client_id)
@@ -3645,6 +3964,9 @@ async def api_minor_case_state(client_id: str = "default"):
             {"error": {"code": "INVALID_CLIENT_ID", "message": "Geçersiz client_id"}},
             status_code=400,
         )
+    # ÇAPRAZ OPERATÖR SIZINTISI KAPANDI: beyan durumu başka operatörün odası
+    # için okunamaz (case_type/case_id sızıyordu). Oda OLUŞTURMAZ.
+    _require_room_seal(client_id)
     case = _minor_case_for(client_id)
     if case is None:
         return {
@@ -3673,16 +3995,37 @@ async def api_minor_case_state(client_id: str = "default"):
     }
 
 
+def _dialogue_scope_prefix(request: Request) -> str:
+    """Server-derived identity prefix for in-memory dialogue session keys.
+
+    Dialogue sessions are not rooms, so they must not use caller-supplied
+    ``task_id`` as their whole storage key. The auth middleware's rate identity
+    is already derived from the configured token (or client address in local
+    development); hashing it keeps raw identity material out of session keys.
+    """
+    identity = getattr(request.state, "rate_identity", None)
+    if not isinstance(identity, str) or not identity:
+        identity = _get_principal()
+    if not identity and request.client is not None:
+        identity = request.client.host
+    if not identity:
+        identity = "unknown"
+    return hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24] + ":"
+
+
 @app.get("/api/dialogue/sessions")
-async def api_dialogue_sessions():
-    """DialogueManager oturumlari - Aspasia terminal -> ajan zinciri"""
+async def api_dialogue_sessions(request: Request):
+    """List only the authenticated caller's scoped dialogue sessions."""
     if dialogue_manager is None:
         return {"sessions": [], "count": 0}
     try:
+        prefix = _dialogue_scope_prefix(request)
         sessions = []
-        for task_id, ctx in dialogue_manager.sessions.items():
+        for session_key, ctx in dialogue_manager.sessions.items():
+            if not session_key.startswith(prefix):
+                continue
             sessions.append({
-                "task_id": task_id,
+                "task_id": session_key[len(prefix):],
                 "history_count": len(ctx.history),
                 "last_seen": ctx.last_seen,
                 "target_profile": bool(ctx.target_profile),
@@ -3834,8 +4177,6 @@ async def holehe_scan(payload: HoleheScanPayload):
     from agent_core.services.holehe_scanner import scan_email
     result = await scan_email(
         payload.email, limit=payload.limit, site_timeout=payload.timeout,
-        # [Tüzük Md.4] Oda-bazlı kasa kararı yaprağa aktarılır.
-        vault_unlocked=_check_vault_interlock(payload.client_id),
     )
     if (unavailable := _engine_unavailable_response(result)) is not None:
         return unavailable
@@ -3851,11 +4192,11 @@ class CrawlFetchPayload(BaseModel):
 
 @app.post("/api/experimental/crawl/fetch")
 async def crawl_fetch(payload: CrawlFetchPayload):
-    """Public-web sayfasını crawl4ai ile LLM-dostu metne çevirir (FAZ 4).
+    """Public-web sayfasını güvenli taşıma sonrası Crawl4AI markdown'a çevirir.
 
-    Kapı: ENABLE_CRAWL4AI=true (varsayılan kapalı; renderer=http tarayıcı
-    binary'si gerektirmez). Dürüst sonuç: içerik çekilemezse `available:false`
-    + makine-okunur sebep; ASLA uydurma içerik döner. SSRF guard'lı.
+    Kapı: ENABLE_CRAWL4AI=true (varsayılan kapalı). HTTP isteği DNS-pinned
+    `safe_get` ile yapılır; JS/browser renderer, ağ adresi sabitlenebilir olana
+    dek fail-closed kapalıdır. İçerik çekilemezse `available:false` + sebep.
     """
     # [ÇOCUK KİLİDİ] Kasa kapısından ÖNCE (istisnasız; politika kapılarından öncedir).
     if (blocked := _require_minor_clearance(payload.client_id, subject=payload.url)) is not None:
@@ -3933,15 +4274,15 @@ async def shadow_generate(task: dict):
     return result.model_dump()
 
 class ChatPayload(BaseModel):
-    # [AUDIT R3] task_id, DialogueManager.sessions anahtarı olur; sınırsız
-    # gövde ile 512 oturum x MB'lık anahtar = yüzlerce MB DoS yüzeyiydi.
+    # [AUDIT R3] DialogueManager ayrıca profil JSON boyutunu ve mesaj geçmişini
+    # sınırlar; geniş geçmiş/serbest metinle oturum başına sınırsız bellek yoktur.
     task_id: str = Field(min_length=1, max_length=_MAX_TASK_ID_LENGTH)
     target_profile: dict
     user_profile: dict
-    target_message: str = Field(max_length=32_000)
+    target_message: str = Field(max_length=MAX_DIALOGUE_MESSAGE_CHARS)
 
 @app.post("/api/experimental/chat/respond")
-async def chat_respond(payload: ChatPayload):
+async def chat_respond(payload: ChatPayload, request: Request):
     """Hedefin mesajına otonom karşı hamle üretir"""
     # [ÇOCUK KİLİDİ] Hedefe DÖNÜK mesaj üretimi; oda adı yok → any-mod.
     if (blocked := _require_minor_clearance(None)) is not None:
@@ -3951,11 +4292,34 @@ async def chat_respond(payload: ChatPayload):
         return _module_unavailable_response(payload.task_id, "dialogue_manager")
 
     try:
-        if payload.task_id not in dialogue_manager.sessions:
-            dialogue_manager.start_session(payload.task_id, payload.target_profile, payload.user_profile)
-            
-        res = await dialogue_manager.generate_response(payload.task_id, payload.target_message)
+        scoped_task_id = _dialogue_scope_prefix(request) + payload.task_id
+        if scoped_task_id not in dialogue_manager.sessions:
+            dialogue_manager.start_session(
+                scoped_task_id, payload.target_profile, payload.user_profile
+            )
+
+        res = await dialogue_manager.generate_response(
+            scoped_task_id, payload.target_message
+        )
         return res.model_dump()
+    except DialogueInputError as e:
+        return JSONResponse(
+            {
+                "error": {"code": "INVALID_DIALOGUE_INPUT", "message": str(e)},
+                "available": False,
+                "task_id": payload.task_id,
+            },
+            status_code=422,
+        )
+    except DialogueSessionCapacityError as e:
+        return JSONResponse(
+            {
+                "error": {"code": "DIALOGUE_CAPACITY", "message": str(e)},
+                "available": False,
+                "task_id": payload.task_id,
+            },
+            status_code=503,
+        )
     except Exception as e:
         # [E5] Üretim BAŞARISIZ olursa yanıt da başarısız olmalı: eskiden
         # `200 + {"error": {...}}` dönüyordu — yani başarısız bir çağrı HTTP
@@ -4012,6 +4376,9 @@ def _aspasia_command_dispatch(spec: dict) -> "str | None":
         aspasia_goals=list(spec.get("goals") or []),
     )
     task_id = _new_task_id()
+    # GÖREV SAHİPLİĞİ KAYDI (bkz. /api/initiate): ASPASIA komutu da kanıt
+    # üretir, dolayısıyla aynı kalıcı sahiplik kaydı gerekir.
+    _record_task_owner(task_id, room.get("_owner") or _get_principal())
     _lifecycle(room).transition(task_id, "processing")
     mission = asyncio.create_task(run_mission(req, task_id))
     room["mission_tasks"][task_id] = mission
@@ -4106,150 +4473,6 @@ class AlternativeAuthorizationPayload(BaseModel):
     approved: bool
 
 
-def _extract_handle_from_url(url: str) -> str:
-    """X/Instagram URL'sinden kullanıcı adı (subject) çıkarır."""
-    import re
-    if not url:
-        return ""
-    needle = re.search(r"(?:instagram\.com|x\.com|twitter\.com)/([^/?#]+)", url)
-    if needle:
-        return needle.group(1).strip().lstrip("@").lower()
-    return url.split("?")[0].rstrip("/").split("/")[-1].replace("@", "").lower()
-
-
-async def _run_public_web_research(
-    url: str, search_engine: Any, client_id: str = "default"
-) -> Dict[str, Any]:
-    """Yetki verilmiş alternatif: kanıt kaynaklı public-web araması.
-
-    Sözleşme (sahte veri YASAK):
-    - Biyografi/gönderi/kişilik ÜRETİLMEZ; yalnızca gerçek arama kayıtları
-      döner (source_url + provider + content).
-    - Subject matching: hedef kullanıcı adı kaynak URL'sinde veya içeriğinde
-      geçmeyen sonuçlar düşürülür (yanlış kişi eşleşmesi engeli).
-    - Sağlayıcı yok/çöktü -> available=False; sonuç yok -> no_results.
-    """
-    handle = _extract_handle_from_url(url)
-    if not handle:
-        return {
-            "status": "invalid_target", "available": False,
-            "query": "", "results": [], "matched_username": "",
-            "total_results_searched": 0,
-            "searched_at": datetime.now().isoformat(),
-            "note": "URL'den hedef kullanıcı adı çıkarılamadı.",
-        }
-
-    query = f'"{handle}"'
-    outcome = await search_engine.search(query, num_results=8)
-    if not getattr(outcome, "available", False):
-        return {
-            "status": "unavailable", "available": False, "query": query,
-            "results": [], "matched_username": handle,
-            "total_results_searched": 0,
-            "searched_at": datetime.now().isoformat(),
-            "note": getattr(outcome, "error", None) or "Arama sağlayıcısı kullanılamadı.",
-        }
-
-    raw = getattr(outcome, "results", []) or []
-    matched = [
-        {
-            "source_url": r.source_url,
-            "provider": r.provider,
-            "content": r.content,
-            "subject_match": True,
-        }
-        for r in raw
-        if handle in (r.source_url or "").lower()
-        or handle in (r.content or "").lower()
-    ]
-    # socid-extractor zenginleştirmesi: eşleşen kaynak URL'lerden kararlı kimlik
-    # kaydı çıkmaya çalışılır. Kütüphane yok/ağ yok/kayıt yoksa alan EKLENMEZ —
-    # sonuç sözleşmesi bozulmaz (dürüst boş).
-    try:
-        socid_records = await socid_enricher.enrich_urls(
-            [m["source_url"] for m in matched], limit=3
-        )
-        by_url = {r.source_url: r for r in socid_records}
-        for m in matched:
-            rec = by_url.get(m["source_url"])
-            if rec is not None:
-                m["socid"] = rec.model_dump()
-        if socid_records:
-            socid_note = f" {len(socid_records)} sonuçtan yapılandırılmış kimlik kaydı çıkarıldı."
-        else:
-            socid_note = ""
-    except Exception as exc:  # zenginleştirme asıl sonucu asla bozmasın
-        logger.warning("socid enrichment skipped: %s: %s", type(exc).__name__, str(exc)[:80])
-        socid_note = ""
-    # [FAZ A · Retina] TEMİZ METİN OMURGASI. Eskiden tek bir crawl4ai çağrısı
-    # vardı ve yalnız ENABLE_CRAWL4AI açıkken çalışıyordu. Artık üç kademeli
-    # omurga devrede: trafilatura → crawl4ai → scrapling. İlk KANIT ÜRETEN
-    # kademe sonucu verir; hiçbiri üretemezse alan uydurma metinle DOLDURULMAZ
-    # (sebep + deneme izi yazılır). Tek arayüz: capabilities.extract_web_text.
-    crawl_note = ""
-    try:
-        from agent_core.capabilities import bootstrap as _caps_bootstrap
-        from agent_core.capabilities.adapters_web import extract_web_text
-        from agent_core.capabilities.state import policy_state
-
-        _caps_bootstrap()
-        web_state = policy_state(vault_locked=not _check_vault_interlock(client_id))
-        if matched:
-            crawled = 0
-            for m in matched[:crawl_enricher.research_limit()]:
-                result = await extract_web_text(m["source_url"], state=web_state)
-                if result.ok:
-                    # payload kademeye göre değişir (pydantic kayıt veya dict);
-                    # ikisi de desteklenir, erişim güvenli.
-                    payload_raw = result.payload
-                    title = (
-                        payload_raw.get("title", "") if isinstance(payload_raw, dict)
-                        else getattr(payload_raw, "title", "") or ""
-                    )
-                    m["crawl"] = {
-                        "available": True,
-                        # HANGİ kademenin ürettiği kayıtta yazar (görünürlük).
-                        "provider": result.capability_id,
-                        "requested_url": m["source_url"],
-                        "title": title,
-                        "text": result.items[0].content if result.items else "",
-                        "evidence_ids": [i.evidence_id for i in result.items],
-                        "attempts": result.notes.get("attempts", []),
-                    }
-                    crawled += 1
-                else:
-                    # Dürüst boş (sözleşme korunur): çekilemeyen sonuca `crawl`
-                    # alanı EKLENMEZ; sebep yalnız logda (uydurma metin yok).
-                    logger.info(
-                        "web extraction failed for %s: %s (attempts=%s)",
-                        m["source_url"], result.unavailable_reason,
-                        result.notes.get("attempts", []),
-                    )
-            if crawled:
-                crawl_note = f" {crawled} sonuca temiz metin çekildi (omurga: trafilatura → crawl4ai → scrapling)."
-    except Exception as exc:  # zenginleştirme asıl sonucu asla bozmasın
-        logger.warning("web extraction skipped: %s: %s", type(exc).__name__, str(exc)[:80])
-
-    if matched:
-        status = "ok"
-        note = f"{len(matched)}/{len(raw)} sonuç hedef kullanıcı adıyla eşleşti." + socid_note + crawl_note
-    elif raw:
-        status = "no_subject_match"
-        note = f"Arama yapıldı ({len(raw)} sonuç) ama hiçbiri hedef kullanıcı adıyla eşleşmedi; sonuç gösterilmiyor (yanlış kişi eşleşmesi engeli)."
-    else:
-        status = "no_results"
-        note = "Arama yapıldı, hiç sonuç döndü."
-
-    return {
-        "status": status,
-        "available": True,
-        "query": query,
-        "results": matched,
-        "matched_username": handle,
-        "total_results_searched": len(raw),
-        "searched_at": datetime.now().isoformat(),
-        "note": note,
-    }
 
 
 class BrowserClientPayload(BaseModel):
@@ -4480,7 +4703,11 @@ async def authorize_scraper_alternative(req: AlternativeAuthorizationPayload):
     if req.alternative == "public_web_search":
         executor = get_executor(req.client_id)
         research = await _run_public_web_research(
-            pending["url"], executor.search_engine, client_id=req.client_id
+            pending["url"],
+            executor.search_engine,
+            client_id=req.client_id,
+            # [API-BÖLME 4] Kasa mandalı DI ile verilir (modül api.py'ye bağımlı olmaz).
+            vault_locked_fn=lambda cid: not _check_vault_interlock(cid),
         )
         room["web_research"] = research
         room.pop("pending_alternative_authorization", None)
@@ -4590,50 +4817,20 @@ async def interpreter_execute(req: InterpreterPayload):
         
     return res.model_dump()
 
-# --- Görev geçmişi ve veri silme (FAZ 3 / etik çerçeve: kişisel veri hedefli sistemde
-#     retention hakkı): bellekteki kanıt dosyaları listelenir ve KALICI olarak silinir. ---
+# --- Görev geçmişi ve veri silme (FAZ 3 / etik çerçeve: kişisel veri hedefli
+#     sistemde retention hakkı): bellekteki kanıt dosyaları listelenir ve
+#     KALICI olarak silinir.
+#
+#     [MONOLİT RATCHET] `GET /api/tasks` gövdesi `backend/routes/tasks.py`
+#     modülüne taşındı (tavan 6000 satır; kural: yeni uç nokta eklemek yerine
+#     MODÜL ÇIKAR). Rota burada KAYDEDİLİR ki `/` statik mount'undan ÖNCE
+#     sıralansın; bağımlılıklar ENJEKTE edilir (modül `backend.api`'yi içe
+#     aktarmaz, dairesel bağımlılık yok). ---
+app.get("/api/tasks")(
+    list_visible_tasks(get_room=get_room, principal_getter=_get_principal)
+)
+register_support_routes(app, get_room=get_room, principal_getter=_get_principal, require_vault_open=_require_vault_open, require_minor_clearance=_require_minor_clearance, broadcast_log=broadcast_log, broadcast_result=broadcast_result, broadcast_result_error=broadcast_result_error, lifecycle_registry=_lifecycle, rate_limit=rate_limit, rate_identity=_rate_identity)
 
-def _read_tasks_sync(storage: str):
-    tasks = []
-    if os.path.isdir(storage):
-        for fn in sorted(os.listdir(storage)):
-            if not fn.endswith(".json") or fn == "learnings.json":
-                continue
-            task_id = fn[:-5]
-            try:
-                path = safe_child_path(storage, fn)
-                with open(path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                if not isinstance(data, dict) or not isinstance(data.get("evidence", []), list):
-                    raise ValueError("invalid canonical memory schema")
-                tasks.append({
-                    "task_id": data.get("task_id", task_id),
-                    "last_updated": data.get("last_updated"),
-                    "evidence_count": len(data.get("evidence", [])),
-                    "confidence": data.get("confidence"),
-                    "memory_state": "READY",
-                    "memory_error_code": None,
-                })
-            except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
-                # A malformed task remains visible and is never represented as
-                # an absent task in retention/operations APIs.
-                tasks.append({
-                    "task_id": task_id,
-                    "last_updated": None,
-                    "evidence_count": None,
-                    "confidence": None,
-                    "memory_state": "CORRUPTED",
-                    "memory_error_code": "MEMORY_CORRUPTED",
-                })
-    return tasks
-
-@app.get("/api/tasks")
-async def api_list_tasks(client_id: str):
-    room = get_room(client_id)
-    storage = room["executor"].memory.storage_path
-    tasks = await asyncio.to_thread(_read_tasks_sync, storage)
-    active = list(room.get("active_tasks", {}).keys())
-    return {"tasks": tasks, "active_tasks": active}
 
 
 def _terminate_mission(client_id: str, task_id: str, action: str, reason: str):
@@ -4661,6 +4858,13 @@ def _terminate_mission(client_id: str, task_id: str, action: str, reason: str):
             {"error": {"code": "TASK_NOT_FOUND", "message": "Task not found"}},
             status_code=404,
         )
+    # GÖREV SAHİPLİĞİ (savunma derinliği): yaşam döngüsü kaydı ODA başına
+    # olduğundan başka operatörün görevi zaten 404 döner; bu mühür, görev
+    # kaydı ileride süreç geneline taşınırsa deliğin kendiliğinden açılmasını
+    # engeller. 404'ten SONRA gelir: var olmayan görev için sahiplik sorgusu
+    # yapılmaz (yoksa "görev var mı" sorusuna ikinci bir yanıt kanalı olurdu).
+    if _task_access(task_id, room.get("_owner") or _get_principal()) == "forbidden":
+        raise TaskForbiddenError(task_id)
     decision = _lifecycle(room).terminate(task_id, action)
     if not decision.accepted:
         return JSONResponse(
@@ -5001,236 +5205,6 @@ async def api_task_memory(
     summary["recalled"] = [hit.model_dump() for hit in result.hits]
     summary["recall_note"] = result.machine_note
     return summary
-
-
-#: [FAZ C · C3] Mikrofon kaydı için üst sınır: 8 MiB (yetenekteki sınırla aynı).
-MAX_LISTEN_AUDIO_BYTES = 8 * 1024 * 1024
-
-
-class SpeechListenResponse(BaseModel):
-    """[FAZ C · C3] Mikrofonun duyduğu: metin YEREL motordan gelir, uydurulmaz."""
-
-    available: bool = False
-    reason: str | None = None
-    state: str = "idle"
-    transcript: str = ""
-    engine: str | None = None
-    chars: int = 0
-    machine_note: str = ""
-
-
-class SpeechSayPayload(BaseModel):
-    """[FAZ C · C2] Seslendirme isteği."""
-
-    text: str = Field(min_length=1, max_length=2000)
-    voice: str = Field(default="", max_length=64)
-    client_id: str = Field(default="default", max_length=128)
-
-
-@app.get("/api/speech/status")
-async def api_speech_status():
-    """[FAZ C · C2] Sesin GERÇEK durumu: motor var mı, hangi kapı, konuşuyor mu."""
-    from agent_core.services import speech
-
-    return speech.status()
-
-
-class SpeechReportPayload(BaseModel):
-    """[FAZ C · C4] Sesli rapor: görev sonucu (veya doğrudan metin) okunur."""
-
-    client_id: str = "default"
-    report: dict | None = None
-    text: str = ""
-
-
-@app.post("/api/speech/report")
-async def api_speech_report(req: SpeechReportPayload):
-    """[FAZ C · C4] Bulunanı SÖYLER: görev sonucu sesli rapora çevrilir.
-
-    Metin payload'daki GERÇEK alanlardan kurulur — olmayan alan için cümle
-    UYDURULMAZ. Motor yoksa ses üretilmez; metin yine de döner (gizlenmez).
-    """
-    from agent_core.services import speech
-
-    if not rate_limit(f"report:{req.client_id}", "speech"):
-        return JSONResponse(
-            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla rapor okuma isteği"}},
-            status_code=429,
-        )
-
-    result = await speech.read_report(
-        req.report,
-        text=req.text,
-        vault_locked=not _check_vault_interlock(req.client_id),
-    )
-    payload = result.model_dump()
-    if result.available:
-        broadcast_speech(req.client_id, {"state": "speaking", **payload})
-        duration = max(0.0, float(result.duration_ms or 0) / 1000.0)
-        asyncio.create_task(_speech_finished(req.client_id, duration))
-        broadcast_log(req.client_id, "INFO", f"SES: {result.machine_note}")
-    else:
-        broadcast_speech(req.client_id, {"state": "denied", **payload})
-        broadcast_log(req.client_id, "WARNING", f"SES: RAPOR OKUNAMADI: {result.reason}")
-    return payload
-
-
-@app.post("/api/speech/listen", response_model=SpeechListenResponse)
-async def api_speech_listen(
-    request: Request,
-    client_id: str = "default",
-    language: str = "",
-):
-    """[FAZ C · C3] Göz dinler: mikrofon kaydı YEREL motorda metne çevrilir.
-
-    Ses dosyası makineden dışarı çıkmaz (yalnız 127.0.0.1/::1/localhost).
-    Motor yoksa uydurma transkript DÖNMEZ: `available:false` + sebep.
-    Konuşma sürerken çağrılırsa önce SUSTURUR (araya girme).
-    """
-    from agent_core.services import speech
-
-    if not rate_limit(f"listen:{client_id}", "speech"):
-        return JSONResponse(
-            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla dinleme isteği"}},
-            status_code=429,
-        )
-
-    try:
-        form = await request.form()
-    except Exception:  # python-multipart kurulu değilse net hata (uydurma yanıt yok)
-        return JSONResponse(
-            {
-                "error": {
-                    "code": "MULTIPART_UNAVAILABLE",
-                    "message": "Dosya yükleme için python-multipart gerekli",
-                }
-            },
-            status_code=500,
-        )
-    upload = form.get("file")
-    if upload is None:
-        return JSONResponse(
-            {"error": {"code": "NO_AUDIO", "message": "Ses dosyası yok"}},
-            status_code=400,
-        )
-    audio = await upload.read()
-    if not audio:
-        return JSONResponse(
-            {"error": {"code": "EMPTY_AUDIO", "message": "Ses dosyası boş"}},
-            status_code=400,
-        )
-    if len(audio) > MAX_LISTEN_AUDIO_BYTES:
-        return JSONResponse(
-            {"error": {"code": "AUDIO_TOO_LARGE", "message": "Ses dosyası çok büyük"}},
-            status_code=413,
-        )
-
-    suffix = os.path.splitext(getattr(upload, "filename", "") or "")[1][:8] or ".webm"
-    # ARAYA GİRME: konuşurken dinlemeye geçiyorsa önce susar.
-    if speech.status()["state"] == "speaking":
-        speech.interrupt()
-    speech.start_listening()
-    broadcast_speech(client_id, {"state": "listening"})
-    result = await speech.listen(
-        audio,
-        suffix=suffix,
-        language=language or None,
-        vault_locked=not _check_vault_interlock(client_id),
-    )
-    payload = result.model_dump()
-    if result.available:
-        broadcast_speech(client_id, {"state": "idle", "transcript": result.transcript})
-        broadcast_log(client_id, "INFO", f"SES: duyuldu ({result.chars} karakter)")
-    else:
-        broadcast_speech(client_id, {"state": "denied", "reason": result.reason})
-        broadcast_log(client_id, "WARNING", f"SES DUYULAMADI: {result.reason}")
-    return payload
-
-
-@app.post("/api/speech/say")
-async def api_speech_say(req: SpeechSayPayload):
-    """[FAZ C · C2] Aspasia konuşur — ses YERELDE üretilir, makineden çıkmaz.
-
-    Motor yoksa uydurma ses DÖNMEZ: `available:false` + makine-okunur sebep.
-    Konuşma durumu (`speaking` → `idle`) WebSocket'ten UI'a akar.
-    """
-    from agent_core.services import speech
-
-    if not rate_limit(f"speech:{req.client_id}", "speech"):
-        return JSONResponse(
-            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla seslendirme isteği"}},
-            status_code=429,
-        )
-
-    # Kasa interlock'u GERÇEK durumdan okunur (uydurma "açık" yok): kilitliyken
-    # yetenek zaten koşamaz (Tüzük Md.4).
-    result = await speech.speak(
-        req.text,
-        voice=req.voice or None,
-        vault_locked=not _check_vault_interlock(req.client_id),
-    )
-    payload = result.model_dump()
-    if result.available:
-        broadcast_speech(req.client_id, {"state": "speaking", **payload})
-        duration = max(0.0, float(result.duration_ms or 0) / 1000.0)
-        asyncio.create_task(_speech_finished(req.client_id, duration))
-        broadcast_log(req.client_id, "INFO", f"SES: {result.machine_note}")
-    else:
-        broadcast_speech(req.client_id, {"state": "denied", **payload})
-        broadcast_log(req.client_id, "WARNING", f"SES ÜRETİLEMEDİ: {result.reason}")
-    return payload
-
-
-async def _speech_finished(client_id: str, seconds: float) -> None:
-    """Ses süresi bitince durum `idle`'a döner (tahmin değil: WAV süresi)."""
-    try:
-        await asyncio.sleep(min(60.0, seconds + 0.35))
-    except asyncio.CancelledError:
-        return
-    from agent_core.services import speech
-
-    speech.set_state("idle")
-    broadcast_speech(client_id, {"state": "idle"})
-
-
-@app.get("/api/speech/audio/{name}")
-async def api_speech_audio(name: str = Path(min_length=1, max_length=128)):
-    """[FAZ C · C2] Üretilen ses dosyası (yalnız yerel dosya; yol kaçışı kapalı)."""
-    from agent_core.services import speech
-    from agent_core.capabilities.adapters_voice import speech_dir
-
-    try:
-        path = safe_child_path(speech_dir(), name)
-    except ValueError:
-        return JSONResponse(
-            {"error": {"code": "INVALID_AUDIO_NAME", "message": "Geçersiz ses dosyası"}},
-            status_code=400,
-        )
-    if not os.path.exists(path):
-        return JSONResponse(
-            {"error": {"code": "NOT_FOUND", "message": "Ses dosyası yok"}},
-            status_code=404,
-        )
-    _ = speech  # servis yolu tek kaynaktır; dosya adı yeteneğin verdiği addır
-    return FileResponse(path, media_type="audio/wav", filename=name)
-
-
-@app.post("/api/speech/stop")
-async def api_speech_stop(client_id: str = "default"):
-    """[FAZ C · C3] Araya girme: konuşma KESİLİR ve durum UI'a düşer."""
-    from agent_core.services import speech
-
-    # [FAZ C · C3] ARAYA GİRME: konuşurken mikrofon açılırsa Aspasia SUSAR.
-    was_speaking = speech.status()["state"] == "speaking"
-    speech.interrupt() if was_speaking else speech.stop()
-    broadcast_speech(
-        client_id,
-        {"state": "interrupted" if was_speaking else "idle", "interrupted": was_speaking},
-    )
-    return {
-        "status": "interrupted" if was_speaking else "stopped",
-        "state": speech.status()["state"],
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -5788,141 +5762,21 @@ async def api_mcp_status(client_id: str = "default"):
     }
 
 
-class LanguageDetectPayload(BaseModel):
-    """[FAZ D · D4] Dil tespiti isteği."""
-
-    text: str = Field(min_length=1, max_length=20000)
-    client_id: str = Field(default="default", max_length=128)
-
-
-class LanguageTranslatePayload(BaseModel):
-    """[FAZ D · D4] Yerel çeviri isteği (metin makineden çıkmaz)."""
-
-    text: str = Field(min_length=1, max_length=2000)
-    target: str = Field(default="en", min_length=2, max_length=8)
-    client_id: str = Field(default="default", max_length=128)
-
-
-@app.get("/api/language/status")
-async def api_language_status():
-    """[FAZ D · D4] Dil hattının GERÇEK durumu: tespit her zaman yereldir;
-    çeviri motoru var mı, kapı açık mı, kanıta işlenen SON ölçüm ne?"""
-    from agent_core.services import language, translation
-
-    return {
-        "detect": {"available": True, "method": "deterministic_local"},
-        "translate": translation.status(),
-        "last": language.last_finding(),
-    }
-
-
-@app.post("/api/language/detect")
-async def api_language_detect(req: LanguageDetectPayload):
-    """[FAZ D · D4] Metnin dilini ölçer: omurga üzerinden (kasa kapısı dâhil).
-
-    Sinyal yoksa `language=unknown` + sebep döner; etiket UYDURULMAZ.
-    Kasa kilitliyken tespit de koşamaz (Tüzük Md.4, istisna yok).
-    """
-    from agent_core.capabilities.base import CapabilityContext
-    from agent_core.capabilities.policy import PolicyState
-    from agent_core.capabilities.registry import bootstrap
-    from agent_core.capabilities.runner import CapabilityRunner
-
-    if not rate_limit(f"language:{req.client_id}", "language"):
-        return JSONResponse(
-            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla dil isteği"}},
-            status_code=429,
-        )
-
-    runner = CapabilityRunner(registry=bootstrap())
-    state = PolicyState(
-        enabled_flags={}, vault_locked=not _check_vault_interlock(req.client_id), rate_ok=True
-    )
-    result = await runner.run(
-        "extractor.text.language", CapabilityContext(subject=req.text), state=state
-    )
-    finding = result.payload
-    payload = {
-        "available": bool(result.available),
-        "denied_by": result.denied_by,
-        "reason": result.unavailable_reason,
-        "language": getattr(finding, "language", "") if result.available else "",
-        "confidence": getattr(finding, "confidence", 0.0) if result.available else 0.0,
-        "script": getattr(finding, "script", "") if result.available else "",
-        "detect_reason": getattr(finding, "reason", None) if result.available else None,
-        "chars": getattr(finding, "chars", 0) if result.available else 0,
-    }
-    if result.denied_by:
-        broadcast_log(req.client_id, "WARNING", f"DİL: tespit engellendi — kasa:{result.denied_by}")
-    elif payload["language"] == "unknown":
-        broadcast_log(req.client_id, "INFO", f"DİL: ölçülemedi — {payload['detect_reason']}")
-    else:
-        broadcast_log(
-            req.client_id,
-            "INFO",
-            f"DİL: {payload['language']} · güven {payload['confidence']:.2f}",
-        )
-    return payload
-
-
-@app.post("/api/language/translate")
-async def api_language_translate(req: LanguageTranslatePayload):
-    """[FAZ D · D4] Metni YEREL motorda çevirir: ses/dinleme ile aynı kural.
-
-    Uzak uç REDDEDİLİR (`non_local_endpoint`); motor yoksa çeviri ÜRETİLMEZ
-    (`available:false` + sebep). Kaynak metin hedef dilmiş gibi DÖNMEZ.
-    """
-    from agent_core.capabilities.base import CapabilityContext
-    from agent_core.capabilities.policy import PolicyState
-    from agent_core.capabilities.registry import bootstrap
-    from agent_core.capabilities.runner import CapabilityRunner
-    from agent_core.services.translation import GATE, MAX_TEXT_CHARS, status as _translation_status
-
-    if not rate_limit(f"language:{req.client_id}", "language"):
-        return JSONResponse(
-            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla çeviri isteği"}},
-            status_code=429,
-        )
-
-    runner = CapabilityRunner(registry=bootstrap())
-    state = PolicyState(
-        enabled_flags={GATE: _flag_env(GATE)},
-        vault_locked=not _check_vault_interlock(req.client_id),
-        rate_ok=True,
-    )
-    result = await runner.run(
-        "extractor.text.translate_local",
-        CapabilityContext(subject=req.text[:MAX_TEXT_CHARS], params={"target": req.target}),
-        state=state,
-    )
-    translated = ""
-    if result.items:
-        translated = result.items[0].content
-    payload = {
-        "available": bool(result.available and result.items),
-        "denied_by": result.denied_by,
-        "reason": result.unavailable_reason,
-        "text": translated,
-        "source_language": result.notes.get("source_language", ""),
-        "source_confidence": result.notes.get("source_confidence", 0.0),
-        "target_language": req.target,
-        "engine": result.notes.get("engine", ""),
-    }
-    if payload["available"]:
-        broadcast_log(
-            req.client_id,
-            "INFO",
-            f"DİL: çeviri tamam — {payload['source_language']} → {req.target} ({payload['engine']})",
-        )
-    else:
-        why = result.denied_by or result.unavailable_reason or _translation_status().get("reason")
-        broadcast_log(req.client_id, "WARNING", f"DİL: ÇEVİRİ ÜRETİLEMEDİ — {why}")
-    return payload
-
-
 def _flag_env(name: str) -> bool:
     """[FAZ D · D4] Env kapısı okuma (speech'teki `_flag` ile aynı dar taraf)."""
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+# [API-BÖLME 2] /api/language uçları ayrı modüle taşındı (tek-modül tavanı,
+# docs/reports/API_MONOLITH_SPLIT_PLAN.md §4). Sözleşme değişmedi: aynı yol,
+# aynı gövde; bağımlılıklar enjekte edilir.
+register_language_routes(
+    app,
+    rate_limit=rate_limit,
+    check_vault_interlock=_check_vault_interlock,
+    broadcast_log=broadcast_log,
+    flag_env=_flag_env,
+)
+
 
 
 @app.post("/api/tasks/{task_id}/cancel")
@@ -5935,50 +5789,9 @@ async def api_halt_task(task_id: str = Path(min_length=1, max_length=_MAX_TASK_I
     return _terminate_mission(client_id, task_id, "halt", reason)
 
 
-@app.delete("/api/tasks/{task_id}")
-async def api_delete_task(task_id: str, client_id: str):
-    """Bir görevin tüm izlerini kalıcı siler (bellek dosyası + aktif snapshot)."""
-    room = get_room(client_id)
-
-    try:
-        # [AUDIT R3] regex + uzunluk (client_id ile aynı sözleşme).
-        if len(task_id) > _MAX_TASK_ID_LENGTH:
-            raise ValueError
-        validate_identifier(task_id, field="task_id")
-        mem_path = safe_child_path(
-            room["executor"].memory.storage_path,
-            f"{task_id}.json",
-        )
-    except ValueError:
-        return JSONResponse(
-            {"error": {"code": "INVALID_TASK_ID", "message": "Invalid task identifier"}},
-            status_code=400,
-        )
-    removed_snapshot = room.get("active_tasks", {}).pop(task_id, None)
-    file_deleted = False
-    if os.path.exists(mem_path):
-        try:
-            os.remove(mem_path)
-            file_deleted = True
-        except OSError as e:
-            return JSONResponse(
-                {"error": {"code": "DELETE_FAILED", "message": redact_text(e)[:120]}},
-                status_code=500,
-            )
-
-    if not removed_snapshot and not file_deleted:
-        return JSONResponse(
-            {"error": {"code": "NOT_FOUND", "message": f"Görev bulunamadı: {task_id}"}},
-            status_code=404,
-        )
-
-    broadcast_log(client_id, "INFO", f"VERİ SİLME: '{task_id}' görev izleri kalıcı olarak silindi (retention).")
-    return {
-        "status": "deleted",
-        "task_id": task_id,
-        "snapshot_removed": removed_snapshot is not None,
-        "memory_file_deleted": file_deleted,
-    }
+app.delete("/api/tasks/{task_id}")(
+    delete_task(get_room=get_room, broadcast_log=broadcast_log)
+)
 
 
 static_dir = "frontend/dist" if os.path.exists("frontend/dist") else "frontend"

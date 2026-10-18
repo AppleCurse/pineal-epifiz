@@ -1,8 +1,7 @@
-"""FAZ C · C2 — Ses uçtan uca: gerçek YEREL motor + WS konuşma durumu.
+"""Speech API contract tests using synthetic payloads from loopback HTTP fixtures.
 
-Kilitlenen iddia: Aspasia konuşur; ses YERELDE üretilir (uç 127.0.0.1),
-konuşma durumu WebSocket'ten UI'a akar, araya girme (`stop`) durumu keser.
-Motor yoksa uç 200 döner ama `available:false` yazar — uydurma ses yok.
+These tests verify the local transport/API boundary and WebSocket state machine;
+they do NOT prove that a real TTS or STT engine is installed or works.
 """
 
 from __future__ import annotations
@@ -10,14 +9,19 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import os
 import struct
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 from fastapi.testclient import TestClient
 
+from agent_core.capabilities import egress
+from agent_core.services import speech
 from backend import api
+from backend.routes.speech_state import speech_finish_delay
 
 
 def _wav(seconds: float = 1.5, rate: int = 8000) -> bytes:
@@ -47,23 +51,35 @@ def _open_vault(client):
 
     DİKKAT: oda ÖNCEDEN (portal döngüsünde) kurulmalı; aksi hâlde WebSocket
     gönderici görevi yaratılmaz ve çerçeveler hiç ulaşmaz.
+
+    SIRA BAĞIMSIZLIĞI: `speech` durumu süreç-global (`_STATE`). Kapı kapalı
+    senaryoları çalıştıran başka testler buraya `denied` bırakabilir; test
+    kendi başlangıç durumunu tohumlar, sonunda eski durumu geri koyar.
     """
+    onceki = dict(speech._STATE)
+    speech.set_state(speech.STATE_IDLE)
     client.get("/api/telemetry?client_id=spx")
     room = api.get_room("spx")
     room["vault"]["or_key"] = True
     yield
     room["vault"].pop("or_key", None)
+    speech._STATE.clear()
+    speech._STATE.update(onceki)
 
 
 @pytest.fixture()
 def local_tts(monkeypatch, tmp_path):
-    """Gerçek bir YEREL TTS sunucusu (ephemeral port) + açılmış kapı."""
+    """Loopback HTTP stub returning synthetic WAV bytes; not a real TTS engine."""
     audio = _wav(1.5)
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self):  # noqa: N802 - http.server sözleşmesi
             length = int(self.headers.get("Content-Length", 0))
-            self.rfile.read(length)
+            body = self.rfile.read(length)
+            try:
+                self.server.last_request = json.loads(body)
+            except (ValueError, TypeError):
+                self.server.last_request = {}
             self.send_response(200)
             self.send_header("Content-Type", "audio/wav")
             self.send_header("Content-Length", str(len(audio)))
@@ -86,7 +102,7 @@ def local_tts(monkeypatch, tmp_path):
 
 @pytest.fixture()
 def local_stt(monkeypatch, tmp_path):
-    """Gerçek bir YEREL STT sunucusu (ephemeral port) + açılmış kapı."""
+    """Loopback HTTP stub returning a fixed transcript; not a real STT engine."""
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self):  # noqa: N802 - http.server sözleşmesi
@@ -128,16 +144,78 @@ def test_status_reports_engine_state(client, local_tts):
 
 def test_say_synthesizes_and_serves_audio(client, local_tts):
     result = client.post(
-        "/api/speech/say", json={"text": "Mösyö, görev tamamlandı.", "client_id": "spx"}
+        "/api/speech/say", json={"text": "Mösyö, görev tamamlandı.", "client_id": "spx", "rate": 1.5}
     ).json()
     assert result["available"] is True, result.get("reason")
     assert result["engine"] == "local_endpoint"
+    assert result["rate"] == 1.5
+    assert local_tts.last_request["rate"] == 1.5
     assert result["duration_ms"] == 1500
     assert result["url"].startswith("/api/speech/audio/")
 
     audio = client.get(result["url"])
     assert audio.status_code == 200
     assert audio.content[:4] == b"RIFF"
+    assert audio.headers["cache-control"] == "private, no-store"
+
+
+def test_voice_http_clients_ignore_proxy_environment_and_disable_redirects(
+    client, local_tts, local_stt, monkeypatch
+):
+    calls = []
+    open_client = egress.open_client
+
+    def observed_open_client(*args, **kwargs):
+        calls.append(dict(kwargs))
+        return open_client(*args, **kwargs)
+
+    monkeypatch.setattr(egress, "open_client", observed_open_client)
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:1")
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:1")
+    monkeypatch.setenv("NO_PROXY", "")
+
+    tts = client.post("/api/speech/say", json={"text": "proxy test", "client_id": "spx"}).json()
+    stt = client.post(
+        "/api/speech/listen?client_id=spx",
+        files={"file": ("mic.webm", b"synthetic input", "audio/webm")},
+    ).json()
+
+    assert tts["available"] is True
+    assert stt["available"] is True
+    assert len(calls) >= 2
+    assert all(call["trust_env"] is False for call in calls)
+    assert all(call["follow_redirects"] is False for call in calls)
+
+
+def test_audio_endpoint_rejects_non_generated_names(client):
+    response = client.get("/api/speech/audio/.piper_0123456789abcdef0123456789abcdef.wav")
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "INVALID_AUDIO_NAME"
+
+
+def test_expired_tts_audio_is_removed_and_not_served(client, local_tts, monkeypatch, tmp_path):
+    monkeypatch.setenv("PINEAL_TTS_RETENTION_SECONDS", "60")
+    result = client.post(
+        "/api/speech/say", json={"text": "geçici ses", "client_id": "spx"}
+    ).json()
+    name = result["url"].rsplit("/", 1)[-1]
+    path = tmp_path / "speech" / name
+    assert path.is_file()
+
+    expired_at = time.time() - 61
+    os.utime(path, (expired_at, expired_at))
+    response = client.get(result["url"])
+
+    assert response.status_code == 404
+    assert not path.exists()
+
+
+def test_say_validates_rate_before_starting_a_motor(client):
+    response = client.post(
+        "/api/speech/say",
+        json={"text": "Mösyö.", "client_id": "spx", "rate": 2.5},
+    )
+    assert response.status_code == 422
 
 
 def test_say_refuses_when_gate_is_closed(client, monkeypatch, tmp_path):
@@ -179,11 +257,49 @@ def test_speaking_state_reaches_the_ui_over_websocket(client, local_tts):
 
 
 def test_speech_returns_to_idle_after_the_audio_duration(client, local_tts, monkeypatch):
+    import backend.routes.speech_state as speech_state
 
     client.post("/api/speech/say", json={"text": "kısa", "client_id": "spx"}).json()
     assert client.get("/api/speech/status").json()["state"] == "speaking"
-    asyncio.run(api._speech_finished("spx", 0.01))
+    playback_id = speech.status()["last"]["playback_id"]
+    monkeypatch.setattr(speech_state, "speech_finish_delay", lambda seconds: 0.0)
+    asyncio.run(api._speech_finished("spx", 0.01, playback_id))
     assert client.get("/api/speech/status").json()["state"] == "idle"
+
+
+def test_speech_finish_watchdog_allows_long_playback_and_is_bounded():
+    assert speech_finish_delay(90.0) == 92.0
+    assert speech_finish_delay(600.0) == 602.0
+    assert speech_finish_delay(3600.0) == 602.0
+    assert speech_finish_delay(float("nan")) == 2.0
+
+
+def test_playback_finished_endpoint_marks_only_current_playback(client):
+    current_id = "a" * 32
+    speech.set_state("speaking", last={"playback_id": current_id})
+    response = client.post(
+        "/api/speech/finished", json={"client_id": "spx", "playback_id": current_id}
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "idle"
+    assert speech.status()["state"] == "idle"
+
+    speech.set_state("speaking", last={"playback_id": "b" * 32})
+    stale = client.post(
+        "/api/speech/finished", json={"client_id": "spx", "playback_id": current_id}
+    )
+    assert stale.json()["status"] == "stale"
+    assert speech.status()["last"]["playback_id"] == "b" * 32
+
+
+def test_stale_speech_timer_cannot_end_a_newer_playback(client, monkeypatch):
+    import backend.routes.speech_state as speech_state
+
+    speech.set_state("speaking", last={"playback_id": "new-playback"})
+    monkeypatch.setattr(speech_state, "speech_finish_delay", lambda seconds: 0.0)
+    asyncio.run(api._speech_finished("spx", 0.0, "old-playback"))
+    assert speech.status()["state"] == "speaking"
+    assert speech.status()["last"]["playback_id"] == "new-playback"
 
 
 def test_stop_interrupts_the_speech(client, local_tts):
@@ -219,6 +335,42 @@ def test_listen_transcribes_with_local_engine(client, local_stt):
     assert result["engine"] == "local_endpoint"
 
 
+def test_listen_does_not_claim_html_error_page_as_transcript(client, monkeypatch, tmp_path):
+    pytest.importorskip("multipart")
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802 - http.server sözleşmesi
+            length = int(self.headers.get("Content-Length", 0))
+            self.rfile.read(length)
+            body = b"<html>upstream error</html>"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            return
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    monkeypatch.setenv("PINEAL_STT_URL", f"http://127.0.0.1:{server.server_port}/stt")
+    monkeypatch.setenv("ENABLE_LOCAL_STT", "true")
+    monkeypatch.setenv("PINEAL_SPEECH_DIR", str(tmp_path / "speech"))
+    try:
+        result = client.post(
+            "/api/speech/listen?client_id=spx",
+            files={"file": ("mic.webm", b"RIFFfake-audio", "audio/webm")},
+        ).json()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert result["available"] is False
+    assert result["transcript"] == ""
+    assert result["reason"] == "unsupported_transcript_content_type"
+
+
 def test_listen_broadcasts_listening_state(client, local_stt):
     pytest.importorskip("multipart")  # dosya yükleme (python-multipart)
     with client.websocket_connect("/ws/spx") as ws:
@@ -239,6 +391,40 @@ def test_listen_broadcasts_listening_state(client, local_stt):
 def test_listen_rejects_missing_audio(client, local_stt):
     pytest.importorskip("multipart")  # dosya yükleme (python-multipart)
     response = client.post("/api/speech/listen?client_id=spx")
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "NO_AUDIO"
+
+
+def test_listen_reports_malformed_multipart_as_client_error(client, local_stt):
+    pytest.importorskip("multipart")
+    response = client.post(
+        "/api/speech/listen?client_id=spx",
+        content=b"--broken\r\nContent-Disposition: form-data; name=\"file\"",
+        headers={"Content-Type": "multipart/form-data; boundary=broken"},
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] in {"INVALID_MULTIPART", "NO_AUDIO"}
+
+
+def test_listen_bounds_client_and_language_query_fields(client, local_stt):
+    too_long_client = client.post(
+        f"/api/speech/listen?client_id={'x' * 129}",
+        files={"file": ("mic.webm", b"x", "audio/webm")},
+    )
+    assert too_long_client.status_code == 422
+    too_long_language = client.post(
+        f"/api/speech/listen?client_id=spx&language={'x' * 33}",
+        files={"file": ("mic.webm", b"x", "audio/webm")},
+    )
+    assert too_long_language.status_code == 422
+
+
+def test_listen_rejects_text_field_instead_of_treating_it_as_upload(client, local_stt):
+    pytest.importorskip("multipart")
+    response = client.post(
+        "/api/speech/listen?client_id=spx",
+        data={"file": "not-an-upload"},
+    )
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "NO_AUDIO"
 

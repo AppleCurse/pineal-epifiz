@@ -32,7 +32,9 @@ class BodySizeLimitMiddleware:
 
     uvicorn 0.52.4'te --limit-max-request-size bayrağı bulunmadığından
     tavan uygulama katmanında enforced edilir.
-    Varsayılan: 1048576 bayt (1 MiB), PINEAL_MAX_BODY_BYTES ile geçersiz kılınabilir.
+    Genel varsayılan 1048576 bayt (1 MiB), PINEAL_MAX_BODY_BYTES ile ayarlanır.
+    /api/speech/listen ayrıca PINEAL_MAX_SPEECH_BODY_BYTES (varsayılan 8 MiB +
+    multipart payı) kullanır; diğer uçların sınırı genişlemez.
     """
 
     def __init__(self, app, max_bytes: Optional[int] = None):
@@ -51,12 +53,23 @@ class BodySizeLimitMiddleware:
         except ValueError:
             return self.max_bytes
 
+    def _get_max_bytes_for_scope(self, scope) -> int:
+        # Multipart audio has a distinct 8 MiB file contract; allow bounded
+        # multipart framing overhead without widening every JSON endpoint.
+        if scope.get("path") == "/api/speech/listen":
+            default = 8 * 1024 * 1024 + 64 * 1024
+            try:
+                return int(os.getenv("PINEAL_MAX_SPEECH_BODY_BYTES", str(default)))
+            except ValueError:
+                return default
+        return self._get_max_bytes()
+
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
 
-        max_bytes = self._get_max_bytes()
+        max_bytes = self._get_max_bytes_for_scope(scope)
 
         # 1. Content-Length başlığı kontrolü (erken ret)
         for name, value in scope.get("headers", []):

@@ -1,3 +1,17 @@
+"""Karar konfigürasyonu yükleyicisi — eşikler kod içine GÖMÜLMEZ.
+
+``config/decision_config.yaml`` bir kez okunur ve tipli iki modele dönüşür:
+``DecisionConfig`` (global karar eşikleri) ve ``AgentThresholds`` (ajan bazlı
+ağırlık/timeout). ``get_agent_config(agent_name)`` ajan adına göre ayar döner,
+tanımsız ajan güvenli varsayılana düşer.
+
+Dosya yoksa/bozuksa varsayılanlar kullanılır ve durum raporlanır — sessiz
+"her şey yolunda" izlenimi verilmez.
+
+Tüketici: ``task_executor``, ``decision_engine``, ``uncertainty_engine``.
+Test: ``tests/unit/test_config_contract.py``.
+"""
+
 from pathlib import Path
 from typing import Any, Dict, List
 import yaml

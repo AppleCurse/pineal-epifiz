@@ -1,3 +1,14 @@
+"""Sürtünme lensi — hedefin sınırları, hassasiyetleri ve tükenme noktaları.
+
+``TargetPsycheProfiler`` omurgasına bağlı ince kabuk; ayrıştırma, kanıt
+disiplini ve model çağrısı ortak profiler'dadır. Çıkış
+``FrictionProfile``'dır ve mesaj üretiminde "dokunulmaz sınır" listesi olarak
+kullanılır (bkz. ``pattern_interrupt``).
+
+Bu lens ASLA teşhis koymaz: yalnız gözlenen ifadeyi/davranışı raporlar.
+Test: ``tests/unit/test_friction_detector.py``.
+"""
+
 import logging
 from typing import Dict, Any
 from agent_core.domain.memory_models import FrictionProfile

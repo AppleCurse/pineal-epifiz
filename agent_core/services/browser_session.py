@@ -50,11 +50,8 @@ class BrowserNotOpenError(RuntimeError):
     """Bu odada açık tarayıcı yok (önce /api/browser/open)."""
 
 
-# [AUDIT 2026-10-08 · E-GÖZ2-3] Tek kasa-kapısı exception sınıfı: kanonik tanım
-# `agent_core.services.vault_gate`'dedir; bu modül onu yeniden dışa aktarır
-# (mevcut `from ...browser_session import VaultLockedError` içe aktarımları
-# değişmeden çalışmaya devam eder).
-from agent_core.services.vault_gate import VaultLockedError  # noqa: F401  # yeniden dışa aktarım
+class VaultLockedError(RuntimeError):
+    """[KASA MANDALI] Kasa kilitli: tarayıcı dışarı çıkamaz (Tüzük Md.4)."""
 
 
 def _domain_ok(url: str) -> bool:

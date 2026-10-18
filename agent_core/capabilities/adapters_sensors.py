@@ -19,19 +19,18 @@ Ortak dürüstlük sözleşmesi:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
+import shlex
 import shutil
+import signal
+import subprocess
+from urllib.parse import urlsplit
 from typing import Any
 
-from urllib.parse import urlparse
-
-from httpx import Timeout
+from agent_core.capabilities.egress import httpx, open_client  # noqa: F401  (test yamaları httpx adını modulede bekler)
 
 from agent_core.capabilities.adapters_osint import _flag, _module_available
-from agent_core.services import net_hygiene
-from agent_core.utils.security import build_secure_client
 from agent_core.capabilities.base import (
     Availability,
     BaseCapability,
@@ -42,6 +41,18 @@ from agent_core.capabilities.base import (
 )
 
 logger = logging.getLogger(__name__)
+
+_AGENT_REACH_ALLOWED_DOMAINS = (
+    "x.com",
+    "twitter.com",
+    "reddit.com",
+    "youtube.com",
+    "youtu.be",
+    "github.com",
+    "bilibili.com",
+)
+_AGENT_REACH_MAX_STDOUT_BYTES = 1_000_000
+_AGENT_REACH_MAX_STDERR_BYTES = 64_000
 
 __all__ = [
     "XTwscrapeCapability",
@@ -54,6 +65,72 @@ __all__ = [
 def _truncate(value: str, limit: int = 480) -> str:
     text = (value or "").strip().replace("\n", " ")
     return text if len(text) <= limit else text[:limit].rstrip() + " …"
+
+
+#: [P0 · DENETİM 2026-10-16 · Bulgu B-4] twscrape `API()` varsayılan olarak
+#: ÇALIŞMA DİZİNİNE `accounts.db` yazıyordu → depo kökü kirleniyordu
+#: (envanter testi kırmızıya dönüyordu). Yol artık YAPILANDIRILABİLİR:
+#:   * `PINEAL_X_ACCOUNTS_DB` → tam yol (en yüksek öncelik)
+#:   * varsayılan → `./cache/x_accounts.db` (`.gitignore`'daki `cache/` altında)
+_X_ACCOUNTS_DB_ENV = "PINEAL_X_ACCOUNTS_DB"
+_X_ACCOUNTS_DB_DEFAULT = os.path.join("cache", "x_accounts.db")
+
+
+def _x_accounts_db_path() -> str:
+    """twscrape hesap havuzu DB yolunu çözer (varsayılan: cache/ altında)."""
+    configured = (os.getenv(_X_ACCOUNTS_DB_ENV) or "").strip()
+    path = configured or _X_ACCOUNTS_DB_DEFAULT
+    parent = os.path.dirname(os.path.abspath(path))
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    return path
+
+
+async def _x_pool_state(api: Any) -> dict[str, Any] | None:
+    """Hesap havuzunun gerçek durumunu ölçer (aktif oturum sayısı).
+
+    Havuz boşsa "hedef yok" değil, "oturum yok" denmelidir.
+
+    ``None`` döner → havuz ÖLÇÜLEMEDİ (ör. `pool` parametresini kabul etmeyen
+    bir sahte/eskiden kalan twscrape). Bu durumda `no_session_pool` kapısı
+    UYGULANMAZ: ölçülmeyen bir şey "yok" diye yazılmaz.
+    """
+    pool = getattr(api, "pool", None)
+    getter = getattr(pool, "get_all", None)
+    if getter is None:
+        return None
+    total = 0
+    active = 0
+    readable = True
+    try:
+        accounts = await getter()
+    except Exception as exc:  # pragma: no cover - bozuk/eksik DB
+        readable = False
+        logger.debug("twscrape hesap havuzu okunamadı: %s", type(exc).__name__)
+        accounts = []
+    for account in accounts or ():
+        total += 1
+        if getattr(account, "active", False):
+            active += 1
+    return {
+        "accounts_total": total,
+        "accounts_active": active,
+        "pool_readable": readable,
+        "accounts_db": getattr(pool, "_db_file", "") or "",
+    }
+
+
+def _make_twscrape_api(API: Any, db_path: str) -> Any:
+    """twscrape API nesnesini kurar — hesap DB'si yapılandırılabilir yoldadır.
+
+    `pool` parametresini kabul etmeyen (sahte/eskiden kalan) uygulamalar için
+    geriye dönük uyum: sıradan kurucuya düşülür.
+    """
+    try:
+        return API(pool=db_path)
+    except TypeError:
+        logger.debug("twscrape API 'pool' parametresini kabul etmiyor; varsayılan kurucu kullanılıyor")
+        return API()
 
 
 # --------------------------------------------------------------------- X
@@ -97,7 +174,24 @@ class XTwscrapeCapability(BaseCapability):
             )
 
         try:
-            api = API()
+            api = _make_twscrape_api(API, _x_accounts_db_path())
+            # [P0 · DENETİM 2026-10-16 · Bulgu B-1] Boş hesap havuzunda
+            # twscrape "kullanıcı yok" (user_not_found) döner — bu YANLIŞTIR:
+            # hedef değil, oturum havuzu yok. Kaynak gerçeği ayrı kanal olarak
+            # ölçülür: havuz boşsa sebep `no_session_pool` olur.
+            pool_state = await _x_pool_state(api)
+            if pool_state is not None and pool_state["accounts_active"] == 0:
+                return CapabilityResult(
+                    capability_id=self.id,
+                    available=False,
+                    unavailable_reason="no_session_pool",
+                    error=None,
+                    notes={
+                        "accounts_total": pool_state["accounts_total"],
+                        "accounts_active": 0,
+                        "accounts_db": pool_state["accounts_db"],
+                    },
+                )
             user = await api.user_by_login(username)
             if user is None:
                 return CapabilityResult(
@@ -300,12 +394,40 @@ class InstagrapiCapability(BaseCapability):
         )
 
 
+def agent_reach_command() -> list[str] | None:
+    """agent-reach CLI'ını çözer: önce ``PINEAL_AGENT_REACH_CMD``, sonra PATH.
+
+    [2026-10-14 · CANLI KANIT] Neden env gerekli: RUNBOOK'taki
+    ``npm i -g agent-reach`` komutu artık AYNI ADLI BAŞKA bir projeyi kuruyor
+    (Nostr ajan ağı; ölçüldü: npm agent-reach@0.3.4). Kör
+    ``shutil.which("agent-reach")`` yanlış aracı "hazır" sayabilir. Operatör
+    gerçek CLI'ın yolunu açıkça işaret eder; eski davranış (PATH araması)
+    korunur — tıpkı ``PINEAL_HARVESTER_CMD`` / ``PINEAL_TRANSCRIBE_CMD`` gibi.
+    """
+    raw = os.getenv("PINEAL_AGENT_REACH_CMD", "").strip()
+    if raw:
+        try:
+            parts = shlex.split(raw)
+        except ValueError:
+            return None  # bozuk tırnak: PATH'e düşmeyiz
+        if not parts:
+            return None
+        head = parts[0]
+        if os.path.isabs(head) or "/" in head or "\\" in head:
+            return parts if os.path.exists(head) else None
+        return parts if shutil.which(head) else None
+    found = shutil.which("agent-reach")
+    return [found] if found else None
+
+
 # ----------------------------------------------------------- Agent-Reach
 class AgentReachCapability(BaseCapability):
     """Agent-Reach (MIT) — Twitter/Reddit/YouTube/GitHub/Bilibili okuma, ücretsiz.
 
-    Harici CLI olarak çağrılır (`agent-reach read <url>`): Pineal'in içine kod
-    gömülmez, süreç izole kalır, API ücreti yoktur.
+    Harici CLI olarak çağrılır (`agent-reach read <url>`): kod Pineal'e gömülmez.
+    Çocuk süreç ayrı argümanlarla başlatılır; URL yalnız desteklenen public host
+    allowlist'inden geçer. CLI'ın kendi DNS/redirect trafiği pinlenemediğinden,
+    bu yetenek yalnız operatörün ENABLE_AGENT_REACH opt-in'iyle çalışır.
     """
 
     id = "sensor.web.agent_reach"
@@ -318,38 +440,160 @@ class AgentReachCapability(BaseCapability):
     def availability(self) -> Availability:
         if not _flag("ENABLE_AGENT_REACH"):
             return Availability.unavailable("gate_disabled:ENABLE_AGENT_REACH")
-        if shutil.which("agent-reach") is None:
+        if agent_reach_command() is None:
             return Availability.unavailable("dependency_missing:agent-reach")
         return Availability.ok()
 
     async def run(self, ctx: CapabilityContext) -> CapabilityResult:
-        target = (ctx.subject or ctx.params.get("url") or "").strip()
-        if not target:
+        raw_target = ctx.subject or ctx.params.get("url") or ""
+        if not isinstance(raw_target, str):
             return CapabilityResult(
                 capability_id=self.id, available=False, unavailable_reason="invalid_target"
             )
-
-        try:
-            proc = await asyncio.wait_for(
-                asyncio.create_subprocess_exec(
-                    "agent-reach",
-                    "read",
-                    target,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                ),
-                timeout=self.timeout_seconds,
-            )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self.timeout_seconds)
-        except asyncio.TimeoutError:
+        target = raw_target.strip()
+        if not target or len(target) > 2048:
             return CapabilityResult(
-                capability_id=self.id, available=False, unavailable_reason="timeout"
+                capability_id=self.id, available=False, unavailable_reason="invalid_target"
             )
-        except FileNotFoundError:
+        try:
+            parsed = urlsplit(target)
+            _ = parsed.port
+            host = (parsed.hostname or "").rstrip(".").lower()
+        except ValueError:
+            return CapabilityResult(
+                capability_id=self.id, available=False, unavailable_reason="invalid_target"
+            )
+        if (
+            parsed.scheme.lower() not in {"http", "https"}
+            or not host
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            return CapabilityResult(
+                capability_id=self.id, available=False, unavailable_reason="invalid_target"
+            )
+        if not any(host == domain or host.endswith(f".{domain}") for domain in _AGENT_REACH_ALLOWED_DOMAINS):
+            return CapabilityResult(
+                capability_id=self.id, available=False, unavailable_reason="unsupported_host"
+            )
+        from agent_core.utils.security import is_safe_url
+
+        if not await asyncio.to_thread(is_safe_url, target):
+            return CapabilityResult(
+                capability_id=self.id, available=False, unavailable_reason="ssrf_blocked"
+            )
+        command = agent_reach_command()
+        if command is None:
             return CapabilityResult(
                 capability_id=self.id,
                 available=False,
                 unavailable_reason="dependency_missing:agent-reach",
+            )
+
+        class _OutputLimitExceeded(Exception):
+            pass
+
+        proc = None
+        reader_tasks: list[asyncio.Task] = []
+
+        async def read_limited(stream, maximum: int) -> bytes:
+            output = bytearray()
+            while True:
+                chunk = await stream.read(min(65_536, maximum + 1 - len(output)))
+                if not chunk:
+                    return bytes(output)
+                output.extend(chunk)
+                if len(output) > maximum:
+                    raise _OutputLimitExceeded()
+
+        async def stop_process() -> None:
+            if proc is None:
+                return
+            if proc.returncode is None:
+                try:
+                    pid = getattr(proc, "pid", None)
+                    if os.name != "nt" and pid is not None:
+                        os.killpg(pid, signal.SIGKILL)
+                    else:
+                        proc.kill()
+                except ProcessLookupError:
+                    pass
+                except OSError:
+                    try:
+                        proc.kill()
+                    except ProcessLookupError:
+                        pass
+            for task in reader_tasks:
+                if not task.done():
+                    task.cancel()
+            if reader_tasks:
+                await asyncio.gather(*reader_tasks, return_exceptions=True)
+            if proc.returncode is None:
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=2.0)
+                except BaseException:
+                    pass
+
+        try:
+            loop = asyncio.get_running_loop()
+            started = loop.time()
+            process_options = {
+                "stdout": asyncio.subprocess.PIPE,
+                "stderr": asyncio.subprocess.PIPE,
+            }
+            if os.name == "nt":
+                process_options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            else:
+                process_options["start_new_session"] = True
+            proc = await asyncio.wait_for(
+                asyncio.create_subprocess_exec(
+                    *command, "read", target, **process_options
+                ),
+                timeout=self.timeout_seconds,
+            )
+            if proc.stdout is None or proc.stderr is None:
+                raise RuntimeError("agent-reach output pipes unavailable")
+            remaining = max(0.001, self.timeout_seconds - (loop.time() - started))
+            reader_tasks = [
+                asyncio.create_task(read_limited(proc.stdout, _AGENT_REACH_MAX_STDOUT_BYTES)),
+                asyncio.create_task(read_limited(proc.stderr, _AGENT_REACH_MAX_STDERR_BYTES)),
+                asyncio.create_task(proc.wait()),
+            ]
+            # [E7-muaf] The outer process boundary translates reader exceptions
+            # (including output-limit violations) into an unavailable result.
+            stdout, stderr, _ = await asyncio.wait_for(
+                asyncio.gather(*reader_tasks), timeout=remaining
+            )
+        except asyncio.CancelledError:
+            try:
+                await asyncio.shield(stop_process())
+            except BaseException:
+                pass
+            raise
+        except asyncio.TimeoutError:
+            await stop_process()
+            return CapabilityResult(
+                capability_id=self.id, available=False, unavailable_reason="timeout"
+            )
+        except FileNotFoundError:
+            await stop_process()
+            return CapabilityResult(
+                capability_id=self.id,
+                available=False,
+                unavailable_reason="dependency_missing:agent-reach",
+            )
+        except _OutputLimitExceeded:
+            await stop_process()
+            return CapabilityResult(
+                capability_id=self.id, available=False, unavailable_reason="output_too_large"
+            )
+        except Exception as exc:
+            await stop_process()
+            return CapabilityResult(
+                capability_id=self.id,
+                available=False,
+                unavailable_reason="process_error",
+                error=type(exc).__name__,
             )
 
         if proc.returncode != 0:
@@ -367,7 +611,12 @@ class AgentReachCapability(BaseCapability):
                 capability_id=self.id, available=False, unavailable_reason="empty_text"
             )
 
-        max_chars = int(ctx.params.get("max_chars") or 20_000)
+        try:
+            raw_max_chars = ctx.params.get("max_chars") or 20_000
+            max_chars = 20_000 if isinstance(raw_max_chars, bool) else int(raw_max_chars)
+        except (TypeError, ValueError):
+            max_chars = 20_000
+        max_chars = max(1, min(max_chars, 100_000))
         content = text if len(text) <= max_chars else text[:max_chars].rstrip() + " …[kırpıldı]"
         item = make_evidence(
             content=content,
@@ -405,32 +654,31 @@ class SearXNGCapability(BaseCapability):
         return Availability.ok()
 
     async def run(self, ctx: CapabilityContext) -> CapabilityResult:
-        query = (ctx.subject or ctx.params.get("query") or "").strip()
-        if not query:
+        raw_query = ctx.subject or ctx.params.get("query") or ""
+        if not isinstance(raw_query, str):
+            return CapabilityResult(
+                capability_id=self.id, available=False, unavailable_reason="invalid_query"
+            )
+        query = raw_query.strip()
+        if not query or len(query) > 1000:
             return CapabilityResult(
                 capability_id=self.id, available=False, unavailable_reason="invalid_query"
             )
         base = os.environ["SEARXNG_BASE_URL"].rstrip("/")
-        limit = int(ctx.params.get("limit") or 10)
-
-        # [AUDIT 2026-10-08 · E-GÖZ1-3] SearXNG kendi kendine barındırılan bir
-        # servis — tipik olarak ÖZEL adreste koşar. Bu yüzden `safe_get`
-        # (yalnızca genel adreslere izin verir) BURAYA UYGUN DEĞİLDİR; kapı
-        # net_hygiene ile aynı ilkeyle kurulur: özel adres → operatör açıkça
-        # `PINEAL_SEARXNG_ALLOW_PRIVATE` ile izin vermedikçe RED.
-        host = (urlparse(base).hostname or "").lower()
-        if net_hygiene.is_private_host(host, env_name="PINEAL_SEARXNG_ALLOW_PRIVATE"):
-            return CapabilityResult(
-                capability_id=self.id,
-                available=False,
-                unavailable_reason=(
-                    "private_host_blocked:PINEAL_SEARXNG_ALLOW_PRIVATE"
-                ),
-            )
+        try:
+            limit = int(ctx.params.get("limit") or 10)
+        except (TypeError, ValueError):
+            limit = 10
+        limit = max(1, min(limit, 50))
 
         try:
-            # Merkezi istemci fabrikası; yönlendirme kapalı (fail-closed).
-            async with build_secure_client(timeout=Timeout(self.timeout_seconds)) as client:
+            async with open_client(
+                purpose="sensor",
+                target=base,
+                timeout=self.timeout_seconds,
+                trust_env=False,
+                follow_redirects=False,
+            ) as client:
                 response = await client.get(
                     f"{base}/search",
                     params={"q": query, "format": "json", "safesearch": "0"},
@@ -452,27 +700,55 @@ class SearXNGCapability(BaseCapability):
 
         try:
             payload = response.json()
-        except json.JSONDecodeError:
+        except (ValueError, UnicodeDecodeError):
             return CapabilityResult(
                 capability_id=self.id, available=False, unavailable_reason="invalid_json"
             )
 
-        results = list(payload.get("results") or [])[:limit]
+        if not isinstance(payload, dict) or not isinstance(payload.get("results"), list):
+            return CapabilityResult(
+                capability_id=self.id, available=False, unavailable_reason="invalid_response"
+            )
+        results = payload["results"][:limit]
         items = []
         for row in results:
-            url = (row.get("url") or "").strip()
-            content = (row.get("content") or row.get("title") or "").strip()
-            if not url or not content:
+            if not isinstance(row, dict):
                 continue
+            raw_url = row.get("url")
+            raw_title = row.get("title")
+            raw_content = row.get("content")
+            url = raw_url.strip() if isinstance(raw_url, str) else ""
+            title = raw_title.strip() if isinstance(raw_title, str) else ""
+            content_source = raw_content if isinstance(raw_content, str) and raw_content.strip() else title
+            content = content_source.strip() if isinstance(content_source, str) else ""
+            try:
+                parsed_url = urlsplit(url)
+                _ = parsed_url.port
+                valid_url = (
+                    parsed_url.scheme.lower() in {"http", "https"}
+                    and bool(parsed_url.hostname)
+                    and parsed_url.username is None
+                    and parsed_url.password is None
+                )
+            except ValueError:
+                valid_url = False
+            if not valid_url or not content:
+                continue
+            url = parsed_url.geturl()
             items.append(
                 make_evidence(
                     content=_truncate(content),
                     source_engine="searxng",
                     epistemic_type="observation",
                     provenance_refs=[url],
-                    scope={"kind": "search_result", "title": (row.get("title") or "").strip()},
+                    scope={"kind": "search_result", "title": title},
                     source_metrics={"engine": row.get("engine")},
                 )
+            )
+
+        if results and not items:
+            return CapabilityResult(
+                capability_id=self.id, available=False, unavailable_reason="invalid_results"
             )
 
         return CapabilityResult(

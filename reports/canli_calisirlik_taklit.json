@@ -1,0 +1,35 @@
+{
+  "mod": "taklit",
+  "taklit_port": 39097,
+  "uyari": "Bu bir BULUT sağlayıcı kanıtı değildir; yerel taklit sunucuya giden İSTEK YOLU kanıtıdır.",
+  "duz_cagri": {
+    "yanit": "TAKLIT-YANIT: istek yolu tamam",
+    "basarili": true
+  },
+  "pineal_rota": {
+    "yanit": "TAKLIT-YANIT: istek yolu tamam",
+    "basarili": true
+  },
+  "kapali_port": {
+    "basarili": false,
+    "hata": "APIConnectionError: Connection error."
+  },
+  "taklit_sunucuya_ulasan_istek": [
+    {
+      "yol": "/v1/chat/completions",
+      "yetki_basligi_var": true,
+      "govde_ilk_160": "{\"messages\":[{\"role\":\"user\",\"content\":\"kanıt amaçlı tek satır yanıt ver\"}],\"model\":\"anthropic/claude-sonnet-5\",\"max_tokens\":4096,\"stream\":false,\"temperature\":0."
+    },
+    {
+      "yol": "/v1/chat/completions",
+      "yetki_basligi_var": true,
+      "govde_ilk_160": "{\"messages\":[{\"role\":\"user\",\"content\":\"kanıt amaçlı tek satır yanıt ver\"}],\"model\":\"pineal-general-reasoning\",\"max_tokens\":4096,\"stream\":false,\"temperature\":0.7"
+    }
+  ],
+  "ozet": {
+    "taklit_istek_sayisi": 2,
+    "duz_cagri_ok": true,
+    "pineal_rota_ok": true,
+    "kapali_port_durust_ret": true
+  }
+}

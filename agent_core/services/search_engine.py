@@ -1,16 +1,26 @@
+"""Çok kaynaklı arama ve doğrulama motoru (Tavily + SerpAPI + Exa + DuckDuckGo/SearXNG).
+
+``search`` çağrıları paralel yürütülür ve ``SearchOutcome`` döner: kaynak
+KULLANILAMAZLIĞI, meşru BOŞ sonuçtan açıkça ayrılır (boş liste "sonuç yok"
+diye yalan söylemez).
+
+Kasa mandalı tek gerçek kaynaktan (``set_vault_state``) okunur: kasa kilitliyken
+dış arama yapılmaz (``VAULT_LOCKED``). Anahtar yoksa ilgili sağlayıcı sessizce
+atlanmaz, gerekçesi raporlanır.
+
+Tüketici: ``agent_core/agents/*`` (autonomous_verifier, osint), task_executor.
+Test: ``tests/unit/test_alternative_web_research.py``.
+"""
+
 import asyncio
 import logging
 import os
 import re
-from typing import Callable, List, Optional
-from urllib.parse import urlencode
-
-from httpx import AsyncClient, HTTPStatusError, RequestError, Timeout, TimeoutException
-from pydantic import BaseModel, ConfigDict
-
-# [AUDIT 2026-10-08 · E-GÖZ1-3] Sağlayıcı çağrıları merkezi istemci
-# (build_secure_client) + SSRF kapısı (safe_get/safe_post) üzerinden çıkar.
-from agent_core.utils.security import build_secure_client, safe_get, safe_post
+from html import unescape
+from urllib.parse import parse_qs, unquote, urljoin, urlsplit
+from agent_core.capabilities.egress import open_client, httpx
+from typing import Any, Callable, List, Optional
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +33,7 @@ class SearchResult(BaseModel):
 
 class SearchOutcome(BaseModel):
     """Provider availability is distinct from a legitimate empty search."""
-    results: List[SearchResult] = []
+    results: List[SearchResult] = Field(default_factory=list)
     # OK, PARTIAL, NO_RESULTS, UNAVAILABLE, VAULT_LOCKED
     status: str = "NO_RESULTS"
     error: Optional[str] = None
@@ -35,6 +45,14 @@ class SearchOutcome(BaseModel):
 #: şey bulamadık" ile "kasa kilitli olduğu için HİÇ ARAMADIK" aynı şey değil.
 VAULT_LOCKED_STATUS = "VAULT_LOCKED"
 VAULT_LOCKED_ERROR = "vault_locked"
+
+
+class SearchProviderError(RuntimeError):
+    """A provider failed; this is distinct from a legitimate empty result."""
+
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
 
 
 class SearchEngine:
@@ -107,6 +125,68 @@ class SearchEngine:
             return bool(self.policy["vault_locked"])
         return True
 
+    @staticmethod
+    def _normalize_result_url(value: Any) -> Optional[str]:
+        """Return a real HTTP(S) URL, decoding DuckDuckGo redirect links."""
+        if not isinstance(value, str) or not value.strip():
+            return None
+        candidate = unescape(value.strip())
+        if candidate.startswith("//"):
+            candidate = "https:" + candidate
+        elif candidate.startswith("/"):
+            candidate = urljoin("https://duckduckgo.com", candidate)
+        try:
+            parsed = urlsplit(candidate)
+        except ValueError:
+            return None
+        if parsed.scheme.lower() not in {"http", "https"}:
+            if parsed.scheme:
+                return None
+            candidate = "https://" + candidate.lstrip("/")
+            try:
+                parsed = urlsplit(candidate)
+            except ValueError:
+                return None
+        if (
+            parsed.hostname in {"duckduckgo.com", "www.duckduckgo.com"}
+            and parsed.path.rstrip("/") == "/l"
+        ):
+            targets = parse_qs(parsed.query).get("uddg", [])
+            if targets:
+                candidate = unquote(targets[0])
+                try:
+                    parsed = urlsplit(candidate)
+                except ValueError:
+                    return None
+        if (
+            parsed.scheme.lower() not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            return None
+        return candidate
+
+    @classmethod
+    def _make_result(
+        cls,
+        query: str,
+        content: Any,
+        source_url: Any,
+        provider: str,
+    ) -> Optional[SearchResult]:
+        if not isinstance(content, str) or not content.strip():
+            return None
+        normalized_url = cls._normalize_result_url(source_url)
+        if normalized_url is None:
+            return None
+        return SearchResult(
+            query=query,
+            content=content.strip(),
+            source_url=normalized_url,
+            provider=provider,
+        )
+
     async def search(self, query: str, num_results: int = 5) -> SearchOutcome:
         # ── KASA MANDALI — HER ŞEYDEN ÖNCE ────────────────────────────────
         # Kasa kilitliyse TEK BİR bayt bile dışarı çıkmaz: httpx istemcisi
@@ -114,8 +194,7 @@ class SearchEngine:
         # çağrılmaz. Dürüst cevap: aramadık, çünkü kasa kilitli.
         if self.vault_locked():
             logger.warning(
-                "KASA KİLİTLİ: dış arama reddedildi (sağlayıcı isteği oluşturulmadı) query=%r",
-                (query or "")[:64],
+                "KASA KİLİTLİ: dış arama reddedildi (sağlayıcı isteği oluşturulmadı; sorgu kaydı tutulmaz)"
             )
             return SearchOutcome(
                 results=[],
@@ -124,49 +203,118 @@ class SearchEngine:
                 available=False,
             )
 
-        # One shared client for all providers in this query (pooling);
-        # per-provider availability is reported via SearchOutcome.
-        async with build_secure_client(timeout=Timeout(10.0)) as client:
-            tasks = []
-            if self.tavily_key:
-                tasks.append(self._search_tavily(query, num_results, client=client))
-            if self.serpapi_key:
-                tasks.append(self._search_serpapi(query, num_results, client=client))
-            if self.exa_key:
-                tasks.append(self._search_exa(query, num_results, client=client))
+        if not isinstance(query, str) or not query.strip() or len(query) > 1000:
+            return SearchOutcome(
+                results=[], status="UNAVAILABLE", error="INVALID_QUERY", available=False
+            )
+        if (
+            not isinstance(num_results, int)
+            or isinstance(num_results, bool)
+            or num_results < 1
+        ):
+            return SearchOutcome(
+                results=[], status="UNAVAILABLE", error="INVALID_RESULT_LIMIT", available=False
+            )
+        query = query.strip()
+        num_results = min(num_results, 10)
 
-            # Eğer hiç anahtar yoksa ücretsiz yedekler devreye girer:
-            # [FAZ A · A4] SearXNG (kendi sunucun, anahtarsız, omurgadan) +
-            # mevcut DuckDuckGo yolu. SearXNG kapalıysa davranış ESKİSİ GİBİ.
-            if not tasks:
-                if self._searxng_enabled():
-                    tasks.append(self._search_searxng(query, num_results))
-                tasks.append(self._search_duckduckgo(query, num_results, client=client))
+        # One shared client for all HTTP providers in this query (pooling).
+        # Paid-provider errors trigger a second free-provider phase only when
+        # none of the configured paid providers returned results. A successful
+        # empty response remains NO_RESULTS and does not cause silent escalation.
+        try:
+            async with open_client(
+                purpose="search",
+                timeout=10.0,
+                trust_env=False,
+                follow_redirects=False,
+            ) as client:
+                paid_tasks = []
+                if self.tavily_key:
+                    paid_tasks.append(self._search_tavily(query, num_results, client=client))
+                if self.serpapi_key:
+                    paid_tasks.append(self._search_serpapi(query, num_results, client=client))
+                if self.exa_key:
+                    paid_tasks.append(self._search_exa(query, num_results, client=client))
 
-            results_lists = await asyncio.gather(*tasks, return_exceptions=True)
+                errors: List[str] = []
+                if paid_tasks:
+                    primary_responses = await asyncio.gather(*paid_tasks, return_exceptions=True)
+                    merged, errors = self._collect_provider_results(primary_responses)
+                    if not merged and errors:
+                        backup_tasks = self._free_search_tasks(query, num_results, client)
+                        backup_responses = await asyncio.gather(*backup_tasks, return_exceptions=True)
+                        backup_results, backup_errors = self._collect_provider_results(backup_responses)
+                        merged.extend(backup_results)
+                        errors.extend(backup_errors)
+                else:
+                    fallback_tasks = self._free_search_tasks(query, num_results, client)
+                    fallback_responses = await asyncio.gather(*fallback_tasks, return_exceptions=True)
+                    merged, errors = self._collect_provider_results(fallback_responses)
+        except Exception as exc:
+            from agent_core.scraper.vault_gate import VaultLockedError
 
-        merged: List[SearchResult] = []
-        errors = []
-        seen_urls = set()
-        for res in results_lists:
-            if isinstance(res, list):
-                for item in res:
-                    if item.source_url not in seen_urls:
-                        seen_urls.add(item.source_url)
-                        merged.append(item)
-            elif isinstance(res, BaseException):
-                errors.append(self._error_code(res))
+            if not isinstance(exc, VaultLockedError):
+                raise
+            logger.warning("KASA KİLİTLENDİ: arama başlamadan egress reddedildi")
+            return SearchOutcome(
+                results=[], status=VAULT_LOCKED_STATUS, error=VAULT_LOCKED_ERROR, available=False
+            )
 
+        unique_errors = ",".join(sorted(set(errors))) or None
         if merged:
             return SearchOutcome(
                 results=merged[:num_results * 2],
-                status="PARTIAL" if errors else "OK",
-                error=",".join(sorted(set(errors))) or None,
+                status="PARTIAL" if unique_errors else "OK",
+                error=unique_errors,
                 available=True,
             )
-        if errors:
-            return SearchOutcome(results=[], status="UNAVAILABLE", error=",".join(sorted(set(errors))), available=False)
+        if unique_errors:
+            return SearchOutcome(
+                results=[], status="UNAVAILABLE", error=unique_errors, available=False
+            )
         return SearchOutcome(results=[], status="NO_RESULTS", available=True)
+
+    def _free_search_tasks(self, query: str, num_results: int, client: httpx.AsyncClient):
+        """Create the explicitly configured keyless provider fallback phase."""
+        tasks = []
+        if self._searxng_enabled():
+            tasks.append(self._search_searxng(query, num_results))
+        tasks.append(self._search_duckduckgo(query, num_results, client=client))
+        return tasks
+
+    def _collect_provider_results(self, responses: list[Any]) -> tuple[List[SearchResult], List[str]]:
+        merged: List[SearchResult] = []
+        errors: List[str] = []
+        seen_urls = set()
+        for response in responses:
+            if isinstance(response, asyncio.CancelledError):
+                raise response
+            if isinstance(response, list):
+                for item in response:
+                    if not isinstance(item, SearchResult):
+                        errors.append("INVALID_PROVIDER_RESULT")
+                        continue
+                    normalized_url = self._normalize_result_url(item.source_url)
+                    content = item.content.strip()
+                    if normalized_url is None or not content:
+                        errors.append("INVALID_PROVIDER_RESULT")
+                        continue
+                    if normalized_url not in seen_urls:
+                        seen_urls.add(normalized_url)
+                        if normalized_url != item.source_url or content != item.content:
+                            item = item.model_copy(
+                                update={"source_url": normalized_url, "content": content}
+                            )
+                        merged.append(item)
+            elif isinstance(response, BaseException):
+                if isinstance(response, Exception):
+                    errors.append(self._error_code(response))
+                else:
+                    raise response
+            else:
+                errors.append("INVALID_PROVIDER_RESPONSE")
+        return merged, errors
 
     def _searxng_enabled(self) -> bool:
         """SearXNG yedeği açık mı? (kapı: ENABLE_SEARXNG + SEARXNG_BASE_URL)."""
@@ -177,9 +325,9 @@ class SearchEngine:
     async def _search_searxng(self, query: str, num_results: int) -> List[SearchResult]:
         """[FAZ A · A4] Anahtarsız metasearch — capability omurgasından koşar.
 
-        Ayrı servis (AGPL-3.0): kod gömülmez, yalnız HTTP. Servis yoksa/ulaşılamazsa
-        boş liste döner (görev hatası değil, sessiz yedek) — asıl sözleşme
-        korunur: sonuç yoksa `NO_RESULTS`, bulgu UYDURULMAZ.
+        Ayrı servis (AGPL-3.0): kod gömülmez, yalnız HTTP. Gerçek bir boş yanıt
+        boş liste döner; servis/kapı hatası ise sınıflandırılmış hata olarak
+        yükseltilir ki üst katman onu NO_RESULTS sanmasın.
         """
         from agent_core.capabilities import (
             CapabilityContext,
@@ -198,8 +346,18 @@ class SearchEngine:
                 rate_ok=self.policy.get("rate_ok"),
             ),
         )
-        if not result.ok:
-            return []
+        if (
+            not getattr(result, "available", False)
+            or getattr(result, "error", None)
+            or getattr(result, "unavailable_reason", None)
+        ):
+            reason = (
+                getattr(result, "unavailable_reason", None)
+                or getattr(result, "error", None)
+                or "unavailable"
+            )
+            code = re.sub(r"[^A-Z0-9]+", "_", str(reason).upper()).strip("_")
+            raise SearchProviderError(f"SEARXNG_{code or 'UNAVAILABLE'}")
         rows: List[SearchResult] = []
         for item in result.items:
             refs = list(getattr(item, "provenance_refs", []) or [])
@@ -217,116 +375,224 @@ class SearchEngine:
 
     @staticmethod
     def _error_code(error: BaseException) -> str:
-        if isinstance(error, TimeoutException):
+        if isinstance(error, SearchProviderError):
+            return error.code
+        if isinstance(error, httpx.TimeoutException):
             return "TIMEOUT"
-        if isinstance(error, HTTPStatusError):
+        if isinstance(error, httpx.HTTPStatusError):
             code = error.response.status_code
             if code in (401, 403):
                 return "AUTH_FAILED"
             if code == 429:
                 return "RATE_LIMITED"
             return "PROVIDER_ERROR"
-        if isinstance(error, RequestError):
+        if isinstance(error, httpx.RequestError):
             return "NETWORK_ERROR"
         return "PROVIDER_ERROR"
 
-    async def _search_tavily(self, query: str, num_results: int, client: Optional[AsyncClient] = None) -> List[SearchResult]:
+    async def _search_tavily(self, query: str, num_results: int, client: Optional[httpx.AsyncClient] = None) -> List[SearchResult]:
         url = "https://api.tavily.com/search"
         from agent_core.utils.security import is_safe_url
         if not is_safe_url(url):
-            return []
+            raise SearchProviderError("TAVILY_UNSAFE_URL")
         payload = {"api_key": self.tavily_key, "query": query, "max_results": num_results}
         try:
             if client is not None:
-                res = await safe_post(client, url, json=payload)
+                res = await client.post(url, json=payload)
             else:
-                async with build_secure_client(timeout=Timeout(10.0)) as _client:
-                    res = await safe_post(_client, url, json=payload)
+                async with open_client(
+                    purpose="search",
+                    target=url,
+                    timeout=10.0,
+                    trust_env=False,
+                    follow_redirects=False,
+                ) as _client:
+                    res = await _client.post(url, json=payload)
                 res.raise_for_status()
             if res.status_code == 200:
-                data = res.json()
-                return [
-                    SearchResult(query=query, content=r.get("content", ""), source_url=r.get("url", ""), provider="tavily")
-                    for r in data.get("results", [])
+                try:
+                    data = res.json()
+                except (ValueError, UnicodeDecodeError) as exc:
+                    raise SearchProviderError("TAVILY_INVALID_JSON") from exc
+                if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+                    raise SearchProviderError("TAVILY_INVALID_RESPONSE")
+                rows = data["results"]
+                results = [
+                    result
+                    for row in rows
+                    if isinstance(row, dict)
+                    for result in [
+                        self._make_result(query, row.get("content"), row.get("url"), "tavily")
+                    ]
+                    if result is not None
                 ]
+                if rows and not results:
+                    raise SearchProviderError("TAVILY_INVALID_RESULTS")
+                return results
             res.raise_for_status()
         except Exception:
             raise
         return []
 
-    async def _search_serpapi(self, query: str, num_results: int, client: Optional[AsyncClient] = None) -> List[SearchResult]:
+    async def _search_serpapi(self, query: str, num_results: int, client: Optional[httpx.AsyncClient] = None) -> List[SearchResult]:
         url = "https://serpapi.com/search"
         from agent_core.utils.security import is_safe_url
         if not is_safe_url(url):
-            return []
+            raise SearchProviderError("SERPAPI_UNSAFE_URL")
         params = {"api_key": self.serpapi_key, "q": query, "num": num_results, "engine": "google"}
-        pinned_url = f"{url}?{urlencode(params)}"
         try:
             if client is not None:
-                res = await safe_get(client, pinned_url)
+                res = await client.get(url, params=params)
             else:
-                async with build_secure_client(timeout=Timeout(10.0)) as _client:
-                    res = await safe_get(_client, pinned_url)
+                async with open_client(
+                    purpose="search",
+                    target=url,
+                    timeout=10.0,
+                    trust_env=False,
+                    follow_redirects=False,
+                ) as _client:
+                    res = await _client.get(url, params=params)
                 res.raise_for_status()
             if res.status_code == 200:
-                data = res.json()
-                return [
-                    SearchResult(query=query, content=r.get("snippet", ""), source_url=r.get("link", ""), provider="serpapi")
-                    for r in data.get("organic_results", [])
+                try:
+                    data = res.json()
+                except (ValueError, UnicodeDecodeError) as exc:
+                    raise SearchProviderError("SERPAPI_INVALID_JSON") from exc
+                if not isinstance(data, dict):
+                    raise SearchProviderError("SERPAPI_INVALID_RESPONSE")
+                rows = data.get("organic_results", [])
+                if not isinstance(rows, list):
+                    raise SearchProviderError("SERPAPI_INVALID_RESPONSE")
+                results = [
+                    result
+                    for row in rows
+                    if isinstance(row, dict)
+                    for result in [
+                        self._make_result(query, row.get("snippet"), row.get("link"), "serpapi")
+                    ]
+                    if result is not None
                 ]
+                if rows and not results:
+                    raise SearchProviderError("SERPAPI_INVALID_RESULTS")
+                return results
             res.raise_for_status()
         except Exception:
             raise
         return []
 
-    async def _search_exa(self, query: str, num_results: int, client: Optional[AsyncClient] = None) -> List[SearchResult]:
+    async def _search_exa(self, query: str, num_results: int, client: Optional[httpx.AsyncClient] = None) -> List[SearchResult]:
         url = "https://api.exa.ai/search"
         from agent_core.utils.security import is_safe_url
         if not is_safe_url(url):
-            return []
+            raise SearchProviderError("EXA_UNSAFE_URL")
         headers = {"x-api-key": self.exa_key, "Content-Type": "application/json"}
         payload = {"query": query, "numResults": num_results}
         try:
             if client is not None:
-                res = await safe_post(client, url, headers=headers, json=payload)
+                res = await client.post(url, headers=headers, json=payload)
             else:
-                async with build_secure_client(timeout=Timeout(10.0)) as _client:
-                    res = await safe_post(_client, url, headers=headers, json=payload)
+                async with open_client(
+                    purpose="search",
+                    target=url,
+                    timeout=10.0,
+                    trust_env=False,
+                    follow_redirects=False,
+                ) as _client:
+                    res = await _client.post(url, headers=headers, json=payload)
                 res.raise_for_status()
             if res.status_code == 200:
-                data = res.json()
-                return [
-                    SearchResult(query=query, content=r.get("text", r.get("title", "")), source_url=r.get("url", ""), provider="exa")
-                    for r in data.get("results", [])
+                try:
+                    data = res.json()
+                except (ValueError, UnicodeDecodeError) as exc:
+                    raise SearchProviderError("EXA_INVALID_JSON") from exc
+                if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+                    raise SearchProviderError("EXA_INVALID_RESPONSE")
+                rows = data["results"]
+                results = [
+                    result
+                    for row in rows
+                    if isinstance(row, dict)
+                    for result in [
+                        self._make_result(
+                            query,
+                            row.get("text") or row.get("title"),
+                            row.get("url"),
+                            "exa",
+                        )
+                    ]
+                    if result is not None
                 ]
+                if rows and not results:
+                    raise SearchProviderError("EXA_INVALID_RESULTS")
+                return results
             res.raise_for_status()
         except Exception:
             raise
         return []
 
-    async def _search_duckduckgo(self, query: str, num_results: int, client: Optional[AsyncClient] = None) -> List[SearchResult]:
+    async def _search_duckduckgo(self, query: str, num_results: int, client: Optional[httpx.AsyncClient] = None) -> List[SearchResult]:
         url = "https://html.duckduckgo.com/html/"
         from agent_core.utils.security import is_safe_url
         if not is_safe_url(url):
-            return []
+            raise SearchProviderError("DUCKDUCKGO_UNSAFE_URL")
         data = {"q": query}
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         try:
             if client is not None:
-                res = await safe_post(client, url, data=data, headers=headers)
+                res = await client.post(url, data=data, headers=headers)
             else:
-                async with build_secure_client(timeout=Timeout(10.0)) as _client:
-                    res = await safe_post(_client, url, data=data, headers=headers)
+                async with open_client(
+                    purpose="search",
+                    target=url,
+                    timeout=10.0,
+                    trust_env=False,
+                    follow_redirects=False,
+                ) as _client:
+                    res = await _client.post(url, data=data, headers=headers)
                 res.raise_for_status()
             if res.status_code == 200:
                 html = res.text
+                link_pattern = re.compile(
+                    r'<a\b(?=[^>]*\bclass=["\'][^"\']*result__url[^"\']*["\'])'
+                    r'(?=[^>]*\bhref=["\']([^"\']+)["\'])[^>]*>(.*?)</a>',
+                    re.IGNORECASE | re.DOTALL,
+                )
+                links = [(match.group(1), match.group(2)) for match in link_pattern.finditer(html)]
+                snippet_pattern = re.compile(
+                    r'<a\b[^>]*class=["\'][^"\']*result__snippet[^"\']*["\'][^>]*>(.*?)</a>',
+                    re.IGNORECASE | re.DOTALL,
+                )
+                title_pattern = re.compile(
+                    r'<a\b[^>]*class=["\'][^"\']*result__a[^"\']*["\'][^>]*>(.*?)</a>',
+                    re.IGNORECASE | re.DOTALL,
+                )
+
+                def clean_markup(value: str) -> str:
+                    return re.sub(r"\s+", " ", unescape(re.sub(r"<[^>]+>", " ", value))).strip()
+
+                snippets = [clean_markup(value) for value in snippet_pattern.findall(html)]
+                titles = [clean_markup(value) for value in title_pattern.findall(html)]
                 results = []
-                links = re.findall(r'<a class="result__url" href="([^"]+)">([^<]+)</a>', html)
-                snippets = re.findall(r'<a class="result__snippet[^>]*>([^<]+)</a>', html)
-                for i, (href, raw_url) in enumerate(links[:num_results]):
-                    snippet = snippets[i] if i < len(snippets) else query
-                    results.append(SearchResult(query=query, content=snippet.strip(), source_url=raw_url.strip(), provider="duckduckgo"))
-                return results
+                for index, (href, _display_url) in enumerate(links[:num_results]):
+                    content = (
+                        snippets[index] if index < len(snippets) and snippets[index]
+                        else titles[index] if index < len(titles) else ""
+                    )
+                    result = self._make_result(query, content, href, "duckduckgo")
+                    if result is not None:
+                        results.append(result)
+                if results:
+                    return results
+                lowered = html.lower()
+                challenge_markers = (
+                    "captcha", "anomaly detected", "bots use duckduckgo", "prove you're human",
+                )
+                code = (
+                    "DUCKDUCKGO_CHALLENGE"
+                    if any(marker in lowered for marker in challenge_markers)
+                    else "DUCKDUCKGO_UNPARSEABLE_RESPONSE"
+                )
+                raise SearchProviderError(code)
             res.raise_for_status()
         except Exception:
             raise

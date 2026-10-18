@@ -57,6 +57,8 @@ import asyncio
 import logging
 import os
 import signal
+
+from agent_core.capabilities.egress import open_client
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -90,36 +92,23 @@ STATUS_DONE = "Done"
 STATUS_ERROR = "Error"
 
 
-def _is_production() -> bool:
-    """PINEAL_ENV fail-closed: yalnızca AÇIK geliştirme adları geliştirme sayılır.
-
-    Kuralın tek sahibi ``agent_core.utils.security._is_production`` ile aynıdır;
-    burada kopyalanmaz — lazy import ile oradan okunur. Import edilemezse
-    (bozuk kurulum) DAR TARAF: üretim sayılır (fail-closed).
-    """
-    try:
-        from agent_core.utils.security import _is_production as _prod
-
-        return bool(_prod())
-    except Exception:
-        return True
-
-
 def build_liveness_message(
     agent_id: str,
     *,
     alive: bool = True,
     redis_link: Optional[bool] = None,
     backend_link: Optional[bool] = None,
-    degraded_mode: bool = False,
+    degraded_mode: Optional[bool] = None,
     timestamp: Optional[str] = None,
 ) -> Dict[str, Any]:
     """İşaretçinin yayınlayacağı canlılık mesajını kurar (saf fonksiyon).
 
     Bilinçli olarak **hiçbir operasyonel iddia içermez**: ``status`` alanı
     YOKTUR, çünkü ajanın durumu bu sürecin bilebileceği bir şey değildir.
-    Yalnızca doğrudan ölçtüğü üç şeyi yazar: kendisi ayakta mı, Redis'e
-    erişiyor mu, backend'e erişiyor mu.
+    Yalnızca doğrudan ölçtüğü şeyleri yazar: kendisi ayakta mı, Redis'e
+    erişiyor mu, backend'e erişiyor mu, **dağıtık moddan mı düştü**
+    (``degraded_mode`` — [AUDIT E-GÖZ2-1] in-memory fallback sessiz
+    başarı sayılmaz; bayrak açıkça mesajdadır).
     """
     return {
         "type": "agent_beacon_liveness",
@@ -133,11 +122,16 @@ def build_liveness_message(
             "alive": alive,
             "redis_link": redis_link,
             "backend_link": backend_link,
-            # [AUDIT 2026-10-08 · E-GÖZ2-1] Yedek moda düşüldüyse bu AÇIKça
-            # yüze çıkar: operatör "her şey yolunda" yanılgısına düşmez.
-            "degraded_mode": bool(degraded_mode),
+            # None = ölçülmedi; False = dağıtık (Redis) yolunda; True =
+            # süreç-içi yedeğe düştü (operatör bunu görmezden gelemez).
+            "degraded_mode": degraded_mode,
         },
     }
+
+
+def _production_mode() -> bool:
+    """``PINEAL_ENV=production`` mı? (E-GÖZ3-2: üretimde fallback YASAK.)"""
+    return os.getenv("PINEAL_ENV", "").strip().lower() == "production"
 
 
 async def probe_backend(backend_url: str, *, timeout: float = 5.0) -> bool:
@@ -149,13 +143,17 @@ async def probe_backend(backend_url: str, *, timeout: float = 5.0) -> bool:
     if not backend_url:
         return False
     try:
-        import httpx
-
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with open_client(purpose="probe", timeout=timeout) as client:
             response = await client.get(f"{backend_url.rstrip('/')}/health")
             return response.status_code < 500
     except Exception as exc:  # noqa: BLE001 - sonda: her türlü hata "erişilemiyor" demektir
-        logger.debug("[%s] backend sondası başarısız: %s", backend_url, exc)
+        # [AUDIT E-GÖZ1-1] Sessiz yutma YOK: sonda başarısızlığı görünür
+        # seviyede, "fallback" sözüyle kaydedilir (debug'a gömülmez).
+        logger.warning(
+            "[%s] backend sondası başarısız — fallback: backend_link=False: %s",
+            backend_url,
+            exc,
+        )
         return False
 
 
@@ -166,17 +164,20 @@ async def publish_liveness(
     alive: bool = True,
     redis_link: Optional[bool] = None,
     backend_link: Optional[bool] = None,
-    degraded_mode: bool = False,
+    degraded_mode: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """Canlılık mesajını KENDİ kanalına yayınlar.
 
     Redis erişilemezse ``RedisBus`` kendi içinde bellek-içi yedeğe düşer;
     bu durumda mesaj kaybolmaz ama yalnızca bu süreçte görülür — bu yüzden
-    ``redis_link`` bayrağı mesajın içinde açıkça taşınır. Aynı şekilde
-    ``degraded_mode`` (yedek mod) de mesajla birlikte açıkça yayınlanır.
+    ``redis_link`` ve ``degraded_mode`` bayrakları mesajın içinde açıkça
+    taşınır (sessiz yedek YOK: operatör düşüşü görür).
     """
     message = build_liveness_message(
-        agent_id, alive=alive, redis_link=redis_link, backend_link=backend_link,
+        agent_id,
+        alive=alive,
+        redis_link=redis_link,
+        backend_link=backend_link,
         degraded_mode=degraded_mode,
     )
     await bus.publish(BEACON_CHANNEL, message)
@@ -206,25 +207,29 @@ async def run_worker(
         Ajan durumu yürütücünün tekelindedir (bkz. modül docstring'i).
     """
     redis_link: Optional[bool] = None
-    degraded_mode = False
+    #: [AUDIT E-GÖZ2-1] In-memory fallback sessiz DEĞİL: bayrak + ERROR log.
+    degraded_mode: Optional[bool] = None
 
     if bus is None:
         try:
             from agent_core.services.redis_bus import init_redis_bus
         except ImportError as exc:
-            if _is_production():
-                # [AUDIT 2026-10-08 · E-GÖZ3-2] Üretimde sessizce yedek moda
-                # düşmek YASAK — dağıtık mimari çökertilene kadar fail-closed.
+            if _production_mode():
+                # [AUDIT E-GÖZ3-2] Üretimde dağıtık mimari sessizce tekil
+                # sürece düşemez: fallback YASAK, kapıda çökülür.
+                logger.error(
+                    "PRODUCTION: Redis bus import edilemedi — in-memory fallback "
+                    "YASAK (dağıtık mimari korunmalı): %s",
+                    exc,
+                    exc_info=True,
+                )
                 raise RuntimeError(
-                    "Redis veri yolu zorunlu (production): import edilemedi — "
-                    f"fallback in-memory yasak: {exc}"
+                    f"PRODUCTION_REQUIRES_REDIS: Redis bus import edilemedi ({exc})"
                 ) from exc
-            # [E-GÖZ1-1 / E-GÖZ2-1] Geliştirmede düşülür ama GÖRÜNÜR:
-            # kritik seviye log + degraded_mode bayrağı (sessiz körlük yok).
             logger.error(
-                "[%s] Redis bus import edilemedi — fallback in-memory moduna düşüldü "
-                "(degraded_mode=True): %s",
-                agent_id, exc,
+                "DEGRADED_MODE: Redis bus import edilemedi — in-memory fallback "
+                "devrede (yalnızca log modu, dağıtık DEĞİL): %s",
+                exc,
             )
             degraded_mode = True
             init_redis_bus = None  # type: ignore[assignment]
@@ -232,82 +237,87 @@ async def run_worker(
         if init_redis_bus is not None:
             try:
                 bus = await init_redis_bus(REDIS_URL)
-                redis_link = getattr(bus, "connection_state", lambda: "unknown")() == "redis_bus"
+                redis_link = getattr(bus, "connection_state", lambda: "unknown")() == "connected"
                 logger.info("[%s] Redis veri yolu kuruldu: %s", agent_id, REDIS_URL)
             except Exception as exc:  # noqa: BLE001 - işaretçi: Redis yoksa da yaşamalı
-                if _is_production():
-                    # [E-GÖZ3-2] Üretimde bağlantı yoksa fallback in-memory yasak.
+                if _production_mode():
+                    logger.error(
+                        "PRODUCTION: Redis kurulamadı — in-memory fallback YASAK "
+                        "(dağıtık mimari korunmalı): %s",
+                        exc,
+                        exc_info=True,
+                    )
                     raise RuntimeError(
-                        "Redis veri yoluna bağlanılamadı (production) — "
-                        f"fallback in-memory yasak: {exc}"
+                        f"PRODUCTION_REQUIRES_REDIS: bağlantı kurulamadı ({exc})"
                     ) from exc
-                # [E-GÖZ2-1] in-memory fallback: kritik log + degraded_mode bayrağı.
                 logger.error(
-                    "[%s] Redis kurulamadı — in-memory fallback (degraded_mode=True): %s",
-                    agent_id, exc,
+                    "DEGRADED_MODE: Redis kurulamadı — in-memory fallback devrede "
+                    "(yalnızca log modu, dağıtık DEĞİL): %s",
+                    exc,
                 )
                 degraded_mode = True
                 redis_link = False
 
     if bus is None:
-        # Bellek-içi yedek: mesajlar yalnızca loglanır. İşaretçi yine de
-        # canlılığını loglardan belli eder; asla durum uydurmaz.
+        # Bellek-içi yedek (yalnız GELİŞTİRME): mesajlar yalnızca loglanır.
+        # İşaretçi yine de canlılığını loglardan belli eder; asla durum uydurmaz.
         class _LogOnlyBus:
             async def publish(self, channel: str, message: Dict[str, Any]) -> int:
                 logger.info("[%s] beacon(%s): %s", agent_id, channel, message)
                 return 0
 
         bus = _LogOnlyBus()
+        degraded_mode = True
         if redis_link is None:
             redis_link = False
 
+    # Ölçülen durum: Redis yolunda değilsek dağıtık moddan düşüldÜ demektir.
+    if degraded_mode is None:
+        degraded_mode = redis_link is not True
+
     logger.info(
-        "[%s] canlılık işaretçisi başladı (rol=%s, analiz_yürütmez=True)", agent_id, BEACON_ROLE
+        "[%s] canlılık işaretçisi başladı (rol=%s, analiz_yürütmez=True, degraded_mode=%s)",
+        agent_id,
+        BEACON_ROLE,
+        degraded_mode,
     )
 
     beats = 0
     try:
         while max_heartbeats is None or beats < max_heartbeats:
             backend_link = await probe_backend(backend_url) if backend_url else None
-            # [AUDIT 2026-10-08] Bağlantı KOPTUYSA her vuruşta yeniden ölçülür:
-            # redis_link bir kez hesaplanıp sabit kalmaz — sessiz düşüş
-            # (bağlantı kopar, bayrak hâlâ "true" der) ortadan kalkar.
-            state_fn = getattr(bus, "connection_state", None)
-            if callable(state_fn):
-                redis_link = state_fn() == "redis_bus"
-                if not redis_link:
-                    degraded_mode = True
-            try:
-                message = await publish_liveness(
-                    bus, agent_id, alive=True,
-                    redis_link=redis_link, backend_link=backend_link,
-                    degraded_mode=degraded_mode,
-                )
-            except Exception as exc:
-                # Yayın patarsa işaretçi YAŞAR (canlılık logla sürer) ama bu
-                # sessizce olmaz: uyarı izi + bağlantı durumu düşürülür.
-                logger.warning("[%s] canlılık yayını başarısız: %s", agent_id, exc)
-                redis_link = False
-                degraded_mode = True
-                message = build_liveness_message(
-                    agent_id, alive=True, redis_link=redis_link,
-                    backend_link=backend_link, degraded_mode=degraded_mode,
-                )
+            message = await publish_liveness(
+                bus,
+                agent_id,
+                alive=True,
+                redis_link=redis_link,
+                backend_link=backend_link,
+                degraded_mode=degraded_mode,
+            )
             logger.debug("[%s] canlılık yayınlandı: %s", agent_id, message)
             beats += 1
             if max_heartbeats is not None and beats >= max_heartbeats:
                 break
             await asyncio.sleep(heartbeat_interval)
     except asyncio.CancelledError:
+        # [AUDIT E-GÖZ1-6] Kapanış izi: son canlılık YAYINLANAMAZSA hata
+        # görünür seviyede kaydedilir — sessiz `except: pass` YOKTUR.
         logger.info("[%s] işaretçi durduruluyor", agent_id)
         try:
             await publish_liveness(
-                bus, agent_id, alive=False, redis_link=redis_link, backend_link=None,
+                bus,
+                agent_id,
+                alive=False,
+                redis_link=redis_link,
+                backend_link=None,
                 degraded_mode=degraded_mode,
             )
         except Exception as exc:  # noqa: BLE001 - kapanışta yayın başarısız olabilir
-            logger.warning(
-                "[run_worker] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+            logger.error(
+                "[%s] KAPANIŞ İZİ YAYINLANAMADI (son durum operatörden gizli kalmaz): %s",
+                agent_id,
+                exc,
+                exc_info=True,
             )
         raise
     finally:
@@ -320,18 +330,8 @@ def main() -> None:
     )
     parser.add_argument("--agent-id", default=AGENT_ID, help="Agent ID (mirror_truth vb.)")
     parser.add_argument("--redis-url", default=REDIS_URL, help="Redis URL")
-    # [AUDIT 2026-10-08] Varsayılan env'den: publication aralığı tek yerden
-    # (PINEAL_AGENT_HEARTBEAT_INTERVAL) ayarlanır — API tarafındaki staleness
-    # eşiği bu aynı değere bağlanır (sabit 30 yerine dinamik bağ).
-    try:
-        _default_interval = float(os.getenv("PINEAL_AGENT_HEARTBEAT_INTERVAL", "30"))
-    except (TypeError, ValueError):
-        _default_interval = 30.0
-    if _default_interval <= 0:
-        _default_interval = 30.0
     parser.add_argument(
-        "--heartbeat-interval", type=float, default=_default_interval,
-        help="Canlılık yayın aralığı (saniye; varsayılan PINEAL_AGENT_HEARTBEAT_INTERVAL veya 30)"
+        "--heartbeat-interval", type=float, default=30.0, help="Canlılık yayın aralığı (saniye)"
     )
     parser.add_argument("--backend-url", default=BACKEND_URL, help="Sağlık sondası için backend adresi")
     args = parser.parse_args()
@@ -349,10 +349,8 @@ def main() -> None:
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:
             loop.add_signal_handler(sig, lambda: loop.stop())
-        except NotImplementedError as exc:
-            logger.debug(
-                "[main] NotImplementedError — atlandı (beklenen/opsiyonel, iz bırakıldı): %s", exc
-            )
+        except NotImplementedError:
+            pass  # Windows
 
     try:
         loop.run_until_complete(

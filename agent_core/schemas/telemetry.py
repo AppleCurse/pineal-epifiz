@@ -1,3 +1,16 @@
+"""Telemetri olay şeması — arayüze akan olayların TİPLİ sözleşmesi.
+
+Olaylar: görev başladı/bitti/iptal edildi, adım tamamlandı, hata-durma,
+insan onayı bekleniyor, frekans güncellemesi ve genel log. Her olay ``Severity``
+ve ``AgentEventType`` taşır; ``TelemetryEvent`` WS çerçevesinin zarfıdır.
+
+Bu şema istemci sözleşmesidir: alan adları/kodlar (ör. ``HALTED_*``,
+``AWAITING_HUMAN``) frontend ve testlerle kilitlidir; arayüzde görünen her
+durum gerçek bir olaydan gelmek zorundadır (uydurma durum yasağı).
+
+Tüketici: ``backend/routes/websocket.py``, ``frontend/src/lib/telemetry.ts``.
+"""
+
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional, List, Union
