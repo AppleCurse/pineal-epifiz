@@ -28,6 +28,10 @@ Dürüstlük sözleşmesi (ev kuralları, değişmedi):
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import asyncio
 import json
 import os
@@ -286,8 +290,10 @@ async def scan_company(
             try:
                 proc.kill()
                 await proc.wait()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "[scan_company] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+                )
             return HarvesterScan(
                 available=False, reason="timeout", domain=clean, sources=src,
                 duration_ms=int((time.monotonic() - started) * 1000),

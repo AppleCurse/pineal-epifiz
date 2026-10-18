@@ -183,6 +183,7 @@ async def scan_email(
     zaman aşımında 'timeout', tüm modüller hatalıysa 'provider_errors'.
     `modules` yalnız test/çağıran Overrides içindir (None => gerçek keşif).
     """
+
     if not is_enabled():
         return HoleheScanResult(requested_email=email, available=False,
                                 reason="disabled")

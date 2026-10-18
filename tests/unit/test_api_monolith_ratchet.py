@@ -55,12 +55,21 @@ MEASURED_AFTER_THIRD_SPLIT = 5908
 #: `backend/services/web_research.py` modülüne taşındı → 5.805 satır.
 MEASURED_AFTER_FOURTH_SPLIT = 5805
 
+#: [API-BÖLME 5 · 2026-10-18] Koşu kaydı (AgentRun) serileştiricisi
+#: `backend/services/run_entries.py` modülüne taşındı (iki saf dönüştürücü:
+#: `_run_display_fields` + `_serialize_run_entry`) → 5.772 satır. Gerekçe:
+#: PR #145 (main'e birleşti) api.py'ye ~40 satır ekledi; canlı kontrol paneli
+#: de WS'e alan eklemeyi gerektirdi. Kural işletildi: **tavan yükseltilmedi**,
+#: satır yerine MODÜL çıkarıldı ve tavan DÜŞÜRÜLDÜ.
+MEASURED_AFTER_FIFTH_SPLIT = 5772
+
 #: Tavan. Yeni uç nokta eklemek yerine MODÜL ÇIKAR. Tavana dayanınca
 #: `docs/reports/API_MONOLITH_SPLIT_PLAN.md` sırasındaki bir sonraki
 #: düşük-bağımlılıklı alanı taşı ve bu sayıyı DÜŞÜR.
 #: Üçüncü bölmeden sonra ölçülen değere indirildi (ratchet: geri çıkış yok).
 #: [API-BÖLME 4] Dördüncü bölmeden sonra 5.805'e indirildi.
-MAX_LINES = 5805
+#: [API-BÖLME 5] Beşinci bölmeden sonra 5.772'ye indirildi.
+MAX_LINES = 5772
 
 
 def _line_count() -> int:
@@ -244,6 +253,34 @@ def test_api_shrank_after_fourth_split():
         f"backend/api.py {current} satır — dördüncü bölme tavanı "
         f"{MEASURED_AFTER_FOURTH_SPLIT}"
     )
+
+
+def test_api_shrank_after_fifth_split():
+    """[API-BÖLME 5] Ölçülebilir ilerleme: tavan 5.772'ye indi.
+
+    Beşinci bölme: koşu kaydı (AgentRun) serileştiricisi
+    `backend/services/run_entries.py` modülüne taşındı; tavan YÜKSELTİLMEDİ.
+    """
+    current = _line_count()
+    assert current <= MEASURED_AFTER_FIFTH_SPLIT, (
+        f"backend/api.py {current} satır — beşinci bölme tavanı "
+        f"{MEASURED_AFTER_FIFTH_SPLIT}"
+    )
+
+
+def test_run_entry_serializer_lives_in_its_own_module():
+    """[API-BÖLME 5] Gövde hem taşındı hem api.py içinde kalmadı (iki kopya yok)."""
+    module = REPO_ROOT / "backend" / "services" / "run_entries.py"
+    assert module.is_file(), "backend/services/run_entries.py yok"
+    api_text = API.read_text(encoding="utf-8")
+    assert "def _serialize_run_entry(" not in api_text, (
+        "serileştirici api.py içinde yeniden tanımlanmış — iki kopya birbirinden sapar"
+    )
+    assert "def _run_display_fields(" not in api_text, (
+        "görüntü alanları türeticisi api.py içinde yeniden tanımlanmış"
+    )
+    # Dış sözleşme: eski adresler yeniden ihraç edilir.
+    assert "serialize_run_entry as _serialize_run_entry" in api_text
 
 
 def test_size_ceiling_is_documented():

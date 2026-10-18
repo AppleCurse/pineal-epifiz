@@ -357,8 +357,10 @@ async def scrape_instagram(
                 _dated = sum(1 for p in _posts if p.taken_at is not None)
                 _coverage = ig_scraper.temporal_coverage(ig_data)
                 emit("INFO", f"SCRAPER TEMPORAL: {_dated}/{len(_posts)} post tarihli (kapsama {_coverage:.2f})")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "[scrape_instagram] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+                )
 
             # [024]/[025]/[026]: hizalı gerçek alanlar; sentetik post ÜRETİLMEZ.
             return ig_target_profile_update(ig_data)

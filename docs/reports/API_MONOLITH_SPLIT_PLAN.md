@@ -102,6 +102,28 @@ Bölme, **en iyi test edilmiş ve en az bağımlılığı olan** katmanla başla
 
 ---
 
+### 2.5 Beşinci bölme — koşu kaydı (AgentRun) serileştiricisi (2026-10-18)
+
+**Gerekçe:** PR #145 (`main`'e birleşti) `api.py`'ye ~40 satır ekledi (sessiz
+istisna yutmayı kaldıran log satırları). Aynı dönemde canlı kontrol paneli
+işi, WS `snapshot_update` payload'ına gerçek alanlar (`input_summary`,
+`evidence_ids`, `responsibility`, `decision_grade`, `warnings`, `error_code`)
+eklemeyi gerektirdi. Tavan **yükseltilemezdi** (5.805).
+
+**Yapılan:** İki saf dönüştürücü — `_run_display_fields()` ve
+`_serialize_run_entry()` — `backend/services/run_entries.py` modülüne taşındı.
+Bağımlılık yalnız `agent_core.utils.security.redact_structure`; uygulama
+durumuna (`app.state`) dokunulmuyor. Dış sözleşme **bozulmadı**: `backend.api`
+içinden `_run_display_fields` / `_serialize_run_entry` adresleriyle yeniden
+ihraç ediliyor (`tests/unit/test_run_display_contract.py` bu adresleri
+kullanıyor).
+
+* Tavan (`MAX_LINES`) 5.805 → **5.772** olarak DÜŞÜRÜLDÜ (ratchet: geri çıkış
+  yok). Ölçülebilir ilerleme testi eklendi:
+  `test_api_shrank_after_fifth_split` +
+  `test_run_entry_serializer_lives_in_its_own_module` (gövde hem taşındı hem
+  `api.py` içinde kalmadı → iki kopya yok).
+
 ## 3. Uç nokta envanteri (ölçülen dağılım)
 
 Aşağıdaki tablo, gerçek `@app.*` dekoratörlerinden sayılmıştır. Bölme

@@ -14,6 +14,10 @@ taşıma sırası, canlı çağrı kapısı (LIVE_LLM_E2E) ve bütçe/spend saya
 için de geçerlidir (M-2 düzeltmesi).
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import sys
 import os
 import asyncio
@@ -24,8 +28,10 @@ if sys.platform == "win32":
     try:
         sys.stdout.reconfigure(encoding="utf-8")
         sys.stderr.reconfigure(encoding="utf-8")
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning(
+            "[<modül>] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+        )
 
 from agent_core.agents.lilith_growth import LilithGrowthAgent
 
@@ -71,8 +77,10 @@ def resolve_credentials(model: str) -> tuple[str | None, str | None, str]:
     try:
         from dotenv import load_dotenv
         load_dotenv()
-    except ImportError:
-        pass
+    except ImportError as exc:
+        logger.debug(
+            "[resolve_credentials] ImportError — atlandı (beklenen/opsiyonel, iz bırakıldı): %s", exc
+        )
 
     base_url = os.getenv("OPENROUTER_BASE_URL") or os.getenv("OPENAI_BASE_URL")
     api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("NOUS_API_KEY") or os.getenv("OPENAI_API_KEY")
@@ -90,8 +98,10 @@ def resolve_credentials(model: str) -> tuple[str | None, str | None, str]:
                         api_key = _or_entry.get("api_key")
                     elif isinstance(_or_entry, str):
                         api_key = _or_entry
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "[resolve_credentials] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+            )
 
     if api_key and not base_url:
         if api_key.startswith("sk-nous-"):
