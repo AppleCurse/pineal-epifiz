@@ -79,7 +79,10 @@ class _LocalLLMHandler(BaseHTTPRequestHandler):
         try:
             self.wfile.write(encoded)
         except BrokenPipeError:
-            pass
+            # Test sunucusu: istemci erken kapattı — beklenen, debug izi bırakılır.
+            import logging
+
+            logging.getLogger(__name__).debug("test http sunucusu: istemci erken kapattı (BrokenPipe)")
 
     def log_message(self, _format, *_args):
         return

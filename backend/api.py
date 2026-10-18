@@ -151,6 +151,16 @@ except ImportError:
     init_tracker = None
     AGENT_DEFINITIONS = []
 
+# [AUDIT 2026-10-08] İşaretçi (beacon) filosu canlılık hesabı + dinamik staleness
+# eşikleri `backend/agent_rack.py`'ye taşındı (api.py monolit tavanı, 6000 satır).
+# Buradan YENİDEN İHRAÇ edilir — mevcut kullanımlar değişmeden çalışır.
+from backend.agent_rack import (  # noqa: F401  # yeniden dışa aktarım
+    AGENT_HEARTBEAT_INTERVAL_S as _AGENT_HEARTBEAT_INTERVAL_S,
+    AGENT_STALE_MULTIPLIER as _AGENT_STALE_MULTIPLIER,
+    beacon_liveness as _beacon_liveness,
+    env_float as _env_float,
+)
+
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     try:
@@ -243,8 +253,10 @@ async def lifespan(application: FastAPI):
     try:
         if hasattr(application.state, 'redis_bus') and application.state.redis_bus:
             await application.state.redis_bus.disconnect()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning(
+            "[lifespan] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+        )
 
 # [AUDIT 2026-10-07 · Madde 2] Başlık sürümü BURAYA YAZILMIŞTI ("v3.0.0-rc.1")
 # ve VERSION dosyası 3.0.0-rc.2'ye çıktığında bayat kaldı: API, müşterilerine
@@ -1353,8 +1365,10 @@ def get_room(client_id: str) -> dict:
             app.state.rooms[client_id]["sender_task"] = loop.create_task(
                 _room_sender(app.state.rooms[client_id])
             )
-        except RuntimeError:
-            pass
+        except RuntimeError as exc:
+            # Beklenen yol: senkron bağlamda (event loop yok) oda kurulumu.
+            # Yutulmuyor — debug iziyle bırakılır.
+            logger.debug("[get_room] event loop yok (senkron bağlam), sender task kurulmadı: %s", exc)
     _prune_room_stale_state(app.state.rooms[client_id])  # [AUDIT R1]
     return app.state.rooms[client_id]
 
@@ -1535,8 +1549,10 @@ def _openai_streaming_response(
             if aclose is not None:
                 try:
                     await aclose()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning(
+                        "[event_source] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+                    )
         yield "data: [DONE]\n\n"
 
     plan = routed_stream.plan
@@ -2019,8 +2035,10 @@ def _prune_room_stale_state(room: dict) -> None:
     try:
         live = set((room.get("mission_tasks") or {}).keys())
         _lifecycle(room).sweep(now, live_task_ids=live)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning(
+            "[_prune_room_stale_state] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+        )
 
     # 2) active_tasks: terminal snapshot'lar retention dolunca düşer; sert
     # tavan aşımında EN ESKİ terminal (hepsi terminal değilse en eski kayıt)
@@ -2033,8 +2051,10 @@ def _prune_room_stale_state(room: dict) -> None:
         retention = 1800.0
         try:
             retention = _lifecycle(room).retention_seconds
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "[_prune_room_stale_state] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+            )
         for task_id in [
             t for t, snap in active.items()
             if _snapshot_status(snap) in _TERMINAL_PIPELINE_STATES
@@ -2133,8 +2153,10 @@ def _enqueue(client_id: str, item: tuple):
             try:
                 dropped_kind, _ = q.get_nowait()  # Explicit drop-oldest policy.
                 _record_queue_drop(room, dropped_kind)
-            except asyncio.QueueEmpty:
-                pass
+            except asyncio.QueueEmpty as exc:
+                logger.warning(
+                    "[_enqueue] beklenmeyen hata (QueueEmpty) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+                )
             try:
                 q.put_nowait(item)
             except asyncio.QueueFull:
@@ -2178,8 +2200,10 @@ async def _send_ws(room: dict, payload: str) -> None:
     for ws in list(ws_set):
         try:
             await asyncio.wait_for(ws.send_text(payload), timeout=_WS_SEND_TIMEOUT_S)
-        except Exception:
+        except Exception as exc:
             # Ölü/açık soket: odaya ait setten at; yayına diğerleriyle devam.
+            # Yutulmuyor — debug iziyle bırakılır (sessiz körleşme yok).
+            logger.debug("[_send_ws] soket gönderimi başarısız, setten atıldı: %s", exc)
             ws_set.discard(ws)
 
 async def _send_log(room: dict, payload: tuple):
@@ -3062,8 +3086,10 @@ async def api_initiate(req: InitiatePayload, request: Request):
         try:
             tracker = get_tracker()
             await tracker.set_all_wait()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "[api_initiate] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+            )
     mission = asyncio.create_task(run_mission(req, task_id))
     room["mission_tasks"][task_id] = mission
 
@@ -3269,10 +3295,12 @@ def _quarantine_learnings(lp: str, problem: str) -> Optional[str]:
         for name in backups[:-keep]:
             try:
                 os.remove(os.path.join(base, name))
-            except OSError:
-                pass
-    except OSError:
-        pass
+            except OSError as exc:
+                # Eski yedek temizliği: dosya zaten gone/erişilemez — debug izi.
+                logger.debug("[_quarantine_learnings] eski yedek silinemedi: %s -> %s", name, exc)
+    except OSError as exc:
+        # Listeleme/erişim hatası: karantina yine de üst katmana bildirilir.
+        logger.warning("[_quarantine_learnings] yedekler listelenemedi — iz bırakıldı: %s", exc, exc_info=True)
     return backup
 
 
@@ -3344,7 +3372,12 @@ async def api_agents_status():
         agents = tracker.get_status_list()
         state_fn = getattr(getattr(tracker, "redis_bus", None), "connection_state", None)
         source = state_fn() if callable(state_fn) else "in_memory"
-        return {"agents": agents, "source": source, "count": len(agents)}
+        return {
+            "agents": agents, "source": source, "count": len(agents),
+            # Çok-süreçli işaretçi filosu: sinyal kaybı (deaf/unreachable)
+            # AÇIKça yüzeye çıkar — son sinyalin yaşı ve dinamik eşik.
+            "beacon": await _beacon_liveness(getattr(app.state, "redis_bus", None)),
+        }
     except Exception as e:
         logger.warning(f"Agent status okuma hatasi: {e}")
         return {"agents": [], "source": "error", "error": str(e)[:100], "count": 0}
@@ -3373,8 +3406,10 @@ async def api_update_agent_status(agent_id: str, status: str, metadata: Optional
                 # Kuyruga ekle - dogrudan WS gonderimi
                 try:
                     await _send_ws(room, payload)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning(
+                        "[api_update_agent_status] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+                    )
         return {"status": "updated", "agent": result}
     except Exception as e:
         return JSONResponse({"error": {"code": "AGENT_UPDATE_FAILED", "message": str(e)[:200]}}, status_code=500)
@@ -3507,10 +3542,12 @@ def _check_vault_interlock(client_id: str) -> bool:
     try:
         room = get_room(client_id)
         vault = room["vault"]
-        if vault.get("or_key") or vault.get("ig_sessionid") or vault.get("x_cookie"):
-            return True
-        # Dosya kasası: VARLIK değil, GERÇEK anahtar malzemesi aranır.
-        return _vault_bears_key_material(_load_vault())
+        unlocked = bool(
+            vault.get("or_key") or vault.get("ig_sessionid") or vault.get("x_cookie")
+        )
+        if not unlocked:
+            # Dosya kasası: VARLIK değil, GERÇEK anahtar malzemesi aranır.
+            unlocked = _vault_bears_key_material(_load_vault())
     except Exception:
         # Fail-closed (dar taraf: KİLİTLİ) — ama arıza YUTULMAZ: mandalın
         # neden okunamadığı logda görünür, yoksa "kasa kilitli" ile "kasa
@@ -3519,7 +3556,12 @@ def _check_vault_interlock(client_id: str) -> bool:
             "KASA MANDALI DEĞERLENDİRİLEMEDİ — dar taraf: KİLİTLİ (client_id=%s)",
             client_id, exc_info=True,
         )
-        return False
+        unlocked = False
+    # [E-GÖZ2-3 · YAPRAK HAT] Karar, `_require_vault_open` içinde yaprak kasa
+    # kapısına (agent_core.scraper.vault_gate) bildirilir — sınır kapısı
+    # atlanırsa yaprak katmanı ikinci savunmadır. Kararın tek sahibi
+    # `_check_vault_interlock`'tür; yaprak uydurmaz.
+    return unlocked
 
 
 app.include_router(
@@ -4134,7 +4176,7 @@ async def holehe_scan(payload: HoleheScanPayload):
         return locked
     from agent_core.services.holehe_scanner import scan_email
     result = await scan_email(
-        payload.email, limit=payload.limit, site_timeout=payload.timeout
+        payload.email, limit=payload.limit, site_timeout=payload.timeout,
     )
     if (unavailable := _engine_unavailable_response(result)) is not None:
         return unavailable

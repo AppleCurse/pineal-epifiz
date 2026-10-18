@@ -327,13 +327,13 @@ if __name__ == "__main__":
         assert_executable("unknown-model@unknown-provider")
         sys.exit("MUST DENY unknown")
     except UnknownModelDenied:
-        pass
+        logger.debug("[self-test] beklenen red doğrulandı: UnknownModelDenied")  # kasıtlı red
 
     try:
         assert_executable("openai/gpt-5.6-luna@nous-research")
         sys.exit("paid must DENY by default")
     except PaidEscalationDenied:
-        pass
+        logger.debug("[self-test] beklenen red doğrulandı: PaidEscalationDenied")  # kasıtlı red
 
     # happy paths
     assert assert_executable("openai/gpt-oss-120b", "groq").is_free()
@@ -344,7 +344,7 @@ if __name__ == "__main__":
         assert_known_model("laguna:free", "nous-research")
         sys.exit("forbidden alias must DENY")
     except UnknownModelDenied:
-        pass
+        logger.debug("[self-test] beklenen red doğrulandı: yasaklı takma ad")  # kasıtlı red
 
     # no paid leakage
     for keys in executable_task_groups(allow_paid=False).values():

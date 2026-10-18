@@ -15,6 +15,10 @@ gizlenmez). Tespit ayrı, çeviri ayrı dürüstlük taşır.
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import asyncio
 import os
 import shutil
@@ -187,8 +191,10 @@ async def _run_local_endpoint(text: str, finding: LanguageFinding, target: str, 
         if isinstance(data, dict):
             candidate = data.get("text") or data.get("translation") or ""
             return str(candidate).strip(), ""
-    except ValueError:
-        pass
+    except ValueError as exc:
+        logger.warning(
+            "[_run_local_endpoint] beklenmeyen hata (ValueError) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+        )
     return body, ""
 
 

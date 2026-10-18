@@ -4,6 +4,10 @@ Her OpenAI-uyumlu sağlayıcının /models listesini çeker; katalog (provider_c
 ve final_routing_policy.ROUTES ile karşılaştırır. Yalnız OKUMA — LLM çağrısı yok.
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import json
 import os
 import sys
@@ -13,8 +17,10 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning(
+            "[<modül>] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+        )
 
 import httpx
 

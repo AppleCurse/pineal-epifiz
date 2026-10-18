@@ -30,6 +30,10 @@ Yetişkin (18+) için: bu modül HİÇBİR ENGEL oluşturmaz. Sistemin tek kırm
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import hashlib
 import json
 import os
@@ -256,7 +260,9 @@ class MinorCaseLedger:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with self.path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
-        except OSError:
+        except OSError as exc:
             # Kayıt yazılamadı diye kilit gevşetilmez; ama koşu da patlamaz.
-            pass
+            logger.warning(
+                "[record] beklenmeyen hata (OSError) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+            )
         return entry
