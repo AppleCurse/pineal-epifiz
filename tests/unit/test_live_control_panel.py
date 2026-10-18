@@ -578,7 +578,7 @@ def test_verify_command_loop_script_reports_unreachable_api():
             "--base-url", "http://127.0.0.1:9",
             "--timeout", "3",
         ],
-        capture_output=True, text=True, timeout=120,
+        capture_output=True, text=True, encoding="utf-8", timeout=120,
     )
     assert proc.returncode == 2, (
         f"erişilemeyen API'de rc=2 bekleniyordu, rc={proc.returncode}\n{proc.stdout}"

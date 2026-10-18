@@ -370,6 +370,9 @@ def verify(base_url: str, client_id: str, url: str, message: str, timeout: int) 
 
 
 def main() -> int:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description="Canlı komut döngüsü doğrulayıcı")
     parser.add_argument("--base-url", default=os.getenv("PINEAL_BASE_URL", "http://127.0.0.1:8000"))
     parser.add_argument("--client-id", default=f"verify_{int(time.time())}")

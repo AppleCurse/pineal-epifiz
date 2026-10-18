@@ -96,6 +96,37 @@ def test_facebook_profile_url_routes_to_socid():
     assert route.runnable is True
 
 
+@pytest.mark.parametrize(
+    ("url", "expected_handle"),
+    [
+        ("https://www.tiktok.com/@hedef", "hedef"),
+        ("https://www.youtube.com/@hedef", "hedef"),
+        ("https://www.threads.net/@hedef", "hedef"),
+        ("https://github.com/hedef", "hedef"),
+        ("https://www.reddit.com/user/hedef", "hedef"),
+        ("https://www.pinterest.com/hedef/", "hedef"),
+        ("https://www.twitch.tv/hedef", "hedef"),
+        ("https://t.me/hedef", "hedef"),
+        ("https://vk.com/hedef", "hedef"),
+        ("https://medium.com/@hedef", "hedef"),
+        ("https://www.snapchat.com/add/hedef", "hedef"),
+        ("https://steamcommunity.com/id/hedef", "hedef"),
+        ("https://linktr.ee/hedef", "hedef"),
+        ("https://www.behance.net/hedef", "hedef"),
+        ("https://dribbble.com/hedef", "hedef"),
+    ],
+)
+def test_multi_platform_social_urls_route_to_socid(url: str, expected_handle: str):
+    """Tüm ana sosyal medya platformları `extractor.identity.socid` omurgasına bağlanır."""
+    from agent_core.aspasia.interface import _TARGET_RE
+
+    route = classify_url(url)
+    assert route.runnable is True, f"{url} runnable değil"
+    assert route.capability_id == CAPABILITY_SOCID
+    assert route.handle == expected_handle
+    assert _TARGET_RE.match(url), f"Aspasia _TARGET_RE {url} adresini reddetti"
+
+
 def test_socid_route_carries_the_profile_url():
     """socid profil SAYFASINI ister → subject URL olmalı (handle değil)."""
     route = classify_url("https://www.linkedin.com/in/hedef")

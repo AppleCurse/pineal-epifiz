@@ -477,6 +477,17 @@ def _is_supported_target(url: str) -> bool:
     from agent_core.services.profile_router import classify_url
 
     return classify_url(url).runnable
+# Hedef dogrulama: desteklenen tum sosyal medya / profil platformlarinin gercek host'lari.
+# (Ornek-uydurmama doktrini [009]: placeholder veri ve lookalike alan adlari ASLA gecmez.)
+_TARGET_RE = re.compile(
+    r"^https://([a-z0-9-]+\.)?("
+    r"instagram\.com|instagr\.am|x\.com|twitter\.com|linkedin\.com|"
+    r"facebook\.com|fb\.com|tiktok\.com|youtube\.com|threads\.net|"
+    r"github\.com|reddit\.com|pinterest\.com|twitch\.tv|t\.me|"
+    r"telegram\.me|vk\.com|medium\.com|snapchat\.com|steamcommunity\.com|"
+    r"linktr\.ee|behance\.net|dribbble\.com"
+    r")(/[A-Za-z0-9._@%-]{1,64}){1,2}/?$"
+)
 
 _GOAL_DOC = "\n".join(f'- "{g}": {", ".join(agents)}' for g, agents in GOAL_FOCUS.items())
 
@@ -486,6 +497,9 @@ _INTENT_INSTRUCTION = (
     "(Instagram, X/Twitter, LinkedIn, Facebook, TikTok, YouTube, Threads, "
     "GitHub, Reddit, Pinterest, Twitch, Telegram, Medium, VK vb.) "
     'inceletmek istiyor ve mesajda acik bir profil URL\'i var -> target_url alanina BIREBIR URL yaz.\n'
+    '- "run_profile_analysis": kullanici belirli bir sosyal medya profilini (Instagram, X/Twitter, '
+    'LinkedIn, Facebook, TikTok, YouTube, Threads, GitHub, Reddit, Telegram vb.) inceletmek istiyor '
+    've mesajda acik bir profil URL\'i var -> target_url alanina BIREBIR URL yaz.\n'
     '- "explain_status": kullanici sistem/ajan/analiz durumu hakkinda bilgi istiyor.\n'
     '- "none": hicbiri.\n'
     "URL mesajda ACIKCA yoksa uydurma; intent='none' dondur.\n\n"
@@ -578,6 +592,8 @@ class AspasiaCommandGateway:
         # dispatch'e de normalize URL gider (asagi akis ayni hedefi gorur).
         url = _normalize_target_url(intent.target_url)
         if not _is_supported_target(url):
+        from agent_core.services.profile_router import classify_url
+        if not _TARGET_RE.match(url) or not classify_url(url).runnable:
             self._record(command_id=command_id, status="rejected", intent=intent.intent,
                          reason="unsupported_or_missing_target")
             return AspasiaCommandResult(command_id=command_id, accepted=False,

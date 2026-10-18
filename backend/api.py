@@ -2538,8 +2538,8 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                 )
 
         if req.url and (effective_type == "cross" or (effective_type == "x" and not x_profile)):
-            from agent_core.services.platform_registry import extract_x_username
-            clean_u = extract_x_username(req.url) or (req.url.split('/')[-1] if '/' in req.url else req.url).lstrip('@').strip()
+            from agent_core.services.profile_router import classify_url
+            clean_u = classify_url(req.url).handle or (req.url.rstrip('/').split('/')[-1] if '/' in req.url else req.url).lstrip('@').strip()
             if effective_type == "x":
                 broadcast_log(client_id, "INFO", f"UPLINK: Hedefe sızılıyor -> {req.url} [X · açık kaynak dosyası]")
             else:
@@ -2603,13 +2603,12 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                 # alanına YAZILMAZ — kanıt tipi `search_snippet` olarak korunur.
                 snippets = build_snippets(ordered_results)
 
-                # Tespit edilen doğrudan sosyal medya profilleri
-                found_profiles = []
+                # Tespit edilen doğrudan sosyal medya profilleri (girilen URL + bulunanlar)
+                found_profiles = [req.url] if classify_url(req.url).runnable else []
                 for r in ordered_results:
                     u = r.source_url or ""
-                    if any(dom in u.lower() for dom in ("instagram.com/", "twitter.com/", "x.com/", "linkedin.com/in/", "linkedin.com/pub/", "facebook.com/")):
-                        if u not in found_profiles:
-                            found_profiles.append(u)
+                    if classify_url(u).runnable and u not in found_profiles:
+                        found_profiles.append(u)
 
                 if found_profiles:
                     broadcast_log(client_id, "INFO", f"HEDEF PROFİLLERİ TESPİT EDİLDİ: {', '.join(found_profiles[:3])}")
