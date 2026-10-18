@@ -72,7 +72,7 @@ RUNNER_NAMES = {"run_capability", "execute_capability", "run_capability_async"}
 
 
 def rel(p: pathlib.Path) -> str:
-    return str(p.relative_to(ROOT))
+    return p.relative_to(ROOT).as_posix()
 
 
 def parse(p: pathlib.Path):
