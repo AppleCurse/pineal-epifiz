@@ -10,6 +10,9 @@
   import { uplinkState } from './lib/telemetry';
   import AtlasPinealCockpit from './components/AtlasPinealCockpit.svelte';
   import TacticalWarRoom from './components/TacticalWarRoom.svelte';
+  // [P6 · CANLI PANEL] Canlı kontrol paneli: ajan hattı, anlık kanal, muhakeme,
+  // kanıt akışı ve çağrı izi — hepsi MEVCUT SoT'tan (WS + /api/aspasia/state).
+  import LiveControlPanel from './components/LiveControlPanel.svelte';
   import NeuralTelemetryBoard from './components/visualizers/NeuralTelemetryBoard.svelte';
   import SupportPanel from './components/SupportPanel.svelte';
 
@@ -433,9 +436,29 @@
 <main class="fullscreen-cockpit-viewport">
   {#if $activeViewMode === 'warroom'}
     <TacticalWarRoom />
+  {:else if $activeViewMode === 'control'}
+    <LiveControlPanel />
   {:else}
     <AtlasPinealCockpit />
   {/if}
+
+  <!-- [P6] Görünüm seçici: Muharebe Masası · Kontrol Paneli · Kokpit.
+       Panel kendi içinde de bu düğmeleri taşır; buradaki seçici her görünümden
+       erişilebilir olsun diye vardır. -->
+  <nav class="view-switcher" aria-label="Görünüm seçici">
+    <button
+      class:is-active={$activeViewMode === 'warroom'}
+      on:click={() => { activeViewMode.set('warroom'); localStorage.setItem('pineal_view_mode', 'warroom'); }}
+    >MUHAREBE MASASI</button>
+    <button
+      class:is-active={$activeViewMode === 'control'}
+      on:click={() => { activeViewMode.set('control'); localStorage.setItem('pineal_view_mode', 'control'); }}
+    >KONTROL PANELİ</button>
+    <button
+      class:is-active={$activeViewMode === 'cockpit'}
+      on:click={() => { activeViewMode.set('cockpit'); localStorage.setItem('pineal_view_mode', 'cockpit'); }}
+    >KOKPİT</button>
+  </nav>
 
   <!--
     Adli Telemetri & Sözleşme Köprüsü — ARTIK GERÇEKTEN GÖRÜNÜR.
@@ -467,6 +490,29 @@
 </main>
 
 <style>
+  .view-switcher {
+    position: fixed;
+    right: 14px;
+    bottom: 14px;
+    display: flex;
+    gap: 6px;
+    z-index: 40;
+  }
+  .view-switcher button {
+    background: rgba(2, 6, 3, 0.85);
+    border: 1px solid rgba(212, 175, 55, 0.5);
+    color: var(--gold, #d4af37);
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 10px;
+    letter-spacing: 1px;
+    padding: 4px 8px;
+    cursor: pointer;
+  }
+  .view-switcher button.is-active {
+    background: rgba(212, 175, 55, 0.18);
+    color: var(--text-phosphor, #38ef7d);
+  }
+
   .fullscreen-cockpit-viewport {
     width: 100vw;
     height: 100vh;

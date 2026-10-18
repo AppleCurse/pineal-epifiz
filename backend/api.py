@@ -89,6 +89,14 @@ from agent_core.services.task_lifecycle import TaskLifecycleRegistry
 from agent_core.services.token_optimizer import OptimizationPolicy, TokenOptimizer
 from agent_core.services.unified_router import RoutingStrategy
 from agent_core.shadow.shadow_executor import ShadowExecutor
+# [API-BÖLME 5 · 2026-10-18] Koşu kaydı serileştiricisi ayrı modüle taşındı
+# (tavan kuralı: satır eklemek yerine MODÜL ÇIKAR). Dış sözleşme bozulmaz —
+# aşağıdaki iki adres `backend.api` üzerinden yeniden ihraç edilir.
+from backend.services.run_entries import (  # noqa: F401  # yeniden dışa aktarım
+    run_display_fields as _run_display_fields,
+    serialize_run_entry as _serialize_run_entry,
+)
+
 from agent_core.utils.security import (
     SecurityConfigurationError,
     principal_of_request,
@@ -1932,37 +1940,6 @@ def _finalize_finished_missions(room: dict) -> None:
             finished.discard(task_id)
 
 
-def _run_display_fields(run) -> dict:
-    """(Şeffaflık düzeltmesi, F2) AgentRun'dan CANLI model/provider gösterimi türetir.
-
-    Backend ``AgentRun`` şeması ``model``/``via`` ÜRETMEZ; bir ajanın gerçekten
-    çağırdığı model/provider, o ajanın ``output_summary._provenance`` kaydında
-    yaşar (kaynak: yakalanan çağrı kayıtlarının son başarılısı). UI "ACTIVE
-    MODEL/VIA" çubuğu bu alanlardan beslenir; provenance yoksa/fallback/
-    deterministik ise değerler açıkça söyler — statik fallback'e sessiz düşme
-    yerine (üretici yorumuyla birebir).
-    """
-    prov = (getattr(run, "output_summary", None) or {}).get("_provenance") or {}
-    source = prov.get("source")
-    model = prov.get("model")
-    provider = prov.get("provider")
-    if source in ("llm", "llm_cache"):
-        return {"model": model, "via": provider or "openrouter", "run_source": source}
-    if source == "llm_error":
-        return {
-            "model": model,
-            "via": (provider or "llm") + " (hata)",
-            "run_source": source,
-        }
-    if source == "deterministic":
-        return {"model": None, "via": "deterministik-motor", "run_source": source}
-    if source == "fallback":
-        reason = prov.get("fallback_reason")
-        suffix = f":{reason}" if reason else ""
-        return {"model": None, "via": "fallback" + suffix, "run_source": source}
-    return {"model": None, "via": None, "run_source": source or None}
-
-
 # [BOSS-5] Deterministik 7-sütun ve psikodinamik derinlik çıktıları hesaplanıyordu
 # ama hiçbir WS payload'ına girmiyordu (ne snapshot ne result): UI'de o veriyi
 # gösterecek bileşen (PillarFeed) hiçbir zaman veri alamıyordu. `pillar_bundle`
@@ -1992,31 +1969,6 @@ def _json_field(val: Any) -> Any:
     if hasattr(val, "model_dump"):
         return val.model_dump(mode="json")
     return val
-
-
-def _serialize_run_entry(run, *, with_timestamps: bool) -> dict:
-    """AgentRun serileştirmesi — tek SoT (iki broadcast noktası da bunu çağırır)."""
-    entry = {
-        "status": getattr(run, "status", None),
-        "confidence": getattr(run, "confidence", None),
-        "error_message": getattr(run, "error_message", None),
-        "call_ids": list(getattr(run, "call_ids", []) or []),
-        "output_summary": redact_structure(
-            getattr(run, "output_summary", None) or {}
-        ),
-        "provenance": redact_structure(
-            (getattr(run, "output_summary", None) or {}).get("_provenance")
-        ),
-    }
-    if with_timestamps:
-        entry["started_at"] = (
-            run.started_at.isoformat() if getattr(run, "started_at", None) else None
-        )
-        entry["completed_at"] = (
-            run.completed_at.isoformat() if getattr(run, "completed_at", None) else None
-        )
-    entry.update(_run_display_fields(run))
-    return entry
 
 
 def _prune_room_stale_state(room: dict) -> None:
@@ -2277,6 +2229,13 @@ async def _send_snapshot(room: dict, snapshot: Any):
         "completed_agents": snapshot.completed_agents,
         "halted_reason": getattr(snapshot, "halted_reason", None),
         "resonance_score": getattr(snapshot, "resonance_score", None),
+        # [P6 · CANLI PANEL] Kanal defteri ANLIK yayınlanır. Veri snapshot
+        # nesnesinde ZATEN var (task_executor: status.channel_status — kazıma
+        # kanalları + OSINT/deep_scan çözümlemeleri) ama WS payload'ına
+        # serileştirilmiyordu -> panel "hangi modül nerede çalışıyor"
+        # sorusunu görev bitene kadar CEVAPLAYAMIYORDU. Paralel kaynak YOK:
+        # aynı SoT (snapshot.channel_status) doğrudan yayınlanır.
+        "channel_status": list(getattr(snapshot, "channel_status", None) or []),
         "holistic_profile": _dump_field(getattr(snapshot, "holistic_profile", None)),
         "follower_audit": _dump_field(getattr(snapshot, "follower_audit", None)),
         "timing_forensics": _dump_field(getattr(snapshot, "timing_forensics", None)),
@@ -4433,6 +4392,7 @@ async def aspasia_state(client_id: str = "default"):
     """
     from agent_core.aspasia.interface import (
         AgentInspector,
+        CallBinder,
         CostReader,
         QuotaReader,
         TelemetryReader,
@@ -4442,12 +4402,24 @@ async def aspasia_state(client_id: str = "default"):
     executor = room.get("executor")
     gateway = executor.llm_gateway if executor is not None else aspasia_chief.llm
     inspector = AgentInspector(executor)
+    telemetry = TelemetryReader(gateway)
+    # [P6 · CANLI PANEL] Çağrı izi (traceability): call_id → ajan → model →
+    # sağlayıcı → süre → maliyet zinciri. Kaynak TEK yerdedir: gateway'in
+    # `call_log`u (paralel telemetri deposu YOK). `run.call_ids` ile `call_log`
+    # AYNI kimlik uzayını paylaşır (call_id); bağ sunucu tarafında kurulur
+    # (bkz. `CallBinder`). Hiçbir çağrı/kimlik UYDURULMAZ.
+    run_view = inspector.run_status(room)
+    calls, binding = CallBinder(telemetry).bind(run_view)
     return {
         "registry": inspector.registry(),
-        "run": inspector.run_status(room),
+        "run": run_view,
         "budget": CostReader(gateway).snapshot(),
         "quota": {p: QuotaReader(gateway=gateway).snapshot(p) for p in ("groq", "cerebras")},
-        "anomalies": TelemetryReader(gateway).anomalies(),
+        "anomalies": telemetry.anomalies(),
+        "calls": calls,
+        "call_count": len(calls),
+        # Çağrı kimliği bağlama özeti (panel "izlenebilirlik" satırı).
+        "call_binding": binding,
     }
 
 
