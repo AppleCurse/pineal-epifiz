@@ -63,13 +63,23 @@ MEASURED_AFTER_FOURTH_SPLIT = 5805
 #: satır yerine MODÜL çıkarıldı ve tavan DÜŞÜRÜLDÜ.
 MEASURED_AFTER_FIFTH_SPLIT = 5772
 
+#: [API-BÖLME 6 · 2026-10-18 · P8] Altıncı bölme: `/api/aspasia/state`
+#: denetim görünümünün gövdesi `backend/services/aspasia_state.py` modülüne
+#: taşındı (`build_state_payload`; çağrı izi sayfalaması `offset`/`limit`
+#: ile aynı modülde). Gerekçe: PR #146 (main'e birleşti) panel için
+#: çağrı izi sayfalama parametreleri + `call_window` alanı gerektirdi.
+#: Kural işletildi: **tavan yükseltilmedi**, satır yerine MODÜL çıkarıldı
+#: ve tavan DÜŞÜRÜLDÜ (5.772 → 5.760).
+MEASURED_AFTER_SIXTH_SPLIT = 5760
+
 #: Tavan. Yeni uç nokta eklemek yerine MODÜL ÇIKAR. Tavana dayanınca
 #: `docs/reports/API_MONOLITH_SPLIT_PLAN.md` sırasındaki bir sonraki
 #: düşük-bağımlılıklı alanı taşı ve bu sayıyı DÜŞÜR.
 #: Üçüncü bölmeden sonra ölçülen değere indirildi (ratchet: geri çıkış yok).
 #: [API-BÖLME 4] Dördüncü bölmeden sonra 5.805'e indirildi.
 #: [API-BÖLME 5] Beşinci bölmeden sonra 5.772'ye indirildi.
-MAX_LINES = 5772
+#: [API-BÖLME 6] Altıncı bölmeden sonra 5.760'a indirildi.
+MAX_LINES = 5760
 
 
 def _line_count() -> int:
@@ -281,6 +291,38 @@ def test_run_entry_serializer_lives_in_its_own_module():
     )
     # Dış sözleşme: eski adresler yeniden ihraç edilir.
     assert "serialize_run_entry as _serialize_run_entry" in api_text
+
+
+def test_api_shrank_after_sixth_split():
+    """[API-BÖLME 6] Ölçülebilir ilerleme: tavan 5.760'a indi.
+
+    Altıncı bölme: `/api/aspasia/state` gövdesi
+    `backend/services/aspasia_state.py` modülüne taşındı; tavan
+    YÜKSELTİLMEDİ.
+    """
+    current = _line_count()
+    assert current <= MEASURED_AFTER_SIXTH_SPLIT, (
+        f"backend/api.py {current} satır — altıncı bölme tavanı "
+        f"{MEASURED_AFTER_SIXTH_SPLIT}"
+    )
+
+
+def test_aspasia_state_body_lives_in_its_own_module():
+    """[API-BÖLME 6] Gövde hem taşındı hem api.py içinde kalmadı (iki kopya yok)."""
+    module = REPO_ROOT / "backend" / "services" / "aspasia_state.py"
+    assert module.is_file(), "backend/services/aspasia_state.py yok"
+    api_text = API.read_text(encoding="utf-8")
+    assert "def build_state_payload(" not in api_text, (
+        "state gövdesi api.py içinde yeniden tanımlanmış — iki kopya birbirinden sapar"
+    )
+    # Dış sözleşme: modül api.py üzerinden de erişilebilir (satır BİREBİR).
+    import re
+
+    assert re.search(
+        r"^from backend\.services\.aspasia_state import build_state_payload$",
+        api_text,
+        re.M,
+    ), "api.py state modülünü içe aktarmıyor"
 
 
 def test_size_ceiling_is_documented():

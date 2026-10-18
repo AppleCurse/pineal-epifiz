@@ -92,6 +92,7 @@ from agent_core.shadow.shadow_executor import ShadowExecutor
 # [API-BÖLME 5 · 2026-10-18] Koşu kaydı serileştiricisi ayrı modüle taşındı
 # (tavan kuralı: satır eklemek yerine MODÜL ÇIKAR). Dış sözleşme bozulmaz —
 # aşağıdaki iki adres `backend.api` üzerinden yeniden ihraç edilir.
+from backend.services.aspasia_state import build_state_payload
 from backend.services.run_entries import (  # noqa: F401  # yeniden dışa aktarım
     run_display_fields as _run_display_fields,
     serialize_run_entry as _serialize_run_entry,
@@ -4384,43 +4385,30 @@ async def aspasia_command(payload: AspasiaCommandPayload, request: Request):
 
 
 @app.get("/api/aspasia/state")
-async def aspasia_state(client_id: str = "default"):
+async def aspasia_state(
+    client_id: str = "default",
+    offset: int = 0,
+    limit: int = 40,
+):
     """Read-only denetim görünümü: registry + görev durumu + bütçe + kota + anomaliler.
 
     Yeni bir telemetri sistemi DOĞMAZ; hepsi mevcut SoT okuyucularıdır
     (gateway call_log/budget, QuotaGovernor, executor.agents, lifecycle).
-    """
-    from agent_core.aspasia.interface import (
-        AgentInspector,
-        CallBinder,
-        CostReader,
-        QuotaReader,
-        TelemetryReader,
-    )
 
+    [API-BÖLME 6] Gövde `backend/services/aspasia_state.py` modülüne taşındı
+    (api.py tavanı; kural: satır eklemek yerine MODÜL ÇIKAR). Uç sözleşmesi
+    aynen korunur; `offset`/`limit` ile çağrı izi penceresi sayfalanır
+    (varsayılanlar eski davranışın aynısı).
+    """
     room = get_room(client_id)
     executor = room.get("executor")
-    gateway = executor.llm_gateway if executor is not None else aspasia_chief.llm
-    inspector = AgentInspector(executor)
-    telemetry = TelemetryReader(gateway)
-    # [P6 · CANLI PANEL] Çağrı izi (traceability): call_id → ajan → model →
-    # sağlayıcı → süre → maliyet zinciri. Kaynak TEK yerdedir: gateway'in
-    # `call_log`u (paralel telemetri deposu YOK). `run.call_ids` ile `call_log`
-    # AYNI kimlik uzayını paylaşır (call_id); bağ sunucu tarafında kurulur
-    # (bkz. `CallBinder`). Hiçbir çağrı/kimlik UYDURULMAZ.
-    run_view = inspector.run_status(room)
-    calls, binding = CallBinder(telemetry).bind(run_view)
-    return {
-        "registry": inspector.registry(),
-        "run": run_view,
-        "budget": CostReader(gateway).snapshot(),
-        "quota": {p: QuotaReader(gateway=gateway).snapshot(p) for p in ("groq", "cerebras")},
-        "anomalies": telemetry.anomalies(),
-        "calls": calls,
-        "call_count": len(calls),
-        # Çağrı kimliği bağlama özeti (panel "izlenebilirlik" satırı).
-        "call_binding": binding,
-    }
+    return build_state_payload(
+        room=room,
+        executor=executor,
+        chief_gateway=aspasia_chief.llm,
+        offset=offset,
+        limit=limit,
+    )
 
 
 @app.post("/api/aspasia/chat")
