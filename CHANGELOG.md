@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased — 2026-10-18 — P5: Faz 2 kapanış denetimi (18 bulgunun kilidi)
+
+- **Yeni düzeltme yok:** Denetimin (2026-10-16) **18** bulgusunun tamamı P0→P4'te
+  kapatılmıştı ve **bugün de** kapalı — her biri güncel kodda dosya:satır kanıtıyla
+  yeniden doğrulandı (`docs/reports/DUZELTME_FAZ2_KAPANIS_2026-10-18.md`).
+- **Yeni teslim — bulgu kilidi:** `tests/unit/test_p5_closing_audit.py` (**17 test**).
+  Her test bir **kod değişmezi** korur: 1 kopuk kablo · 2 snippet≠gönderi ·
+  3/3b socid omurgada · 4/4b maigret+holehe omurgada (reddedilen tarama mühürlü) ·
+  5b X sensörü boş havuzda `no_session_pool` · 6 Lilith CLI-only + ana hat gateway'i ·
+  7 çapraz profil deterministik (ağırlık toplamı 1.0, "kapsam") · 8/9/10 kapılar dürüst ·
+  11 UI'da "profil bağlandı" yok · 12/12b model matrisi + M-1 · 14/B-3 telemetri sebebi ·
+  B-4 `accounts.db` depo kökünü kirletmiyor.
+- **Ölçüm (PR #143 sonrası, `main` @ `7212657`):** `pytest tests -q` → **2765 passed,
+  6 skipped** · `ruff check .` → **All checks passed!** · `audit_regression.py` →
+  **✓ BEKÇİ GEÇTİ** · revert-doğrulama **P0 7/7 · P1 6/6 · P2 3/3 · P3 4/4 · P4 5/5 = 25/25**.
+- **Kapı tablosu ölçümü (mock'suz):** kasa kilitliyken 26/26 yetenek
+  `policy_allowed=False · vault_locked`; kasa açıkken 22 `gate_disabled` + 4 izinli →
+  **"kapalı"nın sebebi kaybolmuyor**.
+- **Ortam notu:** platform çalışma ağacını sıfırladı (`.venv`/`node_modules` silindi) →
+  venv yeniden kuruldu (`ruff 0.17.1` doğrulandı).
+
 ## Unreleased — 2026-10-16 — P4: dokümantasyon = kod (ölçülen ↔ DOĞRULANMADI)
 
 - **Denetim tespiti güncellendi:** "holehe ana hattan erişilemez" tespiti **P1
