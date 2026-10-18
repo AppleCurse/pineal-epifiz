@@ -18,6 +18,11 @@
 - **Kapı tablosu ölçümü (mock'suz):** kasa kilitliyken 26/26 yetenek
   `policy_allowed=False · vault_locked`; kasa açıkken 22 `gate_disabled` + 4 izinli →
   **"kapalı"nın sebebi kaybolmuyor**.
+- **CI'da ölçülen fiyat salınımı:** PR #144'ün ilk `backend` koşusu **fiyat drift
+  bekçisi** yüzünden kırıldı (`deepseek-v4-pro` canlı $0.2088/$0.4176 — ölçülmüş
+  durum değil). Bekçi doğru davrandı; yeni okuma **ölçüldüğü** için
+  `OBSERVED_OPENROUTER_STATES` kümesine koşu kimliğiyle eklendi
+  (`39081581447`). Bilinmeyen fiyat hâlâ `FAIL` eder.
 - **Ortam notu:** platform çalışma ağacını sıfırladı (`.venv`/`node_modules` silindi) →
   venv yeniden kuruldu (`ruff 0.17.1` doğrulandı).
 

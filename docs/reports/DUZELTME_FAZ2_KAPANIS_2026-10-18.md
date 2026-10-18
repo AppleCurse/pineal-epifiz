@@ -157,6 +157,29 @@ REVERT-DOĞRULAMA (P4): 5/5 ...
 
 ---
 
+## 5.1 CI'da ölçülen fiyat salınımı (bekçi doğru çalıştı)
+
+PR #144'ün **ilk CI koşusunda `backend` job'ı kırıldı** — P5 değişiklikleriyle ilgisi
+yok, **fiyat drift bekçisi** yüzünden:
+
+```
+FAIL: deepseek/deepseek-v4-pro: live price $0.2088/$0.4176 per 1M is NOT a measured
+state (measured states: $0.4679/$0.9358, $0.395328/$0.790656, $0.392022/$0.784044,
+$0.386976/$0.773952, $0.348174/$0.696348, $0.346434/$0.692868, $0.95526/$1.91052,
+$0.297192/$0.594384)
+```
+
+Bekçi **amaçlandığı gibi** davrandı: canlı fiyat **ölçülmüş bir durum değilse** `FAIL`
+eder (sessizce geçmez). Yeni okuma **gerçek bir ölçüm** olduğu için
+`scripts/verify_openrouter_catalog.py` içindeki `OBSERVED_OPENROUTER_STATES`
+kümesine **koşu kimliğiyle** eklendi (`39081581447` → `$0.2088/$0.4176`).
+`tests/unit/test_openrouter_catalog_contract.py` → **28 passed**.
+
+> Not: Bu, "kapıyı zayıflatma" değildir — bilinmeyen fiyat hâlâ `FAIL` eder; yalnızca
+> **ölçülmüş** yeni durum kümeye kaydedilir.
+
+---
+
 ## 6. MAKİNE-OKUNUR KAPANIŞ ÖZETİ
 
 ```json
