@@ -2480,7 +2480,7 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                 )
                 broadcast_result_error(
                     client_id, "unsupported_platform",
-                    "Bu URL'nin platformu desteklenmiyor (destekli: Instagram). Analiz başlatılmadı.",
+                    "Bu URL'nin platformu desteklenmiyor (doğrudan: Instagram/X; diğer sosyal platformlar ENABLE_CROSS_PLATFORM ile). Analiz başlatılmadı.",
                 )
                 return
             effective_type = "cross"

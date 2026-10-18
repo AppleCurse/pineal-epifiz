@@ -25,11 +25,15 @@ Yol tablosu (tasarım kararı):
     instagram profil URL'si   → ``sensor.ig.instagrapi``
     x / twitter profil URL'si → ``sensor.x.twscrape``
     linkedin / facebook profil → ``extractor.identity.socid``
+    diğer bilinen sosyal profil URL'leri (tiktok, youtube, threads,
+    github, reddit, pinterest, twitch, telegram, medium, vk,
+    snapchat, steam, behance, dribbble, linktr.ee) → ``extractor.identity.socid``
     diğer                     → yol yok + sebep
 """
 
 from __future__ import annotations
 
+import re
 from typing import Any, Iterable
 from urllib.parse import urlsplit
 
@@ -73,8 +77,99 @@ _FACEBOOK_RESERVED = frozenset({
     "profile.php", "photo.php", "share.php", "search", "messages", "friends",
 })
 
-#: X'in rezerv yolları (giriş, keşfet...) — `platform_registry` de eler.
+#: X'in rezerv yolları (giriş, keşfet...) — ``platform_registry`` de eler.
 _LINKEDIN_PREFIXES = ("in", "pub", "company", "school", "showcase")
+
+#: [P10 · 2026-10-18] Çapraz platform profil tablosu.
+#: Her satır: (host sonu, iki segmentli profil önekleri, rezerv
+#: kelimeler, platform etiketi).
+#:
+#: Biçim kuralları (fail-closed — shape bilinmiyorsa kabul YOK):
+#:   * Tek segment            → ``host/kullanici`` (facebook, tiktok,
+#:     github, pinterest, twitch, medium, vk, snapchat, behance,
+#:     dribbble, linktr.ee, telegram; ``@`` ön eki de kabul edilir)
+#:   * Önek kümesi boş değil  → ``host/öneki/kullanici``
+#:     (linkedin ``in/``, reddit ``user/``, snapchat ``add/``,
+#:     steam ``id|profiles/``, youtube ``c|user|channel/``)
+#: * Eşleşme TAM EŞİTTİR ya da ``.son`` sonekıyladır:
+#:   ``evilinkedin.com`` linkedin DEĞİLDİR (N4 dersinin çapraz
+#:   platform geneli; [023] yanlış hedef yasağı).
+#: * Rezerv kelimeler profil OLMAYAN yolları reddeder (login, watch,
+#:   tag, user...): kullanıcı adı shape'ı da charset ile sınırlanır.
+_SOCIAL_HANDLE_RE = re.compile(r"^[A-Za-z0-9._-]{1,39}$")
+
+_TIKTOK_RESERVED = frozenset({
+    "login", "signup", "trending", "discover", "explore", "upload",
+    "settings", "tag", "video", "music", "search", "live", "about",
+})
+_YOUTUBE_RESERVED = frozenset({
+    "watch", "shorts", "results", "feed", "playlists", "trending",
+    "live", "login", "signup", "settings", "search", "about",
+    # kendi önek kelimeleri: host/c tek segmenti profil DEĞİL
+    "c", "user", "channel",
+})
+_YOUTUBE_PREFIXES = ("c", "user", "channel")
+_THREADS_RESERVED = frozenset({"login", "signup", "explore", "settings", "search"})
+_GITHUB_RESERVED = frozenset({
+    "login", "signup", "features", "settings", "explore", "marketplace",
+    "topics", "collections", "organizations", "site", "pricing",
+    "security", "join", "about", "blog", "readme", "new", "pulls",
+    "issues", "sponsors",
+})
+_PINTEREST_RESERVED = frozenset({
+    "login", "signup", "explore", "create", "search", "pin-builder",
+    "about", "business", "careers",
+})
+_TWITCH_RESERVED = frozenset({
+    "directory", "discover", "login", "signup", "settings", "products",
+    "brand", "careers", "creator-dashboard", "moderation", "dashboard",
+    "search", "videos", "top",
+})
+_MEDIUM_RESERVED = frozenset({
+    "login", "signup", "topics", "tag", "search", "write", "newsletter",
+    "about", "policies",
+})
+_VK_RESERVED = frozenset({"login", "signup", "feed", "messages", "settings", "help", "search", "about"})
+_LINKEDIN_RESERVED = frozenset({
+    "login", "signup", "help", "settings", "search", "jobs", "talent",
+    "sales", "learning", "events", "groups", "articles", "pulse",
+    "directory",
+    # kendi önek kelimeleri: host/in tek segmenti profil DEĞİL
+    "in", "pub", "company", "school", "showcase",
+})
+_BEHANCE_RESERVED = frozenset({"login", "signup", "explore", "search", "about", "careers", "blog"})
+_DRIBBBLE_RESERVED = frozenset({"login", "signup", "shots", "explore", "search", "about", "blog", "jobs", "designers"})
+_LINKTREE_RESERVED = frozenset({"login", "signup", "pricing", "features", "about"})
+_TELEGRAM_RESERVED = frozenset({"login", "signup", "s"})  # /s/ herkese açık grup ≠ profil
+
+_SOCIAL_HOST_TABLE: tuple[tuple[str, tuple[str, ...], frozenset[str], str], ...] = (
+    ("linkedin.com", _LINKEDIN_PREFIXES, _LINKEDIN_RESERVED, PLATFORM_LINKEDIN),
+    ("facebook.com", (), _FACEBOOK_RESERVED, PLATFORM_SOCIAL),
+    ("fb.com", (), _FACEBOOK_RESERVED, PLATFORM_SOCIAL),
+    ("tiktok.com", (), _TIKTOK_RESERVED, PLATFORM_SOCIAL),
+    ("youtube.com", _YOUTUBE_PREFIXES, _YOUTUBE_RESERVED, PLATFORM_SOCIAL),
+    ("threads.net", (), _THREADS_RESERVED, PLATFORM_SOCIAL),
+    ("threads.com", (), _THREADS_RESERVED, PLATFORM_SOCIAL),
+    ("github.com", (), _GITHUB_RESERVED, PLATFORM_SOCIAL),
+    ("reddit.com", ("user",), frozenset({"user"}), PLATFORM_SOCIAL),
+    ("pinterest.com", (), _PINTEREST_RESERVED, PLATFORM_SOCIAL),
+    ("twitch.tv", (), _TWITCH_RESERVED, PLATFORM_SOCIAL),
+    ("medium.com", (), _MEDIUM_RESERVED, PLATFORM_SOCIAL),
+    ("vk.com", (), _VK_RESERVED, PLATFORM_SOCIAL),
+    ("snapchat.com", ("add",), frozenset({"add"}), PLATFORM_SOCIAL),
+    ("steamcommunity.com", ("id", "profiles"), frozenset({"id", "profiles"}), PLATFORM_SOCIAL),
+    ("behance.net", (), _BEHANCE_RESERVED, PLATFORM_SOCIAL),
+    ("dribbble.com", (), _DRIBBBLE_RESERVED, PLATFORM_SOCIAL),
+    ("linktr.ee", (), _LINKTREE_RESERVED, PLATFORM_SOCIAL),
+    ("t.me", (), _TELEGRAM_RESERVED, PLATFORM_SOCIAL),
+    ("telegram.me", (), _TELEGRAM_RESERVED, PLATFORM_SOCIAL),
+)
+
+#: Sınıflandırıcısı bilinen tüm sosyal hostları (tek kaynak: tablo + IG/X).
+_KNOWN_SOCIAL_HOSTS: tuple[str, ...] = tuple(
+    sorted({suffix for suffix, _, _, _ in _SOCIAL_HOST_TABLE}
+           | {"instagram.com", "x.com", "twitter.com"})
+)
 
 
 def _host(url: str) -> str:
@@ -160,34 +255,50 @@ def _x_route(url: str) -> ProfileRoute | None:
 
 
 def _social_route(url: str) -> ProfileRoute | None:
-    """LinkedIn / Facebook profil URL'si → ``extractor.identity.socid``."""
+    """Bilinen sosyal medya profil URL'si → ``extractor.identity.socid``.
+
+    [P10] Kabul kümesi ``_SOCIAL_HOST_TABLE``'dan gelir (tek
+    doğruluk kaynağı). Eşleşme tam host + nokta sınırıdır; profil
+    shape'ı (tek segment / önekli iki segment) ve rezerv kelime
+    kuralları sağlanmazsa ``None`` — çağıran yolu "koşulamaz"
+    olarak raporlar, tahmin üretmez.
+    """
     host = _host(url)
     segments = _segments(url)
     if not segments:
         return None
-    if host.endswith("linkedin.com"):
-        if len(segments) < 2 or segments[0].lower() not in _LINKEDIN_PREFIXES:
+    for suffix, prefixes, reserved, platform in _SOCIAL_HOST_TABLE:
+        if not (host == suffix or host.endswith("." + suffix)):
+            continue
+        if len(segments) == 1:
+            handle = segments[0].lstrip("@")
+        elif (
+            len(segments) == 2
+            and prefixes
+            and segments[0].lower() in prefixes
+        ):
+            handle = segments[1]
+        else:
             return None
-        handle = segments[1]
-    elif host.endswith("facebook.com"):
-        handle = segments[0]
-        if handle.lower() in _FACEBOOK_RESERVED:
-            return None
-    else:
-        return None
-    handle = handle.strip().lstrip("@")
-    if not handle or "/" in handle:
-        return None
-    # socid profil sayfasının tam adresini ister (kimlik alanları URL'den çıkarılır).
-    return ProfileRoute(
-        url=url,
-        platform=PLATFORM_LINKEDIN if host.endswith("linkedin.com") else PLATFORM_SOCIAL,
-        handle=handle,
-        capability_id=CAPABILITY_SOCID,
-        subject=url,
-        params={"url": url},
-        runnable=True,
-    )
+        handle = handle.strip()
+        # socid profil sayfasının tam adresini ister (kimlik alanları
+        # URL'den çıkarılır); handle shape'ı da doğrulanır.
+        if (
+            handle
+            and handle.lower() not in reserved
+            and _SOCIAL_HANDLE_RE.match(handle)
+        ):
+            return ProfileRoute(
+                url=url,
+                platform=platform,
+                handle=handle,
+                capability_id=CAPABILITY_SOCID,
+                subject=url,
+                params={"url": url},
+                runnable=True,
+            )
+        return None  # host tanındı ama yol profil shape'ı değil
+    return None
 
 
 def classify_url(url: str) -> ProfileRoute:
@@ -209,10 +320,13 @@ def classify_url(url: str) -> ProfileRoute:
             return route
 
     # Bilinen bir platformun PROFİL OLMAYAN adresi → sebep "profil değil".
+    # [P10] eşleşme tam host + nokta sınırı (N4): `evilgithub.com`
+    # github'un "profil değil" raporunu aldırmayacak — bilinmeyen
+    # host olarak "desteklenmiyor" der.
     host = _host(raw)
     if any(
-        host.endswith(domain)
-        for domain in ("instagram.com", "x.com", "twitter.com", "linkedin.com", "facebook.com")
+        host == domain or host.endswith("." + domain)
+        for domain in _KNOWN_SOCIAL_HOSTS
     ):
         return ProfileRoute(url=raw, platform=PLATFORM_UNSUPPORTED, reason=REASON_NOT_A_PROFILE)
     return ProfileRoute(url=raw, platform=PLATFORM_UNSUPPORTED, reason=REASON_UNSUPPORTED)

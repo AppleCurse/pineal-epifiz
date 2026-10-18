@@ -56,3 +56,7 @@ reportlab>=4.0
 redis>=5.0.0
 hiredis>=2.0.0
 python-multipart>=0.0.9
+# [P10] README §10 doğrulayıcısı (scripts/verify_command_loop.py)
+# WS istemcisi için; çalışma zamanı (starlette/uvicorn sunucusu)
+# bu pakete bağımsızdır — yalnız operatör betiği kullanır.
+websockets>=12.0

@@ -49,9 +49,10 @@ def _normalize_target_url(url: Optional[str]) -> str:
     """[FAZ 2] Paylasim artiklarini dusur, katiligi koru.
 
     Mobil paylasim URL'leri (?igsh=, ?utm_source=, #fragman) ayni profile
-    isaret eder; _TARGET_RE eslesmesi oncesi dusurulur. Host/path kurali
-    DEGISMEZ: yalniz https + instagram.com|instagr.am + tek segment kabul
-    edilir (lookalike host ve hedefsiz komut yine reddedilir).
+    isaret eder; _is_supported_target eslesmesi oncesi dusurulur.
+    https zorunlugu DEGISMEZ; profil shape kontrolu TEK doğruluk
+    kaynağı olan ``profile_router.classify_url``'a aittir
+    (lookalike host ve hedefsiz komut yine reddedilir).
     """
     candidate = (url or "").strip()
     try:
@@ -456,16 +457,35 @@ class AspasiaIntent(BaseModel):
     goals: List[Literal[_GOAL_IDS]] = Field(default_factory=list)
 
 
-# Hedef dogrulama: yalnizca mevcut scraper sozlesmesinin gercek host'lari.
+# Hedef dogrulama: TEK doğruluk kaynağı profil yönlendiricisidir
+# (Kural [009] — ikinci bir platform kararı yok). Kapı https +
+# `classify_url(...).runnable` demektir; kabul kümesi
+# `agent_core/services/profile_router.py` tablosundan gelir.
 # (Ornek-uydurmama doktrini [009]: placeholder veri ASLA uretilmez.)
-_TARGET_RE = re.compile(r"^https://(www\.)?(instagram\.com|instagr\.am)/[A-Za-z0-9._@-]{1,64}/?$")
+def _is_supported_target(url: str) -> bool:
+    """Aspasia hedef kapısı: https ve koşulabilir bir profil URL'si.
+
+    [P10] Instagram-only kuralı genişletildi: IG/X doğrudan
+    sensörleri olan platformlar ile tiktok/youtube/threads/
+    github/reddit/pinterest/twitch/telegram/medium/vk/snapchat/
+    steam/behance/dribbble/linktr.ee gibi bilinen sosyal profil
+    shape'ları kabul; sahte host, rezerv yol ve profil-olmayan
+    adresler aynı fail-closed kuralıyla reddedilir.
+    """
+    if not (url or "").startswith("https://"):
+        return False
+    from agent_core.services.profile_router import classify_url
+
+    return classify_url(url).runnable
 
 _GOAL_DOC = "\n".join(f'- "{g}": {", ".join(agents)}' for g, agents in GOAL_FOCUS.items())
 
 _INTENT_INSTRUCTION = (
     "Kullanicinin cumlesini siniflandir. Yalniz su niyetler gecerlidir:\n"
-    '- "run_profile_analysis": kullanici belirli bir Instagram profilini inceletmek istiyor '
-    've mesajda acik bir profil URL\'i var -> target_url alanina BIREBIR URL yaz.\n'
+    '- "run_profile_analysis": kullanici belirli bir sosyal medya profilini '
+    "(Instagram, X/Twitter, LinkedIn, Facebook, TikTok, YouTube, Threads, "
+    "GitHub, Reddit, Pinterest, Twitch, Telegram, Medium, VK vb.) "
+    'inceletmek istiyor ve mesajda acik bir profil URL\'i var -> target_url alanina BIREBIR URL yaz.\n'
     '- "explain_status": kullanici sistem/ajan/analiz durumu hakkinda bilgi istiyor.\n'
     '- "none": hicbiri.\n'
     "URL mesajda ACIKCA yoksa uydurma; intent='none' dondur.\n\n"
@@ -557,7 +577,7 @@ class AspasiaCommandGateway:
         # [FAZ 2] Eslesme normalize URL uzerinden (?igsh=/fragment dusmus);
         # dispatch'e de normalize URL gider (asagi akis ayni hedefi gorur).
         url = _normalize_target_url(intent.target_url)
-        if not _TARGET_RE.match(url):
+        if not _is_supported_target(url):
             self._record(command_id=command_id, status="rejected", intent=intent.intent,
                          reason="unsupported_or_missing_target")
             return AspasiaCommandResult(command_id=command_id, accepted=False,
