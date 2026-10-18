@@ -46,14 +46,10 @@ def _status_value(status: Any) -> Any:
 
 
 def _normalize_target_url(url: Optional[str]) -> str:
-    """[FAZ 2] Paylasim artiklarini dusur, katiligi koru.
-
-    Mobil paylasim URL'leri (?igsh=, ?utm_source=, #fragman) ayni profile
-    isaret eder; _TARGET_RE eslesmesi oncesi dusurulur. Host/path kurali
-    DEGISMEZ: yalniz https + instagram.com|instagr.am + tek segment kabul
-    edilir (lookalike host ve hedefsiz komut yine reddedilir).
-    """
+    """[FAZ 2] Paylasim artiklarini dusur, katiligi koru."""
     candidate = (url or "").strip()
+    if candidate and "://" not in candidate and "." in candidate and "/" in candidate:
+        candidate = "https://" + candidate
     try:
         parts = urlsplit(candidate)
     except ValueError:
@@ -474,10 +470,11 @@ _INTENT_INSTRUCTION = (
     "Kullanicinin cumlesini siniflandir. Yalniz su niyetler gecerlidir:\n"
     '- "run_profile_analysis": kullanici belirli bir sosyal medya profilini (Instagram, X/Twitter, '
     'LinkedIn, Facebook, TikTok, YouTube, Threads, GitHub, Reddit, Telegram vb.) inceletmek istiyor '
-    've mesajda acik bir profil URL\'i var -> target_url alanina BIREBIR URL yaz.\n'
+    've mesajda acik bir profil URL\'i, alan adi (orn. instagram.com/kullanici) veya acik bir @kullanici_adi var -> '
+    'target_url alanina tam https://... profil URL\'ini yaz (yalniz @kullanici_adi verilmisse https://www.instagram.com/kullanici_adi/ olarak yaz).\n'
     '- "explain_status": kullanici sistem/ajan/analiz durumu hakkinda bilgi istiyor.\n'
     '- "none": hicbiri.\n'
-    "URL mesajda ACIKCA yoksa uydurma; intent='none' dondur.\n\n"
+    "Mesajda acik bir URL veya @kullanici_adi YOKSA kesinlikle isim/URL uydurma; target_url=null ve intent='none' dondur.\n\n"
     "goals: kullanicinin AMACINI tasir; AJAN ISMI YAZMAZSIN. Gecerli goal id'leri "
     "(baska isim UYDURMA; message'da acik karsiligi yoksa hic goal ekleme):\n"
     + _GOAL_DOC + "\n"

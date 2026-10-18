@@ -523,30 +523,31 @@
     overflow: hidden;
   }
 
-  /* [AUDIT 2026-10-07 · Madde 6] Telemetri panosu ve açma/kapama düğmesi. */
+  /* [AUDIT 2026-10-07 · Madde 6] Telemetri panosu ve açma/kapama düğmesi.
+     Sol üst köşede kompakt konumlandırıldı — alttaki Aspasia sohbet ekranını ASLA kapatmaz. */
   .telemetry-panel {
     position: fixed;
-    left: 18px;
-    bottom: 62px;
-    width: min(460px, 34vw);
-    z-index: 60;
+    left: 14px;
+    top: 46px;
+    width: min(340px, 24vw);
+    z-index: 45;
   }
 
-  /* Pano kendi içinde 450px yükseklikte; küçük ekranlarda taşmasın. */
+  /* Pano kompakt yükseklikte; sohbet ve ana kontrolleri örtmez. */
   .telemetry-panel :global(.telemetry-board) {
-    height: min(450px, calc(100vh - 130px));
+    height: min(190px, 24vh);
   }
 
   .telemetry-toggle {
     position: fixed;
-    left: 18px;
-    bottom: 18px;
-    z-index: 61;
-    padding: 6px 12px;
+    left: 14px;
+    top: 12px;
+    z-index: 46;
+    padding: 5px 10px;
     font-family: 'JetBrains Mono', 'Courier New', monospace;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.06em;
     color: #d4af37;
     background: rgba(3, 5, 10, 0.88);
     border: 1px solid rgba(212, 175, 55, 0.35);

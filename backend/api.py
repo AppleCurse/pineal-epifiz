@@ -54,6 +54,7 @@ import logging
 import importlib
 import shutil
 import os
+import re
 import hashlib
 import time
 
@@ -72,7 +73,10 @@ from agent_core.chat.dialogue_manager import (
     DialogueSessionCapacityError,
     MAX_DIALOGUE_MESSAGE_CHARS,
 )
-from agent_core.scraper.instagram_ghost import InstagramGhostScraper
+from agent_core.scraper.instagram_ghost import (
+    InstagramGhostScraper,
+    InsufficientEvidenceError as ScraperInsufficientEvidenceError,
+)
 from agent_core.services.browser_session import BrowserSession
 from agent_core.services.dependency_health import (
     StartupDependencyError,
@@ -1249,7 +1253,7 @@ def get_room(client_id: str) -> dict:
         vault.pop("provider_keys", None)
 
         # Check if local 9router proxy is configured
-        is_9router = "20128" in os.getenv("OPENROUTER_BASE_URL", "")
+        is_9router = "20128" in (os.getenv("OPENROUTER_BASE_URL", "") + os.getenv("NINEROUTER_BASE_URL", ""))
         ninerouter_key = os.getenv("NINEROUTER_API_KEY") or os.getenv("PINEAL_LLM_API_KEY") or os.getenv("OPENROUTER_API_KEY")
 
         if is_9router and ninerouter_key and ninerouter_key.startswith("sk-pineal"):
@@ -2537,6 +2541,64 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                     "profil uydurulmadı, açık kaynak dosyası ile devam ediliyor.",
                 )
 
+        if req.url and effective_type == "instagram":
+            broadcast_log(client_id, "INFO", f"UPLINK: Hedefe sızılıyor -> {req.url} [INSTAGRAM]")
+            scrape_max = _bounded_env_int("PINEAL_SCRAPE_MAX_ATTEMPTS", 3, 1, 5)
+            last_err = None
+            for scrape_attempt in range(1, scrape_max + 1):
+                try:
+                    payload["target_profile"].update(await scrape_instagram(
+                        req.url, cookie,
+                        log=lambda lvl, msg: broadcast_log(client_id, lvl, msg),
+                    ))
+                    channel_runs.extend(
+                        instagram_channel_rows(
+                            post_count=len(payload["target_profile"].get("posts") or [])
+                        )
+                    )
+                    broadcast_log(client_id, "INFO", "TELEMETRİ: Veri ele geçirildi.")
+                    last_err = None
+                    break
+                except (InsufficientEvidenceError, ScraperInsufficientEvidenceError) as exc:
+                    if not enable_cross:
+                        raise
+                    # [GİZLİ HESAP KANIT KURTARMA] Gizli hesaptan kurtarılan bio/isim/bağlı hesaplar:
+                    priv_profile = getattr(exc, "profile_update", None) or {}
+                    if priv_profile:
+                        payload["target_profile"].update(priv_profile)
+                        broadcast_log(
+                            client_id, "INFO",
+                            f"GİZLİ PROFİL KANITI KURTARILDI: bio='{priv_profile.get('bio', '')[:60]}', "
+                            f"takipçi={priv_profile.get('followers')}, takip={priv_profile.get('following')}"
+                        )
+                    x_sensor_reason = str(exc)[:200]
+                    broadcast_log(client_id, "WARNING", f"IG DOĞRUDAN KAZIMA KANIT ÜRETEMEDİ ({x_sensor_reason}); açık kaynak OSINT ile devam ediliyor.")
+                    effective_type = "cross"
+                    last_err = None
+                    break
+                except Exception as e:
+                    last_err = e
+                    broadcast_log(
+                        client_id, "ERROR",
+                        f"UPLINK KOPTU (Deneme {scrape_attempt}/{scrape_max}): "
+                        f"{type(e).__name__}: {str(e)[:100]}",
+                    )
+                    if scrape_attempt < scrape_max:
+                        await asyncio.sleep(min(2 * scrape_attempt, 5))
+            if last_err is not None:
+                if enable_cross:
+                    x_sensor_reason = f"{type(last_err).__name__}: {str(last_err)[:120]}"
+                    broadcast_log(client_id, "WARNING", f"IG ALTYAPI HATASI ({x_sensor_reason}); açık kaynak OSINT ile devam ediliyor.")
+                    effective_type = "cross"
+                else:
+                    logger.error("HEDEF VERİSİ ALINAMADI: %s", str(last_err)[:200])
+                    broadcast_result_error(
+                        client_id, "failed",
+                        "HEDEF VERİSİ ALINAMADI: kazıma altyapısı denemeleri tüketti; analiz başlatılmadı.",
+                        task_id,
+                    )
+                    return
+
         if req.url and (effective_type == "cross" or (effective_type == "x" and not x_profile)):
             from agent_core.services.profile_router import classify_url
             clean_u = classify_url(req.url).handle or (req.url.rstrip('/').split('/')[-1] if '/' in req.url else req.url).lstrip('@').strip()
@@ -2546,21 +2608,52 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                 broadcast_log(client_id, "INFO", f"UPLINK: Hedefe sızılıyor -> {req.url} [{effective_type.upper()}]")
             broadcast_log(client_id, "INFO", f"AÇIK KAYNAK VE OSINT: {clean_u} için veriler taranıyor...")
             try:
-                # Çok kanallı paralel OSINT araması (Instagram, LinkedIn, Web)
-                if " " in clean_u:
-                    queries = [
-                        f'"{clean_u}" instagram',
-                        f'"{clean_u}" linkedin',
-                        f'"{clean_u}"',
-                        f'site:instagram.com "{clean_u}"',
-                        f'site:linkedin.com/in "{clean_u}"',
-                    ]
-                else:
-                    queries = [
-                        f"{clean_u} instagram",
-                        f"{clean_u} linkedin twitter",
-                        f"{clean_u}",
-                    ]
+                # [ZİNCİRLEME OSINT] Hedefin biyografisinden ve profilinden çıkan gerçek isim ve bağlı hesaplar (@handle):
+                recovered_bio = payload["target_profile"].get("bio") or ""
+                recovered_name = (payload["target_profile"].get("name") or "").strip()
+                bio_handles = [h.lstrip("@").strip() for h in re.findall(r"@[A-Za-z0-9_.-]+", recovered_bio) if len(h) > 2]
+
+                # Biyografiden gerçek isim adaylarını bul (örn. "Kübra Cebi"):
+                name_candidates = []
+                if recovered_name and recovered_name.lower() != clean_u.lower():
+                    name_candidates.append(recovered_name)
+                for line in recovered_bio.splitlines():
+                    clean_line = re.sub(r"[^\w\s]", "", line).strip()
+                    parts = clean_line.split()
+                    if 1 < len(parts) <= 3 and not any(kw in clean_line.lower() for kw in ["takip", "specialist", "artist", "inci"]):
+                        if clean_line not in name_candidates:
+                            name_candidates.append(clean_line)
+
+                # Temel kullanıcı adı sorguları:
+                queries = [
+                    f"{clean_u} instagram",
+                    f"{clean_u} linkedin twitter",
+                    f"{clean_u} facebook reddit",
+                    f"{clean_u} threads",
+                    f"{clean_u}",
+                ]
+
+                # Tespit edilen gerçek isim varsa LinkedIn, Facebook, Reddit ve genel web aramaları ekle:
+                for cand_name in name_candidates[:2]:
+                    queries.append(f"{cand_name} linkedin")
+                    queries.append(f"{cand_name} facebook")
+                    queries.append(f"{cand_name} reddit")
+                    broadcast_log(client_id, "INFO", f"HEDEF GERÇEK İSİM TESPİT EDİLDİ: '{cand_name}' (LinkedIn, Facebook, Reddit taramasına alındı)")
+
+                # Biyografiden çıkan iş/ikinci hesapları ve Threads aramalarını ekle:
+                for bh in bio_handles[:3]:
+                    if bh.lower() != clean_u.lower():
+                        queries.append(f"{bh} instagram")
+                        broadcast_log(client_id, "INFO", f"ZİNCİRLEME HEDEF TESPİT EDİLDİ: @{bh} (Açık kaynak araştırmasına dahil edildi)")
+
+                # Biyografide meslek/lokasyon varsa ek sorgu:
+                specialty_matches = re.findall(r'(?:esthetician|makeup|kuaför|güzellik|estetisyen|artist)', recovered_bio, re.IGNORECASE)
+                if specialty_matches:
+                    spec_term = specialty_matches[0]
+                    queries.append(f"{clean_u} {spec_term}")
+                    if name_candidates:
+                        queries.append(f"{name_candidates[0]} {spec_term}")
+
                 search_tasks = [executor.search_engine.search(q, num_results=6) for q in queries]
                 search_results = await asyncio.gather(*search_tasks, return_exceptions=True)
 
@@ -2580,32 +2673,28 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                         f"{', '.join(unique_search_errors[:5]) or 'yok'}.",
                     )
 
-                # Katmanlı alaka sıralaması: Tam ad eşleşmesi > parça eşleşmesi > genel
                 target_parts = [p.lower() for p in clean_u.split() if len(p) > 1]
+                for c_name in name_candidates:
+                    target_parts.extend([p.lower() for p in c_name.split() if len(p) > 1])
                 name_full = clean_u.lower()
+                cand_lowers = [c.lower() for c in name_candidates]
                 tier1 = []
                 tier2 = []
                 tier3 = []
                 for r in all_raw_results:
                     text_blob = f"{r.content or ''} {r.source_url or ''}".lower()
-                    if name_full in text_blob:
+                    if name_full in text_blob or any(cn in text_blob for cn in cand_lowers):
                         tier1.append(r)
-                    elif all(p in text_blob for p in target_parts):
+                    elif all(p in text_blob for p in target_parts[:2]):
                         tier2.append(r)
                     elif any(p in text_blob for p in target_parts):
                         tier3.append(r)
 
                 ordered_results = (tier1 + tier2 + tier3) or all_raw_results
-
-                # Anlamlı içerikleri filtrele.
-                # [P0 · DENETİM 2026-10-16 · Bulgu 2] Snippet'lar ARAMA SONUCUDUR;
-                # "gönderi" değildir. Yapılandırılmış olarak tutulur ve `posts`
-                # alanına YAZILMAZ — kanıt tipi `search_snippet` olarak korunur.
                 snippets = build_snippets(ordered_results)
 
-                # Tespit edilen doğrudan sosyal medya profilleri (girilen URL + bulunanlar)
                 found_profiles = [req.url] if classify_url(req.url).runnable else []
-                for r in ordered_results:
+                for r in (ordered_results + all_raw_results):
                     u = r.source_url or ""
                     if classify_url(u).runnable and u not in found_profiles:
                         found_profiles.append(u)
@@ -2613,25 +2702,23 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                 if found_profiles:
                     broadcast_log(client_id, "INFO", f"HEDEF PROFİLLERİ TESPİT EDİLDİ: {', '.join(found_profiles[:3])}")
 
-                # [P1 · 2026-10-16] Bulunan profiller GERÇEKTEN kazınır — ama
-                # KOŞUM TEK YERDE olur: görev yürütücüsü
-                # (`agent_core/services/deep_profile_resolver.py` → `profile_router`
-                # → `CapabilityRunner`). Burada yalnız adresler taşınır; ikinci bir
-                # koşum yolu açmak aynı yeteneği iki kez çağırırdı.
-
                 display_user = f"@{clean_u.replace(' ', '_').lower()}" if " " in clean_u else f"@{clean_u}"
-                # [P0 · DENETİM 2026-10-16] Dosya kuralları ve kanal durumu
-                # `backend/services/web_dossier.py` modülünde (API-BÖLME 3).
-                payload["target_profile"].update(
-                    build_dossier_profile(
-                        display_user=display_user,
-                        clean_u=clean_u,
-                        snippets=snippets,
-                        found_profiles=found_profiles,
-                        web_search=web_search_status_record,
-                        x_sensor_reason=x_sensor_reason,
-                    )
+                dossier_data = build_dossier_profile(
+                    display_user=display_user,
+                    clean_u=clean_u,
+                    snippets=snippets,
+                    found_profiles=found_profiles,
+                    web_search=web_search_status_record,
+                    x_sensor_reason=x_sensor_reason,
                 )
+                # Eğer hedefin profilinden (örn. gizli hesap başlığından) bio/takipçi kurtarıldıysa ezme:
+                if recovered_bio:
+                    dossier_data["bio"] = recovered_bio
+                if payload["target_profile"].get("followers") is not None:
+                    dossier_data["followers"] = payload["target_profile"].get("followers")
+                if payload["target_profile"].get("following") is not None:
+                    dossier_data["following"] = payload["target_profile"].get("following")
+                payload["target_profile"].update(dossier_data)
                 channel_runs.extend(
                     dossier_channel_rows(
                         web_search_status=web_search_status,
@@ -2659,57 +2746,6 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                 )
         if x_profile:
             payload["target_profile"].update(x_profile)
-        if req.url and effective_type == "instagram":
-            broadcast_log(client_id, "INFO", f"UPLINK: Hedefe sızılıyor -> {req.url} [INSTAGRAM]")
-            # [FIX #8] Eski kod: (1) tek deneme + hata yutuluyordu ve
-            # operasyon BOŞ profille sessizce devam ediyordu; (2) ISE
-            # kontrolü str(type(e).__name__) ile yapılıyordu — iki farklı
-            # ISE sınıfı (task_executor + scraper) ad eşleşmesiyle
-            # yakalanmaya çalışılıyordu, TargetPrivateError ise hiç
-            # tanımlanmayan bir sınıftı.
-            scrape_max = _bounded_env_int("PINEAL_SCRAPE_MAX_ATTEMPTS", 3, 1, 5)
-            last_err = None
-            for scrape_attempt in range(1, scrape_max + 1):
-                try:
-                    # [W4.2] Kazıma tek sahiplikli platform_registry'de; Rust
-                    # TaskManager (run_task.py) da aynı fonksiyonu kullanır.
-                    payload["target_profile"].update(await scrape_instagram(
-                        req.url, cookie,
-                        log=lambda lvl, msg: broadcast_log(client_id, lvl, msg),
-                    ))
-                    channel_runs.extend(
-                        instagram_channel_rows(
-                            post_count=len(payload["target_profile"].get("posts") or [])
-                        )
-                    )
-                    broadcast_log(client_id, "INFO", "TELEMETRİ: Veri ele geçirildi.")
-                    last_err = None
-                    break
-                except (InsufficientEvidenceError, ScraperInsufficientEvidenceError):
-                    # Kanıt yok (ör. özel profil) = altyapı hatası değil;
-                    # denemek anlamsız. Dış handler "halted_evidence"
-                    # terminal durumuna çevirir.
-                    raise
-                except Exception as e:
-                    last_err = e
-                    broadcast_log(
-                        client_id, "ERROR",
-                        f"UPLINK KOPTU (Deneme {scrape_attempt}/{scrape_max}): "
-                        f"{type(e).__name__}: {str(e)[:100]}",
-                    )
-                    if scrape_attempt < scrape_max:
-                        await asyncio.sleep(min(2 * scrape_attempt, 5))
-            if last_err is not None:
-                # [FIX #8] Altyapı tükenmesi → dürüst terminal durum.
-                # Boş profille operasyon ÇALIŞTIRILMAZ (eski kod sessizce
-                # devam edip kanıtsız "analiz" üretiyordu).
-                logger.error("HEDEF VERİSİ ALINAMADI: %s", str(last_err)[:200])
-                broadcast_result_error(
-                    client_id, "failed",
-                    "HEDEF VERİSİ ALINAMADI: kazıma altyapısı denemeleri tüketti; analiz başlatılmadı.",
-                    task_id,
-                )
-                return
         # [FAZ A · Retina] Kasa gerçeği görev payload'ına yazılır: ajanlar
         # capability omurgasını çağırırken durumu TAHMİN ETMEZ, operatörün
         # mandalının tek sahibi olan interlock'tan okur (kasa kapalıysa hiçbir
@@ -2838,6 +2874,8 @@ def broadcast_result_error(client_id, status, msg, task_id: Optional[str] = None
     room = app.state.rooms.get(client_id)
     if room is not None:
         _close_active_task(room, task_id, status)
+        if task_id:
+            room["latest_result"] = {"task_id": task_id, "status": status, "halted_reason": msg}
     payload = {"type": "result", "status": status}
     if task_id:
         payload["task_id"] = task_id

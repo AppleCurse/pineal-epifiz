@@ -46,6 +46,13 @@ class InsufficientEvidenceError(Exception):
     """Kanıt yoksa uydurma, DUR. Faz 4 kuralı."""
 
 
+class PrivateProfileEvidenceError(InsufficientEvidenceError):
+    """Gizli profil: gönderiler kapalı ama meta veri (bio, isim, bağlı hesaplar) kurtarıldı."""
+    def __init__(self, message: str, profile: Any = None):
+        super().__init__(message)
+        self.profile = profile
+
+
 # --- Pydantic V2 Şemalar (ConfigDict, extra="forbid" - halüsinasyon filtresi) ---
 class InstagramPost(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -348,8 +355,12 @@ class InstagramGhostScraper:
                 if name_m:
                     full_name = name_m.group(1).strip()
 
-            # 3. Bio parse (Multilingual)
-            bio_match = re.search(r'<meta\s+content="[^"]*(?:Instagram\'da|on Instagram):\s*&quot;([^&]*)&quot;"', html)
+            # 3. Bio parse (Multilingual & meta description fallback)
+            bio_match = (
+                re.search(r'<meta\s+[^>]*content="[^"]*(?:Instagram\'da|on Instagram):\s*&quot;([^&]*)&quot;"', html, re.DOTALL | re.IGNORECASE)
+                or re.search(r'<meta\s+content="[^"]*(?:Instagram\'da|on Instagram):\s*&quot;([^&]*)&quot;"', html, re.DOTALL | re.IGNORECASE)
+                or re.search(r'(?:Instagram\'da|on Instagram):\s*&quot;([^&]*)&quot;', html, re.DOTALL | re.IGNORECASE)
+            )
             if bio_match:
                 biography = html_lib.unescape(bio_match.group(1).strip())
             elif og_desc_match and " - " in og_desc_match.group(1):
@@ -501,10 +512,6 @@ class InstagramGhostScraper:
                     except Exception:
                         continue
 
-            # Eğer private ve post yoksa, sonraki ajanlar boş veriyle halüsinasyon göreceği için durdur
-            if is_private and len(posts) == 0:
-                raise InsufficientEvidenceError(f"Hedef profil gizli (Private) ve gönderi okunamıyor: {username}")
-
             profile = InstagramProfile(
                 username=username,
                 full_name=full_name,
@@ -517,6 +524,14 @@ class InstagramGhostScraper:
                 posts=posts,
                 evidence_source="self_hosted_ghost_browser"
             )
+
+            # Eğer private ve post yoksa, sonraki ajanlar boş veriyle halüsinasyon görmesin
+            # ama meta veri (bio, isim, bağlı hesaplar) PrivateProfileEvidenceError ile kurtarılır
+            if is_private and len(posts) == 0:
+                raise PrivateProfileEvidenceError(
+                    f"Hedef profil gizli (Private) ve gönderi okunamıyor: {username}",
+                    profile=profile,
+                )
 
             # --- ANTI-HALÜSİNASYON KONTROLÜ ---
             # Eğer hem follower yok, hem bio yok, hem post yok -> bu sayfa boş, HALT
@@ -769,6 +784,19 @@ class InstagramGhostScraper:
             raise InsufficientEvidenceError(f"Instagram rate-limit: {username} - bekle ve tekrar dene")
 
         raw = self._extract_from_html(html, username)
+        
+        # DOM tabanlı Header & Bio kurtarma (özellikle gizli ve modern Instagram sayfalarında)
+        try:
+            dom_bio_text = await playwright_page.evaluate("""() => {
+                const header = document.querySelector('header');
+                return header ? header.innerText : '';
+            }""")
+            if dom_bio_text and len(dom_bio_text.strip()) > 10:
+                # DOM header'ındaki metinleri HTML içine gömerek regex parse'ına destek ol
+                html += f'\n<meta content="{dom_bio_text.replace(chr(34), "&quot;")} on Instagram: &quot;{dom_bio_text.replace(chr(34), "&quot;")}&quot;" name="description">\n'
+        except Exception:
+            pass
+
         profile = self._parse_real_profile(raw, html, username)
 
         # [FAZ 1] Post-detay zenginlestirme: grid'de eksik kalan caption /

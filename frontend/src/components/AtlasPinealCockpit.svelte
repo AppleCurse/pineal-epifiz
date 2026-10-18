@@ -523,15 +523,145 @@
 
   // Aspasia Canlı CRT Sohbet Akışı
   let chatMessages: Array<{ ts: string; sender: string; text: string }> = [
-    { ts: nowTime(), sender: 'Aspasia', text: 'Sistem çevrimiçi. Dinliyorum Mösyö; hedefin durumunu, riskleri veya aklınızdaki soruları doğrudan sorabilirsiniz.' }
+    { ts: nowTime(), sender: 'Aspasia', text: 'Sistem çevrimiçi. İncelemek istediğiniz kişinin @kullanıcı adını, profil linkini veya sorunuzu doğrudan buraya yazabilirsiniz Mösyö; başka bir yere yazmanıza gerek yok.' }
   ];
   let terminalEl: HTMLElement | null = null;
+  let isChatExpanded = false;
+  let copiedIdx: number | null = null;
+  let copiedAll = false;
+  let lastAnnouncedTaskId: string | null = null;
+
+  const AGENT_PLAIN_TR: Record<string, string> = {
+    osint_investigator: 'Açık Kaynak & Web Araştırması',
+    pineal_7pillar: '7 Temel Profil Ölçümü',
+    mirror_truth: 'Kişisel Uyum Karşılaştırması',
+    autonomous_verifier: 'Doğruluk & Tutarlılık Kontrolü',
+    human_behavior: 'Davranış & Alışkanlık Analizi',
+    passion_mapper: 'İlgi Alanları & Tutku Analizi',
+    friction_detector: 'Hassasiyet & Sınır Analizi',
+    cognitive_profiler: 'İletişim Dili & Üslup Analizi',
+    resonance_calc: 'Uyum Hesaplaması',
+    pattern_interrupt: 'Dikkat Çekici Mesaj Kurgusu',
+    resonance_synthesizer: 'İlk İletişim Önerisi',
+    depth_analyst: 'Kişilik Özü Analizi',
+  };
+
+  $: plainLiveStatus = (() => {
+    const st = String($taskStatus?.status || '');
+    const cur = $taskStatus?.current_agent ? (AGENT_PLAIN_TR[$taskStatus.current_agent] || $taskStatus.current_agent) : null;
+    const doneCount = $taskStatus?.completed_agents?.length || 0;
+    const planCount = $taskStatus?.planned_agents?.length || 0;
+    const tName = $taskStatus?.target_profile?.name || $taskStatus?.target_profile?.username || targetUrl || '';
+    if ($isProcessing || st === 'running' || st === 'processing') {
+      return `ŞU AN ÇALIŞIYOR: ${tName ? `[${tName}] inceleniyor · ` : ''}${cur ? `Şu anki adım: ${cur}` : 'Veriler toplanıyor'}${planCount ? ` (${doneCount}/${planCount} adım tamamlandı)` : ''}`;
+    }
+    if (st && TERMINAL_STATUSES.has(st)) {
+      return `SON İŞLEM TAMAMLANDI${tName ? ` (${tName})` : ''} — Sonuçlar aşağıda; istediğiniz soruyu veya yeni bir hesabı doğrudan buraya yazabilirsiniz.`;
+    }
+    return 'HAZIR — İncelemek istediğiniz profil linkini, @kullanıcı adını veya sorunuzu doğrudan aşağıya yazın.';
+  })();
+
+  // Görev bittiğinde sonucu ve varsa eksikleri yalın Türkçe ile otomatik olarak sohbet ekranına yaz
+  $: {
+    const tId = $taskStatus?.task_id ?? null;
+    const st = String($taskStatus?.status ?? '');
+    if (tId && TERMINAL_STATUSES.has(st) && tId !== lastAnnouncedTaskId) {
+      lastAnnouncedTaskId = tId;
+      const tp = $taskStatus?.target_profile || {};
+      const name = tp.name || tp.username || targetUrl || 'Hedef profil';
+      const postCount = (tp.posts || []).length;
+      const snipCount = (tp.search_snippets || []).length;
+      const urlCount = (tp.detected_urls || []).length;
+      const essence = $taskStatus?.depth_report?.essence_one_liner || '';
+      const opening = $taskStatus?.runs?.resonance_synthesizer?.output_summary?.suggested_opening_message || '';
+      const channels = Array.isArray($taskStatus?.channel_status) ? $taskStatus.channel_status : [];
+
+      const parts: string[] = [];
+      parts.push(`✅ [${name}] incelemesi tamamlandı.`);
+      if (postCount > 0 || snipCount > 0 || urlCount > 0) {
+        parts.push(`📊 Toplanan bilgi: ${postCount} doğrudan gönderi, ${snipCount} web arama sonucu, ${urlCount} bağlantılı sosyal hesap.`);
+      } else {
+        parts.push(`⚠️ Bu isim veya bağlantı için açık kaynaklarda doğrudan gönderi/veri bulunamadı.`);
+      }
+      if (essence) {
+        parts.push(`💡 Kişilik Özü: "${essence}"`);
+      }
+      if (opening) {
+        parts.push(`💬 Önerilen İlk Mesaj: "${opening}"`);
+      }
+
+      const missingList: string[] = [];
+      for (const ch of channels) {
+        if (ch && (ch.status === 'failed' || ch.status === 'not_run')) {
+          const r = String(ch.reason || ch.detail || '');
+          if (String(ch.channel || '').includes('instagram') && (r.includes('login') || r.includes('session'))) {
+            missingList.push('Instagram oturumu (giriş çerezi) tanımlı olmadığı için doğrudan Instagram gönderileri yerine açık web araması kullanıldı.');
+          }
+        }
+      }
+      if ($taskStatus?.runs?.mirror_truth?.status === 'completed_no_decision') {
+        missingList.push('Sizinle kişisel uyum karşılaştırması için kendi ilgi alanı/ritüel bilginiz girilmemiş (isterseniz bana burada kısaca kendinizden bahsedebilirsiniz).');
+      }
+      if (missingList.length > 0) {
+        parts.push(`📌 Eksik Bilgi Notu: ${missingList.join(' ')}`);
+      }
+      parts.push(`Detayları sorabilir veya yeni bir profil/kullanıcı adı yazabilirsiniz.`);
+
+      chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: parts.join('\n') }];
+      scrollToBottom();
+    }
+  }
 
   function scrollToBottom() {
     if (typeof window !== 'undefined') {
       setTimeout(() => {
         if (terminalEl) terminalEl.scrollTop = terminalEl.scrollHeight;
       }, 40);
+    }
+  }
+
+  async function copyMessageText(text: string, idx: number) {
+    try {
+      await navigator.clipboard.writeText(text);
+      copiedIdx = idx;
+      setTimeout(() => { if (copiedIdx === idx) copiedIdx = null; }, 1800);
+    } catch (_e) {
+      // Fallback kopyalama
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      copiedIdx = idx;
+      setTimeout(() => { if (copiedIdx === idx) copiedIdx = null; }, 1800);
+    }
+  }
+
+  async function copyAllMessages() {
+    const all = chatMessages.map(m => `[${m.ts}] ${m.sender}: ${m.text}`).join('\n\n');
+    await copyMessageText(all, -1);
+    copiedAll = true;
+    setTimeout(() => { copiedAll = false; }, 1800);
+  }
+
+  function speakTextInBrowser(text: string): boolean {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return false;
+    try {
+      window.speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = 'tr-TR';
+      utter.rate = 1.02;
+      const voices = window.speechSynthesis.getVoices();
+      const trVoice = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('tr'));
+      if (trVoice) utter.voice = trVoice;
+      utter.onstart = () => speechState.set('speaking');
+      utter.onend = () => speechState.set('idle');
+      utter.onerror = () => speechState.set('idle');
+      window.speechSynthesis.speak(utter);
+      return true;
+    } catch (_e) {
+      return false;
     }
   }
 
@@ -561,29 +691,44 @@
   }
 
   async function readReportAloud() {
+    if (isReadingReport) {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+      isReadingReport = false;
+      speechState.set('idle');
+      return;
+    }
     const digest = reportDigest($taskStatus);
-    if (!digest || isReadingReport) return;
+    const lastAspasiaMsg = [...chatMessages].reverse().find(m => m.sender === 'Aspasia')?.text || '';
+    if (!digest && !lastAspasiaMsg) return;
     isReadingReport = true;
     playClick(590, 40);
     try {
-      const res = await apiFetch('/api/speech/report', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ client_id: $clientId || 'default', report: digest })
-      });
-      const data = await res.json();
-      if (data.script) addLog(`SES: rapor okundu → ${data.script}`, 'INFO');
-      if (!data.available) addLog(`SES: ses ÜRETİLEMEDİ — ${data.reason}`, 'WARNING');
+      if (digest) {
+        const res = await apiFetch('/api/speech/report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ client_id: $clientId || 'default', report: digest })
+        });
+        const data = await res.json();
+        if (data.script) addLog(`SES: rapor okundu → ${data.script}`, 'INFO');
+        if (!data.available) {
+          addLog(`SES: ses ÜRETİLEMEDİ — ${data.reason}`, 'WARNING');
+          speakTextInBrowser(data.script || lastAspasiaMsg);
+        }
+      } else if (lastAspasiaMsg) {
+        speakTextInBrowser(lastAspasiaMsg);
+      }
     } catch (_e) {
       addLog('SES: rapor okunamadı', 'WARNING');
+      if (lastAspasiaMsg) speakTextInBrowser(lastAspasiaMsg);
     } finally {
       isReadingReport = false;
     }
   }
 
-  // --- [FAZ C · C3] DİNLEYEN GÖZ: mikrofon -> yerel STT -> Aspasia ---
-  // Kayıt TARAYICIDA tutulur, yalnız transkript için YEREL motora gider;
-  // ses dosyası dışarı çıkmaz. Motor yoksa uydurma metin yazılmaz.
+  // --- [FAZ C · C3] DİNLEYEN GÖZ: mikrofon -> tarayıcı Türkçe STT veya yerel STT -> Aspasia ---
   const MAX_MIC_AUDIO_BYTES = 8 * 1024 * 1024;
   let micRecorder: MediaRecorder | null = null;
   let micChunks: Blob[] = [];
@@ -593,6 +738,7 @@
   let micLimitReached = false;
   let isListening = false;
   let isTranscribing = false;
+  let browserRecognition: any = null;
 
   async function toggleListening() {
     if (isListening) {
@@ -604,6 +750,9 @@
       return;
     }
     // ARAYA GİRME: Aspasia konuşurken mikrofon açılırsa SUSAR.
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
     if ($speechState === 'speaking') {
       try {
         await apiFetch(`/api/speech/stop?client_id=${encodeURIComponent($clientId)}`, { method: 'POST' });
@@ -612,6 +761,59 @@
         addLog('SES: araya girilemedi', 'WARNING');
       }
     }
+
+    // 1) Önce tarayıcının yerleşik Türkçe Ses Tanıma motorunu (Web Speech API) dene:
+    const SpeechRec = typeof window !== 'undefined'
+      ? ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)
+      : null;
+    if (SpeechRec) {
+      try {
+        const rec = new SpeechRec();
+        browserRecognition = rec;
+        rec.lang = 'tr-TR';
+        rec.interimResults = true;
+        rec.continuous = false;
+        let finalTranscript = '';
+        rec.onresult = (event: any) => {
+          let interim = '';
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const tr = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+              finalTranscript += tr + ' ';
+            } else {
+              interim += tr;
+            }
+          }
+          inputMessage = (finalTranscript + interim).trim();
+        };
+        rec.onend = () => {
+          isListening = false;
+          speechState.set('idle');
+          browserRecognition = null;
+          const heard = inputMessage.trim();
+          if (heard) {
+            addLog(`SES: duyuldu (tarayıcı tr-TR) → ${heard}`, 'INFO');
+            void sendAspasiaMessage();
+          }
+        };
+        rec.onerror = (e: any) => {
+          isListening = false;
+          speechState.set('idle');
+          browserRecognition = null;
+          addLog(`SES: mikrofon hatası (${e?.error || 'bilinmiyor'})`, 'WARNING');
+        };
+        rec.start();
+        isListening = true;
+        speechState.set('listening');
+        playClick(660, 40);
+        addLog('SES: dinliyorum (Türkçe konuşabilirsiniz)...', 'INFO');
+        return;
+      } catch (_e) {
+        browserRecognition = null;
+      }
+    }
+
+    // 2) Yedek: MediaRecorder -> /api/speech/listen
     try {
       micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (_e) {
@@ -658,6 +860,17 @@
   }
 
   function stopListening(transcribe = true) {
+    if (browserRecognition) {
+      try {
+        if (transcribe) browserRecognition.stop();
+        else browserRecognition.abort();
+      } catch (_e) {}
+      browserRecognition = null;
+      isListening = false;
+      speechState.set('idle');
+      if (transcribe) playClick(330, 40);
+      return;
+    }
     if (micRecorder && micRecorder.state !== 'inactive') {
       if (!transcribe) {
         micRecorder.onstop = null;
@@ -726,6 +939,56 @@
     }
   }
 
+  /**
+   * Kullanıcının sohbet kutusuna yazdığı metinden doğrudan profil bağlantısı veya
+   * @kullanıcı_adı çıkarır. Böylece "oraya yaz buraya yaz" kalmaz; her şey sohbet
+   * kutusundan tek adımda çalışır.
+   */
+  function extractTargetFromChat(rawText: string): string | null {
+    const trimmed = rawText.trim();
+    // 1) Tam URL var mı?
+    const fullUrlMatch = trimmed.match(/https?:\/\/[^\s"'<>]+/i);
+    if (fullUrlMatch) return fullUrlMatch[0].replace(/^http:\/\//i, 'https://');
+
+    // 2) Şemasız bilinen platform linki (örn. instagram.com/kullanici, x.com/kullanici)
+    const domainMatch = trimmed.match(/\b((?:www\.)?(?:instagram\.com|instagr\.am|x\.com|twitter\.com|linkedin\.com|tiktok\.com|github\.com|youtube\.com|reddit\.com|t\.me|threads\.net|facebook\.com|pinterest\.com|twitch\.tv|medium\.com)\/[A-Za-z0-9._@%/-]+)/i);
+    if (domainMatch) return `https://${domainMatch[1]}`;
+
+    // 3) @kullanici_adi yazıldıysa (örn. "@megadose" veya "@megadose incele")
+    const atMatch = trimmed.match(/(?:^|\s)@([A-Za-z0-9._]{2,32})(?:\b|$)/);
+    if (atMatch) {
+      const handle = atMatch[1];
+      if (/\b(x|twitter)\b/i.test(trimmed)) return `https://x.com/${handle}/`;
+      if (/\btiktok\b/i.test(trimmed)) return `https://www.tiktok.com/@${handle}`;
+      if (/\bgithub\b/i.test(trimmed)) return `https://github.com/${handle}`;
+      if (/\btelegram\b/i.test(trimmed)) return `https://t.me/${handle}`;
+      return `https://www.instagram.com/${handle}/`;
+    }
+
+    // 4) Tek kelimelik kullanıcı adı veya "instagram kullanici incele" kalıbı
+    const platformHandleMatch = trimmed.match(/\b(instagram|insta|x|twitter|tiktok|github|linkedin|telegram)(?:['’]?da|['’]?de|['’]?dan|['’]?den)?\s+([A-Za-z0-9._]{2,32})\b/i);
+    if (platformHandleMatch) {
+      const plat = platformHandleMatch[1].toLowerCase();
+      const handle = platformHandleMatch[2];
+      const stopWords = new Set(['incele', 'analiz', 'tara', 'bak', 'hesabini', 'hesabını', 'profilini', 'profili', 'kim', 'nedir']);
+      if (!stopWords.has(handle.toLowerCase())) {
+        if (plat === 'x' || plat === 'twitter') return `https://x.com/${handle}/`;
+        if (plat === 'tiktok') return `https://www.tiktok.com/@${handle}`;
+        if (plat === 'github') return `https://github.com/${handle}`;
+        if (plat === 'telegram') return `https://t.me/${handle}`;
+        return `https://www.instagram.com/${handle}/`;
+      }
+    }
+
+    // 5) Eğer kullanıcı "başlat / incele / analiz et" dediyse ve üstteki targetUrl kutusunda zaten bir değer varsa onu kullan
+    if (targetUrl.trim() && /\b(başlat|baslat|incele|analiz|tara|araştır|arastir)\b/i.test(trimmed)) {
+      const existing = targetUrl.trim();
+      return existing.startsWith('http') ? existing : `https://www.instagram.com/${existing.replace(/^@/, '')}/`;
+    }
+
+    return null;
+  }
+
   async function sendAspasiaMessage() {
     const text = inputMessage.trim();
     if (!text || isSending) return;
@@ -738,14 +1001,30 @@
     scrollToBottom();
     addLog(`SİZ: ${text}`, 'INFO');
 
+    const extractedTarget = extractTargetFromChat(text);
+    if (extractedTarget) {
+      targetUrl = extractedTarget;
+    }
+    const commandPayloadText = extractedTarget && !text.includes('https://')
+      ? `${text} (${extractedTarget})`
+      : text;
+
     // [P6 · KOMUT KANALI] Önce YAZMA yolu denenir: Aspasia'nın tek yetkili
     // yazma eylemi `run_profile_analysis` (`POST /api/aspasia/command`). Kabul edilip
     // görev id dönerse görev BAŞLAR (canlı akış WS'ten gelir). Kabul edilmezse
     // veya uç erişilemezse sohbet ucuna düşülür — mesaj kaybı yok.
     // (Düşüşün sebebi ekrana yazılır; "kurgu emir" gösterilmez.)
-    const commandResult = await tryAspasiaCommand(text);
+    const commandResult = await tryAspasiaCommand(commandPayloadText);
     if (commandResult.started) {
       isSending = false;
+      return;
+    }
+
+    // Kullanıcı sohbet kutusuna doğrudan bir link veya @kullanıcı_adı yazdıysa
+    // ve komut ucu LLM niyet sınıflandırmasında takıldıysa, doğrudan /api/initiate ile başlat:
+    if (extractedTarget && !$isProcessing) {
+      isSending = false;
+      await launchAnalysis();
       return;
     }
 
@@ -771,6 +1050,9 @@
         scrollToBottom();
         addLog(`ASPASIA: ${reply}`, 'INFO');
         playClick(520, 40);
+        if ($voiceEnabled) {
+          speakTextInBrowser(reply);
+        }
       } else {
         throw new Error(`HTTP ${res.status}`);
       }
@@ -1019,32 +1301,59 @@
   ></button>
 
   <!-- Aspasia Canlı CRT Terminal Ekranı (Dinamik Canlı Sohbet & Rapor Akışı) -->
-  <div class="aspasia-crt-terminal" bind:this={terminalEl}>
-    {#each chatMessages as msg}
-      <div class="term-line {msg.sender === 'SİZ' ? 'user-line' : 'aspasia-line'}">
-        <span class="ts">[{msg.ts}]</span>
-        <span class={msg.sender === 'SİZ' ? 'sender-user' : 'sender-aspasia'}>{msg.sender}</span>
-        <span class="arrow">&gt;</span>
-        <span class="term-text">{msg.text}</span>
+  <div class="aspasia-crt-terminal" class:expanded={isChatExpanded} bind:this={terminalEl}>
+    <!-- SOHBET ÜST PANELİ & ŞU AN NE OLUYOR BİLGİLENDİRMESİ -->
+    <div class="aspasia-header-bar">
+      <div class="aspasia-header-left">
+        <span class="aspasia-title-tag">💬 ASPASIA SOHBET & KOMUT MERKEZİ</span>
+        <span class="aspasia-live-status-pill">{plainLiveStatus}</span>
       </div>
-    {/each}
-    {#if isSending}
-      <div class="term-line typing-line">
-        <span class="ts">[{nowTime()}]</span>
-        <span class="sender-aspasia">Aspasia</span>
-        <span class="arrow">&gt;</span>
-        <span class="term-text typing-glow">Düşünüyor ve sistem verilerini inceliyor...</span>
+      <div class="aspasia-header-actions">
+        <button class="chat-tool-btn" on:click={copyAllMessages} title="Tüm sohbeti panoya kopyala">
+          {copiedAll ? '✓ KOPYALANDI' : '📋 TÜMÜNÜ KOPYALA'}
+        </button>
+        <button class="chat-tool-btn" on:click={() => isChatExpanded = !isChatExpanded} title="Sohbet ekranını büyüt / küçült">
+          {isChatExpanded ? '⤡ KÜÇÜLT' : '⤢ BÜYÜT'}
+        </button>
       </div>
-    {/if}
+    </div>
+
+    <!-- MESAJLAR AKIŞI -->
+    <div class="aspasia-messages-stream">
+      {#each chatMessages as msg, idx}
+        <div class="term-line {msg.sender === 'SİZ' ? 'user-line' : 'aspasia-line'}">
+          <span class="ts">[{msg.ts}]</span>
+          <span class={msg.sender === 'SİZ' ? 'sender-user' : 'sender-aspasia'}>{msg.sender}</span>
+          <span class="arrow">&gt;</span>
+          <span class="term-text">{msg.text}</span>
+          <button class="msg-copy-btn" on:click={() => copyMessageText(msg.text, idx)} title="Mesajı kopyala">
+            {copiedIdx === idx ? '✓' : '📋'}
+          </button>
+          {#if msg.sender === 'Aspasia'}
+            <button class="msg-speak-btn" on:click={() => speakTextInBrowser(msg.text)} title="Bu mesajı sesli oku">
+              🔊
+            </button>
+          {/if}
+        </div>
+      {/each}
+      {#if isSending}
+        <div class="term-line typing-line">
+          <span class="ts">[{nowTime()}]</span>
+          <span class="sender-aspasia">Aspasia</span>
+          <span class="arrow">&gt;</span>
+          <span class="term-text typing-glow">İnceliyor ve sistem verilerini derliyor...</span>
+        </div>
+      {/if}
+    </div>
   </div>
 
   <!-- Aspasia Sohbet/Komut Satırı (Sol alttaki '> Komut veya sorgu gir...' alanı) -->
-  <div class="aspasia-command-slot">
+  <div class="aspasia-command-slot" class:expanded-slot={isChatExpanded}>
     <input
       type="text"
       class="aspasia-command-input"
       bind:value={inputMessage}
-      placeholder="> Komut veya soru girin (Enter ile gönder)..."
+      placeholder="> Profil linki, @kullanıcı veya soru girin (Enter ile doğrudan gönder)..."
       disabled={isSending}
       on:keydown={(e) => { if (e.key === 'Enter') sendAspasiaMessage(); }}
       title="Aspasia Komut Satırı"
@@ -1054,26 +1363,29 @@
   <!-- [FAZ C · C4] SESLİ RAPOR: son görevin özetini YÜKSEK SESLE okur -->
   <button
     class="mic-spot report-spot"
+    class:expanded-btn={isChatExpanded}
     on:click={readReportAloud}
-    disabled={isReadingReport || !$taskStatus}
-    title={$taskStatus ? 'Son raporu sesli oku' : 'Okunacak rapor yok'}
+    disabled={isReadingReport && !$taskStatus}
+    title="Son raporu veya Aspasia yanıtını sesli oku"
   >
-    {isReadingReport ? 'OKUYOR' : 'RAPORU OKU'}
+    {isReadingReport ? 'DURDUR' : '🔊 SESLİ OKU'}
   </button>
 
   <!-- [FAZ C · C3] MİKROFON: bas -> dinler, bırak -> yerel STT -> Aspasia -->
   <button
     class="mic-spot"
     class:listening={isListening}
+    class:expanded-btn={isChatExpanded}
     on:click={toggleListening}
-    title={isListening ? 'Dinliyorum — bırakmak için tıkla' : 'Mikrofon: konuş, Aspasia duysun'}
+    title={isListening ? 'Dinliyorum — durdurmak için tıkla' : 'Mikrofon: konuş, Aspasia duysun'}
   >
-    {isListening ? 'DİNLİYOR' : 'MİK'}
+    {isListening ? '🎤 DİNLİYOR' : '🎤 MİK'}
   </button>
 
   <!-- Aspasia GÖNDER Butonu ('GÖNDER' butonu üzerine şık buton) -->
   <button
     class="aspasia-send-spot"
+    class:expanded-btn={isChatExpanded}
     on:click={sendAspasiaMessage}
     disabled={isSending || !inputMessage.trim()}
     title="GÖNDER"
@@ -1443,36 +1755,130 @@
   }
 
   /* =========================================================
-     CANLI ASPASIA CRT TERMİNAL EKRANI (DİNAMİK AKIŞ)
+     CANLI ASPASIA CRT TERMİNAL EKRANI (DİNAMİK AKIŞ & BÜYÜTÜLEBİLİR MOD)
      ========================================================= */
   .aspasia-crt-terminal {
     position: absolute;
     left: 5.44%;
-    top: 83.20%;
+    top: 80.20%;
     width: 44.50%;
-    height: 10.40%;
+    height: 13.40%;
     background: #020705;
-    border-radius: 3px;
+    border-radius: 4px;
     padding: 6px 10px;
-    overflow-y: auto;
-    overflow-x: hidden;
+    overflow: hidden;
     z-index: 12;
     display: flex;
     flex-direction: column;
     gap: 4px;
-    box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.95), inset 0 0 4px rgba(6, 182, 212, 0.15);
+    box-shadow: inset 0 0 16px rgba(0, 0, 0, 0.95), 0 0 10px rgba(16, 185, 129, 0.15);
     font-family: 'JetBrains Mono', monospace;
-    font-size: clamp(9px, 0.76vw, 12px);
-    line-height: 1.35;
-    border: 1px solid rgba(16, 185, 129, 0.25);
+    font-size: clamp(10px, 0.85vw, 13px);
+    line-height: 1.45;
+    border: 1px solid rgba(16, 185, 129, 0.45);
+    user-select: text !important;
+    -webkit-user-select: text !important;
+    cursor: text;
+    transition: all 0.28s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
-  .aspasia-crt-terminal::-webkit-scrollbar {
-    width: 4px;
+  /* BÜYÜTÜLMÜŞ TAM EKRAN MODU */
+  .aspasia-crt-terminal.expanded {
+    position: fixed;
+    left: 50% !important;
+    top: 48% !important;
+    transform: translate(-50%, -50%);
+    width: min(920px, 88vw) !important;
+    height: min(720px, 80vh) !important;
+    z-index: 99999 !important;
+    font-size: 14px !important;
+    box-shadow: 0 0 60px rgba(0, 0, 0, 0.98), 0 0 30px rgba(16, 185, 129, 0.35) !important;
+    border: 2px solid #10b981 !important;
+    background: rgba(2, 8, 5, 0.97) !important;
+    backdrop-filter: blur(12px);
   }
-  .aspasia-crt-terminal::-webkit-scrollbar-thumb {
-    background: rgba(16, 185, 129, 0.4);
-    border-radius: 2px;
+
+  .aspasia-header-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 4px;
+    border-bottom: 1px solid rgba(16, 185, 129, 0.25);
+    flex-shrink: 0;
+    gap: 8px;
+    user-select: none;
+  }
+
+  .aspasia-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow: hidden;
+  }
+
+  .aspasia-title-tag {
+    color: #34d399;
+    font-weight: 800;
+    font-size: 0.85em;
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+  }
+
+  .aspasia-live-status-pill {
+    color: #6ee7b7;
+    font-size: 0.78em;
+    background: rgba(16, 185, 129, 0.15);
+    padding: 2px 7px;
+    border-radius: 4px;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+  }
+
+  .aspasia-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .chat-tool-btn {
+    background: rgba(16, 185, 129, 0.18);
+    border: 1px solid rgba(16, 185, 129, 0.45);
+    color: #6ee7b7;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 0.76em;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.2s ease;
+  }
+
+  .chat-tool-btn:hover {
+    background: rgba(16, 185, 129, 0.35);
+    color: #fff;
+  }
+
+  .aspasia-messages-stream {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-right: 4px;
+    user-select: text !important;
+    -webkit-user-select: text !important;
+  }
+
+  .aspasia-messages-stream::-webkit-scrollbar {
+    width: 6px;
+  }
+  .aspasia-messages-stream::-webkit-scrollbar-thumb {
+    background: rgba(16, 185, 129, 0.5);
+    border-radius: 3px;
   }
 
   .term-line {
@@ -1480,6 +1886,26 @@
     align-items: baseline;
     gap: 6px;
     word-break: break-word;
+    user-select: text !important;
+    -webkit-user-select: text !important;
+    padding: 2px 0;
+  }
+
+  .msg-copy-btn, .msg-speak-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: rgba(16, 185, 129, 0.6);
+    font-size: 0.9em;
+    padding: 0 4px;
+    margin-left: 4px;
+    flex-shrink: 0;
+    transition: all 0.2s ease;
+  }
+
+  .msg-copy-btn:hover, .msg-speak-btn:hover {
+    color: #34d399;
+    transform: scale(1.15);
   }
 
   .ts {
@@ -1511,6 +1937,9 @@
   .term-text {
     color: #a7f3d0;
     text-shadow: 0 0 4px rgba(167, 243, 208, 0.3);
+    white-space: pre-wrap;
+    user-select: text !important;
+    -webkit-user-select: text !important;
   }
 
   .user-line .term-text {
@@ -1540,6 +1969,16 @@
     align-items: center;
   }
 
+  .aspasia-command-slot.expanded-slot {
+    position: fixed !important;
+    bottom: calc(50vh - min(360px, 40vh) + 12px) !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    width: min(880px, 84vw) !important;
+    height: 44px !important;
+    z-index: 100000 !important;
+  }
+
   .aspasia-command-input {
     width: 100%;
     height: 100%;
@@ -1549,7 +1988,7 @@
     outline: none;
     padding: 0 10px;
     color: #34d399;
-    font-size: clamp(9px, 0.82vw, 12px);
+    font-size: clamp(10px, 0.88vw, 13px);
     font-family: 'JetBrains Mono', monospace;
     caret-color: #10b981;
     box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.95);
@@ -1563,7 +2002,7 @@
   }
 
   .aspasia-command-input::placeholder {
-    color: rgba(52, 211, 153, 0.4);
+    color: rgba(52, 211, 153, 0.55);
     font-size: 0.9em;
   }
 

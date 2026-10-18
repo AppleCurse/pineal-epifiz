@@ -18,31 +18,33 @@ from pydantic import BaseModel
 
 from agent_core.services.llm_gateway import LLMGateway
 
-ASPASIA_SYSTEM_PROMPT = """Sen ASPASIA'sın: PINEAL sisteminin kullanıcıyla konuşan chief asistanı.
+ASPASIA_SYSTEM_PROMPT = """Sen ASPASIA'sın: PINEAL sisteminin kullanıcıyla konuşan başdanışmanı ve tek merkezli sohbet/komut arayüzüsün.
 
-KİMLİK: Sakin, zarif, ölçülü ve analitiksin; ince ve kuru bir mizah kullanabilirsin. Zekânı sergilemezsin, kullanırsın. Kullanıcıya "Mösyö" diye hitap edersin — her cümlede değil, doğal aralıkla.
+KİMLİK: Sakin, net, anlaşılır ve doğal bir Türkçe ile konuşursun. Kullanıcıya gerektiğinde doğal aralıkla "Mösyö" diye hitap edersin.
 
-KONU: Hedef profil, kanıt zinciri ve sistem durumu. Kullanıcının mesajını ya da kişiliğini analiz konusu yapmazsın.
+KONU: Hedef profil, toplanan bulgular ve şu anki işlem durumu. Kullanıcının mesajını ya da kişiliğini analiz konusu yapmazsın.
 
 KANIT SÖZLEŞMESİ:
-- Sadece elindeki sistem verisinin (telemetri/kanıt özeti) söylediğini söylersin; veride olmayanı uydurmazsın.
+- Sadece elindeki sistem verisinin söylediğini söylersin; veride olmayanı uydurmazsın.
 - Doğrulamadığın şeyi kesin gibi sunmazsın; bilmiyorsan "Bunu henüz doğrulamadım, Mösyö." dersin.
-- Kanıt yetersizse bunu açıkça söylersin; sonucu şişirmezsin; ham log veya iç etiket kopyalamazsın.
+- Kanıt yetersizse veya bir bilgi eksikse bunu yalın, günlük bir dille açıkça söylersin; ham log, iç değişken adı veya teknik etiket kopyalamazsın.
 
-ÜSLUP:
-- Kısa ve net: önce sonuç, gerekiyorsa bir-iki cümle neden, sonra tek bir sonraki adım. Duvar-metin yazmazsın.
-- Jargonu çevirirsin ("dizin" değil "klasör"); teknik terim şartsa aynı cümlede kısaca açıklarsın.
-- Komut satırı / PowerShell önerisi VERMEZSİN. Ne yapılması gerektiğini ve nedenini günlük dille söylersin; uygulamayı kullanıcı yapar.
-- Sokak ağzı, abartılı emoji, yapay samimiyet, teatral ton yok. Kullanıcı öfkelenirse sakin kalır, konuya dönersin.
+ÜSLUP (YALIN VE DOĞAL DİL):
+- Kısa, sade ve herkesin ilk okumada anlayacağı yalın bir Türkçe kullan: önce sonuç, sonra gerekiyorsa tek cümleyle neden, sonra tek bir sonraki adım.
+- Asla karmaşık iç terimler ("telemetri", "canonical memory", "bayat snapshot", "pipeline", "routing-aday", "snippet", "7-pillar", "command gateway") kullanma; bunları günlük konuşma diline çevir.
+- Komut satırı / PowerShell önerisi VERMEZSİN.
+- Kullanıcıya ASLA "yukarıdaki kutuya yazın", "başka bir bölüme geçin" veya "CAPTURE tuşuna basın" DEME! Kullanıcı her şeyi doğrudan bu sohbet kutusuna yazarak halledebilir.
+- Eğer bir inceleme başlatmak için hedef hesap linki veya kullanıcı adı eksikse: "Hangi hesabı incelememi istersiniz Mösyö? Kullanıcı adını (örneğin @kullanici) veya profil linkini doğrudan buraya yazmanız yeterli." de.
+- Eğer yapılan incelemede bir veri eksik kaldıysa (örneğin Instagram oturumu açık olmadığı için gönderiler çekilemediyse veya açık web aramasında yeterli bilgi çıkmadıysa), neyin eksik olduğunu doğal dille söyle.
 
-KARAR: Teknik seçimi sen yapmazsın — CognitiveRouter yapar. Öneri sunar, gerekçeni söyler, tek yol tavsiye edersin; seçenek menüsü sunmazsın. Kullanıcının planına itirazın varsa gerekçeni bir-iki cümleyle söylersin, kararı ona bırakırsın. Kendinle çelişmezsin; yanıldıysan savunmaz, düzeltir ve devam edersin.
+KARAR: Teknik seçimi sen yapmazsın — CognitiveRouter yapar. Öneri sunar, gerekçeni söyler, tek yol tavsiye edersin.
 
 SINIR: Sisteme doğrudan müdahale yetkin yok; gereken işlem kullanıcıya gerekçesiyle iletilir. Kusursuz Türkçe konuşursun.
 
 ROL GENİŞLETMESİ — MERKEZİ ARAYÜZ VE DENETİM:
-- Sen Pineal'in merkezi doğal-dil arayüzüsün: sistem, ajan, routing, kota ve maliyet durumunu elindeki DENETİM KATMANI özetinden kullanıcıya şeffafça açıklarsın (rota neden seçildi, kota ne durumda, indirimli fiyat listeye göre ne, fallback neden işledi, ikame neden reddedildi).
-- Kullanıcı isteğini yapılandırılmış komuta çevirebilirsin; komut yalnız CommandGateway üzerinden geçer: doğrulama, rate limit, yaşam döngüsü ve gerçek planlayıcı (CognitiveRouter) katmanlarından geçtikten sonra yürür. Bu, "doğrudan müdahale" değil, yetkili kanaldan iletilen taleptir.
-- Politika atlatma öneremezsin; model/provider/ajan adı uyduramazsın; ajan listesi senin işin değil planlayıcının işidir. Özetlerde kanıt yoksa "veri yok" dersin — ham log dökmezsin.
+- Sen Pineal'in merkezi doğal-dil arayüzüsün: sistem, ajan, routing, kota ve maliyet durumunu sorulduğunda elindeki özetten şeffafça ve sade bir dille açıklarsın.
+- Kullanıcı isteğini yapılandırılmış komuta çevirebilirsin; komut yalnız CommandGateway üzerinden geçer.
+- Politika atlatma öneremezsin; model/provider/ajan adı uyduramazsın. Özetlerde kanıt yoksa "veri yok" dersin — ham log dökmezsin.
 """
 
 class AspasiaResponse(BaseModel):
@@ -110,10 +112,14 @@ class AspasiaChief:
                 snapshot = list(active_tasks.values())[-1]
             elif "task_id" in room_state:
                 snapshot = room_state
+            elif isinstance(room_state.get("latest_result"), dict) and room_state["latest_result"].get("task_id"):
+                snapshot = room_state["latest_result"]
             else:
                 vault = room_state.get("vault", {})
                 api_status = 'OK' if vault.get('or_key') else 'X'
-                return f"Sistem boşta. API: {api_status} | Beklemedeyiz."
+                recent_logs = room_state.get("logs") or []
+                log_tail = ("\nSon Oda Kayıtları:\n" + "\n".join(str(x) for x in recent_logs[-10:])) if recent_logs else ""
+                return f"Sistem boşta. API: {api_status} | Beklemedeyiz. (Henüz incelenecek bir profil linki veya @kullanıcı adı girilmedi.){log_tail}"
         else:
             return "Sistem beklemede. Henüz aktif görev tetiklenmedi."
 
@@ -127,7 +133,9 @@ class AspasiaChief:
             planned = snapshot.get("planned_agents", [])
             completed = snapshot.get("completed_agents", [])
             halted_reason = snapshot.get("halted_reason")
-            agent_runs = snapshot.get("agent_runs", {})
+            agent_runs = snapshot.get("agent_runs", {}) or snapshot.get("runs", {})
+            target_profile = snapshot.get("target_profile") or {}
+            channel_status = snapshot.get("channel_status") or []
         else:
             task_id = getattr(snapshot, "task_id", "unknown")
             status = getattr(snapshot, "status", "unknown")
@@ -136,6 +144,8 @@ class AspasiaChief:
             completed = getattr(snapshot, "completed_agents", []) or []
             halted_reason = getattr(snapshot, "halted_reason", None)
             agent_runs = getattr(snapshot, "agent_runs", {}) or {}
+            target_profile = getattr(snapshot, "target_profile", {}) or {}
+            channel_status = getattr(snapshot, "channel_status", []) or []
 
         # [FAZ 2] Enum repr ("PipelineStatus.COMPLETED") kullaniciya sizmaz;
         # durum degeri normalize edilir (interface._status_value ile ayni kural).
@@ -149,16 +159,62 @@ class AspasiaChief:
             f"Planlanan: {' -> '.join(planned) if planned else 'Henüz rota çizilmedi'}",
             f"Tamamlanan: {', '.join(completed) or 'henüz yok'}",
         ]
+
+        if isinstance(target_profile, dict) and target_profile:
+            t_name = target_profile.get("name") or target_profile.get("username") or ""
+            t_bio = target_profile.get("bio") or ""
+            t_posts = target_profile.get("posts") or []
+            t_snips = target_profile.get("search_snippets") or []
+            t_urls = target_profile.get("detected_urls") or []
+            t_followers = target_profile.get("followers")
+            t_following = target_profile.get("following")
+            counts_part = []
+            if t_followers is not None:
+                counts_part.append(f"Takipçi: {t_followers}")
+            if t_following is not None:
+                counts_part.append(f"Takip: {t_following}")
+            counts_str = f" | {' / '.join(counts_part)}" if counts_part else ""
+            lines.append(
+                f"Hedef Profil: {t_name or 'Bilinmiyor'}{counts_str} | Gönderi sayısı: {len(t_posts)} | "
+                f"Web arama sonucu: {len(t_snips)} | Bulunan sosyal bağlantılar: {len(t_urls)}"
+            )
+            if t_bio:
+                lines.append(f"Hedef Biyografisi (Bio): {str(t_bio)[:400]}")
+                import re
+                bio_mentions = re.findall(r"@[A-Za-z0-9_.-]+", str(t_bio))
+                if bio_mentions:
+                    lines.append(f"Biyografideki Bağlı/İş Hesapları: {', '.join(bio_mentions)}")
+            if t_urls:
+                lines.append(f"Tespit Edilen Bağlantılar/Hesaplar: {', '.join(t_urls[:5])}")
+
+        missing_notes = []
+        if isinstance(channel_status, list):
+            for ch in channel_status:
+                if isinstance(ch, dict) and ch.get("status") in ("failed", "not_run"):
+                    ch_name = ch.get("channel") or ""
+                    reason = ch.get("reason") or ch.get("detail") or ""
+                    if "instagram" in ch_name and ("login" in str(reason) or "session" in str(reason)):
+                        missing_notes.append("Instagram doğrudan gönderi çekimi için Instagram oturumu (çerez) eksik; açık web araması kullanıldı.")
+                    elif reason:
+                        missing_notes.append(f"{ch_name}: {reason}")
+        if missing_notes:
+            lines.append("EKSİK / ÇALIŞMAYAN KANALLAR (Kullanıcıya yalın dille açıkla): " + " | ".join(missing_notes))
         
         if halted_reason:
             lines.append(f"DURDURMA NEDENİ: {halted_reason}")
             
         if agent_runs:
             for name, run in agent_runs.items():
-                conf = f"{run.confidence:.2f}" if getattr(run, "confidence", None) is not None else "?"
-                st = getattr(run, "status", "unknown")
+                if isinstance(run, dict):
+                    conf_val = run.get("confidence")
+                    conf = f"{conf_val:.2f}" if isinstance(conf_val, (int, float)) else "?"
+                    st = run.get("status", "unknown")
+                    err = run.get("error_message")
+                else:
+                    conf = f"{run.confidence:.2f}" if getattr(run, "confidence", None) is not None else "?"
+                    st = getattr(run, "status", "unknown")
+                    err = getattr(run, "error_message", None)
                 lines.append(f"  [{name}] {st} | güven:{conf}")
-                err = getattr(run, "error_message", None)
                 if err:
                     lines.append(f"    HATA: {err}")
 
@@ -190,6 +246,8 @@ class AspasiaChief:
                 lines.append(f"  [SAHİCİ İLETİŞİM KÖPRÜSÜ]: \"{msg}\"")
             lines.append("--------------------------------------")
                     
+        if isinstance(room_state, dict) and room_state.get("logs"):
+            lines.append("Son Oda Kayıtları:\n" + "\n".join(str(x) for x in room_state["logs"][-10:]))
         return "\n".join(lines)
 
     async def chat(
@@ -240,11 +298,11 @@ SİSTEM CANLI TELEMETRİ ÖZETİ (Event Bus):
 KULLANICI MESAJI VEYA SORUSU: "{user_message}"
 {"(Not: Kullanıcı bir görsel yükledi; görsel de isteğe eklenmiştir — varsa içeriğini yorumla.)" if image_data else ""}
 
-Yukarıdaki sistem durumu ve kullanıcı mesajını dikkate alarak ASPASIA kimliğinle yanıt ver.
-Kullanıcının sistem tercümanına ihtiyacı yok: ajanların ne yaptığını, hangi model/provider durumunun etkilediğini ve kanıtın ne söylediğini günlük dille kendin açıkla.
-Senin sisteme doğrudan müdahale etme veya durdurma yetkin yok. Kullanıcının bir işlem yapması gerekiyorsa önce nedenini söyle; ne yapılacağını günlük dille anlat, komut satırı önerme.
-Bir hata veya durma varsa hangi ajanın takıldığını, nedenini ve sonraki doğru adımı açıkla. Telemetride olmayan şeyi uydurma; kanıt yoksa bunu dürüstçe belirt.
-Cevabın kısa ve net olsun: sonuç, sonra gerekiyorsa neden ve tek bir sonraki adım. Kullanıcıya "Mösyö" diye hitap et; duvar-metin yazma; gereksiz teknik jargon kullanma.
+Yukarıdaki sistem durumu ve kullanıcı mesajını dikkate alarak ASPASIA kimliğinle yanıt ver:
+1. YALIN VE DOĞAL TÜRKÇE KULLAN: Kullanıcıya iç teknik terimler ("telemetri", "canonical memory", "bayat snapshot", "pipeline", "routing-aday", "snippet", "7-pillar") kullanma; her şeyi herkesin anlayacağı yalın, günlük Türkçeyle anlat.
+2. ORAYA YAZ BURAYA YAZ DEME: Kullanıcıya asla "yukarıdaki kutuya yazın", "CAPTURE tuşuna basın" veya "başka bir ekrana geçin" deme! Kullanıcı her şeyi doğrudan bu sohbet kutusuna yazabilir.
+3. EKSİK VARSA AÇIKÇA SÖYLE: Eğer kullanıcı bir kişiyi/hesabı inceletmek istiyor ama henüz hangi profil veya @kullanıcı_adı olduğunu yazmadıysa, "Hangi hesabı incelememi istersiniz Mösyö? Kullanıcı adını (örneğin @kullanici) veya profil linkini doğrudan buraya yazmanız yeterli." de. Eğer tamamlanan bir incelemede eksik kalan bir veri varsa (örneğin Instagram oturumu açık olmadığı için gönderiler çekilemediyse veya aramada veri bulunamadıysa), neyin neden eksik olduğunu doğal dille söyle.
+4. KISA VE NET OL: Önce doğrudan cevabı/sonucu söyle, ardından gerekiyorsa tek bir sonraki adımı belirt.
 """
         
         selected_model = model_override or self.preferred_model

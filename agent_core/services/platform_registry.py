@@ -51,8 +51,6 @@ def effective_scraper_type(url: str, requested: Optional[str] = None) -> str:
     if u.startswith("@") or ("://" not in u and "." not in u and "/" not in u):
         if req in ("x", "twitter"):
             return "x"
-        if req in ("instagram", "ig"):
-            return "instagram"
         return "cross"
 
     return "unsupported_web"
@@ -212,10 +210,12 @@ def check_scrape_confidence(ig_scraper, ig_data, emit) -> float:
     confidence = ig_scraper.evaluate_confidence(ig_data)
     emit("INFO", f"SCRAPER CONFIDENCE: {confidence:.2f} (min esik {min_confidence:.2f})")
     if confidence < min_confidence:
-        raise InsufficientEvidenceError(
+        err = InsufficientEvidenceError(
             f"Yetersiz kanit guveni: {confidence:.2f} < {min_confidence:.2f} "
             "(anti-halüsinasyon kapısı; sahte profil üretmiyorum)"
         )
+        err.profile_update = ig_target_profile_update(ig_data)
+        raise err
     return confidence
 
 
@@ -344,7 +344,14 @@ async def scrape_instagram(
                 if not applied:
                     emit("WARNING", f"STEALTH apply başarısız: {note}")
             ig_scraper = InstagramGhostScraper(vault_cookies={"sessionid": cookie} if cookie else None)
-            ig_data = await ig_scraper.scrape_async(username, playwright_page=page)
+            from agent_core.scraper.instagram_ghost import PrivateProfileEvidenceError
+            try:
+                ig_data = await ig_scraper.scrape_async(username, playwright_page=page)
+            except PrivateProfileEvidenceError as priv_err:
+                # [GİZLİ HESAP VERİ KURTARMA] Gönderiler kapalı olsa dahi bio, isim ve bağlı hesaplar
+                # kurtarıldı. Bu kanıtı hataya ekleyerek dışarı taşıyoruz:
+                priv_err.profile_update = ig_target_profile_update(priv_err.profile) if priv_err.profile else {}
+                raise priv_err
 
             # [AUDIT P1-7] Anti-halüsinasyon kapısı ÜRETİMDE devrede (bkz.
             # check_scrape_confidence): kanıt zayıfsa düşük güvenli profil
