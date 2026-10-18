@@ -32,7 +32,7 @@ from typing import Any, Iterable, Sequence
 
 from agent_core.capabilities.base import CapabilityContext
 from agent_core.capabilities.runner import CapabilityRunner
-from agent_core.domain.channel_status import CHANNEL_OK, ChannelRun, failed, not_run, ok
+from agent_core.domain.channel_status import ChannelRun, failed, not_run, ok
 from agent_core.domain.content_basis import CONTENT_BASIS_NONE, CONTENT_BASIS_PLATFORM
 from agent_core.domain.evidence_models import EvidenceItem
 from agent_core.services.profile_router import ProfileRoute
@@ -262,34 +262,6 @@ class DeepScanResult:
                 }
             )
         return rows
-
-    def summary_row(self) -> ChannelRun:
-        """Toplam kanal satırı (``profile.deep_scan``).
-
-        P0 sözleşmesi: "koşmadı" ile "kazınamadı" ayrımı kaybolmaz; hiçbir
-        profil kazınamadıysa satır ``not_run`` + sebep olur.
-        """
-        if not self.plan:
-            return not_run(
-                CHANNEL_DEEP_SCAN,
-                reason="no_profile_urls",
-                detail="profil URL'si yok",
-            )
-        ok_rows = [run for run in self.channel_runs if run.status == CHANNEL_OK]
-        if ok_rows:
-            return ok(
-                CHANNEL_DEEP_SCAN,
-                detail=(
-                    f"{len(ok_rows)}/{len(self.plan)} profil kazındı · "
-                    f"{len(self.evidence_items)} kanıt"
-                ),
-            )
-        reasons = sorted({str(run.reason) for run in self.channel_runs if run.reason})
-        return not_run(
-            CHANNEL_DEEP_SCAN,
-            reason=reasons[0] if reasons else "not_attempted",
-            detail=f"{len(self.plan)} profil URL'si planlandı; hiçbiri kazınamadı",
-        )
 
     def has_evidence(self) -> bool:
         return bool(self.evidence_items)

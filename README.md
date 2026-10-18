@@ -142,7 +142,8 @@ Bu tablo, depodaki iddiaların **gerçekten koşulup koşulmadığını** göste
 | Profil derinleştirme (P1) | `detected_urls` → router sınıflandırması → `CapabilityRunner`; kapalı kapı → `not_run` + sebep; arama snippet'ı **gönderi sayılmaz** |
 | Çapraz profilleme (P2) | 4 **deterministik** sinyal; skor "kapsam" etiketli (olasılık **değil**); her eşleşme `EvidenceItem` |
 | OSINT omurgası (P4) | Biyografideki e-posta → holehe yeteneği **çağrılıyor** → kasa kilitliyken `policy:vault_locked` (dürüst sebep, mühürlü kayıt) |
-| Test tabanı | `pytest tests -q` → **2782 passed, 6 skipped** (2026-10-18 ölçümü) · `ruff check .` → **All checks passed!** · `scripts/audit_regression.py` → **✓ BEKÇİ GEÇTİ** |
+| Test tabanı | `pytest tests -q` → **2800 passed, 6 skipped** (2026-10-18 ölçümü) · `ruff check .` → **All checks passed!** · `scripts/audit_regression.py` → **✓ BEKÇİ GEÇTİ** |
+| Ölü kod bekçisi (P6) | `scripts/dead_code_audit.py` → **ölü modül=0 · ölü fonksiyon=0 · kayıtlı-ama-çağrılmayan ajan=0 · düşürülemeyen yetenek=0 · ulaşılamayan frontend bileşeni=0** (13 ajanın 13'ü, 26 yeteneğin 26'sı **canlı**) |
 | Frontend | `npm run check` → **0 hata / 0 uyarı** · `npm run build` → başarılı |
 | Model fiyatı | Canlı OpenRouter ölçümü CI'da; **durum-kümesi** bekçisi (bilinmeyen fiyat → `FAIL`, ölçülen durum → `PASS` + uyarı) |
 

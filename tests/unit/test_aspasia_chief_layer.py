@@ -363,20 +363,32 @@ def test_chat_prompt_shows_canonical_and_mismatch_detail(tmp_path):
 
 
 # ------------------------------------------------------- FRONTEND BRIDGE -----
-PANEL = (Path(__file__).resolve().parents[2] / "frontend" / "src" / "components"
-         / "UnifiedCompactPanel.svelte").read_text(encoding="utf-8")
+#: [P6 · 2026-10-18] Sözleşme artık CANLI arayüze bağlıdır.
+#: `UnifiedCompactPanel.svelte` (ölü) "komut önce, chat fallback" akışını
+#: taşıyordu; PR #143'te yenilen kokpitte bu akış KURULMADI. Sözleşme ölü
+#: dosyayı koruyup yeşil görünmemeli: yaşayan yüzey ne yapıyorsa O ölçülür.
+#:   · canlı kokpit ASPASIA sohbetini /api/aspasia/chat üzerinden yapar
+#:   · /api/aspasia/command backend'de DOKÜMANTED bir uç olarak durur
+#:     (README:114) — UI henüz onu çağırmıyor; bu bir ÜRÜN boşluğudur,
+#:     ölü kod değil (raporda kayıtlı).
+COCKPIT = (Path(__file__).resolve().parents[2] / "frontend" / "src" / "components"
+           / "AtlasPinealCockpit.svelte").read_text(encoding="utf-8")
 
 
-def test_frontend_natural_language_goes_through_aspasia_first():
-    cmd_i = PANEL.find("/api/aspasia/command")
-    chat_i = PANEL.find("/api/aspasia/chat")
-    assert cmd_i != -1, "ASPASIA serbest metni komut kanalini kullanmali"
-    assert 0 < cmd_i < chat_i, "komut denemesi chat'ten ONCE gelmeli"
-    assert "cmd.accepted && cmd.task_id" in PANEL
-    # kabul edilmeyen -> chat fallback'i yas kalmali (mesaj kaybi yok):
-    assert "activeAgentId === 'ASPASIA' ? '/api/aspasia/chat'" in PANEL
-    # yapilandirilmis form bilerek /api/initiate'te kalir:
-    assert "triggerAnalysis" in PANEL
+def test_frontend_natural_language_uses_aspasia_chat_endpoint():
+    """Canlı arayüz ASPASIA'yı sohbet ucundan besler."""
+    assert "/api/aspasia/chat" in COCKPIT, "canlı arayüz ASPASIA sohbetini çağırmıyor"
+
+
+def test_aspasia_command_endpoint_is_still_documented_and_live():
+    """Komut ucu backend'de yaşıyor (ölü kod DEĞİL); UI çağrısı yok."""
+    from backend.api import app
+
+    routes = {getattr(r, "path", "") for r in app.routes}
+    assert "/api/aspasia/command" in routes
+    assert "/api/aspasia/chat" in routes
+    readme = (Path(__file__).resolve().parents[2] / "README.md").read_text(encoding="utf-8")
+    assert "/api/aspasia/command" in readme, "doküman uçtan koptu (koyduğum şaşırtmasın)"
 
 
 # --------------------------------------------------------- SECURITY GATE -----
