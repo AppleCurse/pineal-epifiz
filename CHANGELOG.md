@@ -42,11 +42,16 @@
 - **Yeni test:** `tests/unit/test_live_control_panel.py` (**17 test**).
   **Revert-doğrulama 9/9 kırmızıya döndü** (her düzeltme geri alınınca ilgili
   test kırmızı).
-- **Ölçüm:** `pytest tests -q` → **2811 passed, 8 skipped** · `ruff check .` →
+- **[API-BÖLME 5] api.py tavanı yükseltilmedi, DÜŞÜRÜLDÜ:** `main`'e PR #145
+  birleşince `api.py` 5840 satıra çıktı (tavan 5805). Kural işletildi: koşu
+  kaydı (AgentRun) serileştiricisi `backend/services/run_entries.py` modülüne
+  taşındı (`_run_display_fields` + `_serialize_run_entry`; dış sözleşme
+  `backend.api` üzerinden yeniden ihraç) → **5772** satır, ratchet tavanı
+  **5772'ye düşürüldü** (gerekçe: `docs/reports/API_MONOLITH_SPLIT_PLAN.md` §2.5).
+- **Ölçüm:** `pytest tests -q` → **2826 passed, 8 skipped** · `ruff check .` →
   **All checks passed!** · `npm run check` → **0/0** · `npm run build` → ✓ ·
   `dead_code_audit.py` → **0/0/0/0/0/0** · `audit_regression.py` → **✓ BEKÇİ
-  GEÇTİ** · `backend/api.py` **5800** satır (ratchet tavanı 5805 ✓ — bağlayıcı
-  modüle çıkarıldı).
+  GEÇTİ** · `backend/api.py` **5772** satır (ratchet tavanı 5772 ✓).
 - **Rapor:** `docs/reports/CANLI_KONTROL_PANELI_2026-10-18.md`.
 
 ## Unreleased — 2026-10-18 — P6: ölü kod / "çalışır gibi yapan" tespiti + düzeltmesi

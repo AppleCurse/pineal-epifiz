@@ -244,14 +244,21 @@ Yeni dosya: **`tests/unit/test_live_control_panel.py`** (17 test).
 
 | Ölçüm | Sonuç |
 |---|---|
-| `pytest tests -q` | **2811 passed, 8 skipped** (173 sn) — aşağıdaki 4 bayatlık test envanter/rapor tazelik kaynaklı; yenilendi |
+| `pytest tests -q` | **2826 passed, 8 skipped** (175 sn) — PR #145 birleşik dalı sonrası tam koşu |
 | `ruff check .` | **All checks passed!** |
 | `npm run check` | **0 errors, 0 warnings** |
 | `npm run build` | **✓ built** (index-*.js 168.75 kB) |
 | `scripts/dead_code_audit.py` | **C1=0 C1b=0 C2=0 C3=0 C4=0 C5=0** (yeni panel "ölü" DEĞİL) |
 | `scripts/audit_regression.py` | **✓ BEKÇİ GEÇTİ** |
-| `backend/api.py` satır | **5800** (ratchet tavanı 5805 ✓ — modül çıkarma kuralı uygulandı) |
-| envanter | `docs/envanter.html` yenilendi (735 dosya) |
+| `backend/api.py` satır | **5772** (ratchet tavanı 5805 → **5772'ye düşürüldü** ✓ — [API-BÖLME 5]: koşu kaydı serileştiricisi `backend/services/run_entries.py` modülüne çıkarıldı) |
+| envanter | `docs/envanter.html` yenilendi (739 dosya) |
+
+> **Not (PR #145 birleşimi):** `main`'e PR #145 birleşince `api.py` tavanı aştı
+> (5840 > 5805). Tavan **yükseltilmedi**: [API-BÖLME 5] ile koşu kaydı
+> (AgentRun) serileştiricisi `backend/services/run_entries.py` modülüne çıkarıldı
+> (`_run_display_fields` + `_serialize_run_entry`; dış sözleşme `backend.api`
+> üzerinden yeniden ihraç edildi) → 5772 satır, tavan **5772'ye düşürüldü**.
+> Gerekçe: `docs/reports/API_MONOLITH_SPLIT_PLAN.md` §2.5.
 
 ---
 
@@ -278,6 +285,8 @@ Yeni dosya: **`tests/unit/test_live_control_panel.py`** (17 test).
 |---|---|
 | `backend/api.py` | `_serialize_run_entry` alanları · `aspasia_state` `calls`/`call_binding` · `_send_snapshot` `channel_status` |
 | `agent_core/aspasia/interface.py` | `CallBinder` (yeni) · `run_status` → koşu `call_ids` |
+| `backend/services/run_entries.py` | **YENİ** — [API-BÖLME 5] AgentRun serileştiricisi (api.py'den çıkarıldı) |
+| `tests/unit/test_api_monolith_ratchet.py` | tavan 5805 → 5772 + iki yeni bölme testi |
 | `agent_core/task_executor.py` | `_summarize_input` → `urls`/`url_count` |
 | `frontend/src/components/LiveControlPanel.svelte` | **YENİ** — 5 bloklu canlı panel (551 satır) |
 | `frontend/src/components/AtlasPinealCockpit.svelte` | komut ucu çağrısı + dürüst düşüş + sahte onay yedeği kaldırıldı |
