@@ -266,7 +266,10 @@ yaratma/planlama politikası değişmedi: plan = `CognitiveRouter`, yürütme =
   `/api/initiate` ile birebir aynı akışı çağırır (rate limit, lifecycle,
   mission_tasks). Ajan listesi/model/quota niyete yazılamaz — şema reddeder.
 - **Uçlar:** `POST /api/aspasia/command` (komut), `GET /api/aspasia/state`
-  (salt-okur denetim görünümü). `chat()` sözleşmesi (AspasiaResponse, pin,
+  (salt-okur denetim görünümü; **[P7]** artık `calls` (cagri izi) ve
+  `call_binding` (kosu cagri kimligi bagi + pencere disi sayimi) da yayinliyor;
+  `WS snapshot_update` de `channel_status` tasiyor → "hangi modul nerede
+  calisiyor" anlik gorunur). `chat()` sözleşmesi (AspasiaResponse, pin,
   image_data) geriye dönük uyumludur; DENETİM KATMANI bloğu yalnız gerçek
   içerik varsa prompt'a eklenir.
 - **Amaç (goal) katmanı — TRUE CHIEF LAYER:** sozluk TEK kaynak
@@ -287,6 +290,20 @@ yaratma/planlama politikası değişmedi: plan = `CognitiveRouter`, yürütme =
   `accepted && task_id` varsa gorev kartina baglanir, degilse chat fallback.
   Yapilandirilmis form (URL/ritual) bilincli olarak `/api/initiate`'te kalir:
   programatik giris Aspasia'siz olabilir, KULLANICI dogal dili olamaz.
+  **[P7 · 2026-10-18] Bu madde artık KODDA GERCEK: onceki donemde yalnizca
+  BELGEDE yaziliydi (kod yalniz `/api/aspasia/chat` cagriyordu) — "belge koddan
+  once" yaziyordu. Duzeltme: `AtlasPinealCockpit.svelte:729/:791`. Kabul
+  edilmezse sebep loglanir ve sohbete dusulur; SAHTE "emir alindi" metni
+  uretilmez.**
+- **[P7 · 2026-10-18] Canli kontrol paneli** (`frontend/src/components/LiveControlPanel.svelte`,
+  `App.svelte:440` ile bagli; `store.ts:121` `ViewMode='control'`): ajan hatti
+  (kuyruk + anlik ajan) · anlik kanal ve "hangi ajan nereyi kaziyor" ·
+  muhakeme (karar/gerekce/sorumluluk) · toplanan bilgi (kanit akisi) · cagri izi
+  (`call_id → ajan → model → ms → $`). Veri kaynagi: WS `snapshot_update` +
+  `GET /api/aspasia/state`. **Olcum yoksa sebebiyle birlikte "YETERSIZ KANIT"
+  yazar**; ornek/elle veri YOK. Cagri kimligi bagi `run.call_ids` ↔ gateway
+  `call_log` uzerinden kurulur (`interface.py:207 CallBinder`); pencere disindaki
+  cagrilar SAYILIR ve sebebi yazilir.
 - **Extension noktasi (simdilik YOK):** cancel/halt intent'leri —
   lifecycle.terminate'a baglanacak; bu fazda kasten yok.
 

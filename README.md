@@ -111,7 +111,9 @@ PINEAL-HERETIC v5.1, operatöre hem derin sinematik sezgi hem de cerrahi şeffaf
 |---|---|
 | `POST /api/initiate` | Ana profil görevi; aynı `run_mission` akışını başlatır. |
 | `POST /api/aspasia/chat` | Kullanıcıya görev/kanıt durumu yanıtı. |
-| `POST /api/aspasia/command` | Sınırlı doğal dil intent'i; desteklenen açık Instagram URL'si doğrulanır ve aynı görev akışına dispatch edilir. |
+| `POST /api/aspasia/command` | Sınırlı doğal dil intent'i; desteklenen açık Instagram URL'si doğrulanır ve aynı görev akışına dispatch edilir. Canlı arayüz (kokpit) bu ucu **önce** çağırır; kabul edilmezse sohbet ucuna düşer (sahte onay yok). |
+| `GET /api/aspasia/state` | Salt-okur denetim görünümü: kayıtlı ajanlar, görev durumu, bütçe, kota, anomaliler ve **çağrı izi** (`calls` + `call_binding`: `run.call_ids` ↔ gateway `call_log` bağı). |
+| Canlı kontrol paneli (UI) | `frontend/src/components/LiveControlPanel.svelte`: ajan hattı (kuyruk+anlık), anlık kanal ve **hangi ajan nereyi kazıyor**, muhakeme (karar+gerekçe+sorumluluk), toplanan bilgi (kanıt akışı), çağrı izi. Veri kaynağı: WS `snapshot_update` + `GET /api/aspasia/state`. Ölçüm yoksa sebebiyle birlikte "YETERSİZ KANIT" yazar. |
 | `GET /api/media/status` | Medya hattı: yt-dlp/ffmpeg/opencv ve transkript motorunun GERÇEK durumu. |
 | `POST /api/media/analyze` | Paylaşılan medyayı indirir, kare kare ölçer, yazıya döker, görsel benzerlik arar. Ölçülmeyen iddia edilmez. |
 | `GET /api/report/status` | Hangi rapor formatı GERÇEKTEN üretilebilir (reportlab/Pillow/ffmpeg sebepleriyle). |

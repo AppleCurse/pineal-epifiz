@@ -732,11 +732,22 @@
     inputMessage = '';
     isSending = true;
     playClick(440, 30);
-    
+
     // Anında canlı ekrana yaz
     chatMessages = [...chatMessages, { ts: nowTime(), sender: 'SİZ', text }];
     scrollToBottom();
     addLog(`SİZ: ${text}`, 'INFO');
+
+    // [P6 · KOMUT KANALI] Önce YAZMA yolu denenir: Aspasia'nın tek yetkili
+    // yazma eylemi `run_profile_analysis` (`POST /api/aspasia/command`). Kabul edilip
+    // görev id dönerse görev BAŞLAR (canlı akış WS'ten gelir). Kabul edilmezse
+    // veya uç erişilemezse sohbet ucuna düşülür — mesaj kaybı yok.
+    // (Düşüşün sebebi ekrana yazılır; "kurgu emir" gösterilmez.)
+    const commandResult = await tryAspasiaCommand(text);
+    if (commandResult.started) {
+      isSending = false;
+      return;
+    }
 
     try {
       const res = await apiFetch('/api/aspasia/chat', {
@@ -750,7 +761,12 @@
 
       if (res.ok) {
         const data = await res.json();
-        const reply = data.message || data.reply || data.response || 'Emir alındı Mösyö.';
+        // [P6 · DÜRÜSTLÜK] Yanıt gövdesi boşsa SAHTE bir emir onayı
+        // ÜRETİLMEZ. Sözleşme (`AspasiaResponse.message`) zorunlu alan; alan
+        // yine de yoksa sebep yazılır (uygulama katmanı boşluğu dürüstçe
+        // bildirir, kullanıcıya yalan söylemez).
+        const reply = data.message || data.reply || data.response
+          || 'Yanıt gövdesi boş — Aspasia yanıt üretmedi (sebep: yanıt alanı yok).';
         chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: reply }];
         scrollToBottom();
         addLog(`ASPASIA: ${reply}`, 'INFO');
@@ -765,6 +781,55 @@
       addLog(`ASPASIA HATA: ${err.message}`, 'ERROR');
     } finally {
       isSending = false;
+    }
+  }
+
+  /**
+   * Aspasia komut kanalını dener. Dönüş: görev başladı mı + neden düşüldü.
+   * HİÇBİR durumda sahte "emir alındı" metni üretilmez.
+   */
+  async function tryAspasiaCommand(text: string): Promise<{ started: boolean; note?: string }> {
+    try {
+      const res = await apiFetch('/api/aspasia/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: $clientId || 'default',
+          user_message: text
+        })
+      });
+
+      if (!res.ok) {
+        const note = res.status === 503
+          ? 'komut kanalı tanımlı değil (sohbete düşüldü)'
+          : `komut kanalı HTTP ${res.status} (sohbete düşüldü)`;
+        addLog(`ASPASIA KOMUT: ${note}`, 'WARNING');
+        return { started: false, note };
+      }
+
+      const data = await res.json();
+      if (data.accepted && data.task_id) {
+        isProcessing.set(true);
+        playRunning();
+        taskStatus.update(s => ({ ...(s || {}), task_id: data.task_id, status: 'processing' }));
+        addLog(`ASPASIA KOMUT: görev #${data.task_id} devrede`, 'INFO');
+        chatMessages = [...chatMessages, {
+          ts: nowTime(),
+          sender: 'Aspasia',
+          text: `Emir alındı Mösyö. Görev #${data.task_id} devrede; kanıtlar geldikçe ekranda.`
+        }];
+        scrollToBottom();
+        playClick(520, 40);
+        return { started: true };
+      }
+
+      // Kabul edildi ama görev yok (intent none / read_only) veya reddedildi.
+      const reason = data.reason || (data.accepted ? 'no_action' : 'rejected');
+      addLog(`ASPASIA KOMUT: görev yok (${reason}) — sohbete düşüldü`, 'INFO');
+      return { started: false, note: reason };
+    } catch (err: any) {
+      addLog(`ASPASIA KOMUT HATA: ${err?.message || err} — sohbete düşüldü`, 'WARNING');
+      return { started: false, note: 'command_error' };
     }
   }
 

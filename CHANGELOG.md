@@ -1,5 +1,54 @@
 # Changelog
 
+## Unreleased — 2026-10-18 — P7: canlı kontrol paneli + Aspasia komut döngüsü
+
+- **Aspasia komuta-kontrol döngüsü omurgası:** canlı arayüz artık
+  `POST /api/aspasia/command` ucunu **çağırıyor** (`AtlasPinealCockpit.svelte:729`
+  → `:791 tryAspasiaCommand`). `accepted && task_id` → görev başlar (WS akışı
+  devralır); red/hata/`task_id` yok → **sahte "emir alındı" üretilmez**, sebep
+  loglanır ve sohbet ucuna düşülür. (Böylece `RUNBOOK.md:286`'daki **yalan
+  iddia** artık doğru: belge bu davranışı vaat ediyordu, kod yapmıyordu.)
+- **Sahte onay yedeği kaldırıldı:** sohbet yanıt gövdesi boşsa UI artık
+  `"Emir alındı Mösyö."` yazmıyor; **sebep yazan dürüst** metni gösteriyor.
+- **Yeni canlı kontrol paneli** (`frontend/src/components/LiveControlPanel.svelte`,
+  yeni — 551 satır): 1) AJAN HATTI (kuyruk + anlık ajan) · 2) ANLIK KANAL
+  (hangi modül nerede + canlı ajan **hangi URL'yi kazıyor**) · 3) MUHAKEME
+  (karar var mı, güven, gerçek model, sorumluluk, çağrı kimlikleri) ·
+  4) TOPLANAN BİLGİ (kanıt akışı) · 5) ÇAĞRI İZİ (`call_id → ajan → model →
+  sağlayıcı → süre → maliyet` + bütçe/kota/anomali). `App.svelte:15/:440`
+  ile bağlı → **ölü bileşen değil** (`dead_code_audit.py` C5=0). Ölçüm yoksa
+  `YETERSİZ KANIT` + **sebep**; örnek/elle veri yok.
+- **Çağrı izi ucu:** `GET /api/aspasia/state` artık `calls` (gateway `call_log`)
+  ve `call_binding` yayınlıyor. Kaynak TEK (paralel telemetri deposu yok).
+- **Çağrı kimliği bağlayıcısı `run.call_ids` şemasına hizalandı:**
+  `agent_core/aspasia/interface.py:207 CallBinder` — `run.call_ids` ile
+  `call_log` AYNI kimlik uzayını (gateway `call_id`) paylaşır; her çağrı
+  satırına `bound_agents` yazılır; pencere dışındaki koşu çağrıları **sayılır**
+  ve sebebi yazılır (kopukluk sessizce yutulmaz).
+- **Veri düşüren iki yer düzeltildi:** `AgentRun` alanları (`input_summary`,
+  `evidence_ids`, `responsibility`, `decision_grade`, `warnings`, `error_code`)
+  artık WS'e serileştiriliyor (War Room'un okuduğu `input_summary` **düşüyordu**);
+  WS `snapshot_update` artık `channel_status` taşıyor (veri snapshot'ta **zaten
+  vardı**, sadece serileştirilmiyordu) → "hangi modül nerede çalışıyor" anlık
+  görünür. `_summarize_input` artık `urls`/`url_count` veriyor (profil içeriği
+  YOK).
+- **Canlı ölçüm (bu sandbox'ta gerçekten koşturuldu):** komut ucu LLM kapalıyken
+  `reason:"intent_unavailable"` döndü (görev uydurmadı); niyet çıkarımı
+  sahtelenince `accepted:true` + gerçek `task_id` (`op_…`) üretildi ve yaşam
+  döngüsü `runs:1` kaydı; 9 ajan gerçekten koştu → `input_summary.urls`,
+  `call_ids`, `responsibility.blockers/next_action` dolu; çağrı bağı **6/6**
+  (`bound_call_count:6`, `missing_call_ids:[]`); WS `snapshot_update` karesi
+  `channel_status` (4 kanal, `not_run` + sebep) ve `runs` alanlarıyla geldi.
+- **Yeni test:** `tests/unit/test_live_control_panel.py` (**17 test**).
+  **Revert-doğrulama 9/9 kırmızıya döndü** (her düzeltme geri alınınca ilgili
+  test kırmızı).
+- **Ölçüm:** `pytest tests -q` → **2811 passed, 8 skipped** · `ruff check .` →
+  **All checks passed!** · `npm run check` → **0/0** · `npm run build` → ✓ ·
+  `dead_code_audit.py` → **0/0/0/0/0/0** · `audit_regression.py` → **✓ BEKÇİ
+  GEÇTİ** · `backend/api.py` **5800** satır (ratchet tavanı 5805 ✓ — bağlayıcı
+  modüle çıkarıldı).
+- **Rapor:** `docs/reports/CANLI_KONTROL_PANELI_2026-10-18.md`.
+
 ## Unreleased — 2026-10-18 — P6: ölü kod / "çalışır gibi yapan" tespiti + düzeltmesi
 
 - **Yeni dedektör (gece bekçisi):** `scripts/dead_code_audit.py` — beş AST tabanlı
@@ -36,10 +85,10 @@
   `dead_code_audit.py` → **modül=0 test-only=0 fonksiyon=0 ajan=0 yetenek=0
   frontend=0** · `npm run check` → 0/0 · `npm run build` → ✓ · envanter **742 → 732**
   dosya.
-- **Kullanıcı kararına bırakılan iki ürün boşluğu** (ölü kod DEĞİL, raporda
-  kayıtlı): canlı arayüz `/api/aspasia/command` ucunu çağırmıyor (backend ucu
-  ayakta, README'de dokümante) · çağrı kimliği bağlayıcısı `_provenance.call_id`
-  yerine canlı `run.call_ids` alanından geliyor.
+- ~~**Kullanıcı kararına bırakılan iki ürün boşluğu**~~ → **P7'de KAPANDI**:
+  canlı arayüz artık `/api/aspasia/command` ucunu çağırıyor ve çağrı kimliği
+  bağlayıcısı `run.call_ids` üzerinden kuruluyor
+  (`docs/reports/CANLI_KONTROL_PANELI_2026-10-18.md`).
 - **Rapor:** `docs/reports/OLU_KOD_DENETIMI_2026-10-18.md`.
 
 ## Unreleased — 2026-10-18 — P5: Faz 2 kapanış denetimi (18 bulgunun kilidi)

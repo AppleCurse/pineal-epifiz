@@ -591,12 +591,26 @@ class PinealExecutor:
             
     def _summarize_input(self, input_data: dict, agent_name: str) -> dict:
         profile = input_data.get("target_profile", {})
+        if not isinstance(profile, dict):
+            profile = {}
+        # [P6 · CANLI PANEL] "Hangi ajan o anda nereyi kazıyor" bilgisi.
+        # Önceden yalnız SAYI veriliyordu (bio_len/post_count) → canlı panelde
+        # "hangi ajan hangi URL'de" sorusu CEVAPLANAMIYORDU. Burada yalnız
+        # URL listesi (host+path) eklenir; profil İÇERİĞİ (bio/gönderi) eklenmez.
+        urls: list[str] = []
+        for key in ("detected_urls", "scraped_urls"):
+            for url in profile.get(key) or []:
+                text = str(url).strip()
+                if text and text not in urls:
+                    urls.append(text)
         return {
             "bio_len": len(profile.get("bio", "")),
             "post_count": len(profile.get("posts", [])),
             "has_images": bool(profile.get("images")),
             "has_mirror": "user_mirror" in input_data,
             "has_target_analysis": "target_analysis" in input_data,
+            "urls": urls[:6],
+            "url_count": len(urls),
         }
 
     def _recall_memory_crystal(self, task_id: str, input_data: dict, status: Any) -> str:

@@ -1979,12 +1979,32 @@ def _json_field(val: Any) -> Any:
 
 
 def _serialize_run_entry(run, *, with_timestamps: bool) -> dict:
-    """AgentRun serileştirmesi — tek SoT (iki broadcast noktası da bunu çağırır)."""
+    """AgentRun serileştirmesi — tek SoT (iki broadcast noktası da bunu çağırır).
+
+    [P6 · CANLI PANEL] Eksik alanlar eklendi. Önceden ``input_summary``
+    (War Room'un INPUT sekmesi okuyordu ama backend HİÇ göndermiyordu →
+    ekran hep yedek metni gösteriyordu = "çalışır gibi yapan" UI),
+    ``evidence_ids`` (toplanan bilgi), ``responsibility`` (muhakeme:
+    attempted/blockers/next_action) ve ``decision_grade`` (karar var mı)
+    serileştirilmiyordu. Hepsi aynı SoT'tan (``AgentRun``) türetilir.
+    """
     entry = {
         "status": getattr(run, "status", None),
         "confidence": getattr(run, "confidence", None),
         "error_message": getattr(run, "error_message", None),
+        "error_code": getattr(run, "error_code", None),
         "call_ids": list(getattr(run, "call_ids", []) or []),
+        # Girdi özeti: ajan NEYİ işliyor (URL listesi + sayılar). Profil
+        # İÇERİĞİ (bio/gönderi metni) burada taşınmaz.
+        "input_summary": redact_structure(
+            getattr(run, "input_summary", None) or {}
+        ),
+        "evidence_ids": list(getattr(run, "evidence_ids", []) or []),
+        "decision_grade": bool(getattr(run, "decision_grade", True)),
+        "responsibility": redact_structure(
+            getattr(run, "responsibility", None) or {}
+        ),
+        "warnings": list(getattr(run, "warnings", []) or []),
         "output_summary": redact_structure(
             getattr(run, "output_summary", None) or {}
         ),
@@ -2253,6 +2273,13 @@ async def _send_snapshot(room: dict, snapshot: Any):
         "completed_agents": snapshot.completed_agents,
         "halted_reason": getattr(snapshot, "halted_reason", None),
         "resonance_score": getattr(snapshot, "resonance_score", None),
+        # [P6 · CANLI PANEL] Kanal defteri ANLIK yayınlanır. Veri snapshot
+        # nesnesinde ZATEN var (task_executor: status.channel_status — kazıma
+        # kanalları + OSINT/deep_scan çözümlemeleri) ama WS payload'ına
+        # serileştirilmiyordu -> panel "hangi modül nerede çalışıyor"
+        # sorusunu görev bitene kadar CEVAPLAYAMIYORDU. Paralel kaynak YOK:
+        # aynı SoT (snapshot.channel_status) doğrudan yayınlanır.
+        "channel_status": list(getattr(snapshot, "channel_status", None) or []),
         "holistic_profile": _dump_field(getattr(snapshot, "holistic_profile", None)),
         "follower_audit": _dump_field(getattr(snapshot, "follower_audit", None)),
         "timing_forensics": _dump_field(getattr(snapshot, "timing_forensics", None)),
@@ -4391,6 +4418,7 @@ async def aspasia_state(client_id: str = "default"):
     """
     from agent_core.aspasia.interface import (
         AgentInspector,
+        CallBinder,
         CostReader,
         QuotaReader,
         TelemetryReader,
@@ -4400,12 +4428,24 @@ async def aspasia_state(client_id: str = "default"):
     executor = room.get("executor")
     gateway = executor.llm_gateway if executor is not None else aspasia_chief.llm
     inspector = AgentInspector(executor)
+    telemetry = TelemetryReader(gateway)
+    # [P6 · CANLI PANEL] Çağrı izi (traceability): call_id → ajan → model →
+    # sağlayıcı → süre → maliyet zinciri. Kaynak TEK yerdedir: gateway'in
+    # `call_log`u (paralel telemetri deposu YOK). `run.call_ids` ile `call_log`
+    # AYNI kimlik uzayını paylaşır (call_id); bağ sunucu tarafında kurulur
+    # (bkz. `CallBinder`). Hiçbir çağrı/kimlik UYDURULMAZ.
+    run_view = inspector.run_status(room)
+    calls, binding = CallBinder(telemetry).bind(run_view)
     return {
         "registry": inspector.registry(),
-        "run": inspector.run_status(room),
+        "run": run_view,
         "budget": CostReader(gateway).snapshot(),
         "quota": {p: QuotaReader(gateway=gateway).snapshot(p) for p in ("groq", "cerebras")},
-        "anomalies": TelemetryReader(gateway).anomalies(),
+        "anomalies": telemetry.anomalies(),
+        "calls": calls,
+        "call_count": len(calls),
+        # Çağrı kimliği bağlama özeti (panel "izlenebilirlik" satırı).
+        "call_binding": binding,
     }
 
 

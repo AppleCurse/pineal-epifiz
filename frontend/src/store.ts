@@ -116,8 +116,11 @@ if (typeof localStorage !== 'undefined') {
     try { localStorage.setItem('pineal_voice_enabled', v ? '1' : '0'); } catch (_e) {}
   });
 }
-export const activeViewMode = writable<'warroom' | 'cockpit'>(
-  (typeof localStorage !== 'undefined' && (localStorage.getItem('pineal_view_mode') as 'warroom' | 'cockpit')) || 'warroom'
+// [P6 · CANLI PANEL] Üçüncü görünüm: 'control' → LiveControlPanel (canlı
+// kontrol paneli). 'warroom' | 'cockpit' | 'control'.
+export type ViewMode = 'warroom' | 'cockpit' | 'control';
+export const activeViewMode = writable<ViewMode>(
+  (typeof localStorage !== 'undefined' && (localStorage.getItem('pineal_view_mode') as ViewMode)) || 'warroom'
 );
 export const inspectedAgentId = writable<string | null>(null);
 

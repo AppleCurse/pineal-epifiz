@@ -16,7 +16,7 @@ import re
 import uuid
 from collections import deque
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Literal, Optional
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -204,6 +204,45 @@ class TelemetryReader:
         return out
 
 
+class CallBinder:
+    """`run.call_ids` ↔ gateway `call_log` bağlayıcısı (kimlik uzayı TEK).
+
+    Çağrı kimliği uzayı TEK yerdedir: gateway `call_id`. Koşu kaydındaki
+    `run.call_ids` ile çağrı günlüğündeki `call_id` AYNI kimliklerdir; aradaki
+    bağ sunucu tarafında kurulur — panel "hangi ajan hangi çağrıyı yaptı"
+    sorusunu gözlemek zorunda kalmaz.
+
+    Görünür pencerede olmayan koşu çağrıları SAYILIR ve sebebi yazılır
+    (call_log üst sınırı + okuma penceresi). Hiçbir kimlik/çağrı UYDURULMAZ.
+    """
+
+    def __init__(self, telemetry: Any):
+        self._telemetry = telemetry
+
+    def bind(self, run_view: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        """Çağrı satırlarını bağlar + bağlama özetini döner."""
+        calls = self._telemetry.recent()
+        id_to_agents: Dict[str, List[str]] = {}
+        for agent_name, run_row in ((run_view or {}).get("runs") or {}).items():
+            for call_id in (run_row or {}).get("call_ids") or []:
+                id_to_agents.setdefault(str(call_id), []).append(agent_name)
+        for row in calls:
+            row["bound_agents"] = id_to_agents.get(str(row.get("call_id")), [])
+        run_call_ids = set(id_to_agents.keys())
+        visible = {str(row.get("call_id")) for row in calls}
+        missing = sorted(run_call_ids - visible)
+        binding = {
+            "run_call_count": len(run_call_ids),
+            "bound_call_count": len(run_call_ids & visible),
+            "missing_call_ids": missing,
+            "missing_reason": (
+                "call_log üst sınırı (500 kayıt) ve okuma penceresi (40 kayıt) "
+                "dışında kaldı" if missing else None
+            ),
+        }
+        return calls, binding
+
+
 class QuotaReader:
     """Reads the QuotaGovernor + policy QUOTAS; unknown stays 'unknown'."""
 
@@ -321,9 +360,19 @@ class AgentInspector:
             "planned": snapshot.get("planned_agents") or [],
             "completed": snapshot.get("completed_agents") or [],
             "current": snapshot.get("current_agent"),
+            # [P6 · CANLI PANEL] Koşu başına çağrı kimlikleri de taşınır:
+            # çağrı izi (gateway call_log) ile koşu arasındaki BAĞLAYICI
+            # `run.call_ids` -> `call_id` eşleşmesidir. Kimlik uzayı TEK
+            # yerdedir (gateway `call_id`); paralel kimlik üretilmez.
             "runs": {
-                name: {"status": run.get("status") if isinstance(run, dict) else
-                       getattr(run, "status", None)}
+                name: {
+                    "status": run.get("status") if isinstance(run, dict) else
+                              getattr(run, "status", None),
+                    "call_ids": list(
+                        (run.get("call_ids") if isinstance(run, dict)
+                         else getattr(run, "call_ids", None)) or []
+                    ),
+                }
                 for name, run in (snapshot.get("agent_runs") or {}).items()
             },
         }
