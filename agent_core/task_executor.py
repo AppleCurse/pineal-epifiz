@@ -1355,7 +1355,13 @@ class PinealExecutor:
         # aynı yetenek iki kez çağrılırdı.
         _deep_items: list[Any] = []
         _detected_urls = list((input_data.get("target_profile") or {}).get("detected_urls") or [])
+        from agent_core.services.profile_router import classify_url as _classify_profile_url
+        for _site in ((status.osint_footprint or {}).get("username_scan") or {}).get("found_sites") or []:
+            _su = (_site.get("url") if isinstance(_site, dict) else getattr(_site, "url", "")) or ""
+            if _su and _su not in _detected_urls and _classify_profile_url(_su).runnable:
+                _detected_urls.append(_su)
         if _detected_urls:
+            input_data.setdefault("target_profile", {})["detected_urls"] = list(_detected_urls)
             try:
                 from agent_core.services.deep_profile_resolver import (
                     resolve_deep_profiles_detailed,

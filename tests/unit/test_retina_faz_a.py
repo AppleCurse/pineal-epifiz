@@ -558,11 +558,13 @@ def test_agent_reach_command_prefers_explicit_env_and_never_guesses(monkeypatch)
     monkeypatch.setenv("PINEAL_AGENT_REACH_CMD", "'bozuk tırnak")
     assert agent_reach_command() is None  # bozuk tırnak → PATH'e düşmez
 
-    monkeypatch.setenv("PINEAL_AGENT_REACH_CMD", "/bin/echo --json")
-    assert agent_reach_command() == ["/bin/echo", "--json"]
+    import sys
+    real_bin = sys.executable.replace("\\", "/")
+    monkeypatch.setenv("PINEAL_AGENT_REACH_CMD", f'"{real_bin}" --json')
+    assert agent_reach_command() == [real_bin, "--json"]
 
     monkeypatch.undo()  # which yaması VE önceki env değerleri kalkar
-    monkeypatch.setenv("PINEAL_AGENT_REACH_CMD", "python3")
+    monkeypatch.setenv("PINEAL_AGENT_REACH_CMD", "python")
     #: Depo kalıbı (PINEAL_HARVESTER_CMD ile aynı): PATH'te bulunan komut ADI
     #: olduğu gibi döner — alt süreç onu kendi PATH'iyle çözer.
-    assert agent_reach_command() == ["python3"]
+    assert agent_reach_command() == ["python"]

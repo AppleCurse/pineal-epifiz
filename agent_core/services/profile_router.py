@@ -76,6 +76,27 @@ _FACEBOOK_RESERVED = frozenset({
 #: X'in rezerv yolları (giriş, keşfet...) — `platform_registry` de eler.
 _LINKEDIN_PREFIXES = ("in", "pub", "company", "school", "showcase")
 
+_GENERIC_SOCIAL_RESERVED = frozenset({
+    "login", "logout", "signup", "register", "explore", "search", "settings",
+    "privacy", "policy", "terms", "help", "about", "home", "messages",
+    "notifications", "feed", "watch", "live", "foryou", "following",
+    "trending", "topics", "collections", "events", "marketplace", "directory",
+    "videos", "clips", "shots", "galleries", "pin", "ideas", "today",
+})
+
+_KNOWN_SOCIAL_DOMAINS = (
+    "instagram.com", "instagr.am", "x.com", "twitter.com",
+    "linkedin.com", "facebook.com", "fb.com", "tiktok.com",
+    "youtube.com", "threads.net", "github.com", "reddit.com",
+    "pinterest.com", "twitch.tv", "t.me", "telegram.me",
+    "vk.com", "medium.com", "snapchat.com", "steamcommunity.com",
+    "linktr.ee", "behance.net", "dribbble.com",
+)
+
+
+def _is_domain(host: str, *domains: str) -> bool:
+    return any(host == d or host.endswith(f".{d}") for d in domains)
+
 
 def _host(url: str) -> str:
     """URL'den host (küçük harf, port atılmış)."""
@@ -160,28 +181,69 @@ def _x_route(url: str) -> ProfileRoute | None:
 
 
 def _social_route(url: str) -> ProfileRoute | None:
-    """LinkedIn / Facebook profil URL'si → ``extractor.identity.socid``."""
+    """Sosyal medya profil URL'si → ``extractor.identity.socid``."""
     host = _host(url)
     segments = _segments(url)
     if not segments:
         return None
-    if host.endswith("linkedin.com"):
-        if len(segments) < 2 or segments[0].lower() not in _LINKEDIN_PREFIXES:
+    first = segments[0]
+    first_low = first.lower()
+    handle = ""
+    platform = PLATFORM_SOCIAL
+    if _is_domain(host, "linkedin.com"):
+        if len(segments) < 2 or first_low not in _LINKEDIN_PREFIXES:
             return None
         handle = segments[1]
-    elif host.endswith("facebook.com"):
-        handle = segments[0]
-        if handle.lower() in _FACEBOOK_RESERVED:
+        platform = PLATFORM_LINKEDIN
+    elif _is_domain(host, "facebook.com", "fb.com"):
+        if first_low in _FACEBOOK_RESERVED:
             return None
+        handle = first
+    elif _is_domain(host, "reddit.com"):
+        if len(segments) < 2 or first_low not in ("user", "u"):
+            return None
+        handle = segments[1]
+    elif _is_domain(host, "youtube.com"):
+        if first.startswith("@"):
+            handle = first[1:]
+        elif len(segments) >= 2 and first_low in ("c", "user", "channel"):
+            handle = segments[1]
+        else:
+            return None
+    elif _is_domain(host, "steamcommunity.com"):
+        if len(segments) < 2 or first_low not in ("id", "profiles"):
+            return None
+        handle = segments[1]
+    elif _is_domain(host, "snapchat.com"):
+        if first_low == "add" and len(segments) >= 2:
+            handle = segments[1]
+        elif first.startswith("@"):
+            handle = first[1:]
+        else:
+            return None
+    elif _is_domain(host, "t.me", "telegram.me"):
+        if first_low in ("joinchat", "addstickers", "share", "proxy", "iv", "login"):
+            return None
+        handle = segments[1] if (first_low == "s" and len(segments) >= 2) else first
+    elif _is_domain(
+        host,
+        "tiktok.com", "threads.net", "github.com", "pinterest.com",
+        "twitch.tv", "vk.com", "medium.com", "linktr.ee",
+        "behance.net", "dribbble.com",
+    ):
+        if first_low in _GENERIC_SOCIAL_RESERVED:
+            return None
+        if _is_domain(host, "github.com") and len(segments) > 1:
+            return None
+        handle = first
     else:
         return None
     handle = handle.strip().lstrip("@")
     if not handle or "/" in handle:
         return None
-    # socid profil sayfasının tam adresini ister (kimlik alanları URL'den çıkarılır).
     return ProfileRoute(
         url=url,
-        platform=PLATFORM_LINKEDIN if host.endswith("linkedin.com") else PLATFORM_SOCIAL,
+        platform=platform,
         handle=handle,
         capability_id=CAPABILITY_SOCID,
         subject=url,
@@ -210,10 +272,7 @@ def classify_url(url: str) -> ProfileRoute:
 
     # Bilinen bir platformun PROFİL OLMAYAN adresi → sebep "profil değil".
     host = _host(raw)
-    if any(
-        host.endswith(domain)
-        for domain in ("instagram.com", "x.com", "twitter.com", "linkedin.com", "facebook.com")
-    ):
+    if _is_domain(host, *_KNOWN_SOCIAL_DOMAINS):
         return ProfileRoute(url=raw, platform=PLATFORM_UNSUPPORTED, reason=REASON_NOT_A_PROFILE)
     return ProfileRoute(url=raw, platform=PLATFORM_UNSUPPORTED, reason=REASON_UNSUPPORTED)
 
