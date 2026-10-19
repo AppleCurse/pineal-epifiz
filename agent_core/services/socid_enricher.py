@@ -40,14 +40,16 @@ def _call_extract(text: str) -> Dict[str, Any]:
     Bazı sürümler dict, bazıları (dict, flags) tuple döner; burada normalize edilir.
     """
     from socid_extractor import extract  # lazy: paket yoksa çağıran dürüst hata alır
+    from agent_core.services.osint_normalizer import osint_to_dict
 
     result = extract(text)
-    if isinstance(result, tuple):
+    if isinstance(result, (tuple, list)):
         for item in result:
-            if isinstance(item, dict) and item:
-                return item
+            d = osint_to_dict(item)
+            if d:
+                return d
         return {}
-    return result if isinstance(result, dict) else {}
+    return osint_to_dict(result)
 
 
 def extract_from_html(html: str, source_url: str = "") -> SocidRecord:

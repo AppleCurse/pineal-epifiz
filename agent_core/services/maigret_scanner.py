@@ -289,12 +289,9 @@ async def scan_username(
     scanned = 0
     for site_name, result in (results or {}).items():
         scanned += 1
-        if isinstance(result, dict):
-            status = result.get("status")
-            url = result.get("url_user") or ""
-        else:
-            status = getattr(result, "status", None)
-            url = getattr(result, "url_user", "") or ""
+        from agent_core.services.osint_normalizer import safe_osint_get
+        status = safe_osint_get(result, "status")
+        url = safe_osint_get(result, "url_user") or ""
 
         if status == MaigretCheckStatus.CLAIMED:
             found.append(MaigretSiteHit(site=str(site_name), url=url, status="claimed"))

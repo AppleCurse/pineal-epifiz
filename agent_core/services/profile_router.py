@@ -90,7 +90,8 @@ _KNOWN_SOCIAL_DOMAINS = (
     "youtube.com", "threads.net", "github.com", "reddit.com",
     "pinterest.com", "twitch.tv", "t.me", "telegram.me",
     "vk.com", "medium.com", "snapchat.com", "steamcommunity.com",
-    "linktr.ee", "behance.net", "dribbble.com",
+    "linktr.ee", "beacons.ai", "taplink.cc", "bio.link", "carrd.co",
+    "behance.net", "dribbble.com",
 )
 
 
@@ -229,6 +230,7 @@ def _social_route(url: str) -> ProfileRoute | None:
         host,
         "tiktok.com", "threads.net", "github.com", "pinterest.com",
         "twitch.tv", "vk.com", "medium.com", "linktr.ee",
+        "beacons.ai", "taplink.cc", "bio.link", "carrd.co",
         "behance.net", "dribbble.com",
     ):
         if first_low in _GENERIC_SOCIAL_RESERVED:

@@ -469,7 +469,13 @@
           scraper_type: 'cross',
         })
       });
-      if (!res.ok) throw new Error(isAuthFailure(res) ? 'PINEAL_TOKEN yetki hatası' : `HTTP ${res.status}`);
+      if (!res.ok) {
+        if (isAuthFailure(res)) throw new Error('PINEAL_TOKEN yetki hatası');
+        if (res.status === 423) throw new Error('KASA KİLİTLİ (423): Bu sekmede dış dünya taraması yapabilmek için önce Kasa (Vault) üzerinden anahtar girmeli veya oturum yetkisi vermelisiniz.');
+        const errJson = await res.json().catch(() => ({}));
+        const errMsg = errJson?.error?.message || errJson?.detail || `HTTP ${res.status}`;
+        throw new Error(errMsg);
+      }
       const data = await res.json();
       if (data.task_id) {
         taskStatus.update(s => ({ ...(s || {}), task_id: data.task_id, status: 'processing' }));
@@ -1871,6 +1877,7 @@
     padding-right: 4px;
     user-select: text !important;
     -webkit-user-select: text !important;
+    -webkit-touch-callout: default !important;
   }
 
   .aspasia-messages-stream::-webkit-scrollbar {
@@ -1888,6 +1895,7 @@
     word-break: break-word;
     user-select: text !important;
     -webkit-user-select: text !important;
+    -webkit-touch-callout: default !important;
     padding: 2px 0;
   }
 

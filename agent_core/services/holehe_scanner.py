@@ -141,11 +141,14 @@ def _classify(
     stalled: Sequence[str],
 ) -> Tuple[List[HoleheSiteHit], int, int]:
     """Dürüst sınıflandırma: rateLimit/eksik/bilinmeyen => hata (asla temiz değil)."""
+    from agent_core.services.osint_normalizer import safe_osint_get
+
     stalled_set = set(stalled)
-    by_name: Dict[str, Dict[str, Any]] = {}
+    by_name: Dict[str, Any] = {}
     for rec in out:
-        if isinstance(rec, dict) and isinstance(rec.get("name"), str):
-            by_name.setdefault(rec["name"], rec)
+        rec_name = safe_osint_get(rec, "name")
+        if isinstance(rec_name, str) and rec_name:
+            by_name.setdefault(rec_name, rec)
 
     found: List[HoleheSiteHit] = []
     scanned = 0
@@ -154,15 +157,18 @@ def _classify(
         name = getattr(fn, "__name__", "?")
         scanned += 1
         rec = by_name.get(name)
+        exists = safe_osint_get(rec, "exists")
+        rate_limit = safe_osint_get(rec, "rateLimit")
+        domain = safe_osint_get(rec, "domain")
         if name in stalled_set or rec is None:
             errors += 1  # hüküm yok — temiz yokluk SAYILMAZ
-        elif rec.get("exists") is True:
+        elif exists is True:
             found.append(
-                HoleheSiteHit(site=name, domain=str(rec.get("domain") or ""))
+                HoleheSiteHit(site=name, domain=str(domain or ""))
             )
-        elif rec.get("rateLimit"):
+        elif rate_limit:
             errors += 1  # holehe istisnaları böyle maskelemesi -> HATA
-        elif rec.get("exists") is False:
+        elif exists is False:
             pass  # temiz: net yokluk yanıtı
         else:
             errors += 1  # tanınmayan şekil -> dürüstlük varsayılanı

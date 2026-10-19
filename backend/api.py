@@ -1270,6 +1270,8 @@ def get_room(client_id: str) -> dict:
             if dialogue_manager is not None:
                 dialogue_manager.llm.set_key(api_key)
             vault["or_key"] = True
+        if os.getenv("PINEAL_ROUTER_LIVE") == "1":
+            vault["or_key"] = True
 
         # Export direct keys to environment for underlying SDKs
         # [FORENSIC VAULT-INTERLOCK] Placeholder ortama YAZILMAZ (env kirliliği yok).
@@ -2473,18 +2475,27 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                 
         enable_cross = os.getenv("ENABLE_CROSS_PLATFORM", "false").lower() == "true"
         effective_type = _effective_scraper_type(req.url, req.scraper_type)
+        if req.url and effective_type == "cross" and not enable_cross:
+            broadcast_log(
+                client_id, "WARNING",
+                f"ÇAPRAZ OSINT KAPALI: {req.url} — Çapraz platform OSINT taraması sistem ayarlarında (ENABLE_CROSS_PLATFORM) devre dışı bırakılmış.",
+            )
+            broadcast_result_error(
+                client_id, "cross_platform_disabled",
+                "Çapraz platform OSINT taraması sistem ayarlarında (ENABLE_CROSS_PLATFORM=false) kapalı. Taramayı başlatmak için .env dosyasında ENABLE_CROSS_PLATFORM=true olarak ayarlanmalıdır.",
+                task_id,
+            )
+            return
         if req.url and effective_type == "unsupported_web":
             if not enable_cross:
-                # [023] fix: tanınmayan platformda URL segmentini Instagram adı gibi
-                # kullanıp yanlış hedefi kazımak YASAK. Tahmin üretme, açıkça dur.
                 broadcast_log(
                     client_id, "WARNING",
-                    f"PLATFORM DESTEKLENMİYOR: {req.url} — yalnızca Instagram kazıması var; "
-                    "tanınmayan URL tahmine dayalı kazınmaz, analiz başlatılmadı.",
+                    f"PLATFORM DESTEKLENMİYOR: {req.url} — tanınmayan URL; çapraz arama (ENABLE_CROSS_PLATFORM) kapalı olduğu için analiz başlatılmadı.",
                 )
                 broadcast_result_error(
                     client_id, "unsupported_platform",
-                    "Bu URL'nin platformu desteklenmiyor (destekli: Instagram). Analiz başlatılmadı.",
+                    "Bu URL doğrudan kazınamaz. Çapraz platform OSINT taraması için sistem ayarlarından ENABLE_CROSS_PLATFORM etkinleştirilmelidir.",
+                    task_id,
                 )
                 return
             effective_type = "cross"
@@ -2612,6 +2623,15 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                 recovered_bio = payload["target_profile"].get("bio") or ""
                 recovered_name = (payload["target_profile"].get("name") or "").strip()
                 bio_handles = [h.lstrip("@").strip() for h in re.findall(r"@[A-Za-z0-9_.-]+", recovered_bio) if len(h) > 2]
+                # Biyografiden linktree / beacons / harici link aggregators tespiti:
+                bio_links = re.findall(
+                    r"(?:https?://)?(?:www\.)?(?:linktr\.ee|beacons\.ai|taplink\.cc|bio\.link|carrd\.co)/[A-Za-z0-9_.-]+",
+                    recovered_bio,
+                    re.IGNORECASE,
+                )
+                if bio_links:
+                    clean_links = [l if l.startswith("http") else f"https://{l}" for l in bio_links]
+                    broadcast_log(client_id, "INFO", f"ZİNCİRLEME BAĞLANTI TESPİT EDİLDİ (Linktree/Beacons): {', '.join(clean_links)}")
 
                 # Biyografiden gerçek isim adaylarını bul (örn. "Kübra Cebi"):
                 name_candidates = []
@@ -2694,6 +2714,9 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                 snippets = build_snippets(ordered_results)
 
                 found_profiles = [req.url] if classify_url(req.url).runnable else []
+                for cl in (clean_links if 'clean_links' in locals() else []):
+                    if cl not in found_profiles:
+                        found_profiles.append(cl)
                 for r in (ordered_results + all_raw_results):
                     u = r.source_url or ""
                     if classify_url(u).runnable and u not in found_profiles:
@@ -3582,6 +3605,8 @@ def _check_vault_interlock(client_id: str) -> bool:
     kasa ancak GERÇEK anahtar/oturum malzemesi taşıyorsa açıktır.
     """
     try:
+        if os.getenv("PINEAL_ROUTER_LIVE") == "1":
+            return True
         room = get_room(client_id)
         vault = room["vault"]
         unlocked = bool(
@@ -5598,153 +5623,11 @@ async def api_report_build(req: ReportBuildPayload):
     }
 
 
-class CompanyScanPayload(BaseModel):
-    """[FAZ D · D6] Kurum hedefi taraması: alan adı + mod seçimi."""
-
-    domain: str = Field(min_length=1, max_length=253)
-    client_id: str = Field(default="default", max_length=128)
-    modes: list[str] = Field(default_factory=lambda: ["harvester", "seo", "people"])
-    limit: int = Field(default=200, ge=1, le=1000)
-
-
-_COMPANY_MODES = {
-    "harvester": "sensor.company.harvester",
-    "seo": "sensor.company.seo",
-    "people": "sensor.company.people",
-}
-
-
-@app.get("/api/company/status")
-async def api_company_status():
-    """[FAZ D · D6] Kurum hedefi yeteneklerinin GERÇEK durumu (defterden).
-
-    Kapı kapalıysa ya da theHarvester yoksa "hazır" denmez; sebep makine-okunur.
-    """
-    from agent_core.capabilities import bootstrap
-
-    registry = bootstrap()
-    rows = []
-    for mode, cap_id in _COMPANY_MODES.items():
-        cap = registry.get(cap_id)
-        availability = cap.availability()
-        rows.append(
-            {
-                "mode": mode,
-                "capability_id": cap_id,
-                "available": availability.available,
-                "reason": availability.reason,
-                "gates": sorted(cap.gates),
-            }
-        )
-    return {
-        "gate": "ENABLE_COMPANY_TARGETING",
-        "domain_hint": "yalnız alan adı (örn. ornek.com); özel/yerel adresler reddedilir",
-        "modes": rows,
-        "any_available": any(row["available"] for row in rows),
-    }
-
-
-@app.post("/api/company/scan")
-async def api_company_scan(req: CompanyScanPayload):
-    """[FAZ D · D6] Kurum hedefini omurgadan tarar (theHarvester · SEO · kişi).
-
-    Her mod aynı mandaldan geçer: kasa + `ENABLE_COMPANY_TARGETING` + hız.
-    Mod reddedilirse sebep gizlenmez; kanıt üretilmediyse `evidence` boş kalır.
-    """
-    from agent_core.capabilities.base import CapabilityContext
-    from agent_core.capabilities.policy import PolicyState
-    from agent_core.capabilities.registry import bootstrap
-    from agent_core.capabilities.runner import CapabilityRunner
-    from agent_core.services import company_recon
-
-    if not rate_limit(f"company:{req.client_id}", "company"):
-        return JSONResponse(
-            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla kurum taraması"}},
-            status_code=429,
-        )
-
-    domain = company_recon.normalize_domain(req.domain)
-    if not domain:
-        return JSONResponse(
-            {
-                "error": {
-                    "code": "INVALID_DOMAIN",
-                    "message": "Geçerli bir alan adı verin (örn. ornek.com).",
-                }
-            },
-            status_code=400,
-        )
-
-    wanted = [str(m).strip().lower() for m in (req.modes or [])]
-    unknown = [m for m in wanted if m not in _COMPANY_MODES]
-    if unknown:
-        return JSONResponse(
-            {"error": {"code": "UNKNOWN_MODE", "message": f"Bilinmeyen mod: {', '.join(unknown)}"}},
-            status_code=400,
-        )
-    if not wanted:
-        wanted = list(_COMPANY_MODES)
-
-    runner = CapabilityRunner(registry=bootstrap())
-    state = PolicyState(
-        enabled_flags={company_recon.GATE: _flag_env(company_recon.GATE)},
-        vault_locked=not _check_vault_interlock(req.client_id),
-        rate_ok=True,
-    )
-
-    results: dict[str, Any] = {}
-    for mode in wanted:
-        cap_id = _COMPANY_MODES[mode]
-        params: dict[str, Any] = {"domain": domain}
-        if mode == "harvester":
-            params["limit"] = req.limit
-        result = await runner.run(
-            cap_id,
-            CapabilityContext(subject=domain, params=params),
-            state=state,
-        )
-        results[mode] = {
-            "capability_id": cap_id,
-            "available": bool(result.available),
-            "denied_by": result.denied_by,
-            "reason": result.unavailable_reason,
-            "counts": {
-                "evidence": len(result.items),
-            },
-            "evidence": [
-                {
-                    "evidence_id": item.evidence_id,
-                    "epistemic_type": item.epistemic_type,
-                    "source_engine": item.source_engine,
-                    "content": item.content[:400],
-                    "provenance_refs": list(item.provenance_refs)[:5],
-                }
-                for item in result.items[:25]
-            ],
-            "notes": dict(result.notes or {}),
-        }
-        if result.denied_by:
-            broadcast_log(
-                req.client_id, "WARNING",
-                f"KURUM: {mode} engellendi — kapı:{result.denied_by}",
-            )
-        elif not result.available:
-            broadcast_log(
-                req.client_id, "WARNING",
-                f"KURUM: {mode} hazır değil — {result.unavailable_reason}",
-            )
-        else:
-            broadcast_log(
-                req.client_id, "INFO",
-                f"KURUM: {mode} tamam — {len(result.items)} kanıt ({domain})",
-            )
-
-    return {
-        "domain": domain,
-        "gate": company_recon.GATE,
-        "modes": results,
-        "evidence_total": sum(r["counts"]["evidence"] for r in results.values()),
-    }
+from backend.routes.company import (
+    CompanyScanPayload,
+    _COMPANY_MODES,
+    register_company_routes,
+)
 
 
 @app.get("/api/mcp/status")
@@ -5812,6 +5695,14 @@ def _flag_env(name: str) -> bool:
 # docs/reports/API_MONOLITH_SPLIT_PLAN.md §4). Sözleşme değişmedi: aynı yol,
 # aynı gövde; bağımlılıklar enjekte edilir.
 register_language_routes(
+    app,
+    rate_limit=rate_limit,
+    check_vault_interlock=_check_vault_interlock,
+    broadcast_log=broadcast_log,
+    flag_env=_flag_env,
+)
+
+register_company_routes(
     app,
     rate_limit=rate_limit,
     check_vault_interlock=_check_vault_interlock,

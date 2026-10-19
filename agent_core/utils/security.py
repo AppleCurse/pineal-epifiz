@@ -30,7 +30,8 @@ _IDENTIFIER = re.compile(r"^[A-Za-z0-9_-]+$")
 _SECRET_PATTERNS = (
     re.compile(r"\bsk-(?:or-v1-)?[A-Za-z0-9._-]{8,}\b"),
     re.compile(r"(?i)\b(?:authorization\s*:\s*bearer|bearer)\s+[A-Za-z0-9._~+/=-]{6,}"),
-    re.compile(r"(?i)\b(?:sessionid|auth_token|access_token|api[_-]?key|cookie)\s*[=:]\s*[^\s;,]+"),
+    re.compile(r"(?i)\b(?:sessionid|auth_token|access_token|api[_-]?key|cookie|ds_user_id|csrftoken|ig_sessionid|x_cookie)\s*[=:]\s*[^\s;,]+"),
+    re.compile(r"(?i)\bcookie\s*:\s*[^\r\n]+"),
 )
 
 # [AUDIT P2-10] Güvenlik varsayılanı fail-CLOSED'dır: PINEAL_ENV yalnızca

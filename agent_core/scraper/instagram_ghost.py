@@ -95,6 +95,7 @@ class InstagramProfile(BaseModel):
     post_count: Optional[int] = None
     profile_pic_url: Optional[str] = None
     posts: List[InstagramPost] = Field(default_factory=list)
+    external_urls: List[str] = Field(default_factory=list, description="Biyografide veya profilde tespit edilen linktree, beacons ve harici bağlantılar")
     scraped_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     evidence_source: str = Field(default="self_hosted_ghost_browser", description="Kanıtın nereden geldiği, şeffaflık için")
 
@@ -512,6 +513,29 @@ class InstagramGhostScraper:
                     except Exception:
                         continue
 
+            # Link-in-bio (linktree, beacons, taplink, carrd, bio.link vb.) ve web bağlantıları kurtarma:
+            external_urls: List[str] = []
+            if biography:
+                agg_matches = re.findall(
+                    r"(?:https?://)?(?:www\.)?(?:linktr\.ee|beacons\.ai|taplink\.cc|bio\.link|carrd\.co|heylink\.me)/[A-Za-z0-9_.-]+",
+                    biography,
+                    re.IGNORECASE,
+                )
+                for am in agg_matches:
+                    clean_am = am if am.startswith("http") else f"https://{am}"
+                    if clean_am not in external_urls:
+                        external_urls.append(clean_am)
+                raw_urls = re.findall(r"https?://[A-Za-z0-9.-]+\.[a-z]{2,}(?:/[^\s\"'<>]*)?", biography)
+                for ru in raw_urls:
+                    if ru not in external_urls:
+                        external_urls.append(ru)
+
+            ext_meta = re.findall(r'"external_url":"([^"]+)"', html)
+            for em in ext_meta:
+                em_clean = em.replace("\\u0026", "&").replace("\\/", "/")
+                if em_clean.startswith("http") and em_clean not in external_urls:
+                    external_urls.append(em_clean)
+
             profile = InstagramProfile(
                 username=username,
                 full_name=full_name,
@@ -522,6 +546,7 @@ class InstagramGhostScraper:
                 post_count=post_count,
                 profile_pic_url=profile_pic_url,
                 posts=posts,
+                external_urls=external_urls,
                 evidence_source="self_hosted_ghost_browser"
             )
 
@@ -788,12 +813,44 @@ class InstagramGhostScraper:
         # DOM tabanlı Header & Bio kurtarma (özellikle gizli ve modern Instagram sayfalarında)
         try:
             dom_bio_text = await playwright_page.evaluate("""() => {
-                const header = document.querySelector('header');
-                return header ? header.innerText : '';
+                // 1. Standart header
+                let h = document.querySelector('header');
+                if (h && h.innerText && h.innerText.trim().length > 15) return h.innerText;
+
+                // 2. Main header veya ilk section
+                let mh = document.querySelector('main header') || document.querySelector('main section');
+                if (mh && mh.innerText && mh.innerText.trim().length > 15) return mh.innerText;
+
+                // 3. Role="main" veya genel section
+                let rm = document.querySelector('[role="main"] section') || document.querySelector('section');
+                if (rm && rm.innerText && rm.innerText.trim().length > 15) return rm.innerText;
+
+                // 4. h1/h2 yakınındaki profil üst bloğu
+                let h1 = document.querySelector('h1') || document.querySelector('h2');
+                if (h1 && h1.parentElement) {
+                    let parent = h1.closest('header') || h1.closest('section') || h1.parentElement.parentElement;
+                    if (parent && parent.innerText && parent.innerText.trim().length > 15) return parent.innerText;
+                }
+                return '';
             }""")
             if dom_bio_text and len(dom_bio_text.strip()) > 10:
-                # DOM header'ındaki metinleri HTML içine gömerek regex parse'ına destek ol
                 html += f'\n<meta content="{dom_bio_text.replace(chr(34), "&quot;")} on Instagram: &quot;{dom_bio_text.replace(chr(34), "&quot;")}&quot;" name="description">\n'
+
+            # DOM'daki harici bio linklerini (linktr.ee vb.) doğrudan yakala
+            dom_ext_links = await playwright_page.evaluate("""() => {
+                const links = [];
+                const anchors = document.querySelectorAll('header a, main a, section a');
+                for (const a of anchors) {
+                    const href = a.href || '';
+                    if (href && (href.includes('linktr.ee') || href.includes('beacons.ai') || href.includes('taplink') || href.includes('bio.link') || a.getAttribute('rel')?.includes('me'))) {
+                        links.push(href);
+                    }
+                }
+                return links;
+            }""")
+            if dom_ext_links:
+                for elink in dom_ext_links:
+                    html += f'\n<link rel="me" href="{elink}">\n'
         except Exception:
             pass
 

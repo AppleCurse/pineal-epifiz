@@ -40,21 +40,27 @@ if exist requirements-osint.txt (
     if errorlevel 1 echo UYARI: OSINT/Retina paketleri kurulamadi - panel acilir ama bazi moduller kapali kalir.
 )
 
-REM --- 3) Playwright tarayici motoru ---
- echo [3/4] Playwright Chromium kontrol ediliyor...
+REM --- 3) Sistem Ön Kontrolü (Preflight) & Tarayıcı Motoru ---
+echo [3/4] Playwright Chromium kontrol ediliyor...
 python -m playwright install chromium
 if errorlevel 1 goto :fail
 
-REM --- 4) Frontend derlemesi (dist yoksa) ---
-if not exist frontend\dist (
-    echo [4/4] Frontend derleniyor...
-    pushd frontend
-    if not exist node_modules call npm ci
-    if errorlevel 1 (popd & goto :fail)
-    call npm run build
-    if errorlevel 1 (popd & goto :fail)
-    popd
-)
+python scripts\preflight_check.py
+if errorlevel 2 goto :build_frontend
+if errorlevel 1 goto :fail
+if not exist frontend\dist goto :build_frontend
+goto :skip_build
+
+:build_frontend
+echo [4/4] Frontend derleniyor / guncelleniyor...
+pushd frontend
+if not exist node_modules call npm ci
+if errorlevel 1 (popd & goto :fail)
+call npm run build
+if errorlevel 1 (popd & goto :fail)
+popd
+
+:skip_build
 
 REM --- Sunucu: http://localhost:8000 ---
 REM [AUDIT P2-10] PINEAL_ENV artik fail-closed: set edilmemis/bozuk bir deger

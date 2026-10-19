@@ -30,11 +30,10 @@ SUPPORTED_PLATFORMS = ("instagram", "x", "cross")
 def effective_scraper_type(url: str, requested: Optional[str] = None) -> str:
     """URL platformuna göre tarayıcı seç ([023] fix: platform registry).
 
-    Instagram adresi X tarayıcısına gitmesin diye URL platform tespiti
-    önceliklidir; ancak tanınmayan platformda kullanıcı seçimi GEÇERLİ
-    DEĞİLDİR: URL'nin son path segmentini Instagram adı gibi kullanıp
-    yanlış hedefi kazımak misattribution'dır. Tanınmayan platform ->
-    unsupported_web (çağıran analizi başlatmadan durur).
+    Tek doğruluk kaynağı `profile_router.classify_url`'dir.
+    Instagram ve X doğrudan omurgadan kazınır; sosyal ağlar (LinkedIn,
+    Facebook, TikTok, Threads vb.) 'cross' (çapraz OSINT) hattına bağlanır.
+    Tanınmayan web adresleri ise 'unsupported_web' döner.
     """
     req = (requested or "").strip().lower()
     u = (url or "").strip().lower()
@@ -42,15 +41,26 @@ def effective_scraper_type(url: str, requested: Optional[str] = None) -> str:
     if not u:
         return "unsupported_web"
 
-    if "instagram.com" in u:
-        return "instagram"
-    if "x.com" in u or "twitter.com" in u:
-        return "x"
-
     # Bare username or @handle without a web domain
     if u.startswith("@") or ("://" not in u and "." not in u and "/" not in u):
         if req in ("x", "twitter"):
             return "x"
+        return "cross"
+
+    from agent_core.services.profile_router import (
+        PLATFORM_INSTAGRAM,
+        PLATFORM_LINKEDIN,
+        PLATFORM_SOCIAL,
+        PLATFORM_X,
+        classify_url,
+    )
+
+    route = classify_url(u)
+    if route.platform == PLATFORM_INSTAGRAM:
+        return "instagram"
+    if route.platform == PLATFORM_X:
+        return "x"
+    if route.platform in (PLATFORM_LINKEDIN, PLATFORM_SOCIAL) or route.runnable:
         return "cross"
 
     return "unsupported_web"

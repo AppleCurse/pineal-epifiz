@@ -102,7 +102,7 @@
   <div class="board-header">
     <div class="title-container">
       <div class="status-dot" class:pulsing={isOnline && activeAgentsCount > 0} class:offline-dot={!isOnline}></div>
-      <h2 class="board-title">PINEAL TELEMETRY PIPELINE</h2>
+      <h2 class="board-title">CANLI ANALİZ VE İZLEME AKIŞI</h2>
     </div>
     <div class="metrics">
       <div class="metric-box">
