@@ -1105,6 +1105,54 @@ class PinealExecutor:
             status.channel_status = [c for c in _inherited_channels if isinstance(c, dict)]
         _task_wall_start = datetime.now(timezone.utc)
 
+        # Privacy boundary: a private Instagram profile is returned as a
+        # scope-limited metadata observation only. Do not send its bio/name into
+        # personality inference, username discovery, or linked-account scans.
+        _private_profile = input_data.get("target_profile") or {}
+        if (_private_profile.get("platform") == "instagram"
+                and _private_profile.get("is_private") is True):
+            _public_metadata = {
+                "platform": "instagram",
+                "username": _private_profile.get("username"),
+                "full_name": _private_profile.get("full_name"),
+                "bio": _private_profile.get("bio") or "",
+                "followers": _private_profile.get("followers"),
+                "following": _private_profile.get("following"),
+                "external_url": _private_profile.get("external_url"),
+                "bio_links": list(_private_profile.get("bio_links") or []),
+                "is_private": True,
+                "profile_access": "metadata_only",
+                "posts": [],
+            }
+            status.status = PipelineStatus.PARTIALLY_COMPLETED
+            status.completed_at = datetime.now(timezone.utc)
+            status.halted_reason = "private_profile_scope"
+            status.telemetry = {
+                "result_kind": "public_profile_metadata_only",
+                "profile_metadata": _public_metadata,
+                "skipped_work": [
+                    "kişilik/duygu çıkarımı", "kullanıcı adıyla hesap keşfi",
+                    "ilişkili profillere geçiş", "gönderi içeriği analizi",
+                ],
+            }
+            self._log("INFO", f"[{task_id}] Gizli Instagram profili: yalnız açık profil metaverisi döndürüldü; analiz ve keşif yapılmadı")
+            self._emit(TaskStartedEvent(
+                task_id=task_id, agent_name="PinealExecutor",
+                input_summary="Gizli profil: yalnız açık profil metaverisi işleniyor.",
+            ))
+            self._snapshot(status)
+            import hashlib as _hashlib
+            import json as _json
+            _result_hash = _hashlib.sha256(
+                _json.dumps(_public_metadata, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+            ).hexdigest()
+            self._emit(TaskCompletedEvent(
+                task_id=task_id, agent_name="PinealExecutor",
+                final_result_hash=_result_hash,
+                duration_ms=int((datetime.now(timezone.utc) - _task_wall_start).total_seconds() * 1000),
+            ))
+            return status
+
         # [RESUME · DESTEKLE DEVAM] Önceki koşudan devralma: tamamlanan
         # ajanlar & kanıtlar & yutulan çıktılar taşınır; destek talepleri
         # çözümlenir. Durum makinesi DEĞİŞMEZ (processing → ... aynı akış).
@@ -1289,7 +1337,7 @@ class PinealExecutor:
         # promptlarını besler. Ajan username/name sürücülüdür (ilk veri
         # gerektirmez), taşımak güvenli.
         _tp = input_data.get("target_profile", {}) or {}
-        if (_tp.get("username") or _tp.get("name")) and not self._resume_done(
+        if (_tp.get("username") or _tp.get("name")) and _tp.get("is_private") is not True and not self._resume_done(
             status, "osint_investigator"
         ):
             self._rack_update("osint_investigator", "active")
@@ -1347,6 +1395,13 @@ class PinealExecutor:
                     error_message=str(e)[:200],
                 )
                 self._log("WARNING", f"[{task_id}] OSINT taraması atlandı: {e}")
+        elif _tp.get("is_private") is True and not self._resume_done(status, "osint_investigator"):
+            status.agent_runs["osint_investigator"] = AgentRun(
+                task_id=task_id, agent_name="osint_investigator", status="skipped",
+                decision_grade=False, completed_at=datetime.now(timezone.utc),
+                warnings=["Gizli profil: kullanıcı adı üzerinden platform/hesap keşfi yapılmadı."],
+            )
+            self._log("INFO", f"[{task_id}] OSINT keşfi atlandı: hedef profil gizli; hesap genişletmesi kapalı")
 
         # [P1 · DERİN PROFİL ÇÖZÜMLEME] detected_urls yetenek omurgasına bağlanır.
         # KOŞUM TEK YERDE: `deep_profile_resolver` → `profile_router` (saf
@@ -1354,12 +1409,17 @@ class PinealExecutor:
         # API katmanı yalnız adresleri taşır; ikinci bir koşum yolu açılsaydı
         # aynı yetenek iki kez çağrılırdı.
         _deep_items: list[Any] = []
-        _detected_urls = list((input_data.get("target_profile") or {}).get("detected_urls") or [])
-        from agent_core.services.profile_router import classify_url as _classify_profile_url
-        for _site in ((status.osint_footprint or {}).get("username_scan") or {}).get("found_sites") or []:
-            _su = (_site.get("url") if isinstance(_site, dict) else getattr(_site, "url", "")) or ""
-            if _su and _su not in _detected_urls and _classify_profile_url(_su).runnable:
-                _detected_urls.append(_su)
+        _target_profile = input_data.get("target_profile") or {}
+        if _target_profile.get("is_private") is True:
+            _detected_urls = []
+            self._log("INFO", f"[{task_id}] DERİN PROFİL atlandı: gizli hedef için ilişkili hesap taraması yapılmıyor")
+        else:
+            _detected_urls = list(_target_profile.get("detected_urls") or [])
+            from agent_core.services.profile_router import classify_url as _classify_profile_url
+            for _site in ((status.osint_footprint or {}).get("username_scan") or {}).get("found_sites") or []:
+                _su = (_site.get("url") if isinstance(_site, dict) else getattr(_site, "url", "")) or ""
+                if _su and _su not in _detected_urls and _classify_profile_url(_su).runnable:
+                    _detected_urls.append(_su)
         if _detected_urls:
             input_data.setdefault("target_profile", {})["detected_urls"] = list(_detected_urls)
             try:

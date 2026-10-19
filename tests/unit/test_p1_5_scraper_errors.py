@@ -156,19 +156,20 @@ async def test_empty_html_no_json_raises():
 
 
 # ------------------------------------------------------------------
-# TEST G: Private profil + 0 post → InsufficientEvidenceError
+# TEST G: Private profil + 0 post → metadata-only result, no fabricated content
 # ------------------------------------------------------------------
-def test_private_profile_no_posts_halts():
-    """_parse_real_profile: private + 0 post → InsufficientEvidenceError."""
+def test_private_profile_no_posts_returns_scope_limited_metadata():
+    """Private status alone must not erase publicly visible profile fields."""
     scraper = InstagramGhostScraper()
-    html_private_no_posts = (
-        '{"is_private":true}'  # JSON body
-        '"is_private":true'    # raw signal
-    )
-    with pytest.raises(InsufficientEvidenceError) as exc_info:
-        scraper._parse_real_profile({}, html_private_no_posts, "gizli_kullanici")
-
-    assert "private" in str(exc_info.value).lower() or "gizli" in str(exc_info.value).lower()
+    raw = {"user": {
+        "username": "gizli_kullanici", "is_private": True,
+        "biography": "Herkese açık bio", "edge_followed_by": {"count": 8},
+    }}
+    profile = scraper._parse_real_profile(raw, '{"is_private":true}', "gizli_kullanici")
+    assert profile.is_private is True
+    assert profile.biography == "Herkese açık bio"
+    assert profile.follower_count == 8
+    assert profile.posts == []
 
 
 # ------------------------------------------------------------------

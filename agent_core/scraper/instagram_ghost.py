@@ -81,6 +81,10 @@ class InstagramProfile(BaseModel):
     username: str
     full_name: Optional[str] = None
     biography: Optional[str] = None
+    # Explicitly displayed profile website and URLs written in the public bio.
+    # These are reported as observations only; the scraper does not follow them.
+    external_url: Optional[str] = None
+    bio_links: List[str] = Field(default_factory=list)
     is_private: bool
     is_verified: bool = False
     follower_count: Optional[int] = None
@@ -319,13 +323,55 @@ class InstagramGhostScraper:
                 return None
 
         try:
-            is_private = '"is_private":true' in html or '"isPrivate":true' in html or 'Bu hesap gizli' in html or 'This account is private' in html
+            is_private = bool(
+                re.search(r'"(?:is_private|isPrivate)"\s*:\s*true\b', html, re.IGNORECASE)
+                or re.search(r"Bu hesap gizli|This account is private", html, re.IGNORECASE)
+            )
 
             follower_count = None
             following_count = None
             post_count = None
             full_name = None
             biography = None
+            external_url = None
+
+            # Modern/legacy embedded payloads vary in shape. Read only the
+            # matching account node; never infer a profile from a post author.
+            def _find_account_node(value: Any, depth: int = 0) -> Optional[Dict[str, Any]]:
+                if depth > 14:
+                    return None
+                if isinstance(value, dict):
+                    node_username = value.get("username")
+                    if isinstance(node_username, str) and node_username.casefold() == username.casefold():
+                        return value
+                    for child in value.values():
+                        found_node = _find_account_node(child, depth + 1)
+                        if found_node is not None:
+                            return found_node
+                elif isinstance(value, list):
+                    for child in value:
+                        found_node = _find_account_node(child, depth + 1)
+                        if found_node is not None:
+                            return found_node
+                return None
+
+            account_node = _find_account_node(raw_json)
+            if account_node:
+                if isinstance(account_node.get("is_private"), bool):
+                    is_private = account_node["is_private"]
+                full_name = account_node.get("full_name") if isinstance(account_node.get("full_name"), str) else None
+                biography = account_node.get("biography") if isinstance(account_node.get("biography"), str) else None
+                external_url = account_node.get("external_url") if isinstance(account_node.get("external_url"), str) else None
+                followers = account_node.get("edge_followed_by") or account_node.get("follower_count")
+                following = account_node.get("edge_follow") or account_node.get("following_count")
+                if isinstance(followers, dict):
+                    followers = followers.get("count")
+                if isinstance(following, dict):
+                    following = following.get("count")
+                if isinstance(followers, int) and not isinstance(followers, bool):
+                    follower_count = followers
+                if isinstance(following, int) and not isinstance(following, bool):
+                    following_count = following
 
             # 1. Meta Description (Follower & Following & Post Count)
             og_desc_match = re.search(r'<meta property="og:description" content="([^"]*)"', html)
@@ -501,14 +547,23 @@ class InstagramGhostScraper:
                     except Exception:
                         continue
 
-            # Eğer private ve post yoksa, sonraki ajanlar boş veriyle halüsinasyon göreceği için durdur
-            if is_private and len(posts) == 0:
-                raise InsufficientEvidenceError(f"Hedef profil gizli (Private) ve gönderi okunamıyor: {username}")
+            # Keep only URLs explicitly present in the visible bio text. Do not
+            # follow them here: a private profile is metadata-only, not a cue to
+            # pivot into identifying or crawling related accounts.
+            bio_links: List[str] = []
+            for link in re.findall(r"https?://[^\s<>\"'\)\]]+", biography or "", re.IGNORECASE):
+                cleaned = html_lib.unescape(link).rstrip(".,;)")
+                if cleaned and cleaned not in bio_links:
+                    bio_links.append(cleaned)
+            if external_url:
+                external_url = html_lib.unescape(external_url.strip()) or None
 
             profile = InstagramProfile(
                 username=username,
                 full_name=full_name,
                 biography=biography,
+                external_url=external_url,
+                bio_links=bio_links,
                 is_private=is_private,
                 follower_count=follower_count,
                 following_count=following_count,

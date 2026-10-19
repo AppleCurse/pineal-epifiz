@@ -211,6 +211,22 @@ def check_scrape_confidence(ig_scraper, ig_data, emit) -> float:
     min_confidence = _min_scrape_confidence()
     confidence = ig_scraper.evaluate_confidence(ig_data)
     emit("INFO", f"SCRAPER CONFIDENCE: {confidence:.2f} (min esik {min_confidence:.2f})")
+    # A private profile can still expose a small, legitimate metadata surface
+    # (e.g. display name, bio, counts, website). Keep that result visible as
+    # metadata-only instead of discarding it at the post-content confidence
+    # gate. This is not permission to infer private content or pivot to related
+    # accounts; downstream receives an explicit scope marker.
+    is_private = bool(getattr(ig_data, "is_private", False))
+    has_public_metadata = any((
+        getattr(ig_data, "full_name", None),
+        getattr(ig_data, "biography", None),
+        getattr(ig_data, "external_url", None),
+        getattr(ig_data, "follower_count", None) is not None,
+        getattr(ig_data, "following_count", None) is not None,
+    ))
+    if is_private and has_public_metadata:
+        emit("INFO", "PRIVATE PROFILE: yalnızca sayfada açıkça görünen profil metaverisi; gönderi/yan hesap taraması yapılmıyor")
+        return confidence
     if confidence < min_confidence:
         raise InsufficientEvidenceError(
             f"Yetersiz kanit guveni: {confidence:.2f} < {min_confidence:.2f} "
@@ -234,8 +250,13 @@ def ig_target_profile_update(ig_data: Any) -> dict:
     """
     posts = ig_data.posts or []
     return {
+        "platform": "instagram",
         "username": "@" + ig_data.username,
+        "full_name": ig_data.full_name,
         "bio": ig_data.biography or "",
+        "external_url": getattr(ig_data, "external_url", None),
+        "bio_links": list(getattr(ig_data, "bio_links", []) or []),
+        "profile_access": "metadata_only" if ig_data.is_private else "profile_content",
         "posts": [p.caption or "" for p in posts],
         # Zaman damgası yoksa "" (None değil): str() ile "None" metnine
         # dönüşüp quote_guard source'larına sızmasın.

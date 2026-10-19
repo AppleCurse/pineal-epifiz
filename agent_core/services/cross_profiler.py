@@ -233,6 +233,14 @@ def correlate_profiles(
     tp = target_profile if isinstance(target_profile, dict) else {}
     osint = osint_footprint if isinstance(osint_footprint, dict) else {}
 
+    # Privacy boundary: a private Instagram profile is not a starting point for
+    # building an identity graph. Surface its explicitly visible bio/link data
+    # to the user, but do not correlate it with username-search footprints,
+    # discover presumed aliases, or attach other people's accounts.
+    if str(tp.get("platform") or "").lower() == "instagram" and tp.get("is_private") is True:
+        logger.info("cross_profiler skipped: private Instagram target; identity expansion is disabled")
+        return CrossProfileCorrelation(matches=[], items=[], cluster_count=0)
+
     # 1. Hesap adayları — yalnız BİLİNEN platformlar (jenerik "web" hesapları
     #    yanlış eşleşme üretir).
     accounts: List[Dict[str, str]] = []

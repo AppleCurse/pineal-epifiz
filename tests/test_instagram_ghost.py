@@ -11,12 +11,24 @@ sys.path.insert(0, '/mnt/data')
 from agent_core.scraper.instagram_ghost import InstagramGhostScraper, InstagramProfile, InstagramPost, InsufficientEvidenceError
 
 
-def test_private_account_should_not_hallucinate_posts():
-    """Gizli hesapta post uydurma"""
+def test_private_account_preserves_visible_metadata_without_posts():
+    """Gizli profilin sayfada açıkça görünen metaverisi korunur; içerik uydurulmaz."""
     scraper = InstagramGhostScraper()
-    html_private = '{"is_private":true,"edge_followed_by":{"count":123}} <meta property="og:description" content="Gizli hesap">'
-    with pytest.raises(InsufficientEvidenceError):
-        scraper._parse_real_profile({}, html_private, "gizli_kullanici")
+    raw = {"data": {"user": {
+        "username": "gizli_kullanici",
+        "full_name": "Örnek Profil",
+        "biography": "Uzman. Bilgi: https://example.org/",
+        "external_url": "https://business.example.org",
+        "is_private": True,
+        "edge_followed_by": {"count": 123},
+    }}}
+    profile = scraper._parse_real_profile(raw, '{"is_private" : true}', "gizli_kullanici")
+    assert profile.is_private is True
+    assert profile.full_name == "Örnek Profil"
+    assert profile.follower_count == 123
+    assert profile.external_url == "https://business.example.org"
+    assert profile.bio_links == ["https://example.org/"]
+    assert profile.posts == []
 
 def test_empty_html_should_halt_not_hallucinate():
     """Boş HTML gelirse halt etmeli, uydurma profil üretmemeli"""
