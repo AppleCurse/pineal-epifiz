@@ -184,8 +184,38 @@ class AspasiaChief:
                 bio_mentions = re.findall(r"@[A-Za-z0-9_.-]+", str(t_bio))
                 if bio_mentions:
                     lines.append(f"Biyografideki Bağlı/İş Hesapları: {', '.join(bio_mentions)}")
+
+            # Zincirleme kazınan işletme hesapları (Faz 1):
+            biz_entities = target_profile.get("business_entities") or []
+            if biz_entities:
+                biz_lines = []
+                for b in biz_entities:
+                    h = b.get("handle")
+                    cnt = b.get("post_count", 0)
+                    fol = b.get("followers")
+                    priv = " (Gizli)" if b.get("is_private") else " (Açık)"
+                    biz_lines.append(f"{h}{priv} [Gönderi: {cnt}, Takipçi: {fol if fol is not None else '?'}]")
+                lines.append(f"İncelenen Bağlı İşletme Profilleri: {'; '.join(biz_lines)}")
+
             if t_urls:
-                lines.append(f"Tespit Edilen Bağlantılar/Hesaplar: {', '.join(t_urls[:5])}")
+                # Platformlara göre ayrıştır
+                platforms_found = {}
+                for u in t_urls:
+                    u_low = str(u).lower()
+                    if "facebook" in u_low:
+                        platforms_found.setdefault("Facebook", []).append(u)
+                    elif "linkedin" in u_low:
+                        platforms_found.setdefault("LinkedIn", []).append(u)
+                    elif "tiktok" in u_low:
+                        platforms_found.setdefault("TikTok", []).append(u)
+                    elif "threads" in u_low:
+                        platforms_found.setdefault("Threads", []).append(u)
+                    elif "instagram" in u_low and t_name not in u_low:
+                        platforms_found.setdefault("Diğer Instagram", []).append(u)
+                if platforms_found:
+                    cat_summary = [f"{plat}: {len(urls_list)} bağlantı" for plat, urls_list in platforms_found.items()]
+                    lines.append(f"Tespit Edilen Çapraz Platformlar: {', '.join(cat_summary)}")
+                lines.append(f"Örnek Profil Bağlantıları: {', '.join(t_urls[:6])}")
 
         missing_notes = []
         if isinstance(channel_status, list):
@@ -301,8 +331,9 @@ KULLANICI MESAJI VEYA SORUSU: "{user_message}"
 Yukarıdaki sistem durumu ve kullanıcı mesajını dikkate alarak ASPASIA kimliğinle yanıt ver:
 1. YALIN VE DOĞAL TÜRKÇE KULLAN: Kullanıcıya iç teknik terimler ("telemetri", "canonical memory", "bayat snapshot", "pipeline", "routing-aday", "snippet", "7-pillar") kullanma; her şeyi herkesin anlayacağı yalın, günlük Türkçeyle anlat.
 2. ORAYA YAZ BURAYA YAZ DEME: Kullanıcıya asla "yukarıdaki kutuya yazın", "CAPTURE tuşuna basın" veya "başka bir ekrana geçin" deme! Kullanıcı her şeyi doğrudan bu sohbet kutusuna yazabilir.
-3. EKSİK VARSA AÇIKÇA SÖYLE: Eğer kullanıcı bir kişiyi/hesabı inceletmek istiyor ama henüz hangi profil veya @kullanıcı_adı olduğunu yazmadıysa, "Hangi hesabı incelememi istersiniz Mösyö? Kullanıcı adını (örneğin @kullanici) veya profil linkini doğrudan buraya yazmanız yeterli." de. Eğer tamamlanan bir incelemede eksik kalan bir veri varsa (örneğin Instagram oturumu açık olmadığı için gönderiler çekilemediyse veya aramada veri bulunamadıysa), neyin neden eksik olduğunu doğal dille söyle.
-4. KISA VE NET OL: Önce doğrudan cevabı/sonucu söyle, ardından gerekiyorsa tek bir sonraki adımı belirt.
+3. BULUNAN PLATFORMLARI VE İŞLETMELERİ DÜZENLİ LİSTELE: Eğer hedef hakkında bağlı işletme profilleri (@hesap) veya diğer sosyal ağlar (Facebook, LinkedIn, TikTok vb.) tespit edildiyse, bunları "Bulunan Profiller ve İşletmeler" başlığı altında net bağlantılar/kullanıcı adları olarak açıkça listele.
+4. EKSİK VARSA AÇIKÇA SÖYLE: Eğer kullanıcı bir kişiyi/hesabı inceletmek istiyor ama henüz hangi profil veya @kullanıcı_adı olduğunu yazmadıysa, "Hangi hesabı incelememi istersiniz Mösyö? Kullanıcı adını (örneğin @kullanici) veya profil linkini doğrudan buraya yazmanız yeterli." de. Eğer tamamlanan bir incelemede eksik kalan bir veri varsa (örneğin Instagram oturumu açık olmadığı için gizli profilin gönderileri çekilemediyse veya bir platformda veri bulunamadıysa), neyin neden eksik olduğunu doğal dille söyle.
+5. KISA VE NET OL: Önce doğrudan cevabı/sonucu söyle, ardından gerekiyorsa tek bir sonraki adımı belirt.
 """
         
         selected_model = model_override or self.preferred_model

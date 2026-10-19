@@ -2719,6 +2719,51 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                 if payload["target_profile"].get("following") is not None:
                     dossier_data["following"] = payload["target_profile"].get("following")
                 payload["target_profile"].update(dossier_data)
+
+                # [FAZ 1 · ZİNCİRLEME İŞLETMELERİ KAZIMA]
+                # Biyografiden çıkan iş/ikinci hesaplar (@bangskuafor, @kubra_beauty_ vb.) açıksa hafifçe kazı:
+                business_entities = payload["target_profile"].setdefault("business_entities", [])
+                for bh in bio_handles[:2]:
+                    if bh.lower() != clean_u.lower():
+                        bh_url = f"https://www.instagram.com/{bh}/"
+                        broadcast_log(client_id, "INFO", f"ZİNCİRLEME PROFİL İNCELENİYOR: @{bh} -> {bh_url}")
+                        try:
+                            bh_data = await asyncio.wait_for(
+                                scrape_instagram(bh_url, cookie, log=lambda lvl, msg: None),
+                                timeout=25.0,
+                            )
+                            business_entities.append({
+                                "handle": f"@{bh}",
+                                "url": bh_url,
+                                "bio": bh_data.get("bio", ""),
+                                "followers": bh_data.get("followers"),
+                                "following": bh_data.get("following"),
+                                "post_count": len(bh_data.get("posts") or []),
+                                "posts": (bh_data.get("posts") or [])[:5],
+                                "is_private": bh_data.get("is_private", False),
+                            })
+                            broadcast_log(
+                                client_id, "INFO",
+                                f"ZİNCİRLEME İŞLETME KAZINDI: @{bh} ({len(bh_data.get('posts') or [])} gönderi, "
+                                f"takipçi={bh_data.get('followers')})"
+                            )
+                        except (InsufficientEvidenceError, ScraperInsufficientEvidenceError) as b_exc:
+                            # Gizli işletme hesabıysa bile başlığı/biyografisi varsa kurtar:
+                            b_priv = getattr(b_exc, "profile_update", None) or {}
+                            if b_priv:
+                                business_entities.append({
+                                    "handle": f"@{bh}",
+                                    "url": bh_url,
+                                    "bio": b_priv.get("bio", ""),
+                                    "followers": b_priv.get("followers"),
+                                    "following": b_priv.get("following"),
+                                    "post_count": 0,
+                                    "is_private": True,
+                                })
+                            broadcast_log(client_id, "INFO", f"ZİNCİRLEME PROFİL GİZLİ/SINIRLI: @{bh}")
+                        except Exception as b_err:
+                            broadcast_log(client_id, "WARNING", f"ZİNCİRLEME PROFİL ATLANDI: @{bh} ({type(b_err).__name__})")
+
                 channel_runs.extend(
                     dossier_channel_rows(
                         web_search_status=web_search_status,
