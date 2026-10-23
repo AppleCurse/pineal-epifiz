@@ -82,12 +82,28 @@ Kod yolları: `backend/api.py` → `agent_core/task_executor.py` (görev) →
 `agent_core/services/cognitive_router.py` (ajan sırası) →
 `agent_core/capabilities/` (dış dünyaya çıkış kapısı) → `agent_core/engines/` (ölçüm).
 
+Toplanan biyografi/gönderi adresleri (`detected_urls`) görev yürütücüsünde
+`agent_core/services/deep_profile_resolver.py` → `profile_router` →
+`CapabilityRunner` zincirine girer; yani "bulundu" demek "tarandı" demektir.
+
 ---
 
 ## 4 · Ekranda ne görürsün
 
-Uygulamanın üç görünümü var; sağ üstteki düğmelerle geçiş yapılır
-(`frontend/src/App.svelte:437-461`).
+Uygulamanın **dört** görünümü var; görünüm seçici düğmelerle geçiş yapılır
+(`frontend/src/App.svelte` → `$activeViewMode`). Varsayılan açılış görünümü
+`spiderfoot`'tur (`frontend/src/store.ts`).
+
+> [2026-10-23 · KUSUR] SpiderFoot kokpiti bir süre **import edilmiş ama hiç
+> render edilmemişti**: `store.ts` varsayılanı `spiderfoot` yapmış, `App.svelte`
+> ise o mod için dal açmadığından açılışta `AtlasPinealCockpit` gösteriyordu.
+> Dal eklendi; `tests/unit/test_claims_are_runtime_proven.py` artık her import
+> edilen görünüm bileşeninin markup'ta **render edildiğini** doğrular
+> (`dead_code_audit` bunu yakalayamaz — import "kullanım" sayılır).
+
+**SPIDERFOOT KOKPİTİ** (`SpiderFootCockpit.svelte`, ~1570 satır) — ana operasyon
+kokpiti: canlı boru hattı, etkileşimli düğüm grafiği, kanal/ajan durumu; aynı
+SoT'tan (WS + `/api/aspasia/state`) beslenir.
 
 **MUHAREBE MASASI** (`TacticalWarRoom.svelte`) — adli teftiş masası. Ajanların
 durum pilleri, tespit edilen profiller, seçili ajanın dört sekmeli Röntgeni
@@ -179,16 +195,46 @@ Canlı liste: `GET /api/telemetry` → 27 yetenek.
 | Sunum | `renderer.report.pdf` · `renderer.report.diagram` · `renderer.report.video` · `voice.report.script` |
 | Ses | `voice.tts.local` · `voice.stt.local` |
 
+**Bulunan adresler çöpe gitmez.** Instagram biyografisindeki link-in-bio adresleri
+(Linktree/beacons/X/Threads…) ve X gönderi **ve** biyografi metinlerindeki
+adresler `target_profile.detected_urls` alanına çıkarılır
+(`agent_core/services/platform_registry.py::detected_profile_urls`), OSINT
+kullanıcı-adı yoklamasının bulgularıyla
+`agent_core/services/deep_url_cables.py::merge_detected_profile_urls` içinde
+birleşir ve **derin taramaya** verilir. Profil olmayan adres (haber sitesi,
+YouTube videosu) elenir — yanlış hedefe tarama yok.
+
+**Gönderi tavanı tek yerden:** `PINEAL_IG_MAX_POSTS` (varsayılan **48**, üst
+sınır 200) hem Playwright hattını hem `instagrapi` ikinci kaynağını bağlar;
+sabit 12/20 tavanı kalmadı. Sayfalama kaydırma + `page_info.end_cursor` ile
+ilerler, tavan operatörün kararıdır.
+
+**Üçüncü taraf OSINT iddiası kanıt değildir.** `holehe` isabetleri
+`epistemic_type="inference"` + `verification="unverified_third_party"` olarak
+işaretlenir; tarama hata oranı yüksekse `reliability="low"` yazılır ve
+"kayıtlı değil" iddiası yalnız **sıfır hatada** üretilir
+(`agent_core/capabilities/adapters_osint.py`).
+
 ---
 
 ## 8 · Güvenlik: dört kilit
 
 | Kilit | Ne yapar | Kod |
 |---|---|---|
-| **Kasa (vault)** | Anahtar girilmeden dışarı **tek bir** OSINT/kazıma isteği çıkamaz. Kasa girilince anahtar `set_key(..., unlock_live=True)` ile canlı LLM çağrıları da açılır. | `backend/api.py:3079` · `llm_gateway.py:1411` |
+| **Kasa (vault)** | Anahtar girilmeden dışarı **tek bir** OSINT/kazıma isteği çıkamaz. Kasa girilince anahtar `set_key(..., unlock_live=True)` ile canlı LLM çağrıları da açılır. | `backend/api.py:3608` (`_check_vault_interlock`) · `llm_gateway.py:1412` (`set_key`) |
 | **Çocuk kilidi** | Yaş tahmini yapılmaz; operatör beyanı varsa araştırma fail-closed durur. | `agent_core/safety/minor_gate.py` · `/api/minor/*` |
 | **Fail-closed kanıt** | Veri/kanıt yoksa iddia üretilemez; kanal dürüstçe kapanır. | `InsufficientEvidenceError` |
 | **Egress politikası** | Her dış çağrı yetenek omurgasından geçer; kapı kapalıyken "çalışıyor" denmez. | `agent_core/capabilities/policy.py` |
+
+**Kapıların açılması (kilit değil, izin):** X ve Instagram sensörleri ile çapraz
+platform yoklaması varsayılan olarak **kapalıdır**. Operatör
+`POST /api/scraper/authorize-alternative` ile o görev için onay verdiyse
+(`cross_platform` / `public_web_search`), onaya bağlı kapılar
+(`ENABLE_CROSS_PLATFORM`, `ENABLE_X_SENSOR`, `ENABLE_IG_SECONDARY`) **yalnız o
+görevde** açılır — kural tek yerde: `agent_core/capabilities/state.py::with_operator_consent`.
+ `.env`'de bir bayrak **açıkça `false`** yazılıysa onay onu ezmez; kasa ve hız
+kapıları hiçbir koşulda gevşemez. Onay yoksa sensör `policy:gate_disabled`
+der — bunu "bozuk" diye yutturmaz.
 
 ---
 
@@ -263,13 +309,16 @@ karşı** koşturur ve ham çıktıyı basar: `0` kanıtlandı · `1` döngü k�
 
 ## 11 · API yüzeyi (69 HTTP ucu + 1 WebSocket)
 
+> Sayım biçimi: **69 = path+metot çifti**, **68 benzersiz yol**. Fark tek bir yoldan gelir: `/api/vault/status` hem `GET` (durum) hem `POST` (kilit aç/kapa) kabul eder. Sayı `backend.api.app.routes` üzerinden ölçülür.
+
 | Alan | Uçlar | Ne yapar |
 |---|---|---|
 | **Aspasia** | `/api/aspasia/chat` · `/api/aspasia/command` · `/api/aspasia/state` | Konuşma · komut+görev · denetim görünümü (kayıtlı ajanlar, görev durumu, bütçe, kota, anomali, **çağrı izi**) |
 | **Görev** | `/api/initiate` · `/api/tasks` · `/api/tasks/{id}` (sil) · `/api/tasks/{id}/…` (cancel, halt, resume, graph, changes, memory, support) · `/api/executor/intervene` | Görevi başlat, durdur, sürdür, gözlemle, müdahale et |
 | **Kasa & güvenlik** | `/api/vault` · `/api/vault/status` · `/api/vault/lock` · `/api/vault/unlock` · `/api/minor/case` · `/api/minor/clear` · `/api/minor/state` | Anahtar yönetimi, canlı kapılar, çocuk kilidi |
 | **Tarayıcı** | `/api/browser/*` (open, click, type, press, shot, state, save, back, close) | Playwright oturumu üzerinden gerçek sayfa gezinme |
-| **Yetenek uçları** | `/api/company/*` · `/api/jury/*` · `/api/language/*` · `/api/media/*` · `/api/report/*` · `/api/mcp/status` · `/api/calibration/*` · `/api/scraper/authorize-alternative` | Kurum taraması, yerel jüri, dil, medya, rapor, MCP, kalibrasyon — her biri durum ucuyla "gerçekten yapılabiliyor mu" bilgisini verir |
+| **Yetenek uçları** | `/api/company/*` · `/api/jury/*` · `/api/language/*` · `/api/media/*` · `/api/report/*` · `/api/mcp/status` · `/api/calibration/*` · `/api/scraper/authorize-alternative` | Kurum taraması, yerel jüri, dil, medya, rapor, MCP, kalibrasyon — her biri durum ucuyla "gerçekten yapılabiliyor mu" bilgisini verir. `authorize-alternative` ayrıca onaya bağlı sensör kapılarını (X/IG/çapraz) **o görev için** açar |
+| **Mobil** | `/api/mobile/coach` | Android koç sohbeti: istem **sunucuda** kurulur, yanıt tek ağ geçidinden geçer; cihazda LLM anahtarı durmaz, istemci kendi sistem istemini gönderemez |
 | **Tanılama** | `/health` · `/api/telemetry` · `/api/telemetry/taste` · `/api/agents/status` · `/api/memory/…` · `/api/dialogue/sessions` · `/api/experimental/*` | Sağlık, yetenek tablosu, ajan durumu, hafıza, oturumlar, deneysel hatlar |
 | **OpenAI uyumlu** | `/v1/models` · `/v1/chat/completions` | OpenAI istemcileriyle birebir konuşma |
 | **Canlı akış** | `WS /ws/{client_id}` | `snapshot_update` (her an durum) ve `result` (görev sonu + kanıt zinciri) |
@@ -289,6 +338,8 @@ karşı** koşturur ve ham çıktıyı basar: `0` kanıtlandı · `1` döngü k�
 | **P6** | Ölü kod dedektörü (`scripts/dead_code_audit.py`, CI'da kapı); 12 ölü arayüz dosyası silindi; 13 ajanın 13'ü canlı |
 | **P7** | Aspasia komut döngüsü (`/api/aspasia/command`) + **ilk canlı kontrol paneli** + çağrı kimliği bağı |
 | **P8** | Panelin "en donanımlı" sürümü (6 blok, filtre, ajan detayı, kanıt zinciri gruplama), çağrı izi **sayfalaması**, `scripts/verify_command_loop.py` doğrulayıcısı, `api.py` satır tavanı 5772 → **5760** |
+| **P9** | README baştan yazıldı (15 bölüm, düz dil) + `docs/envanter.html` sisteme bağlandı + `tests/unit/test_readme_claims.py` sayıları koddan ölçer |
+| **P10** | Çapraz arama **kablosu**: IG bio ve X gönderi/biyografi adresleri `detected_urls` → derin tarama; operatör onayı X/IG sensörlerini o görev için açar; `holehe` iddiaları `inference` olarak etiketlendi; tek IG gönderi tavanı (`PINEAL_IG_MAX_POSTS`); Android koç sohbeti sunucuya taşındı (`/api/mobile/coach`); noktalı modül yoklaması (`agent_core/utils/optional_deps.py`) |
 
 Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 `docs/reports/` (56 tarihli rapor).
@@ -301,16 +352,22 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 
 | Ne | Ölçüm |
 |---|---|
-| API ayakta | `/health` → **200** · `/api/telemetry` → **200** (26 yetenek) |
+| API ayakta | `/health` → **200** · `/api/telemetry` → **200** (27 yetenek) |
 | Kayıtlı ajanlar | `/api/aspasia/state` → **13** ajan |
 | Kasa kilidi | Kilitliyken `POST /api/initiate` → **423 VAULT_LOCKED** |
 | WebSocket akışı | Yerel istemciyle **63 kare** alındı |
-| Test tabanı | `pytest tests -q --cov --cov-fail-under=80` → **2850 passed, 8 skipped**, kapsam **%92.60** |
+| Test tabanı | CI'ın kendi komutu (`pytest -q --cov=agent_core --cov=backend --cov-fail-under=80`) → **3097 passed, 6 skipped, 2 xfailed**, kapsam **%86.56** |
 | Kod kalitesi | `ruff check .` → **All checks passed!** · `npm run check` → **0 hata / 0 uyarı** · `npm run build` → ✓ |
 | Denetim bekçileri | `audit_regression.py` → **✓ BEKÇİ GEÇTİ** · `dead_code_audit.py` → **0/0/0/0/0/0** |
-| Ölçülebilir ilerleme | `backend/api.py` **5760** satır (tavan 5760, düşürülmüş) |
-| Revert-doğrulama | `scripts/revert_verification_p*.py` → her düzeltme geri alınınca test kırmızıya döndü |
+| Ölçülebilir ilerleme | `backend/api.py` **5754** satır (tavan 5760, düşürülmüş) |
+| Revert-doğrulama | `scripts/revert_verification_p*.py` → **43/43** düzeltme geri alınınca test kırmızıya döndü (p0 7/7 · p1 6/6 · p2 3/3 · p3 4/4 · p4 5/5 · p8 10/10 · p9 8/8; her koşum dosyayı `finally` ile geri yükler) |
 | Komut döngüsü | `scripts/verify_command_loop.py` → erişilemeyen API'de `rc=2` + sebep; kırık döngüde `rc=1` + sebep |
+| Onay kablosu | Onay yok → `sensor.ig.instagrapi` / `sensor.x.twscrape` **`policy:gate_disabled`**; onay var → kapı **açık**, dürüst sebep `dependency_missing:*` (birim testi, sahte çalıştırıcı) |
+| Bio/gönderi adres kablosu | Sahte `twscrape` → `bio` → `x_target_profile_update` → `detected_urls` → `merge_detected_profile_urls` zinciri uçtan uca koşuyor (çevrimdışı) |
+| IG gönderi tavanı | Ham HTML yolunda 20 sahte gönderi → **20 post**; `PINEAL_IG_MAX_POSTS=5` → **5 post** (sabit 12 yok) |
+| 13 ajan GERÇEKTEN koşuyor | Gerçek `CognitiveRouter` + gerçek `PinealExecutor` ile görev koşuldu, her ajanın `execute/analyze` çağrısı kaydedildi → **13/13** (rota 10, yürütücü 3 ayrı çağrı). Test: `tests/unit/test_claims_are_runtime_proven.py` |
+| 27 yetenek erişilebilir | `availability()` 27/27 **istisnasız** yanıt verdi (4 açık: socid, dil, handle_probe, rapor metni; 23'ü kapı/bağımlılık sebebiyle kapalı). Her kimliğin adaptör dışı çağrı yeri var; 3 web çıkarıcısı `WEB_EXTRACTION_ORDER` zinciriyle çağrılıyor (`web_research.py`) |
+| Ölü uç yok | 68 benzersiz HTTP yolu: **30**'u UI/edge worker'dan, **38**'i testlerden çağrılıyor; **hiçbir çağrı yeri olmayan uç 0**. (`dead_code_audit` uçları KAPSAMAZ — bu ölçüm `test_no_http_endpoint_is_orphaned` ile kilitli) |
 
 **DOĞRULANMADI (sebebiyle):**
 
@@ -318,9 +375,13 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 |---|---|
 | Canlı 9Router ile tam komut döngüsü (niyet → görev → 9 ajan → **canlı kanıt zinciri**) | Sandbox'tan `127.0.0.1:20128` erişilemiyor (HTTP 000) → komut dürüstçe reddedildi |
 | Canlı Instagram / X kazıma | Egress kapalı + Playwright chromium kurulu değil |
+| Canlı bio linki → derin tarama | Egress kapalı; zincir yalnız **sahte sensörle** (çevrimdışı birim testi) doğrulandı — canlı hesapta görülmedi |
+| Canlı X akışı (`twscrape`) | Hesap havuzu boş → dürüst `no_session_pool`; operatör hesabı eklenmeden X kazıması çalışmaz |
 | Panelin **görsel** doğrulaması | Headless tarayıcı yok; statik kontrat + derleme ile doğrulandı, gözle görülmedi |
 | Canlı `socid`, canlı arama→derin tarama zinciri | Egress kapalı |
 | `ENABLE_*` bayraklarının tamamı açık hâli | Kapılar kapalı tutuldu (görev talimatı) |
+| Kasa anahtarının diskte şifrelenmesi | **Şifreleme YOK**: `.pineal_vault.json` düz JSON'dur (gitignore'da, uygulama yazmaz; operatör koyar). `repr=False` + log redaksiyonu anahtarı loglara sızdırmaz, `/api/vault/status` yalnız boolean döner. Kasa bir **yetki mandalı**dır, sır kasası değil |
+| Atlanan 6 testin kapanması | 4'ü `requirements-retina.txt` paketleri (trafilatura/scrapling/twscrape/instagrapi) CI'da kurulmadığı için, 1'i PIL dolu/None dalı, 1'i open-interpreter opsiyonel katmanı. **2 xfail**: TikTok `tag` rezervi ve `t.me/s` önizlemesi — platform-bazlı rezerv tablosu P10'a devredildi |
 
 ---
 
@@ -328,19 +389,19 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 
 | Klasör | İçinde ne var |
 |---|---|
-| `backend/` | HTTP + WS yüzeyi (`api.py` 5760 satır), uç modülleri (`routes/`), servisler (`services/`), güvenlik (`security/`) |
+| `backend/` | HTTP + WS yüzeyi (`api.py` 5754 satır), uç modülleri (`routes/`), servisler (`services/`), güvenlik (`security/`) |
 | `agent_core/` | Çekirdek: görev yürütücü, ajanlar, 7 dalga motoru, yetenek omurgası, hafıza, gölge hat |
 | `frontend/src/` | Svelte arayüzü: 3 görünüm + Kontrol Paneli + ajan rafı + destek paneli |
 | `rust_core/` | Deneysel, opsiyonel Rust çekirdek (CI'da ayrı derlenir, ürün yoluna bağlı değildir) |
 | `android/` | Android istemcisi (CI'da lint + birim testi) |
 | `functions/` · `worker.ts` | Cloudflare Pages/Workers `/api` ve `/ws` edge vekilleri |
-| `tests/` | 254 test modülü (birim + entegrasyon) |
+| `tests/` | 268 test modülü (birim + entegrasyon) |
 | `scripts/` | Denetim ve doğrulama araçları: ölü kod denetimi, regresyon bekçisi, envanter üreteci, revert doğrulamaları, 9Router ön kontrolü |
 | `docs/` | Tüzük, sözleşmeler, mimari, `docs/reports/` (56 rapor) ve **tam envanter sayfası** |
 | `config/` | Yönlendirme, sağlayıcı kataloğu, karar yapılandırması, RTK politikası |
 
 **Tam ve aranabilir harita:** **[docs/envanter.html](docs/envanter.html)** —
-761 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
+763 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
 ile yenilenir, CI `--check` ile bayatlamayı yakalar.
 
 **Ayrıca:** [ARCHITECTURE.md](ARCHITECTURE.md) · [README_TECHNICAL.md](README_TECHNICAL.md) ·
@@ -351,14 +412,20 @@ ile yenilenir, CI `--check` ile bayatlamayı yakalar.
 ## 15 · Testler ve kalite kapıları
 
 ```bash
-.venv/bin/python -m pytest tests -q --cov --cov-fail-under=80   # 2850 passed
+.venv/bin/python -m pytest tests -q --cov --cov-fail-under=80   # 3097 passed
 .venv/bin/ruff check .                                           # temiz
 cd frontend && npm run check && npm run build                    # 0/0 + derleme
 .venv/bin/python scripts/dead_code_audit.py                      # ölü kod yok
 .venv/bin/python scripts/audit_regression.py                     # 24 denetim bulgusu bekçisi
-.venv/bin/python scripts/revert_verification_p8.py                # düzeltmeler geri alınınca test kırmızı
-.venv/bin/python scripts/revert_verification_p9.py                # README iddiaları koddan kopunca test kırmızı
+
+# Revert-doğrulama: 43/43 (p0 7 · p1 6 · p2 3 · p3 4 · p4 5 · p8 10 · p9 8)
+for s in 0 1 2 3 4 8 9; do .venv/bin/python scripts/revert_verification_p$s.py || exit 1; done
 ```
+
+Revert betikleri **kirli ağaçta koşmayı reddeder** ve dosyayı `finally` ile geri
+yükler; `tests/unit/test_revert_verification_contract.py` aradıkları metin
+README'den/koddan koptuğunda ya da hedef test silindiğinde kırmızıya döner —
+kanıt sessizce çürüyemez.
 
 CI (`.github/workflows/ci.yml`) bunları ve ayrıca envanter tazeliliğini, sağlayıcı
 kataloğunu, svelte tip kontrolünü, smoke testini, Rust ve Android derlemesini çalıştırır.
