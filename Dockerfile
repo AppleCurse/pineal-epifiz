@@ -40,7 +40,6 @@ RUN PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=300000 python -m playwright install -
 COPY backend/ ./backend/
 COPY agent_core/ ./agent_core/
 COPY config/ ./config/
-COPY main.py scraper.py ./
 COPY --from=frontend /app/frontend/dist ./frontend/dist
 
 RUN mkdir -p /app/memory /app/cache

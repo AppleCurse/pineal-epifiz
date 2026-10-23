@@ -81,7 +81,7 @@ def _gather_sites():
             line_no = source[: match.start()].count("\n") + 1
             lines = source.splitlines()
             before = "\n".join(lines[max(0, line_no - 4) : line_no - 1])
-            sites.append((str(rel), line_no, _call_text(source, match.start()), before))
+            sites.append((rel.as_posix(), line_no, _call_text(source, match.start()), before))
     return sites
 
 

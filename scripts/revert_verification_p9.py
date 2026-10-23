@@ -100,7 +100,7 @@ def main() -> int:
     ))
     results.append(revert_step(
         "P9-5 README envanter sayısı haritadan koptu",
-        readme, "745 dosya, klasör klasör", "742 dosya, klasör klasör",
+        readme, "739 dosya, klasör klasör", "736 dosya, klasör klasör",
         f"{claims}::test_readme_inventory_count_matches_the_map",
     ))
     results.append(revert_step(

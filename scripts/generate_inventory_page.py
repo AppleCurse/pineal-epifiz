@@ -152,15 +152,12 @@ CATEGORY_B = [
     "scripts/smoke_test_browser.py", "scripts/generate_routing_shadows.py",
     "scripts/audit_regression.py", "scripts/verify_openrouter_catalog.py",
     "scripts/preflight_9router.py", "scripts/export_skills.py", "scripts/run_task.py",
-    "scripts/archive/live_provider_probe.py", "scripts/archive/test_live_holistic.py",
-    "scripts/archive/benchmark_download.py", "scripts/archive/ws_leak_probe.py",
-    "scripts/archive/e2e_test.py", "scripts/archive/flow_roentgen.py",
-    "scripts/archive/analyze_target_instagram.py", "scripts/archive/test_e2e_fixture.py",
 ]
 
 API_SPLIT = {
     "backend/routes/language.py": "taşındı",
     "backend/routes/speech_audio.py": "taşındı (TTS gizli dosya TTL/boyut sınırı)",
+    "backend/routes/company.py": "taşındı (API-BÖLME 7)",
     "backend/routes/support.py": "taşındı (B0)",
     "backend/routes/tasks.py": "taşındı",
     "backend/routes/websocket.py": "taşındı",
@@ -834,6 +831,8 @@ def build_html(entries: list) -> str:
     endpoints = re.findall(r'@app\.(get|post|put|delete|patch|websocket)\("([^"]+)"', api_src)
     lang_src = read_text(ROOT / "backend/routes/language.py")
     endpoints += re.findall(r'^\s*@app\.(get|post|patch|delete)\("([^"]+)"', lang_src, re.M)
+    company_src = read_text(ROOT / "backend/routes/company.py")
+    endpoints += re.findall(r'^\s*@app\.(get|post|patch|delete)\("([^"]+)"', company_src, re.M)
     speech_audio_src = read_text(ROOT / "backend/routes/speech_audio.py")
     endpoints += re.findall(r'^\s*@router\.(get|post|patch|delete)\("([^"]+)"', speech_audio_src, re.M)
     ep_table = "".join(

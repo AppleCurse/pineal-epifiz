@@ -30,13 +30,15 @@ SUPPORTED_PLATFORMS = ("instagram", "x", "cross")
 def effective_scraper_type(url: str, requested: Optional[str] = None) -> str:
     """URL platformuna göre tarayıcı seç ([023] fix: platform registry).
 
-    Tek doğruluk kaynağı `profile_router.classify_url`'dir.
-    Instagram ve X doğrudan omurgadan kazınır; sosyal ağlar (LinkedIn,
-    Facebook, TikTok, Threads vb.) 'cross' (çapraz OSINT) hattına bağlanır.
-    Tanınmayan web adresleri ise 'unsupported_web' döner.
+    Instagram ve X host'ları her zaman kendi omurga sensörlerine gider
+    (profil dışı path'ler orada `InsufficientEvidenceError` ile reddedilir;
+    yanlışlıkla çapraz aramaya sızmaz). Diğer sosyal profil URL'leri yalnızca
+    `ENABLE_CROSS_PLATFORM=true` açıkken `'cross'` hattına bağlanır; aksi
+    hâlde `'unsupported_web'` döner ([023] sözleşmesi).
     """
     req = (requested or "").strip().lower()
-    u = (url or "").strip().lower()
+    raw = (url or "").strip()
+    u = raw.lower()
 
     if not u:
         return "unsupported_web"
@@ -47,21 +49,27 @@ def effective_scraper_type(url: str, requested: Optional[str] = None) -> str:
             return "x"
         return "cross"
 
-    from agent_core.services.profile_router import (
-        PLATFORM_INSTAGRAM,
-        PLATFORM_LINKEDIN,
-        PLATFORM_SOCIAL,
-        PLATFORM_X,
-        classify_url,
-    )
+    candidate = raw if "://" in u else f"https://{raw}"
+    try:
+        host = (urlsplit(candidate).hostname or "").lower().rstrip(".")
+    except ValueError:
+        return "unsupported_web"
 
-    route = classify_url(u)
-    if route.platform == PLATFORM_INSTAGRAM:
+    if _is_instagram_host(host) or host == "instagr.am":
         return "instagram"
-    if route.platform == PLATFORM_X:
+    if host in ("x.com", "twitter.com") or host.endswith((".x.com", ".twitter.com")):
         return "x"
-    if route.platform in (PLATFORM_LINKEDIN, PLATFORM_SOCIAL) or route.runnable:
-        return "cross"
+
+    if os.getenv("ENABLE_CROSS_PLATFORM", "false").lower() == "true":
+        from agent_core.services.profile_router import (
+            PLATFORM_LINKEDIN,
+            PLATFORM_SOCIAL,
+            classify_url,
+        )
+
+        route = classify_url(candidate)
+        if route.platform in (PLATFORM_LINKEDIN, PLATFORM_SOCIAL) or route.runnable:
+            return "cross"
 
     return "unsupported_web"
 
@@ -224,7 +232,8 @@ def check_scrape_confidence(ig_scraper, ig_data, emit) -> float:
             f"Yetersiz kanit guveni: {confidence:.2f} < {min_confidence:.2f} "
             "(anti-halüsinasyon kapısı; sahte profil üretmiyorum)"
         )
-        err.profile_update = ig_target_profile_update(ig_data)
+        if hasattr(ig_data, "username") and hasattr(ig_data, "posts"):
+            err.profile_update = ig_target_profile_update(ig_data)
         raise err
     return confidence
 
