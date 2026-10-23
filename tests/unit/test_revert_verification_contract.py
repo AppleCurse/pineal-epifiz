@@ -17,7 +17,10 @@ Bu test iki şeyi kilitler:
 from __future__ import annotations
 
 import importlib.util
+import os
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -80,3 +83,30 @@ def test_number_mutation_really_breaks_the_claim():
         value = int(match.group(1))
         mutated = readme[: match.start(1)] + str(value - 1) + readme[match.end(1):]
         assert mutated != readme
+
+
+def test_script_survives_a_non_utf8_console():
+    """Windows (cp1254) benzeri bir konsolda betik `→` yüzünden ÇÖKMEMELİ.
+
+    [2026-10-24 · BULUNAN KUSUR] `print(f"... {value} → {value - 1} ...")`
+    satırı, `→` (U+2192) karakterini kodlayamayan bir konsolda
+    `UnicodeEncodeError` ile betiği daha ilk adımda düşürüyordu.
+
+    Gerçek koşulla taklit edilir: alt süreç `PYTHONIOENCODING=ascii` ile
+    başlatılır (cp1254'ün aynı sınıf hatası: karakter kod sayfasında yok),
+    betik MODÜL OLARAK yüklenir ve `→` yazdırılır. Beklenen: çıkış kodu 0 ve
+    baytlar UTF-8 olarak çözülüp karakteri taşır.
+    """
+    probe = (
+        "import importlib.util\n"
+        f"spec = importlib.util.spec_from_file_location('p9', {str(SCRIPT)!r})\n"
+        "module = importlib.util.module_from_spec(spec)\n"
+        "spec.loader.exec_module(module)\n"
+        "print('sayı 762 → 761')\n"
+    )
+    env = {**os.environ, "PYTHONIOENCODING": "ascii"}
+    result = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, env=env, timeout=60
+    )
+    assert result.returncode == 0, result.stderr.decode("utf-8", "replace")
+    assert "762 → 761" in result.stdout.decode("utf-8", "replace")

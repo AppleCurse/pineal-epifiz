@@ -48,7 +48,10 @@
   let isTargetValid = false;
   let activeTab: 'graph' | 'matrix' | 'correlations' | 'evidence' | 'agents' = 'graph';
   let selectedNode: GraphNode | null = null;
-  let currentMissionId: string | null = null;
+  // /api/initiate'in döndürdüğü GERÇEK görev kimliği. Eskiden burada
+  // `mis_<rastgele>` uyduruluyor ve hiçbir yere gönderilmiyordu: durdurma
+  // düğmesi backend'de var olmayan bir görevi durdurmaya çalışıyordu.
+  let activeTaskId: string | null = null;
   let missionStartTime: number | null = null;
   let elapsedTime = '00:00';
   let timerInterval: any = null;
@@ -344,6 +347,21 @@
     animationFrameId = requestAnimationFrame(runPhysicsStep);
   }
 
+  function pushOperator(text: string) {
+    aspasiaMessages = [
+      ...aspasiaMessages,
+      { role: 'aspasia', text, time: new Date().toLocaleTimeString() }
+    ];
+  }
+
+  function stopLocalTimer() {
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+    missionStartTime = null;
+  }
+
   // --- CANLI GÖREV BAŞLATMA & VERİ DİNLEME ---
   async function startMission() {
     if (!targetInput.trim()) return;
@@ -351,7 +369,7 @@
     const target = targetInput.trim();
     isProcessing.set(true);
     missionStartTime = Date.now();
-    currentMissionId = `mis_${Math.random().toString(36).substring(2, 9)}`;
+    activeTaskId = null; // gerçek kimlik yanıttan gelecek
 
     // Kronometre
     if (timerInterval) clearInterval(timerInterval);
@@ -400,48 +418,115 @@
         body: JSON.stringify(payload)
       });
 
-      if (res.ok) {
+      // Yanıt OKUNUR: görev kimliği yalnız burada gelir ve durdurma düğmesi
+      // ona muhtaçtır. `res.ok` tek başına yeterli değil — gövdede `task_id`
+      // yoksa elimizde durdurulabilir bir görev de YOKTUR.
+      const body = await res.json().catch(() => ({}));
+      if (res.ok && body?.task_id) {
+        activeTaskId = String(body.task_id);
         pipelineSteps[0].status = 'completed';
         pipelineSteps[1].status = 'running';
         pipelineSteps = [...pipelineSteps];
       } else {
-        const err = await res.json().catch(() => ({}));
         pipelineSteps[0].status = 'error';
         pipelineSteps = [...pipelineSteps];
-        aspasiaMessages = [
-          ...aspasiaMessages,
-          {
-            role: 'aspasia',
-            text: `⚠️ Başlatma engellendi: ${err?.error?.message || 'Bilinmeyen hata'}. Kasa anahtarınızı veya izinleri kontrol edin.`,
-            time: new Date().toLocaleTimeString()
-          }
-        ];
+        const detail = body?.error?.message || body?.detail || 'bilinmeyen hata';
+        pushOperator(
+          `⚠️ Başlatma engellendi (HTTP ${res.status}): ${detail}. ` +
+          'Kasa anahtarınızı veya izinleri kontrol edin.'
+        );
+        // Görev başlamadıysa kronometre de işlemez: DURDUR düğmesi asılı kalmasın.
+        isProcessing.set(false);
+        stopLocalTimer();
       }
     } catch (e: any) {
       pipelineSteps[0].status = 'error';
       pipelineSteps = [...pipelineSteps];
+      pushOperator(`⚠️ Başlatma isteği gönderilemedi: ${e?.message || 'ağ hatası'}`);
+      isProcessing.set(false);
+      stopLocalTimer();
     }
   }
 
+  // Bir zamanlar burada `POST /api/override` çağrılıyordu. O uç HAFIZA
+  // güncelleme ucudur (`fact`+`tag` bekler) ve `{action:'HALT'}` gövdesine
+  // HTTP 422 döner; `try/catch {}` hatayı yuttuğu için arayüz "durduruldu"
+  // diyor, backend'de GÖREV KOŞMAYA DEVAM EDİYORDU.
+  //
+  // Gerçek durdurma ucu `POST /api/tasks/{task_id}/halt`'tir: yaşam döngüsünü
+  // sonlandırır, `room["mission_tasks"][task_id].cancel()` ile asyncio
+  // görevini iptal eder ve WS'e `USER_HALT` olayı yayınlar.
+  // `/api/executor/intervene` ise TASARIM GEREĞİ hiçbir şeyi durdurmaz
+  // (bkz. backend/api.py: `status: review_required`, "otomatik uygulanmadı");
+  // burada yalnız DENETİM İZİ olarak çağrılır, durdurma yerine sayılmaz.
   async function abortMission() {
-    isProcessing.set(false);
-    if (timerInterval) clearInterval(timerInterval);
+    const taskId = activeTaskId;
+    const cid = get(clientId) || 'default';
+
+    if (!taskId) {
+      pushOperator(
+        '⚠️ Durdurulacak aktif görev yok: /api/initiate bu oturumda görev kimliği ' +
+        'döndürmedi. Backend tarafında iptal edilecek bir görev de yok.'
+      );
+      isProcessing.set(false);
+      stopLocalTimer();
+      return;
+    }
+
     try {
-      await apiFetch('/api/override', {
+      const res = await apiFetch(
+        `/api/tasks/${encodeURIComponent(taskId)}/halt` +
+        `?client_id=${encodeURIComponent(cid)}` +
+        `&reason=${encodeURIComponent('Operatör kokpitten durdurdu')}`,
+        { method: 'POST' }
+      );
+      const body = await res.json().catch(() => ({}));
+
+      // Denetim izi her sonuçta yazılır (kayıt tutulur, otomatik uygulanmaz).
+      void apiFetch('/api/executor/intervene', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ client_id: get(clientId) || 'default', action: 'HALT' })
-      });
-    } catch {}
+        body: JSON.stringify({
+          client_id: cid,
+          action_type: 'HALT',
+          target_agent: null,
+          parameters: { task_id: taskId, halt_http_status: res.status },
+          reason: 'Operatör kokpitten durdurdu'
+        })
+      }).catch(() => {});
 
-    aspasiaMessages = [
-      ...aspasiaMessages,
-      {
-        role: 'aspasia',
-        text: '🛑 Operatör müdahalesi: Görev ve çalışan tüm alt sensörler derhal durduruldu.',
-        time: new Date().toLocaleTimeString()
+      if (res.ok) {
+        // Yalnız backend'in onayladığı durumda yerel durumu kapat.
+        isProcessing.set(false);
+        stopLocalTimer();
+        activeTaskId = null;
+        pushOperator(
+          `🛑 Görev durduruldu (${taskId}) — backend: ${body?.status || 'halted_user'}.`
+        );
+        return;
       }
-    ];
+
+      if (res.status === 409) {
+        // Zaten bitmiş görev: durdurma gereksiz, arayüz dürüstçe kapatılır.
+        isProcessing.set(false);
+        stopLocalTimer();
+        activeTaskId = null;
+        pushOperator(`ℹ️ Görev (${taskId}) zaten sonlanmış (HTTP 409); durdurma gerekmedi.`);
+        return;
+      }
+
+      // Durdurma BAŞARISIZ: görev hâlâ koşuyor olabilir, "durduruldu" DENMEZ.
+      const detail = body?.error?.message || body?.detail || 'bilinmeyen hata';
+      pushOperator(
+        `⚠️ Görev DURDURULAMADI (HTTP ${res.status}): ${detail}. ` +
+        'Görev koşmaya devam ediyor olabilir; tekrar deneyin.'
+      );
+    } catch (e: any) {
+      pushOperator(
+        `⚠️ Durdurma isteği gönderilemedi: ${e?.message || 'ağ hatası'}. ` +
+        'Görev koşmaya devam ediyor olabilir.'
+      );
+    }
   }
 
   // Aspasia Sohbeti
@@ -502,19 +587,46 @@
   }
 
   // Kasa Açma / Kapama Hızlı Anahtarı
+  // Kasa mandalı: yanıt OKUNMADAN durum yazılmıyordu. Kasada anahtar yokken
+  // `unlock` çağrısı backend'de HTTP 423 (VAULT_LOCKED) döner; eski kod bunu
+  // yutup göstergeyi YEŞİL (açık) yapıyordu — arayüz "dış dünyaya çıkış
+  // serbest" derken mandal kapalı kalıyordu.
   async function toggleVault() {
-    const isLocked = get(vaultLocked);
+    const wasLocked = get(vaultLocked);
+    const cid = get(clientId) || 'default';
     try {
-      await apiFetch('/api/vault/status', {
+      const res = await apiFetch('/api/vault/status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          client_id: get(clientId) || 'default',
-          action: isLocked ? 'unlock' : 'lock'
-        })
+        body: JSON.stringify({ client_id: cid, action: wasLocked ? 'unlock' : 'lock' })
       });
-      vaultLocked.set(!isLocked);
-    } catch {}
+      const body = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        // Mandal DEĞİŞMEDİ: kilitli kaldı (ya da kilitli kaldıysa öyle kalır).
+        vaultLocked.set(wasLocked);
+        const detail = body?.error?.message || body?.detail || 'bilinmeyen hata';
+        pushOperator(
+          `⚠️ Kasa ${wasLocked ? 'açılamadı' : 'kilitlenemedi'} (HTTP ${res.status}): ${detail}`
+        );
+        return;
+      }
+
+      // Durum, tahminle değil YANITLA yazılır.
+      if (body?.status === 'unlocked') vaultLocked.set(false);
+      else if (body?.status === 'locked') vaultLocked.set(true);
+      else vaultLocked.set(wasLocked ? false : true);
+
+      // Kontrol deneyi: kilidin gerçekten istendiği durumda olduğunu doğrula.
+      const confirm = await apiFetch(`/api/vault/status?client_id=${encodeURIComponent(cid)}`);
+      if (confirm.ok) {
+        const state = await confirm.json().catch(() => ({}));
+        if (typeof state?.locked === 'boolean') vaultLocked.set(state.locked);
+      }
+    } catch (e: any) {
+      vaultLocked.set(wasLocked);
+      pushOperator(`⚠️ Kasa isteği gönderilemedi: ${e?.message || 'ağ hatası'}`);
+    }
   }
 
   // --- KANIT & LOG GÖZLEMCİSİ (Store Takibi) ---

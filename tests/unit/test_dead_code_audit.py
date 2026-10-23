@@ -172,3 +172,54 @@ def test_removed_orphan_components_are_absent_from_repo(audit):
     )
     present = [rel for rel in removed if (ROOT / rel).exists()]
     assert present == [], f"silinen ölü bileşen geri geldi: {present}"
+
+
+# ── frontend test varlıkları (vitest sözleşme testleri) ─────────────────────
+def test_frontend_test_files_are_not_reported_as_dead(audit):
+    """Vitest test dosyaları "ulaşılamaz bileşen" diye suçlanmamalı.
+
+    [2026-10-24] `SpiderFootCockpit` sözleşme testleri eklenince C5 dedektörü
+    onları ölü kod saydı: test dosyaları tarayıcı paketine girmez, bu yüzden
+    `main.ts → App.svelte` grafiğinden ulaşılamaz olmaları NORMALDİR.
+    """
+    dead_paths = {item["path"] for item in audit.dead_frontend()}
+    test_files = [
+        "frontend/src/__tests__/spiderfoot-cockpit.contract.test.ts",
+        "frontend/src/test-setup.ts",
+    ]
+    for rel in test_files:
+        assert (ROOT / rel).exists(), f"test varlığı kayıp: {rel}"
+        assert rel not in dead_paths, f"test varlığı ölü kod sayıldı: {rel}"
+
+
+def test_detector_flags_a_test_file_that_vitest_never_collects(audit, tmp_path):
+    """Vitest `include` kalıbına uymayan test dosyası → BULGU (sahte yeşil yok).
+
+    Muafiyetin bedava olmadığını kanıtlar: uygulama grafiğinden çıkardığımız
+    her test dosyası, koşulduğunu `include` eşleşmesiyle kanıtlamak zorunda.
+    """
+    victim = ROOT / "frontend" / "src" / "components" / "__tests__" / "_probe_uncollected.spec.ts"
+    victim.parent.mkdir(parents=True, exist_ok=True)
+    victim.write_text("import { it } from 'vitest';\nit('x', () => {});\n", encoding="utf-8")
+    try:
+        findings = audit.uncollected_frontend_tests()
+        assert any(
+            f["path"].endswith("_probe_uncollected.spec.ts") for f in findings
+        ), f"koşulmayan test dosyası görülmedi: {findings}"
+        # Aynı dosya "ölü bileşen" olarak İKİ kez suçlanmamalı.
+        assert all(
+            "_probe_uncollected" not in item["path"] for item in audit.dead_frontend()
+        )
+    finally:
+        victim.unlink(missing_ok=True)
+        parent = victim.parent
+        if parent.exists() and not any(parent.iterdir()):
+            parent.rmdir()
+    assert not any(
+        "_probe_uncollected" in f["path"] for f in audit.uncollected_frontend_tests()
+    )
+
+
+def test_collected_frontend_tests_are_clean(audit):
+    """Depodaki bütün frontend test dosyaları vitest tarafından toplanıyor."""
+    assert audit.uncollected_frontend_tests() == []

@@ -35,6 +35,31 @@ import sys
 import tempfile
 from pathlib import Path
 
+
+def _force_utf8_stdio() -> None:
+    """Konsolu UTF-8'e çevir: Windows'ta betik ilk `→` karakterinde ölüyordu.
+
+    [2026-10-24 · BULUNAN KUSUR] Bu betik ilerlemeyi `→` ile yazdırıyor
+    (`print(f"... {value} → {value - 1} ...")`). Windows konsolu varsayılan
+    olarak `cp1254`/`cp437` kodlamıyor ve `→` (U+2192) o kod sayfalarında YOK:
+    `UnicodeEncodeError` ile betik DAHA İLK ADIMDA çöküyordu. `errors="replace"`
+    ikinci güvenlik ağıdır (kullanıcı farklı bir kod sayfası zorlarsa çıktı
+    bozulur ama betik ölmez).
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:  # yakalanmış/yer tutucu akış (pytest capture)
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            # Akış zaten kapanmış/yönlendirilmişse sessizce geç: süsleme
+            # uğruna betiği düşürmenin anlamı yok.
+            continue
+
+
+_force_utf8_stdio()
+
 ROOT = Path(__file__).resolve().parents[1]
 _VENV_PY = ROOT / ".venv" / "bin" / "python"
 # .venv depoda (gitignore) ama her ortamda aynı yerde olmayabilir; yoksa

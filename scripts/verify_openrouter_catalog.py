@@ -176,7 +176,10 @@ OBSERVED_OPENROUTER_STATES: dict[str, tuple[tuple[float, float], ...]] = {
     # 38953030504 (PR #143 koşusu) → $0.297192/$0.594384 ·
     # 39081581447 (PR #144 koşusu) → $0.2088/$0.4176 ·
     # 39959652727 (PR #154 koşusu) → $0.894012/$1.78802 (aynı fiyat `main`'de
-    # 39959044768 ile de okundu: PR'dan bağımsız, canlı katalog kayması)
+    # 39959044768 ile de okundu: PR'dan bağımsız, canlı katalog kayması) ·
+    # 40034566367 (PR #155 koşusu) → $0.692694/$1.38539 (bir önceki ölçümden
+    # %22 uzak: bu bir KOTASYON TİTREMESİ DEĞİL, gerçek fiyat hareketi; ±%2
+    # bandına girmediği için kapı KIRMIZI kaldı — tasarım gereği doğru davranış)
     "deepseek/deepseek-v4-pro": (
         (0.4679, 0.9358),
         (0.395328, 0.790656),
@@ -188,6 +191,7 @@ OBSERVED_OPENROUTER_STATES: dict[str, tuple[tuple[float, float], ...]] = {
         (0.297192, 0.594384),
         (0.2088, 0.4176),
         (0.894012, 1.78802),
+        (0.692694, 1.38539),
     ),
 }
 
