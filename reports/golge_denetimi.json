@@ -1,0 +1,1929 @@
+{
+  "ajanlar": {
+    "gated_wired": [
+      "interpreter"
+    ],
+    "modules": [
+      {
+        "classes": [
+          "AuthenticityProfile",
+          "AuthenticityAuditorAgent"
+        ],
+        "executor_key": "authenticity_auditor",
+        "gated": false,
+        "in_frontend": true,
+        "in_router": true,
+        "module": "agent_core/agents/authenticity_auditor.py",
+        "rack_slot": "authenticity_auditor",
+        "tested": true,
+        "wired_in_executor": true
+      },
+      {
+        "classes": [
+          "Claim",
+          "VerificationResult",
+          "CanonicalObservationCheck",
+          "VerifierReport",
+          "AutonomousVerifier"
+        ],
+        "executor_key": "autonomous_verifier",
+        "gated": false,
+        "in_frontend": true,
+        "in_router": true,
+        "module": "agent_core/agents/autonomous_verifier.py",
+        "rack_slot": "autonomous_verifier",
+        "tested": true,
+        "wired_in_executor": true
+      },
+      {
+        "classes": [
+          "CognitiveProfilerAgent"
+        ],
+        "executor_key": "cognitive_profiler",
+        "gated": false,
+        "in_frontend": true,
+        "in_router": true,
+        "module": "agent_core/agents/cognitive_profiler.py",
+        "rack_slot": "cognitive_profiler",
+        "tested": true,
+        "wired_in_executor": true
+      },
+      {
+        "classes": [
+          "DepthFinding",
+          "DepthReport",
+          "DepthAnalyst"
+        ],
+        "executor_key": "depth_analyst",
+        "gated": false,
+        "in_frontend": true,
+        "in_router": false,
+        "module": "agent_core/agents/depth_analyst.py",
+        "rack_slot": "depth_analyst",
+        "tested": true,
+        "wired_in_executor": true
+      },
+      {
+        "classes": [
+          "FrictionDetectorAgent"
+        ],
+        "executor_key": "friction_detector",
+        "gated": false,
+        "in_frontend": true,
+        "in_router": true,
+        "module": "agent_core/agents/friction_detector.py",
+        "rack_slot": "friction_detector",
+        "tested": true,
+        "wired_in_executor": true
+      },
+      {
+        "classes": [
+          "HumanBehaviorPayload",
+          "MicroSignal",
+          "DigitalColdReading",
+          "HumanBehaviorAnalyzer"
+        ],
+        "executor_key": "human_behavior",
+        "gated": false,
+        "in_frontend": true,
+        "in_router": true,
+        "module": "agent_core/agents/human_behavior.py",
+        "rack_slot": "human_behavior",
+        "tested": true,
+        "wired_in_executor": true
+      },
+      {
+        "classes": [
+          "InterpreterResult",
+          "InterpreterAgent"
+        ],
+        "executor_key": null,
+        "gated": true,
+        "in_frontend": false,
+        "in_router": false,
+        "module": "agent_core/agents/interpreter_agent.py",
+        "rack_slot": null,
+        "tested": true,
+        "wired_in_executor": false
+      },
+      {
+        "classes": [
+          "NeurochemicalProfile",
+          "NeuroMetrics",
+          "LilithGenerationResponse",
+          "LilithContentPackage",
+          "_ChatMessage",
+          "_ChatChoice",
+          "_ChatResponse",
+          "FreeTextGateway",
+          "OpenAICompatibleGateway",
+          "LilithGrowthAgent"
+        ],
+        "executor_key": null,
+        "gated": false,
+        "in_frontend": false,
+        "in_router": false,
+        "module": "agent_core/agents/lilith_growth.py",
+        "rack_slot": null,
+        "tested": true,
+        "wired_in_executor": false
+      },
+      {
+        "classes": [
+          "MirrorReflection",
+          "MirrorOfTruth"
+        ],
+        "executor_key": "mirror_truth",
+        "gated": false,
+        "in_frontend": true,
+        "in_router": true,
+        "module": "agent_core/agents/mirror_truth.py",
+        "rack_slot": "mirror_truth",
+        "tested": true,
+        "wired_in_executor": true
+      },
+      {
+        "classes": [
+          "OsintProfile",
+          "OsintInvestigatorAgent"
+        ],
+        "executor_key": "osint_investigator",
+        "gated": false,
+        "in_frontend": true,
+        "in_router": false,
+        "module": "agent_core/agents/osint_investigator.py",
+        "rack_slot": "osint_investigator",
+        "tested": true,
+        "wired_in_executor": true
+      },
+      {
+        "classes": [
+          "PassionMapperAgent"
+        ],
+        "executor_key": "passion_mapper",
+        "gated": false,
+        "in_frontend": true,
+        "in_router": true,
+        "module": "agent_core/agents/passion_mapper.py",
+        "rack_slot": "passion_mapper",
+        "tested": true,
+        "wired_in_executor": true
+      },
+      {
+        "classes": [
+          "ScenarioResponse",
+          "GeneratedMessage",
+          "PatternInterrupt"
+        ],
+        "executor_key": "pattern_interrupt",
+        "gated": false,
+        "in_frontend": true,
+        "in_router": true,
+        "module": "agent_core/agents/pattern_interrupt.py",
+        "rack_slot": "pattern_interrupt",
+        "tested": true,
+        "wired_in_executor": true
+      },
+      {
+        "classes": [
+          "ResonanceCalculationError",
+          "EvidenceOverlap",
+          "ResonanceProfile",
+          "ResonanceCalculator"
+        ],
+        "executor_key": "resonance_calc",
+        "gated": false,
+        "in_frontend": true,
+        "in_router": false,
+        "module": "agent_core/agents/resonance_calculator.py",
+        "rack_slot": "resonance_calculator",
+        "tested": true,
+        "wired_in_executor": true
+      },
+      {
+        "classes": [
+          "ResonanceSynthesizerAgent"
+        ],
+        "executor_key": "resonance_synthesizer",
+        "gated": false,
+        "in_frontend": true,
+        "in_router": true,
+        "module": "agent_core/agents/resonance_synthesizer.py",
+        "rack_slot": "resonance_synthesizer",
+        "tested": true,
+        "wired_in_executor": true
+      },
+      {
+        "classes": [
+          "TargetPsycheProfiler"
+        ],
+        "executor_key": null,
+        "gated": false,
+        "in_frontend": false,
+        "in_router": false,
+        "module": "agent_core/agents/target_psyche_profiler.py",
+        "rack_slot": null,
+        "tested": true,
+        "wired_in_executor": false
+      }
+    ],
+    "rack_map": {
+      "authenticity_auditor": "authenticity_auditor",
+      "autonomous_verifier": "autonomous_verifier",
+      "cognitive_profiler": "cognitive_profiler",
+      "depth_analyst": "depth_analyst",
+      "friction_detector": "friction_detector",
+      "human_behavior": "human_behavior",
+      "mirror_truth": "mirror_truth",
+      "osint_investigator": "osint_investigator",
+      "passion_mapper": "passion_mapper",
+      "pattern_interrupt": "pattern_interrupt",
+      "pineal_7pillar": "",
+      "resonance_calc": "resonance_calculator",
+      "resonance_synthesizer": "resonance_synthesizer",
+      "shadow_executor": "",
+      "vision_analyzer": ""
+    },
+    "unwired_modules": [
+      "agent_core/agents/interpreter_agent.py",
+      "agent_core/agents/lilith_growth.py",
+      "agent_core/agents/target_psyche_profiler.py"
+    ],
+    "wired": [
+      "authenticity_auditor",
+      "autonomous_verifier",
+      "cognitive_profiler",
+      "depth_analyst",
+      "friction_detector",
+      "human_behavior",
+      "mirror_truth",
+      "osint_investigator",
+      "passion_mapper",
+      "pattern_interrupt",
+      "resonance_calc",
+      "resonance_synthesizer",
+      "shadow_executor"
+    ],
+    "wired_count": 13
+  },
+  "erisim": {
+    "entrypoints": [
+      "backend/api.py",
+      "main.py",
+      "run_lilith.py",
+      "scraper.py",
+      "live_llm_gate.py",
+      "agent_core/mcp/server.py",
+      "agent_core/mcp/__main__.py",
+      "agent_core/scraper/run_scraper.py"
+    ],
+    "module_count": 180,
+    "reachable_count": 180,
+    "unreachable": []
+  },
+  "gomulu": [
+    {
+      "code_refs": [
+        "agent_core/services/runtime_status.py",
+        "backend/api.py",
+        "backend/routes/telemetry.py",
+        "scripts/golge_denetimi.py"
+      ],
+      "desc": "Rust çekirdeği (cargo)",
+      "exists": true,
+      "path": "rust_core"
+    },
+    {
+      "code_refs": [
+        "scripts/golge_denetimi.py"
+      ],
+      "desc": "Android kabuğu",
+      "exists": true,
+      "path": "android"
+    },
+    {
+      "code_refs": [
+        "agent_core/services/holehe_scanner.py",
+        "backend/routes/websocket.py",
+        "scripts/dead_code_audit.py",
+        "scripts/golge_denetimi.py"
+      ],
+      "desc": "Cloudflare/Vercel edge fonksiyonları",
+      "exists": true,
+      "path": "functions"
+    },
+    {
+      "code_refs": [
+        "agent_core/scraper/vault_gate.py",
+        "agent_core/services/redis_bus.py",
+        "agent_core/workers/__init__.py",
+        "agent_core/workers/agent_worker.py",
+        "backend/agent_rack.py",
+        "scripts/audit_regression.py",
+        "scripts/dead_code_audit.py",
+        "scripts/golge_denetimi.py"
+      ],
+      "desc": "Edge worker",
+      "exists": true,
+      "path": "worker.ts"
+    },
+    {
+      "code_refs": [
+        "agent_core/__init__.py",
+        "agent_core/agents/osint_investigator.py",
+        "agent_core/capabilities/adapters_sensors.py",
+        "agent_core/capabilities/adapters_web.py",
+        "agent_core/capabilities/egress.py",
+        "agent_core/capabilities/state.py",
+        "agent_core/scraper/instagram_ghost.py",
+        "agent_core/scraper/run_scraper.py",
+        "agent_core/scraper/vault_gate.py",
+        "agent_core/services/crawl_enricher.py",
+        "agent_core/services/holehe_scanner.py",
+        "agent_core/services/platform_registry.py",
+        "agent_core/services/safe_web_fetch.py",
+        "agent_core/services/search_engine.py",
+        "agent_core/task_executor.py",
+        "backend/api.py",
+        "backend/routes/telemetry.py",
+        "frontend/src/components/AtlasPinealCockpit.svelte",
+        "frontend/src/components/TacticalWarRoom.svelte",
+        "frontend/src/lib/tauriBridge.ts",
+        "frontend/src/lib/telemetry.ts",
+        "scripts/audit_regression.py",
+        "scripts/dead_code_audit.py",
+        "scripts/generate_inventory_page.py",
+        "scripts/golge_denetimi.py",
+        "scripts/run_task.py"
+      ],
+      "desc": "Kök scraper",
+      "exists": true,
+      "path": "scraper.py"
+    },
+    {
+      "code_refs": [
+        "agent_core/services/llm_gateway.py",
+        "scripts/dead_code_audit.py",
+        "scripts/generate_inventory_page.py",
+        "scripts/golge_denetimi.py"
+      ],
+      "desc": "Canlı LLM kapısı",
+      "exists": true,
+      "path": "live_llm_gate.py"
+    },
+    {
+      "code_refs": [
+        "agent_core/services/llm_gateway.py",
+        "agent_core/services/media_forensics.py",
+        "backend/checkpoint_store.py",
+        "backend/routes/support.py",
+        "scripts/golge_denetimi.py"
+      ],
+      "desc": "Sürüm kilit dosyaları",
+      "exists": true,
+      "path": "release"
+    },
+    {
+      "code_refs": [
+        "backend/api.py",
+        "scripts/export_skills.py",
+        "scripts/generate_inventory_page.py",
+        "scripts/golge_denetimi.py"
+      ],
+      "desc": "SKILL.md araç defteri",
+      "exists": true,
+      "path": "skills"
+    },
+    {
+      "code_refs": [
+        "agent_core/capabilities/adapters_sensors.py",
+        "agent_core/capabilities/registry.py",
+        "agent_core/mcp/status.py",
+        "agent_core/mcp/tools.py",
+        "agent_core/services/llm_gateway.py",
+        "backend/api.py",
+        "scripts/audit_regression.py",
+        "scripts/canli_calisirlik_probe.py",
+        "scripts/generate_inventory_page.py",
+        "scripts/golge_denetimi.py",
+        "scripts/kapasite_denetimi_probe.py",
+        "scripts/revert_verification_p9.py"
+      ],
+      "desc": "Envanter sayfası",
+      "exists": true,
+      "path": "docs/envanter.html"
+    },
+    {
+      "code_refs": [
+        "agent_core/services/llm_gateway.py",
+        "scripts/generate_inventory_page.py",
+        "scripts/golge_denetimi.py"
+      ],
+      "desc": "Ajan kademe planı",
+      "exists": true,
+      "path": "config/agent_tiers.json"
+    }
+  ],
+  "kapilar": {
+    "code_but_unmanaged": [
+      "ENABLE_INTERPRETER"
+    ],
+    "code_gates": [
+      "ENABLE_AGENT_REACH",
+      "ENABLE_COMPANY_TARGETING",
+      "ENABLE_CRAWL4AI",
+      "ENABLE_CROSS_PLATFORM",
+      "ENABLE_HOLEHE",
+      "ENABLE_IG_SECONDARY",
+      "ENABLE_INTERPRETER",
+      "ENABLE_LOCAL_JURY",
+      "ENABLE_LOCAL_STT",
+      "ENABLE_LOCAL_TRANSLATE",
+      "ENABLE_LOCAL_TTS",
+      "ENABLE_MAIGRET",
+      "ENABLE_MEDIA_FORENSICS",
+      "ENABLE_REPORT_FACTORY",
+      "ENABLE_SCRAPLING",
+      "ENABLE_SEARXNG",
+      "ENABLE_X_SENSOR"
+    ],
+    "env_example_gates": [
+      "ENABLE_AGENT_REACH",
+      "ENABLE_COMPANY_TARGETING",
+      "ENABLE_CRAWL4AI",
+      "ENABLE_CROSS_PLATFORM",
+      "ENABLE_HOLEHE",
+      "ENABLE_IG_SECONDARY",
+      "ENABLE_INTERPRETER",
+      "ENABLE_LOCAL_JURY",
+      "ENABLE_LOCAL_STT",
+      "ENABLE_LOCAL_TRANSLATE",
+      "ENABLE_LOCAL_TTS",
+      "ENABLE_MAIGRET",
+      "ENABLE_MEDIA_FORENSICS",
+      "ENABLE_REPORT_FACTORY",
+      "ENABLE_SCRAPLING",
+      "ENABLE_SEARXNG",
+      "ENABLE_X_SENSOR"
+    ],
+    "example_but_unmanaged": [
+      "ENABLE_INTERPRETER"
+    ],
+    "managed": [
+      "ENABLE_AGENT_REACH",
+      "ENABLE_COMPANY_TARGETING",
+      "ENABLE_CRAWL4AI",
+      "ENABLE_CROSS_PLATFORM",
+      "ENABLE_HOLEHE",
+      "ENABLE_IG_SECONDARY",
+      "ENABLE_LOCAL_JURY",
+      "ENABLE_LOCAL_STT",
+      "ENABLE_LOCAL_TRANSLATE",
+      "ENABLE_LOCAL_TTS",
+      "ENABLE_MAIGRET",
+      "ENABLE_MEDIA_FORENSICS",
+      "ENABLE_REPORT_FACTORY",
+      "ENABLE_SCRAPLING",
+      "ENABLE_SEARXNG",
+      "ENABLE_X_SENSOR"
+    ],
+    "managed_but_missing_from_example": [],
+    "managed_count": 16
+  },
+  "olcum": "scripts/golge_denetimi.py",
+  "olcum_zamani": "2026-10-23T23:53:25Z",
+  "platform": "linux",
+  "python": "3.11.2",
+  "sema_surumu": 1,
+  "uclar": {
+    "count": 70,
+    "experimental": [
+      "POST /api/experimental/chat/respond",
+      "POST /api/experimental/crawl/fetch",
+      "POST /api/experimental/holehe/scan",
+      "POST /api/experimental/interpreter/execute",
+      "POST /api/experimental/maigret/scan",
+      "POST /api/experimental/shadow/analyze",
+      "POST /api/experimental/shadow/generate",
+      "POST /api/experimental/socid/extract",
+      "GET /api/experimental/stealth"
+    ],
+    "frontend_unreferenced": [
+      "POST /api/browser/back",
+      "POST /api/browser/click",
+      "POST /api/browser/close",
+      "POST /api/browser/open",
+      "POST /api/browser/press",
+      "POST /api/browser/save",
+      "GET /api/browser/shot",
+      "GET /api/browser/state",
+      "POST /api/browser/type",
+      "POST /api/calibration/adjudicate",
+      "POST /api/calibration/observations",
+      "POST /api/company/scan",
+      "GET /api/dialogue/sessions",
+      "POST /api/experimental/chat/respond",
+      "POST /api/experimental/crawl/fetch",
+      "POST /api/experimental/holehe/scan",
+      "POST /api/experimental/interpreter/execute",
+      "POST /api/experimental/maigret/scan",
+      "POST /api/experimental/shadow/analyze",
+      "POST /api/experimental/shadow/generate",
+      "POST /api/experimental/socid/extract",
+      "GET /api/experimental/stealth",
+      "POST /api/jury/vote",
+      "POST /api/language/detect",
+      "POST /api/language/translate",
+      "POST /api/media/analyze",
+      "GET /api/media/status",
+      "GET /api/memory/{target}",
+      "GET /api/memory/{target}/recall",
+      "POST /api/minor/case",
+      "POST /api/minor/clear",
+      "GET /api/minor/state",
+      "POST /api/mobile/coach",
+      "POST /api/report/build",
+      "GET /api/report/status",
+      "POST /api/scraper/authorize-alternative",
+      "GET /api/speech/audio/{name}",
+      "POST /api/speech/say",
+      "GET /api/speech/status",
+      "POST /api/tasks/{task_id}/cancel",
+      "GET /api/tasks/{task_id}/changes",
+      "GET /api/tasks/{task_id}/graph",
+      "POST /api/tasks/{task_id}/halt",
+      "GET /api/tasks/{task_id}/memory",
+      "GET /api/telemetry/taste",
+      "POST /api/vault/lock",
+      "POST /api/vault/unlock",
+      "POST /v1/chat/completions",
+      "GET /v1/models"
+    ],
+    "gated_routes": [
+      "GET /api/company/status (ENABLE_COMPANY_TARGETING)"
+    ],
+    "routes": [
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": true,
+        "gates": [],
+        "method": "GET",
+        "path": "/api/agents/status"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": true,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/agents/status/{agent_id}"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": true,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/aspasia/chat"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": true,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/aspasia/command"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": true,
+        "gates": [],
+        "method": "GET",
+        "path": "/api/aspasia/state"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/browser/back"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/browser/click"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/browser/close"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/browser/open"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/browser/press"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/browser/save"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "GET",
+        "path": "/api/browser/shot"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "GET",
+        "path": "/api/browser/state"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/browser/type"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": true,
+        "gates": [],
+        "method": "GET",
+        "path": "/api/calibration"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/calibration/adjudicate"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/calibration/observations"
+      },
+      {
+        "experimental": false,
+        "file": "backend/routes/company.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/company/scan"
+      },
+      {
+        "experimental": false,
+        "file": "backend/routes/company.py",
+        "frontend_referenced": true,
+        "gates": [
+          "ENABLE_COMPANY_TARGETING"
+        ],
+        "method": "GET",
+        "path": "/api/company/status"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "GET",
+        "path": "/api/dialogue/sessions"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": true,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/executor/intervene"
+      },
+      {
+        "experimental": true,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/experimental/chat/respond"
+      },
+      {
+        "experimental": true,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/experimental/crawl/fetch"
+      },
+      {
+        "experimental": true,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/experimental/holehe/scan"
+      },
+      {
+        "experimental": true,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/experimental/interpreter/execute"
+      },
+      {
+        "experimental": true,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/experimental/maigret/scan"
+      },
+      {
+        "experimental": true,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/experimental/shadow/analyze"
+      },
+      {
+        "experimental": true,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/experimental/shadow/generate"
+      },
+      {
+        "experimental": true,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/experimental/socid/extract"
+      },
+      {
+        "experimental": true,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "GET",
+        "path": "/api/experimental/stealth"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": true,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/initiate"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": true,
+        "gates": [],
+        "method": "GET",
+        "path": "/api/jury/status"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/jury/vote"
+      },
+      {
+        "experimental": false,
+        "file": "backend/routes/language.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/language/detect"
+      },
+      {
+        "experimental": false,
+        "file": "backend/routes/language.py",
+        "frontend_referenced": true,
+        "gates": [],
+        "method": "GET",
+        "path": "/api/language/status"
+      },
+      {
+        "experimental": false,
+        "file": "backend/routes/language.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/language/translate"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": true,
+        "gates": [],
+        "method": "GET",
+        "path": "/api/mcp/status"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/media/analyze"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "GET",
+        "path": "/api/media/status"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "GET",
+        "path": "/api/memory/{target}"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "GET",
+        "path": "/api/memory/{target}/recall"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/minor/case"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/minor/clear"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "GET",
+        "path": "/api/minor/state"
+      },
+      {
+        "experimental": false,
+        "file": "backend/routes/mobile_coach.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/mobile/coach"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": true,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/override"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/report/build"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "GET",
+        "path": "/api/report/status"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/scraper/authorize-alternative"
+      },
+      {
+        "experimental": false,
+        "file": "backend/routes/speech_audio.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "GET",
+        "path": "/api/speech/audio/{name}"
+      },
+      {
+        "experimental": false,
+        "file": "backend/routes/speech.py",
+        "frontend_referenced": true,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/speech/finished"
+      },
+      {
+        "experimental": false,
+        "file": "backend/routes/speech.py",
+        "frontend_referenced": true,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/speech/listen"
+      },
+      {
+        "experimental": false,
+        "file": "backend/routes/speech.py",
+        "frontend_referenced": true,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/speech/report"
+      },
+      {
+        "experimental": false,
+        "file": "backend/routes/speech.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/speech/say"
+      },
+      {
+        "experimental": false,
+        "file": "backend/routes/speech.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "GET",
+        "path": "/api/speech/status"
+      },
+      {
+        "experimental": false,
+        "file": "backend/routes/speech.py",
+        "frontend_referenced": true,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/speech/stop"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/tasks/{task_id}/cancel"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "GET",
+        "path": "/api/tasks/{task_id}/changes"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "GET",
+        "path": "/api/tasks/{task_id}/graph"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/tasks/{task_id}/halt"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "GET",
+        "path": "/api/tasks/{task_id}/memory"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "GET",
+        "path": "/api/telemetry/taste"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": true,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/vault"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/vault/lock"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": true,
+        "gates": [],
+        "method": "GET",
+        "path": "/api/vault/status"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": true,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/vault/status"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/api/vault/unlock"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": true,
+        "gates": [],
+        "method": "GET",
+        "path": "/health"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "POST",
+        "path": "/v1/chat/completions"
+      },
+      {
+        "experimental": false,
+        "file": "backend/api.py",
+        "frontend_referenced": false,
+        "gates": [],
+        "method": "GET",
+        "path": "/v1/models"
+      }
+    ]
+  },
+  "yetenecek_sayisi": 27,
+  "yetenekler": {
+    "count": 27,
+    "error": null,
+    "items": [
+      {
+        "available": false,
+        "available_gates_open": true,
+        "env_gates": [
+          "ENABLE_MEDIA_FORENSICS"
+        ],
+        "gates": [
+          "ENABLE_MEDIA_FORENSICS",
+          "vault"
+        ],
+        "id": "analyzer.media.frames",
+        "kind": "CapabilityKind.ANALYZER",
+        "license": "OpenCV (Apache-2.0) — harici bağımlılık",
+        "reason": "gate_disabled:ENABLE_MEDIA_FORENSICS",
+        "reason_gates_open": null,
+        "unmanaged_gates": [],
+        "wake_class": "sadece_kapi"
+      },
+      {
+        "available": false,
+        "available_gates_open": true,
+        "env_gates": [
+          "ENABLE_MEDIA_FORENSICS"
+        ],
+        "gates": [
+          "ENABLE_MEDIA_FORENSICS",
+          "vault"
+        ],
+        "id": "analyzer.media.similarity",
+        "kind": "CapabilityKind.ANALYZER",
+        "license": "OpenCV + kendi pHash uygulaması (dahili)",
+        "reason": "gate_disabled:ENABLE_MEDIA_FORENSICS",
+        "reason_gates_open": null,
+        "unmanaged_gates": [],
+        "wake_class": "sadece_kapi"
+      },
+      {
+        "available": false,
+        "available_gates_open": false,
+        "env_gates": [],
+        "gates": [
+          "vault"
+        ],
+        "id": "extractor.identity.socid",
+        "kind": "CapabilityKind.EXTRACTOR",
+        "license": "MIT",
+        "reason": "dependency_missing:socid_extractor",
+        "reason_gates_open": "dependency_missing:socid_extractor",
+        "unmanaged_gates": [],
+        "wake_class": "kurulum_gerekli"
+      },
+      {
+        "available": false,
+        "available_gates_open": false,
+        "env_gates": [
+          "ENABLE_MEDIA_FORENSICS"
+        ],
+        "gates": [
+          "ENABLE_MEDIA_FORENSICS",
+          "vault"
+        ],
+        "id": "extractor.media.transcript",
+        "kind": "CapabilityKind.EXTRACTOR",
+        "license": "yerel motor (whisper CLI ya da yerel uç) — kod gömülmez",
+        "reason": "gate_disabled:ENABLE_MEDIA_FORENSICS",
+        "reason_gates_open": "no_engine",
+        "unmanaged_gates": [],
+        "wake_class": "kurulum_gerekli"
+      },
+      {
+        "available": true,
+        "available_gates_open": true,
+        "env_gates": [],
+        "gates": [
+          "vault"
+        ],
+        "id": "extractor.text.language",
+        "kind": "CapabilityKind.EXTRACTOR",
+        "license": "yerel/deterministik (kod içi, harici bağımlılık yok)",
+        "reason": null,
+        "reason_gates_open": null,
+        "unmanaged_gates": [],
+        "wake_class": "hazır"
+      },
+      {
+        "available": false,
+        "available_gates_open": false,
+        "env_gates": [
+          "ENABLE_LOCAL_TRANSLATE"
+        ],
+        "gates": [
+          "ENABLE_LOCAL_TRANSLATE",
+          "vault"
+        ],
+        "id": "extractor.text.translate_local",
+        "kind": "CapabilityKind.EXTRACTOR",
+        "license": "harici süreç/yerel uç (kod gömülmez)",
+        "reason": "gate_disabled:ENABLE_LOCAL_TRANSLATE",
+        "reason_gates_open": "no_engine",
+        "unmanaged_gates": [],
+        "wake_class": "kurulum_gerekli"
+      },
+      {
+        "available": false,
+        "available_gates_open": false,
+        "env_gates": [
+          "ENABLE_CRAWL4AI"
+        ],
+        "gates": [
+          "ENABLE_CRAWL4AI",
+          "vault"
+        ],
+        "id": "extractor.web.crawl4ai",
+        "kind": "CapabilityKind.EXTRACTOR",
+        "license": "Apache-2.0",
+        "reason": "gate_disabled:ENABLE_CRAWL4AI",
+        "reason_gates_open": "dependency_missing:crawl4ai",
+        "unmanaged_gates": [],
+        "wake_class": "kurulum_gerekli"
+      },
+      {
+        "available": false,
+        "available_gates_open": false,
+        "env_gates": [
+          "ENABLE_SCRAPLING"
+        ],
+        "gates": [
+          "ENABLE_SCRAPLING",
+          "vault"
+        ],
+        "id": "extractor.web.scrapling",
+        "kind": "CapabilityKind.EXTRACTOR",
+        "license": "BSD-3-Clause",
+        "reason": "gate_disabled:ENABLE_SCRAPLING",
+        "reason_gates_open": "dependency_missing:scrapling",
+        "unmanaged_gates": [],
+        "wake_class": "kurulum_gerekli"
+      },
+      {
+        "available": false,
+        "available_gates_open": false,
+        "env_gates": [],
+        "gates": [
+          "vault"
+        ],
+        "id": "extractor.web.trafilatura",
+        "kind": "CapabilityKind.EXTRACTOR",
+        "license": "Apache-2.0",
+        "reason": "dependency_missing:trafilatura",
+        "reason_gates_open": "dependency_missing:trafilatura",
+        "unmanaged_gates": [],
+        "wake_class": "kurulum_gerekli"
+      },
+      {
+        "available": false,
+        "available_gates_open": false,
+        "env_gates": [
+          "ENABLE_REPORT_FACTORY"
+        ],
+        "gates": [
+          "ENABLE_REPORT_FACTORY",
+          "vault"
+        ],
+        "id": "renderer.report.diagram",
+        "kind": "CapabilityKind.RENDERER",
+        "license": "dahili (reportlab/Pillow/ffmpeg harici araçlar)",
+        "reason": "gate_disabled:ENABLE_REPORT_FACTORY",
+        "reason_gates_open": "dependency_missing:Pillow",
+        "unmanaged_gates": [],
+        "wake_class": "kurulum_gerekli"
+      },
+      {
+        "available": false,
+        "available_gates_open": false,
+        "env_gates": [
+          "ENABLE_REPORT_FACTORY"
+        ],
+        "gates": [
+          "ENABLE_REPORT_FACTORY",
+          "vault"
+        ],
+        "id": "renderer.report.pdf",
+        "kind": "CapabilityKind.RENDERER",
+        "license": "dahili (reportlab/Pillow/ffmpeg harici araçlar)",
+        "reason": "gate_disabled:ENABLE_REPORT_FACTORY",
+        "reason_gates_open": "dependency_missing:reportlab",
+        "unmanaged_gates": [],
+        "wake_class": "kurulum_gerekli"
+      },
+      {
+        "available": false,
+        "available_gates_open": false,
+        "env_gates": [
+          "ENABLE_REPORT_FACTORY"
+        ],
+        "gates": [
+          "ENABLE_REPORT_FACTORY",
+          "vault"
+        ],
+        "id": "renderer.report.video",
+        "kind": "CapabilityKind.RENDERER",
+        "license": "dahili (reportlab/Pillow/ffmpeg harici araçlar)",
+        "reason": "gate_disabled:ENABLE_REPORT_FACTORY",
+        "reason_gates_open": "dependency_missing:ffmpeg",
+        "unmanaged_gates": [],
+        "wake_class": "kurulum_gerekli"
+      },
+      {
+        "available": false,
+        "available_gates_open": false,
+        "env_gates": [
+          "ENABLE_COMPANY_TARGETING"
+        ],
+        "gates": [
+          "ENABLE_COMPANY_TARGETING",
+          "rate",
+          "vault"
+        ],
+        "id": "sensor.company.harvester",
+        "kind": "CapabilityKind.SENSOR",
+        "license": "GPL-2.0 (harici CLI — kod gömülmez)",
+        "reason": "gate_disabled:ENABLE_COMPANY_TARGETING",
+        "reason_gates_open": "dependency_missing:theHarvester",
+        "unmanaged_gates": [],
+        "wake_class": "kurulum_gerekli"
+      },
+      {
+        "available": false,
+        "available_gates_open": true,
+        "env_gates": [
+          "ENABLE_COMPANY_TARGETING"
+        ],
+        "gates": [
+          "ENABLE_COMPANY_TARGETING",
+          "vault"
+        ],
+        "id": "sensor.company.people",
+        "kind": "CapabilityKind.SENSOR",
+        "license": "dahili (yalnız HTTP GET + stdlib ayrıştırma)",
+        "reason": "gate_disabled:ENABLE_COMPANY_TARGETING",
+        "reason_gates_open": null,
+        "unmanaged_gates": [],
+        "wake_class": "sadece_kapi"
+      },
+      {
+        "available": false,
+        "available_gates_open": true,
+        "env_gates": [
+          "ENABLE_COMPANY_TARGETING"
+        ],
+        "gates": [
+          "ENABLE_COMPANY_TARGETING",
+          "vault"
+        ],
+        "id": "sensor.company.seo",
+        "kind": "CapabilityKind.SENSOR",
+        "license": "dahili (yalnız HTTP GET + stdlib ayrıştırma)",
+        "reason": "gate_disabled:ENABLE_COMPANY_TARGETING",
+        "reason_gates_open": null,
+        "unmanaged_gates": [],
+        "wake_class": "sadece_kapi"
+      },
+      {
+        "available": true,
+        "available_gates_open": true,
+        "env_gates": [
+          "ENABLE_CROSS_PLATFORM"
+        ],
+        "gates": [
+          "ENABLE_CROSS_PLATFORM",
+          "vault"
+        ],
+        "id": "sensor.identity.handle_probe",
+        "kind": "CapabilityKind.SENSOR",
+        "license": "native",
+        "reason": null,
+        "reason_gates_open": null,
+        "unmanaged_gates": [],
+        "wake_class": "hazır"
+      },
+      {
+        "available": false,
+        "available_gates_open": false,
+        "env_gates": [
+          "ENABLE_HOLEHE"
+        ],
+        "gates": [
+          "ENABLE_HOLEHE",
+          "vault"
+        ],
+        "id": "sensor.identity.holehe",
+        "kind": "CapabilityKind.SENSOR",
+        "license": "GPL-3.0 (harici süreç/bağımlılık — kod gömülmez)",
+        "reason": "gate_disabled:ENABLE_HOLEHE",
+        "reason_gates_open": "dependency_missing:holehe",
+        "unmanaged_gates": [],
+        "wake_class": "kurulum_gerekli"
+      },
+      {
+        "available": false,
+        "available_gates_open": false,
+        "env_gates": [
+          "ENABLE_MAIGRET"
+        ],
+        "gates": [
+          "ENABLE_MAIGRET",
+          "vault"
+        ],
+        "id": "sensor.identity.maigret",
+        "kind": "CapabilityKind.SENSOR",
+        "license": "MIT",
+        "reason": "gate_disabled:ENABLE_MAIGRET",
+        "reason_gates_open": "dependency_missing:maigret",
+        "unmanaged_gates": [],
+        "wake_class": "kurulum_gerekli"
+      },
+      {
+        "available": false,
+        "available_gates_open": false,
+        "env_gates": [
+          "ENABLE_IG_SECONDARY"
+        ],
+        "gates": [
+          "ENABLE_IG_SECONDARY",
+          "rate",
+          "vault"
+        ],
+        "id": "sensor.ig.instagrapi",
+        "kind": "CapabilityKind.SENSOR",
+        "license": "NOASSERTION (yalnız ikinci kaynak; hukuki inceleme notu)",
+        "reason": "dependency_missing:instagrapi",
+        "reason_gates_open": "dependency_missing:instagrapi",
+        "unmanaged_gates": [],
+        "wake_class": "kurulum_gerekli"
+      },
+      {
+        "available": false,
+        "available_gates_open": true,
+        "env_gates": [
+          "ENABLE_MEDIA_FORENSICS"
+        ],
+        "gates": [
+          "ENABLE_MEDIA_FORENSICS",
+          "rate",
+          "vault"
+        ],
+        "id": "sensor.media.fetch",
+        "kind": "CapabilityKind.SENSOR",
+        "license": "yt-dlp (Unlicense) · httpx (BSD) — harici araç, kod gömülmez",
+        "reason": "gate_disabled:ENABLE_MEDIA_FORENSICS",
+        "reason_gates_open": null,
+        "unmanaged_gates": [],
+        "wake_class": "sadece_kapi"
+      },
+      {
+        "available": false,
+        "available_gates_open": false,
+        "env_gates": [
+          "ENABLE_SEARXNG"
+        ],
+        "gates": [
+          "ENABLE_SEARXNG",
+          "vault"
+        ],
+        "id": "sensor.search.searxng",
+        "kind": "CapabilityKind.SENSOR",
+        "license": "AGPL-3.0 (ayrı servis — kod gömülmez, HTTP ile çağrılır)",
+        "reason": "gate_disabled:ENABLE_SEARXNG",
+        "reason_gates_open": "config_missing:SEARXNG_BASE_URL",
+        "unmanaged_gates": [],
+        "wake_class": "kurulum_gerekli"
+      },
+      {
+        "available": false,
+        "available_gates_open": false,
+        "env_gates": [
+          "ENABLE_AGENT_REACH"
+        ],
+        "gates": [
+          "ENABLE_AGENT_REACH",
+          "vault"
+        ],
+        "id": "sensor.web.agent_reach",
+        "kind": "CapabilityKind.EXTRACTOR",
+        "license": "MIT (harici CLI süreci)",
+        "reason": "gate_disabled:ENABLE_AGENT_REACH",
+        "reason_gates_open": "dependency_missing:agent-reach",
+        "unmanaged_gates": [],
+        "wake_class": "kurulum_gerekli"
+      },
+      {
+        "available": false,
+        "available_gates_open": false,
+        "env_gates": [
+          "ENABLE_X_SENSOR"
+        ],
+        "gates": [
+          "ENABLE_X_SENSOR",
+          "rate",
+          "vault"
+        ],
+        "id": "sensor.x.twscrape",
+        "kind": "CapabilityKind.SENSOR",
+        "license": "MIT",
+        "reason": "dependency_missing:twscrape",
+        "reason_gates_open": "dependency_missing:twscrape",
+        "unmanaged_gates": [],
+        "wake_class": "kurulum_gerekli"
+      },
+      {
+        "available": false,
+        "available_gates_open": false,
+        "env_gates": [
+          "ENABLE_LOCAL_JURY"
+        ],
+        "gates": [
+          "ENABLE_LOCAL_JURY",
+          "vault"
+        ],
+        "id": "verifier.jury.local",
+        "kind": "CapabilityKind.VERIFIER",
+        "license": "yerel uç (ollama/llama.cpp/vLLM); kod gömülmez",
+        "reason": "no_local_models",
+        "reason_gates_open": "no_local_models",
+        "unmanaged_gates": [],
+        "wake_class": "kurulum_gerekli"
+      },
+      {
+        "available": true,
+        "available_gates_open": true,
+        "env_gates": [],
+        "gates": [
+          "vault"
+        ],
+        "id": "voice.report.script",
+        "kind": "CapabilityKind.RENDERER",
+        "license": "dahili (deterministik metin kurucu)",
+        "reason": null,
+        "reason_gates_open": null,
+        "unmanaged_gates": [],
+        "wake_class": "hazır"
+      },
+      {
+        "available": false,
+        "available_gates_open": false,
+        "env_gates": [
+          "ENABLE_LOCAL_STT"
+        ],
+        "gates": [
+          "ENABLE_LOCAL_STT",
+          "vault"
+        ],
+        "id": "voice.stt.local",
+        "kind": "CapabilityKind.EXTRACTOR",
+        "license": "harici süreç/yerel uç (kod gömülmez)",
+        "reason": "no_local_endpoint",
+        "reason_gates_open": "no_local_endpoint",
+        "unmanaged_gates": [],
+        "wake_class": "kurulum_gerekli"
+      },
+      {
+        "available": false,
+        "available_gates_open": false,
+        "env_gates": [
+          "ENABLE_LOCAL_TTS"
+        ],
+        "gates": [
+          "ENABLE_LOCAL_TTS",
+          "vault"
+        ],
+        "id": "voice.tts.local",
+        "kind": "CapabilityKind.RENDERER",
+        "license": "harici süreç/yerel uç (kod gömülmez)",
+        "reason": "no_local_endpoint",
+        "reason_gates_open": "no_local_endpoint",
+        "unmanaged_gates": [],
+        "wake_class": "kurulum_gerekli"
+      }
+    ],
+    "managed_gate_flags": [
+      "ENABLE_AGENT_REACH",
+      "ENABLE_COMPANY_TARGETING",
+      "ENABLE_CRAWL4AI",
+      "ENABLE_CROSS_PLATFORM",
+      "ENABLE_HOLEHE",
+      "ENABLE_IG_SECONDARY",
+      "ENABLE_LOCAL_JURY",
+      "ENABLE_LOCAL_STT",
+      "ENABLE_LOCAL_TRANSLATE",
+      "ENABLE_LOCAL_TTS",
+      "ENABLE_MAIGRET",
+      "ENABLE_MEDIA_FORENSICS",
+      "ENABLE_REPORT_FACTORY",
+      "ENABLE_SCRAPLING",
+      "ENABLE_SEARXNG",
+      "ENABLE_X_SENSOR"
+    ]
+  },
+  "zincir": [
+    {
+      "frontend_invokes": false,
+      "id": "analyzer.media.frames",
+      "mcp_tool": true,
+      "pipeline_refs": [],
+      "routes": [
+        "GET /api/media/status",
+        "POST /api/media/analyze"
+      ],
+      "skill_doc": true
+    },
+    {
+      "frontend_invokes": false,
+      "id": "analyzer.media.similarity",
+      "mcp_tool": true,
+      "pipeline_refs": [],
+      "routes": [
+        "GET /api/media/status",
+        "POST /api/media/analyze"
+      ],
+      "skill_doc": true
+    },
+    {
+      "frontend_invokes": false,
+      "id": "extractor.identity.socid",
+      "mcp_tool": true,
+      "pipeline_refs": [
+        "agent_core/services/deep_profile_resolver.py",
+        "agent_core/services/platform_registry.py",
+        "agent_core/services/profile_deep_scan.py",
+        "agent_core/services/profile_router.py"
+      ],
+      "routes": [
+        "POST /api/experimental/socid/extract"
+      ],
+      "skill_doc": true
+    },
+    {
+      "frontend_invokes": false,
+      "id": "extractor.media.transcript",
+      "mcp_tool": true,
+      "pipeline_refs": [],
+      "routes": [
+        "GET /api/media/status",
+        "POST /api/media/analyze"
+      ],
+      "skill_doc": true
+    },
+    {
+      "frontend_invokes": false,
+      "id": "extractor.text.language",
+      "mcp_tool": true,
+      "pipeline_refs": [],
+      "routes": [
+        "GET /api/language/status",
+        "POST /api/language/detect",
+        "POST /api/language/translate"
+      ],
+      "skill_doc": true
+    },
+    {
+      "frontend_invokes": false,
+      "id": "extractor.text.translate_local",
+      "mcp_tool": true,
+      "pipeline_refs": [],
+      "routes": [
+        "POST /api/language/translate"
+      ],
+      "skill_doc": true
+    },
+    {
+      "frontend_invokes": false,
+      "id": "extractor.web.crawl4ai",
+      "mcp_tool": true,
+      "pipeline_refs": [],
+      "routes": [],
+      "skill_doc": true
+    },
+    {
+      "frontend_invokes": false,
+      "id": "extractor.web.scrapling",
+      "mcp_tool": true,
+      "pipeline_refs": [],
+      "routes": [],
+      "skill_doc": true
+    },
+    {
+      "frontend_invokes": false,
+      "id": "extractor.web.trafilatura",
+      "mcp_tool": true,
+      "pipeline_refs": [],
+      "routes": [],
+      "skill_doc": true
+    },
+    {
+      "frontend_invokes": false,
+      "id": "renderer.report.diagram",
+      "mcp_tool": true,
+      "pipeline_refs": [],
+      "routes": [
+        "GET /api/report/status",
+        "POST /api/report/build"
+      ],
+      "skill_doc": true
+    },
+    {
+      "frontend_invokes": false,
+      "id": "renderer.report.pdf",
+      "mcp_tool": true,
+      "pipeline_refs": [],
+      "routes": [
+        "GET /api/report/status",
+        "POST /api/report/build"
+      ],
+      "skill_doc": true
+    },
+    {
+      "frontend_invokes": false,
+      "id": "renderer.report.video",
+      "mcp_tool": true,
+      "pipeline_refs": [],
+      "routes": [
+        "GET /api/report/status",
+        "POST /api/report/build"
+      ],
+      "skill_doc": true
+    },
+    {
+      "frontend_invokes": false,
+      "id": "sensor.company.harvester",
+      "mcp_tool": true,
+      "pipeline_refs": [],
+      "routes": [
+        "GET /api/company/status",
+        "POST /api/company/scan"
+      ],
+      "skill_doc": true
+    },
+    {
+      "frontend_invokes": false,
+      "id": "sensor.company.people",
+      "mcp_tool": true,
+      "pipeline_refs": [],
+      "routes": [
+        "GET /api/company/status",
+        "POST /api/company/scan"
+      ],
+      "skill_doc": true
+    },
+    {
+      "frontend_invokes": false,
+      "id": "sensor.company.seo",
+      "mcp_tool": true,
+      "pipeline_refs": [],
+      "routes": [
+        "GET /api/company/status",
+        "POST /api/company/scan"
+      ],
+      "skill_doc": true
+    },
+    {
+      "frontend_invokes": false,
+      "id": "sensor.identity.handle_probe",
+      "mcp_tool": true,
+      "pipeline_refs": [
+        "agent_core/agents/osint_investigator.py"
+      ],
+      "routes": [],
+      "skill_doc": true
+    },
+    {
+      "frontend_invokes": false,
+      "id": "sensor.identity.holehe",
+      "mcp_tool": true,
+      "pipeline_refs": [
+        "agent_core/agents/osint_investigator.py",
+        "agent_core/task_executor.py"
+      ],
+      "routes": [
+        "POST /api/experimental/holehe/scan"
+      ],
+      "skill_doc": true
+    },
+    {
+      "frontend_invokes": false,
+      "id": "sensor.identity.maigret",
+      "mcp_tool": true,
+      "pipeline_refs": [
+        "agent_core/agents/osint_investigator.py",
+        "agent_core/mcp/tools.py",
+        "agent_core/task_executor.py"
+      ],
+      "routes": [
+        "POST /api/experimental/maigret/scan"
+      ],
+      "skill_doc": true
+    },
+    {
+      "frontend_invokes": false,
+      "id": "sensor.ig.instagrapi",
+      "mcp_tool": true,
+      "pipeline_refs": [
+        "agent_core/services/platform_registry.py",
+        "agent_core/services/profile_deep_scan.py",
+        "agent_core/services/profile_router.py"
+      ],
+      "routes": [],
+      "skill_doc": true
+    },
+    {
+      "frontend_invokes": false,
+      "id": "sensor.media.fetch",
+      "mcp_tool": true,
+      "pipeline_refs": [],
+      "routes": [
+        "POST /api/experimental/crawl/fetch",
+        "GET /api/media/status",
+        "POST /api/media/analyze"
+      ],
+      "skill_doc": true
+    },
+    {
+      "frontend_invokes": false,
+      "id": "sensor.search.searxng",
+      "mcp_tool": true,
+      "pipeline_refs": [
+        "agent_core/services/search_engine.py"
+      ],
+      "routes": [],
+      "skill_doc": true
+    },
+    {
+      "frontend_invokes": false,
+      "id": "sensor.web.agent_reach",
+      "mcp_tool": true,
+      "pipeline_refs": [
+        "agent_core/services/platform_registry.py"
+      ],
+      "routes": [],
+      "skill_doc": true
+    },
+    {
+      "frontend_invokes": false,
+      "id": "sensor.x.twscrape",
+      "mcp_tool": true,
+      "pipeline_refs": [
+        "agent_core/services/platform_registry.py",
+        "agent_core/services/profile_deep_scan.py",
+        "agent_core/services/profile_router.py"
+      ],
+      "routes": [],
+      "skill_doc": true
+    },
+    {
+      "frontend_invokes": false,
+      "id": "verifier.jury.local",
+      "mcp_tool": true,
+      "pipeline_refs": [],
+      "routes": [
+        "GET /api/jury/status",
+        "POST /api/jury/vote"
+      ],
+      "skill_doc": true
+    },
+    {
+      "frontend_invokes": false,
+      "id": "voice.report.script",
+      "mcp_tool": true,
+      "pipeline_refs": [
+        "agent_core/services/speech.py"
+      ],
+      "routes": [],
+      "skill_doc": true
+    },
+    {
+      "frontend_invokes": false,
+      "id": "voice.stt.local",
+      "mcp_tool": true,
+      "pipeline_refs": [
+        "agent_core/services/speech.py"
+      ],
+      "routes": [],
+      "skill_doc": true
+    },
+    {
+      "frontend_invokes": false,
+      "id": "voice.tts.local",
+      "mcp_tool": true,
+      "pipeline_refs": [
+        "agent_core/services/speech.py"
+      ],
+      "routes": [],
+      "skill_doc": true
+    }
+  ]
+}

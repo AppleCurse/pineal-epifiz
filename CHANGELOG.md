@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased — 2026-10-24 — P10: GÖLGE DENETİMİ (hiçbir şey gölgede kalmasın)
+
+- **Yeni betik: `scripts/golge_denetimi.py`** — ürünün TAMAMINI tek koşuda
+  ölçer ve iki kanıt dosyası üretir: `reports/golge_denetimi.json` (makine
+  okunur) + `docs/reports/GOLGE_DENETIMI.md` (insan okunur). Rapordaki hiçbir
+  sayı elle yazılmaz.
+- **Ölçülen 8 boyut:** (1) yetenek defteri + iki senaryo (şalterler kapalı /
+  hepsi açık), (2) yetenek → HTTP ucu → MCP aracı → SKILL.md → arayüz zinciri,
+  (3) ajan modülü → yürütücü anahtarı → Agent Rack slotu → rota → arayüz,
+  (4) backend'deki her uç + kapısı + arayüz referansı, (5) env kapıları ↔
+  kodda okunan ↔ `.env.example` üç yönlü fark, (6) giriş noktalarından AST ile
+  **erişilemeyen modüller**, (7) sebebe göre **uyanma planı**, (8) depoda durup
+  ürüne bağlanmayan gömülü varlıklar.
+- **Kritik ayrım ölçüldü:** "şalter kapalı" ile "şalter açık ama bağımlılık/
+  motor/uç yok" artık AYRI raporlanır (`gate_disabled` / `dependency_missing` /
+  `no_engine` / `no_local_endpoint` / `no_local_models` / `config_missing`).
+  Böylece "hepsini açalım" cümlesi, açıldığında gerçekten çalışacak yeteneklerle
+  kurulum isteyenleri karıştırmaz.
+- **Kilitleyen test:** `tests/unit/test_golge_denetimi.py` — her yetenek bir
+  uyanma sınıfı taşımak zorunda; şalterler açıkken hazır olan bir yetenek
+  "kurulum gerekli" diye sınıflanamaz; CLI aracı `run_lilith.py` beyanlı giriş
+  noktası olduğu için `lilith_growth` yanlışlıkla "ölü kod" damgası yemez.
+- **Beyan edilmiş zayıflık:** giriş noktası listesi betiğin içinde açıkça
+  yazılıdır (8 adet). Yeni bir CLI eklenip listeye yazılmazsa betik onu ölü kod
+  sanar — bu, raporun tek kör noktasıdır ve raporda da böyle yazılıdır.
+
 ## Unreleased — 2026-10-18 — P9: README yenilemesi + sistemin yeni haritası
 
 - **README baştan yazıldı — "herkesin anlayabileceği" bir dilde** (15 bölüm,
