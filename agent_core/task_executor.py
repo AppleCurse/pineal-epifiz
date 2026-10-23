@@ -835,7 +835,21 @@ class PinealExecutor:
         olarak izlenir; ``completed`` + eksik kanıt ``InsufficientEvidenceError``
         ile görevi durdurur (execütor çağrısında).
         """
-        from agent_core.domain.responsibility import build_trail
+        from agent_core.domain.responsibility import TaskContract, build_trail
+
+        # [2026-10-23 · SORUMLULUK ZİNCİRİ] `TaskContract` üretimde HİÇ
+        # kullanılmıyordu (yalnız testte). Silinmedi; mühürün parçası oldu:
+        # her ajan koşusu için sözleşme kurulur ve zincire yazılır. Sözleşme
+        # eksikse `ensure_complete` ValueError fırlatır — bu yüzden alanlar
+        # koşunun GERÇEK durumundan türetilir, uydurulmuş kabul kriteri yok.
+        _run_status = getattr(run, "status", None) or "unknown"
+        contract = TaskContract.for_agent(
+            task_id=str(getattr(run, "task_id", "") or "task"),
+            agent_id=agent_name,
+            required_inputs=["task_payload"],
+            acceptance_criteria=[f"ajan koşusu '{_run_status}' durumuyla kapandı"],
+            evidence_output=["agent_run", "responsibility_trail"],
+        )
 
         trail = build_trail(
             claimed=claimed,
@@ -849,6 +863,8 @@ class PinealExecutor:
                 "run_status": getattr(run, "status", None),
                 "confidence": getattr(run, "confidence", None),
                 "error_code": getattr(run, "error_code", None),
+                # Sözleşme mühürde taşınır: hangi kriterlerle kapandığı görünür.
+                "contract": contract.model_dump(mode="json"),
             },
         )
         if trail.integrity.get("violation"):

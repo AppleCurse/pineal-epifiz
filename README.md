@@ -261,7 +261,7 @@ karşı** koşturur ve ham çıktıyı basar: `0` kanıtlandı · `1` döngü k�
 
 ---
 
-## 11 · API yüzeyi (68 HTTP ucu + 1 WebSocket)
+## 11 · API yüzeyi (69 HTTP ucu + 1 WebSocket)
 
 | Alan | Uçlar | Ne yapar |
 |---|---|---|
@@ -340,7 +340,7 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 | `config/` | Yönlendirme, sağlayıcı kataloğu, karar yapılandırması, RTK politikası |
 
 **Tam ve aranabilir harita:** **[docs/envanter.html](docs/envanter.html)** —
-746 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
+754 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
 ile yenilenir, CI `--check` ile bayatlamayı yakalar.
 
 **Ayrıca:** [ARCHITECTURE.md](ARCHITECTURE.md) · [README_TECHNICAL.md](README_TECHNICAL.md) ·

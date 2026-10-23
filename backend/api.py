@@ -3628,6 +3628,18 @@ def _check_vault_interlock(client_id: str) -> bool:
     return unlocked
 
 
+# [API-BÖLME 7 · 2026-10-23] Mobil danışman köprüsü `/api/mobile/coach`
+# ayrı modüle taşındı (`backend/routes/mobile_coach.py`): Android doğrudan
+# Gemini'yi çağırmak yerine bu uçtan geçer. Satır yerine MODÜL çıkarıldı.
+from backend.routes.mobile_coach import register_mobile_coach_routes
+
+register_mobile_coach_routes(
+    app,
+    rate_limit=rate_limit,
+    rate_identity=_rate_identity,
+    gateway_provider=lambda: getattr(aspasia_chief, "llm", None),
+)
+
 app.include_router(
     build_speech_router(
         rate_limit=rate_limit,
