@@ -149,6 +149,27 @@ REQUIRED_OPENROUTTER = {
 # tests/unit/test_openrouter_catalog_contract.py::test_jitter_tolerance_is_small)
 # ve salınmayan modeller bu banttan ETKİLENMEZ — onlarda hâlâ tam eşitlik aranır.
 #
+# ── 2026-10-24: BANT YETMEDİ → GÖZLENEN FİYAT REJİMİ (ölçüldü) ─────────────
+# `deepseek/deepseek-v4-pro` iki günde $0.2088 → $0.95526 aralığında on bir
+# ayrı değer verdi ve her okumada çıktı = girdi × 2 kaldı. Yani bu model bir
+# SÖZLEŞME fiyatı taşımıyor, her istekte yeniden KOTASYON ediliyor. İki koşu
+# arasında %22'lik atlama (39959652727 → 40034566367) ±%2 bandının dışında
+# kaldı ve kapı yine kırmızı oldu: "her yeni değeri listeye ekle" yaklaşımı
+# YAKINSAMIYOR (bugün iki kez ısırdı).
+#
+# Kural üç kademeli (yalnız `OBSERVED_OPENROUTER_STATES`'teki modeller için):
+#   1) Tam eşleşme                                  → geçer
+#   2) Bilinen bir durumun ±%2 bandı                → geçer (+ uyarı)
+#   3) Gözlenen REJİM içinde (min..max ölçüm ± %2) VE girdi/çıktı oranı
+#      gözlenmiş oranlardan biriyle uyumlu (±%2)    → geçer (+ uyarı)
+#   4) Rejim dışı VEYA oran bozuk                   → `FAIL:` (gerçek rejim
+#      değişimi: fiyat modeli değişti, sağlayıcı başka bir ürün fiyatlıyor)
+#
+# Kalan risk (adı konmuş): rejim İÇİNDEKİ büyük bir gerçek fiyat değişimi artık
+# alarm üretmez — çünkü aynı aralıktaki bütün değerler zaten kotasyon olarak
+# gözlendi, ikisi ölçümden ayırt edilemiyor. Rejim sınırı ve oran kuralı
+# testlerle donduruldu; salınmayan modellerde tam eşitlik aynen sürer.
+#
 # UYARI: harcama sayacı (LLMGateway.MODEL_PRICING) TEK değer taşır — son
 # ölçülen durum. Salınım sürdüğü sürece sayacın canlı durumdan saptığı
 # olabilir; kalıcı çözüm canlı fiyatın periyodik olarak tabloya alınmasıdır
@@ -198,6 +219,28 @@ OBSERVED_OPENROUTER_STATES: dict[str, tuple[tuple[float, float], ...]] = {
 # Salınan modellerde kabul edilen göreli bant (bkz. yukarıdaki 2026-10-23 notu).
 # Yalnız `OBSERVED_OPENROUTER_STATES` içinde yer alan modellere uygulanır.
 STATE_JITTER_TOLERANCE = 0.02
+
+
+def observed_price_regime(
+    states: tuple[tuple[float, float], ...],
+) -> tuple[float, float, float, float]:
+    """Ölçülmüş durumların kapsadığı (min_in, max_in, min_out, max_out) rejimi."""
+    return (
+        min(pair[0] for pair in states),
+        max(pair[0] for pair in states),
+        min(pair[1] for pair in states),
+        max(pair[1] for pair in states),
+    )
+
+
+def observed_price_ratios(states: tuple[tuple[float, float], ...]) -> tuple[float, ...]:
+    """Ölçülmüş girdi/çıktı oranları (0'a bölme korumalı)."""
+    return tuple(pair[0] / pair[1] for pair in states if pair[1])
+
+
+def ratio_is_known(ratio: float, known: tuple[float, ...], tolerance: float = 0.02) -> bool:
+    """Canlı oran, gözlenmiş oranlardan birine ±tolerance içinde mi?"""
+    return any(abs(ratio - ref) <= abs(ref) * tolerance for ref in known if ref)
 
 # ── KAPSAM BOŞLUĞU (dürüstçe adlandırılmış) ──────────────────────────────────
 # `LLMGateway.MODEL_PRICING` şu iki modeli ücretlendirir ama bunlar
@@ -389,12 +432,52 @@ def verify_live_openrouter(
                             matched = (state_in, state_out)
                             break
                 if matched is None:
-                    known = ", ".join(f"${a:g}/${b:g}" for a, b in observed_states)
-                    failures.append(
-                        f"{model_id}: live price ${actual_in * 1_000_000:g}/"
-                        f"${actual_out * 1_000_000:g} per 1M is NOT a measured state "
-                        f"(measured states: {known})"
+                    # Kademe 3: bilinen bir duruma birebir oturmuyor ama
+                    # GÖZLENEN REJİMİN içinde ve fiyat yapısı (girdi/çıktı
+                    # oranı) gözlenmiş oranlardan biriyle uyumlu → kotasyon.
+                    reg_in_min, reg_in_max, reg_out_min, reg_out_max = (
+                        observed_price_regime(observed_states)
                     )
+                    ratio = actual_in / actual_out if actual_out else 0.0
+                    in_regime = (
+                        reg_in_min / 1_000_000 * (1 - STATE_JITTER_TOLERANCE)
+                        <= actual_in
+                        <= reg_in_max / 1_000_000 * (1 + STATE_JITTER_TOLERANCE)
+                        and reg_out_min / 1_000_000 * (1 - STATE_JITTER_TOLERANCE)
+                        <= actual_out
+                        <= reg_out_max / 1_000_000 * (1 + STATE_JITTER_TOLERANCE)
+                    )
+                    known_ratios = observed_price_ratios(observed_states)
+                    structure_ok = bool(actual_out) and ratio_is_known(
+                        ratio, known_ratios, STATE_JITTER_TOLERANCE
+                    )
+                    if in_regime and structure_ok:
+                        warnings.append(
+                            f"{model_id}: live price ${actual_in * 1_000_000:g}/"
+                            f"${actual_out * 1_000_000:g} is not a recorded state but sits "
+                            f"inside the observed price regime "
+                            f"(${reg_in_min:g}-${reg_in_max:g} / ${reg_out_min:g}-${reg_out_max:g}) "
+                            f"with a known input/output ratio — treated as re-quoting"
+                        )
+                    else:
+                        known = ", ".join(f"${a:g}/${b:g}" for a, b in observed_states)
+                        if in_regime and not structure_ok:
+                            why = (
+                                f"input/output ratio {ratio:.4f} is not one of the observed "
+                                f"ratios {', '.join(f'{r:.4f}' for r in known_ratios)} — "
+                                "the pricing STRUCTURE changed"
+                            )
+                        else:
+                            why = (
+                                "outside the observed price regime "
+                                f"(${reg_in_min:g}-${reg_in_max:g} in / "
+                                f"${reg_out_min:g}-${reg_out_max:g} out per 1M)"
+                            )
+                        failures.append(
+                            f"{model_id}: live price ${actual_in * 1_000_000:g}/"
+                            f"${actual_out * 1_000_000:g} per 1M is NOT a measured state — "
+                            f"{why} (measured states: {known})"
+                        )
                 else:
                     if not exact:
                         # Kotasyon salınımı: bilinen durumun bandında.

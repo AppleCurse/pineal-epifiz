@@ -1,13 +1,33 @@
 name: 9Router Preflight Verification
 
+# ── NEDEN ZAMANLANMIŞ TETİKLEYİCİ YOK (2026-10-24) ──────────────────────────
+# Bu iş, operatörün MAKİNESİNDE çalışan 9Router hub'ını (127.0.0.1:20128)
+# doğrular; GitHub'ın barındırdığı runner'lar oraya ULAŞAMAZ. Kayıtlı bir
+# self-hosted runner olmadığı için `schedule` her 6 saatte bir yeni bir koşu
+# KUYRUĞA atıyor ve o koşular hiç icra edilmiyordu:
+#   2026-10-23 03:04 · 10:55 · 16:20 UTC (+ 10-24) — hepsi `queued`,
+#   tek adım bile çalışmadı. Yeşil/kırmızı üretmeyen "kapı" kapı değil,
+#   sahte bir yeşil görüntüsüdür. Zamanlanmış tetikleyici bu yüzden KALDIRILDI.
+#
+# Doğrulamayı gerçekten koşturmanın iki yolu:
+#   1) Hub'ın yanındaki makineye self-hosted runner kaydet → Actions →
+#      "9Router Preflight Verification" → Run workflow.
+#   2) Runner olmadan: hub'ın yanında `python scripts/preflight_9router.py`
+#      (hub erişilemezse exit 1 — kapı fail-closed).
+# Job gövdesi BİLEREK korundu: runner kaydedildiği gün elle tetiklendiğinde
+# aynı adımları koşar.
 on:
-  schedule:
-    - cron: '0 */6 * * *'  # Her 6 saatte bir periyodik denetim
   workflow_dispatch:
+
+# Elle art arda tetiklemeler birikmesin: yalnız en son istek koşar.
+concurrency:
+  group: 9router-preflight
+  cancel-in-progress: true
 
 jobs:
   preflight-probe:
     runs-on: self-hosted  # 9Router yerel proxy'sine (127.0.0.1:20128) erişebilen self-hosted runner
+    timeout-minutes: 20
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4

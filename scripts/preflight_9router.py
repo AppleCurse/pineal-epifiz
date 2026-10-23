@@ -169,10 +169,24 @@ def run_preflight() -> dict[str, Any]:
 
 if __name__ == "__main__":
     report = run_preflight()
-    report_file = ROOT / "reports" / "9router_preflight_latest.json"
+    # [2026-10-24] Rapor yolu SABİT değildi: her koşu depodaki izlenen kanıt
+    # dosyasını (`reports/9router_preflight_latest.json`) eziyordu. Bir test
+    # betiği koşturduğunda çalışma ağacı kirleniyor, "kanıt" ise nerede/neden
+    # koşulduğundan bağımsız olarak son koşuya dönüşüyordu. Ortam değişkeniyle
+    # yönlendirilebilir; varsayılan davranış (kanıtı tazelemek) korunur.
+    report_file = Path(
+        os.getenv("NINEROUTER_PREFLIGHT_REPORT")
+        or (ROOT / "reports" / "9router_preflight_latest.json")
+    )
     report_file.parent.mkdir(parents=True, exist_ok=True)
     report_file.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"\nRapor kaydedildi: {report_file.relative_to(ROOT)}")
+    # Rapor yolu depo DIŞINA yönlendirilmiş olabilir (test/CI); bu durumda
+    # `relative_to` patlıyordu — kapı, rapor basamadığı için çöküyordu.
+    try:
+        shown = report_file.relative_to(ROOT)
+    except ValueError:
+        shown = report_file
+    print(f"\nRapor kaydedildi: {shown}")
     if not report["all_ok"]:
         print("\nSONUÇ: PREFLIGHT BAŞARISIZ!")
         sys.exit(1)
