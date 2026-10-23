@@ -40,6 +40,10 @@ BUILTIN_GATES = frozenset({"vault", "budget", "rate"})
 #: reddeder — sessizce "kapalı" gibi görünmez.
 MANAGED_GATE_FLAGS: tuple[str, ...] = (
     "ENABLE_MAIGRET",
+    # [2026-10-23] Native çapraz platform yoklaması (sensor.identity.handle_probe).
+    # Kapı listede olmazsa PolicyKernel onu `unknown_gate` ile reddeder ve
+    # yetenek "açık" görünürken kalıcı kapalı kalır (B1/B2 dersi).
+    "ENABLE_CROSS_PLATFORM",
     "ENABLE_HOLEHE",
     "ENABLE_CRAWL4AI",
     "ENABLE_SCRAPLING",

@@ -27,23 +27,105 @@ def _read(rel: str) -> str:
 # BULGU 1 — `detected_urls` kopuk kablo (P1)
 # ─────────────────────────────────────────────────────────────────────────────
 def test_bulgu_1_detected_urls_kablo_bagli():
-    """Bulunan profil URL'leri artık gerçekten taranıyor (kopuk kablo değil)."""
-    executor = _read("agent_core/task_executor.py")
-    assert "resolve_deep_profiles_detailed" in executor
-    assert "deep_profile_resolver" in executor
+    """[BULGU 1 · GERÇEK VERİ AKIŞI] Kazınan adres → taranan profil.
 
-    resolver = _read("agent_core/services/deep_profile_resolver.py")
-    assert "profile_router" in resolver or "classify_url" in resolver
-    assert "profile_deep_scan" in resolver or "scan_profiles" in resolver
+    [2026-10-23] Bu test eskiden YALNIZ dosyada kelime arıyordu
+    (`assert "deep_profile_resolver" in executor`); yani kablo kopsa bile
+    YEŞİL kalıyordu. Ölçüm gerçekten kopuktu: Instagram bio'sundaki
+    Linktree/X bağlantıları `external_urls`'te toplanıyor ama
+    `target_profile`'a yazılmıyor, X gönderilerindeki adresler ise hiç
+    ayrıştırılmıyordu.
 
-    # Sınıflandırma ve koşum **tek yerden** gelmeli.
-    router = _read("agent_core/services/profile_router.py")
-    assert "def classify_url" in router
-    assert "httpx" not in router, "router saf sınıflandırıcıdır; ağ çağrısı yapmaz"
+    Artık test üç halkayı BİRLİKTE koşar:
+      1. Kazıyıcı çıktısı (IG profili / X serisi) → `detected_urls` dolu mu?
+      2. Yürütücünün birleştirme fonksiyonu bu adresleri taşıyor mu?
+      3. Derin tarama bu adresler için GERÇEKTEN capability koşuyor mu?
+    """
+    import asyncio
 
-    scan = _read("agent_core/services/profile_deep_scan.py")
-    assert "from agent_core.capabilities.runner import CapabilityRunner" in scan
-    assert "import httpx" not in scan, "derin tarama yalnız CapabilityRunner üzerinden koşar"
+    from agent_core.capabilities.base import CapabilityResult
+    from agent_core.scraper.instagram_ghost import InstagramPost, InstagramProfile
+    from agent_core.services.deep_url_cables import merge_detected_profile_urls
+    from agent_core.services.platform_registry import (
+        ig_target_profile_update,
+        x_target_profile_update,
+    )
+    from agent_core.services.profile_deep_scan import run_detected_profiles
+    from agent_core.services.profile_router import CAPABILITY_SOCID, plan_for_urls
+
+    # ---- 1. halka: Instagram bio'su (Linktree + X + Instagram) ----
+    profile = InstagramProfile(
+        username="hedef",
+        biography="linkler: https://linktr.ee/hedef ve https://x.com/hedef",
+        external_urls=[
+            "https://linktr.ee/hedef",
+            "https://x.com/hedef",
+            "https://example.com/haber",  # profil DEĞİL → taranmamalı
+        ],
+        is_private=False,
+        posts=[InstagramPost(shortcode="SC01", display_url="https://cdn.example/1.jpg")],
+    )
+    ig_payload = ig_target_profile_update(profile)
+    assert "https://linktr.ee/hedef" in ig_payload["detected_urls"]
+    assert "https://x.com/hedef" in ig_payload["detected_urls"]
+    assert "https://example.com/haber" not in ig_payload["detected_urls"], (
+        "profil olmayan adres derin taramaya verildi (yanlış hedef)"
+    )
+
+    # ---- 1b. X gönderilerindeki adresler de ayrıştırılıyor ----
+    x_payload = x_target_profile_update(
+        "hedef",
+        [{"text": "yeni hesap: https://www.instagram.com/hedef/", "created_at": "2026-01-01"}],
+        bio="threads: https://www.threads.net/@hedef",
+    )
+    assert "https://www.instagram.com/hedef/" in x_payload["detected_urls"]
+    assert "https://www.threads.net/@hedef" in x_payload["detected_urls"]
+    assert x_payload["bio"].startswith("threads:"), "gerçek bio taşınmadı"
+
+    # ---- 2. halka: yürütücünün birleştirmesi ----
+    merged = merge_detected_profile_urls(
+        ig_payload,
+        {"handle_probe": {"found_sites": [{"url": "https://www.facebook.com/hedef"}]}},
+    )
+    assert "https://linktr.ee/hedef" in merged
+    assert "https://x.com/hedef" in merged
+    assert "https://www.facebook.com/hedef" in merged
+    assert "https://example.com/haber" not in merged
+    assert len(merged) == len(set(merged)), "tekrar eden adres"
+
+    # ---- 3. halka: derin tarama gerçekten koşuyor ----
+    class _Runner:
+        def __init__(self):
+            self.calls = []
+
+        async def run(self, cap_id, ctx=None, *, state=None):
+            self.calls.append((cap_id, getattr(ctx, "subject", None)))
+            return CapabilityResult(capability_id=cap_id, available=True, items=())
+
+    runner = _Runner()
+    result = asyncio.run(run_detected_profiles(merged, runner=runner, limit=6))
+    called_urls = {subject for _, subject in runner.calls}
+    assert "https://linktr.ee/hedef" in called_urls, "bio linki için tarama koşmadı"
+    assert "https://www.facebook.com/hedef" in called_urls, "yoklama bulgusu taranmadı"
+    # IG/X kendi sensörüne gider; diğer platformlar socid'e. Plan hangi
+    # yeteneğin koşacağını TEK kaynaktan (classify_url) belirler.
+    plan = {route.subject: route.capability_id for route in plan_for_urls(merged, limit=6)}
+    assert plan["https://linktr.ee/hedef"] == CAPABILITY_SOCID
+    # X yolunun subject'i URL değil HANDLE'dır (sensör handle ile çalışır).
+    assert plan["hedef"] == "sensor.x.twscrape"
+    assert all(cap for cap, _ in runner.calls), "yeteneksiz koşu"
+    assert result is not None
+
+    # ---- 4. halka: yürütücü TEK kabloyu kullanıyor (ikinci kopya yok) ----
+    executor_src = _read("agent_core/task_executor.py")
+    assert "merge_detected_profile_urls(" in executor_src, (
+        "yürütücü birleştirme fonksiyonunu çağırmıyor"
+    )
+    # Eski satır içi (kopya) birleştirme geri gelmesin.
+    assert "for _site in ((status.osint_footprint or {}).get(\"username_scan\")" not in executor_src
+
+    # Sınıflandırma ve koşum tek yerden: plan saf, koşum capability runner.
+    assert plan_for_urls(merged, limit=6)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

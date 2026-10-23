@@ -224,8 +224,22 @@ def test_seal_items_rejects_empty_and_keeps_schema():
 
 # ------------------------------------------------------- A3 · X sensörü
 def test_x_sensor_gates(monkeypatch):
+    """[2026-10-23] `availability()` KAPI kararı vermez — karar `PolicyKernel`'de.
+
+    Eski hâlde iki yerde kontrol vardı: onayla açılan kapı `availability()`de
+    yine kapalı görünüyordu ("iki farklı gerçek", B1/B2 dersi). Artık burada
+    yalnız BAĞIMLILIK bildirilir; kapalı bayrağın sebebi politika kararıdır
+    (`tests/unit/test_p0_honest_status.py::test_x_sensor_gate_disabled_reports_reason`).
+    """
     monkeypatch.delenv("ENABLE_X_SENSOR", raising=False)
-    assert XTwscrapeCapability().availability().reason == "gate_disabled:ENABLE_X_SENSOR"
+    from agent_core.capabilities.state import policy_state
+
+    monkeypatch.setattr(
+        "agent_core.capabilities.adapters_sensors._module_available", lambda _n: True
+    )
+    assert XTwscrapeCapability().availability().available is True
+    state = policy_state(vault_locked=False, rate_ok=True)
+    assert state.enabled_flags["ENABLE_X_SENSOR"] is False
 
 
 def test_x_sensor_carries_vault_and_rate_gates():
@@ -319,9 +333,17 @@ async def test_x_sensor_produces_time_series_for_frequency_engine(monkeypatch):
 
 # ------------------------------------------- A4 · Instagram ikinci kaynak
 def test_instagrapi_is_second_source_only(monkeypatch):
+    """İkinci kaynak + bağımlılık kapısı (politika kararı ayrı testte)."""
     monkeypatch.delenv("ENABLE_IG_SECONDARY", raising=False)
+    monkeypatch.setattr(
+        "agent_core.capabilities.adapters_sensors._module_available", lambda _n: True
+    )
     cap = InstagrapiCapability()
-    assert cap.availability().reason == "gate_disabled:ENABLE_IG_SECONDARY"
+    # Kapi kararı burada VERİLMEZ: eksik olan şey kimlik bilgisi/bağımlılık
+    # olarak raporlanır, "gate_disabled" olarak DEĞİL.
+    reason = cap.availability().reason or ""
+    assert not reason.startswith("gate_disabled"), reason
+    assert "ENABLE_IG_SECONDARY" in cap.gates
     assert "rate" in cap.gates and "vault" in cap.gates
 
 
@@ -568,3 +590,52 @@ def test_agent_reach_command_prefers_explicit_env_and_never_guesses(monkeypatch)
     #: Depo kalıbı (PINEAL_HARVESTER_CMD ile aynı): PATH'te bulunan komut ADI
     #: olduğu gibi döner — alt süreç onu kendi PATH'iyle çözer.
     assert agent_reach_command() == ["python"]
+
+
+@pytest.mark.asyncio
+async def test_instagrapi_uses_the_same_post_cap_as_ghost(monkeypatch):
+    """[2026-10-23] İki Instagram yolu AYNI operatör tavanını kullanır.
+
+    Eski hâl: ghost kazıyıcı 12, bu ikinci kaynak 20 ile sabitti. Artık ikisi
+    de `PINEAL_IG_MAX_POSTS` (varsayılan 48) okur; çağıran `limit` verirse o
+    kazanır.
+    """
+    import sys
+    import types
+
+    captured: dict[str, int] = {}
+
+    class _Info:
+        full_name = "x"
+        biography = ""
+        follower_count = 1
+        following_count = 1
+        media_count = 1
+
+    class _Client:
+        def login(self, _u, _p):
+            return True
+
+        def user_id_from_username(self, _u):
+            return 7
+
+        def user_info(self, _id):
+            return _Info()
+
+        def user_medias(self, _id, limit):
+            captured["limit"] = limit
+            return []
+
+    monkeypatch.setenv("IG_USERNAME", "u")
+    monkeypatch.setenv("IG_PASSWORD", "p")
+    monkeypatch.setenv("PINEAL_IG_MAX_POSTS", "33")
+    monkeypatch.setitem(
+        sys.modules, "instagrapi", types.SimpleNamespace(Client=lambda: _Client())
+    )
+    monkeypatch.setattr(
+        "agent_core.capabilities.adapters_sensors._module_available", lambda _n: True
+    )
+    from agent_core.capabilities.base import CapabilityContext
+
+    await InstagrapiCapability().run(CapabilityContext(subject="hedef"))
+    assert captured["limit"] == 33, captured

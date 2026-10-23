@@ -81,3 +81,37 @@ def test_scrape_without_playwright_page_should_halt():
             await scraper.scrape_async("test_user", playwright_page=None)
     
     asyncio.run(run())
+
+
+def _html_with_posts(n: int) -> str:
+    """n adet gerçek shortcode + display_url çifti taşıyan profil HTML'i."""
+    units = []
+    for i in range(n):
+        units.append(
+            '"shortcode":"sc%02d","display_url":"https://scontent.cdninstagram.com/v/sc%02d.jpg"'
+            % (i, i)
+        )
+    return (
+        '{"is_private":false,"edge_followed_by":{"count":1500},'
+        '"biography":"gerçek bio https://linktr.ee/hedef",'
+        + ",".join(units)
+        + "}"
+    )
+
+
+def test_ham_html_yolu_12_tavanini_asmali():
+    """[2026-10-23] Sabit 12 tavanı kalktı: 20 gönderi de toplanır.
+
+    Bu yol Playwright'sız ham HTML ayrıştırmasıdır ve `min(len(display_urls), 12)`
+    ile sessizce kırpıyordu; artık tavan operatör ayarıdır.
+    """
+    scraper = InstagramGhostScraper()
+    profile = scraper._parse_real_profile({}, _html_with_posts(20), "hedef")
+    assert len(profile.posts) == 20, f"12 tavanı geri gelmiş: {len(profile.posts)}"
+
+
+def test_ham_html_yolu_operator_tavanina_uyar(monkeypatch):
+    monkeypatch.setenv("PINEAL_IG_MAX_POSTS", "5")
+    scraper = InstagramGhostScraper()
+    profile = scraper._parse_real_profile({}, _html_with_posts(20), "hedef")
+    assert len(profile.posts) == 5

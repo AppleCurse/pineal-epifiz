@@ -149,8 +149,10 @@ class XTwscrapeCapability(BaseCapability):
     description = "X/Twitter gönderi akışı (gerçek zaman serisi; Frequency motorunu besler)."
 
     def availability(self) -> Availability:
-        if not _flag("ENABLE_X_SENSOR"):
-            return Availability.unavailable("gate_disabled:ENABLE_X_SENSOR")
+        # [2026-10-23 · B1/B2 DERSİ] `availability()` KAPI kararı VERMEZ:
+        # `ENABLE_X_SENSOR` kararı `PolicyKernel`'e aittir (tek gerçek).
+        # Burada iki kez kontrol edilince onayla açılan kapı yine
+        # `gate_disabled` dönüyordu — yetenek "açık" görünürken kalıcı kapalı.
         if not _module_available("twscrape"):
             return Availability.unavailable("dependency_missing:twscrape")
         return Availability.ok()
@@ -197,6 +199,13 @@ class XTwscrapeCapability(BaseCapability):
                 return CapabilityResult(
                     capability_id=self.id, available=False, unavailable_reason="user_not_found"
                 )
+            # [2026-10-23 · KABLO] Profil biyografisi taşınır: içindeki adresler
+            # (`detected_urls`) derin taramaya gider. twscrape sürümleri alanı
+            # `description` ya da `rawDescription` diye adlandırıyor; ikisi de
+            # yoksa "" (uydurma biyografi YOK).
+            bio = str(
+                getattr(user, "description", "") or getattr(user, "rawDescription", "") or ""
+            )
             # [E7-muaf] twscrape'in KENDİ gather'ı (asyncio değil) ve zaten
             # tek çağrı; hatası aşağıdaki try/except ile dürüst
             # CapabilityResult(available=False) hâline gelir.
@@ -260,7 +269,12 @@ class XTwscrapeCapability(BaseCapability):
             capability_id=self.id,
             available=True,
             items=tuple(items),
-            payload={"platform": "x", "username": username, "series": series},
+            payload={
+                "platform": "x",
+                "username": username,
+                "series": series,
+                "bio": bio,
+            },
             notes={"post_count": len(items)},
         )
 
@@ -281,8 +295,7 @@ class InstagrapiCapability(BaseCapability):
     description = "Instagram ikinci kaynak: Playwright engellenirse sensör düşmez."
 
     def availability(self) -> Availability:
-        if not _flag("ENABLE_IG_SECONDARY"):
-            return Availability.unavailable("gate_disabled:ENABLE_IG_SECONDARY")
+        # [2026-10-23] Kapı kararı `PolicyKernel`'de (bkz. X sensörü notu).
         if not _module_available("instagrapi"):
             return Availability.unavailable("dependency_missing:instagrapi")
         if not (os.getenv("IG_USERNAME", "").strip() and os.getenv("IG_PASSWORD", "")):
@@ -295,7 +308,13 @@ class InstagrapiCapability(BaseCapability):
             return CapabilityResult(
                 capability_id=self.id, available=False, unavailable_reason="invalid_username"
             )
-        limit = int(ctx.params.get("limit") or 20)
+        # [2026-10-23 · TEK AYAR] Ghost kazıyıcı ve bu ikinci kaynak AYNI
+        # operatör tavanını kullanır (`PINEAL_IG_MAX_POSTS`, varsayılan 48).
+        # Önceden ghost 12, bu yol 20 ile sabitti: iki yol farklı sınırla aynı
+        # işi yapıyordu. Çağıran `limit` verirse o kazanır.
+        from agent_core.scraper.instagram_ghost import _ig_max_posts
+
+        limit = int(ctx.params.get("limit") or _ig_max_posts())
 
         def _work() -> dict[str, Any]:
             from instagrapi import Client  # lazy import

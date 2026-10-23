@@ -835,7 +835,21 @@ class PinealExecutor:
         olarak izlenir; ``completed`` + eksik kanıt ``InsufficientEvidenceError``
         ile görevi durdurur (execütor çağrısında).
         """
-        from agent_core.domain.responsibility import build_trail
+        from agent_core.domain.responsibility import TaskContract, build_trail
+
+        # [2026-10-23 · SORUMLULUK ZİNCİRİ] `TaskContract` üretimde HİÇ
+        # kullanılmıyordu (yalnız testte). Silinmedi; mühürün parçası oldu:
+        # her ajan koşusu için sözleşme kurulur ve zincire yazılır. Sözleşme
+        # eksikse `ensure_complete` ValueError fırlatır — bu yüzden alanlar
+        # koşunun GERÇEK durumundan türetilir, uydurulmuş kabul kriteri yok.
+        _run_status = getattr(run, "status", None) or "unknown"
+        contract = TaskContract.for_agent(
+            task_id=str(getattr(run, "task_id", "") or "task"),
+            agent_id=agent_name,
+            required_inputs=["task_payload"],
+            acceptance_criteria=[f"ajan koşusu '{_run_status}' durumuyla kapandı"],
+            evidence_output=["agent_run", "responsibility_trail"],
+        )
 
         trail = build_trail(
             claimed=claimed,
@@ -849,6 +863,8 @@ class PinealExecutor:
                 "run_status": getattr(run, "status", None),
                 "confidence": getattr(run, "confidence", None),
                 "error_code": getattr(run, "error_code", None),
+                # Sözleşme mühürde taşınır: hangi kriterlerle kapandığı görünür.
+                "contract": contract.model_dump(mode="json"),
             },
         )
         if trail.integrity.get("violation"):
@@ -1354,12 +1370,15 @@ class PinealExecutor:
         # API katmanı yalnız adresleri taşır; ikinci bir koşum yolu açılsaydı
         # aynı yetenek iki kez çağrılırdı.
         _deep_items: list[Any] = []
-        _detected_urls = list((input_data.get("target_profile") or {}).get("detected_urls") or [])
-        from agent_core.services.profile_router import classify_url as _classify_profile_url
-        for _site in ((status.osint_footprint or {}).get("username_scan") or {}).get("found_sites") or []:
-            _su = (_site.get("url") if isinstance(_site, dict) else getattr(_site, "url", "")) or ""
-            if _su and _su not in _detected_urls and _classify_profile_url(_su).runnable:
-                _detected_urls.append(_su)
+        # [2026-10-23 · KABLO] Instagram bio linkleri (`external_urls`),
+        # X gönderi metinlerindeki adresler ve OSINT yoklaması bulguları TEK
+        # fonksiyonda birleşir. Kural (yalnız `classify_url.runnable`) ve
+        # üst sınır orada; burası yalnız taşır.
+        from agent_core.services.deep_url_cables import merge_detected_profile_urls
+
+        _detected_urls = merge_detected_profile_urls(
+            input_data.get("target_profile"), status.osint_footprint
+        )
         if _detected_urls:
             input_data.setdefault("target_profile", {})["detected_urls"] = list(_detected_urls)
             try:

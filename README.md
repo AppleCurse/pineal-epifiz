@@ -164,15 +164,15 @@ canlılık işaretidir, analiz yapmaz.)
 
 ---
 
-## 7 · Veri toplama kanalları (26 yetenek)
+## 7 · Veri toplama kanalları (27 yetenek)
 
-Sistemde **26 yetenek** var. `agent_core/capabilities/` — dış dünyaya **tek kapı**.
+Sistemde **27 yetenek** var. `agent_core/capabilities/` — dış dünyaya **tek kapı**.
 Hiçbir yetenek dış servise doğrudan gitmez; önce politika ve kasa kapısından geçer.
-Canlı liste: `GET /api/telemetry` → 26 yetenek.
+Canlı liste: `GET /api/telemetry` → 27 yetenek.
 
 | Grup | Yetenekler |
 |---|---|
-| Toplama (sensör) | `sensor.ig.instagrapi` (Instagram) · `sensor.x.twscrape` (X) · `sensor.search.searxng` (web arama) · `sensor.web.agent_reach` · `sensor.identity.holehe` (e-posta) · `sensor.identity.maigret` (kullanıcı adı) · `sensor.company.harvester` · `sensor.company.people` · `sensor.company.seo` · `sensor.media.fetch` |
+| Toplama (sensör) | `sensor.ig.instagrapi` (Instagram) · `sensor.x.twscrape` (X) · `sensor.search.searxng` (web arama) · `sensor.web.agent_reach` · `sensor.identity.holehe` (e-posta) · `sensor.identity.maigret` (kullanıcı adı) · `sensor.identity.handle_probe` (çapraz platform: IG/FB/Threads/X/TikTok…) · `sensor.company.harvester` · `sensor.company.people` · `sensor.company.seo` · `sensor.media.fetch` |
 | Çıkarma | `extractor.identity.socid` · `extractor.web.crawl4ai` · `extractor.web.scrapling` · `extractor.web.trafilatura` · `extractor.text.language` · `extractor.text.translate_local` · `extractor.media.transcript` |
 | Analiz | `analyzer.media.frames` · `analyzer.media.similarity` |
 | Doğrulama | `verifier.jury.local` (yerel jüri) |
@@ -261,7 +261,7 @@ karşı** koşturur ve ham çıktıyı basar: `0` kanıtlandı · `1` döngü k�
 
 ---
 
-## 11 · API yüzeyi (68 HTTP ucu + 1 WebSocket)
+## 11 · API yüzeyi (69 HTTP ucu + 1 WebSocket)
 
 | Alan | Uçlar | Ne yapar |
 |---|---|---|
@@ -340,7 +340,7 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 | `config/` | Yönlendirme, sağlayıcı kataloğu, karar yapılandırması, RTK politikası |
 
 **Tam ve aranabilir harita:** **[docs/envanter.html](docs/envanter.html)** —
-739 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
+760 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
 ile yenilenir, CI `--check` ile bayatlamayı yakalar.
 
 **Ayrıca:** [ARCHITECTURE.md](ARCHITECTURE.md) · [README_TECHNICAL.md](README_TECHNICAL.md) ·

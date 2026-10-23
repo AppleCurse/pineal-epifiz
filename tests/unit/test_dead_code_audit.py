@@ -96,10 +96,14 @@ def test_all_registered_capabilities_are_dispatchable(audit):
     assert source.startswith("kayıt defteri"), f"yetenek listesi varsayımdan gelmemeli: {source}"
 
 
-def test_registered_capability_count_is_26(audit):
-    """Kayıt defteri 26 yetenek; bu kilit, bir yetenek kaydı silinirse kırılır."""
+def test_registered_capability_count_is_27(audit):
+    """Kayıt defteri 27 yetenek; bu kilit, bir yetenek kaydı silinirse kırılır.
+
+    [2026-10-23] 26 → 27: `sensor.identity.handle_probe` (native çapraz
+    platform kullanıcı-adı yoklaması) eklendi.
+    """
     ids, _ = audit.registered_capability_ids()
-    assert len(ids) == 26, f"beklenen 26 yetenek, bulunan {len(ids)}"
+    assert len(ids) == 27, f"beklenen 27 yetenek, bulunan {len(ids)}"
 
 
 # ── C5 · frontend ───────────────────────────────────────────────────────────

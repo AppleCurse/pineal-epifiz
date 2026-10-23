@@ -127,14 +127,11 @@ async def fetch_readable(url: str) -> CrawlFetchResult:
     # pins the actual connection, so this check is never treated as the control.
     if not is_safe_url(clean):
         return CrawlFetchResult(requested_url=clean, available=False, reason="ssrf_blocked")
-    try:
-        import importlib.util
+    # [2026-10-23] `find_spec("crawl4ai.…")` ebeveyn yokken İSTİSNA fırlatır;
+    # ortak yoklama (optional_deps) bunu `False`'a çevirir — burada tek satır.
+    from agent_core.utils.optional_deps import module_available
 
-        if importlib.util.find_spec("crawl4ai.markdown_generation_strategy") is None:
-            return CrawlFetchResult(
-                requested_url=clean, available=False, reason="library_missing"
-            )
-    except (ImportError, ModuleNotFoundError, ValueError):
+    if not module_available("crawl4ai.markdown_generation_strategy"):
         return CrawlFetchResult(requested_url=clean, available=False, reason="library_missing")
 
     renderer = os.getenv("CRAWL4AI_RENDERER", "http").lower()
