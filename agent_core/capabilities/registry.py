@@ -147,6 +147,7 @@ def bootstrap(
     # kaynak sapması). Açık None kontrolü zorunludur.
     reg = registry if registry is not None else default_registry
     if capabilities is None:
+        from agent_core.capabilities.adapters_identity import HandleProbeCapability
         from agent_core.capabilities.adapters_osint import (
             HoleheCapability,
             MaigretCapability,
@@ -195,6 +196,9 @@ def bootstrap(
             MaigretCapability(),
             HoleheCapability(),
             SocidCapability(),
+            # [2026-10-23] native çapraz platform yoklaması (paket gerektirmez);
+            # maigret kapalıyken de IG/FB/Threads/X... araması gerçekten koşar.
+            HandleProbeCapability(),
             # --- temiz metin omurgası (sıra: trafilatura → crawl4ai → scrapling)
             TrafilaturaCapability(),
             Crawl4AICapability(),

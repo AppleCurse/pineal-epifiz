@@ -25,9 +25,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY requirements.lock ./
+COPY requirements.lock requirements-osint.txt requirements-retina.txt ./
 RUN pip install --default-timeout=300 -r requirements.lock
 RUN pip install --default-timeout=120 "websockets==17.1"
+
+# ─── Kapı arkasındaki yeteneklerin GERÇEK bağımlılıkları ─────────────────────
+# [AUDIT 2026-10-23] requirements.lock yalnız requirements.txt + osint ağacını
+# taşıyordu. Retina paketleri (trafilatura, scrapling, browserforge, twscrape,
+# instagrapi) imajda HİÇ yoktu; yani operatör `ENABLE_SCRAPLING=true` /
+# `ENABLE_X_SENSOR=true` / `ENABLE_IG_SECONDARY=true` yaptığında yetenek
+# `dependency_missing:<paket>` dönüyordu — kapı açık, motor yok.
+# Artık imaj bu paketleri içerir; kapılar yine varsayılan KAPALI (davranış
+# değişmez), ama açıldıklarında çalışırlar.
+# `--upgrade-strategy only-if-needed`: psutil gibi ortak bağımlılıklar
+# gereksiz yere yükseltilmez (lock'taki pin korunur).
+ARG PINEAL_INSTALL_RETINA=1
+RUN if [ "$PINEAL_INSTALL_RETINA" = "1" ]; then \
+        pip install --default-timeout=300 --upgrade-strategy only-if-needed \
+            -r requirements-retina.txt; \
+    else \
+        echo "PINEAL_INSTALL_RETINA=0 → Retina paketleri kurulmadı (yetenekler dependency_missing döner)"; \
+    fi
 
 ARG PLAYWRIGHT_DOWNLOAD_HOST=""
 ENV PLAYWRIGHT_DOWNLOAD_HOST=${PLAYWRIGHT_DOWNLOAD_HOST}

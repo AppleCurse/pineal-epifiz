@@ -260,9 +260,15 @@ def correlate_profiles(
                 _register(p, h, url_str, "detected_url")
 
     # OSINT / Maigret bulunan siteler
+    # [2026-10-23] Native çapraz platform yoklaması (`handle_probe`) da aynı
+    # kimlik grafiğine girer: X'te bulunan hedefin IG/FB/Threads hesapları
+    # böylece eşleştirmeye katılır. Kaynak etiketi gizlenmez.
     u_scan = osint.get("username_scan") or {}
-    if isinstance(u_scan, dict):
-        for site in u_scan.get("found_sites") or []:
+    for scan_key, origin in (("username_scan", "username_scan"), ("handle_probe", "handle_probe")):
+        scan = osint.get(scan_key) if scan_key != "username_scan" else u_scan
+        if not isinstance(scan, dict):
+            continue
+        for site in scan.get("found_sites") or []:
             if not isinstance(site, dict):
                 continue
             site_url = site.get("url") or ""
@@ -272,7 +278,7 @@ def correlate_profiles(
                 h = primary_handle
             if not h or _is_generic_handle(h):
                 continue
-            _register(p if p in PLATFORM_DOMAINS else str(site_name or p).lower(), h, url_str, "username_scan")
+            _register(p if p in PLATFORM_DOMAINS else str(site_name or p).lower(), h, url_str, origin)
 
     # socid kimlik iddiaları (kullanıcı adı DEĞİL — yalnız kimlik sinyali)
     claims = _id_claims(tp.get("socid_identities"))

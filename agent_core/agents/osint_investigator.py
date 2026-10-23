@@ -172,6 +172,71 @@ class OsintInvestigatorAgent:
             })
         return profile.model_copy(update={"username_scan": scan.model_dump(), **sealed})
 
+    async def _apply_cross_platform_probe(
+        self,
+        profile: OsintProfile,
+        clean_username: str,
+        payload: Dict[str, Any] | None = None,
+    ) -> OsintProfile:
+        """[2026-10-23] Native çapraz platform yoklaması — X/IG/FB/Threads...
+
+        Neden: kullanıcı adı çapraz araması yalnız ``ENABLE_MAIGRET`` kapısına
+        bağlıydı; maigret varsayılan KAPALI olduğu için "X'te bulunan hedef
+        Instagram'da / Facebook'ta / Threads'te aransın" beklentisi pratikte
+        hiç koşmuyordu. Bu adım ``sensor.identity.handle_probe`` yeteneğini
+        dener; kapı kapalıysa ALANLAR DEĞİŞMEZ, yalnız makine-okunur sebep
+        mühürlenir (sessiz yutma yok).
+
+        Birleştirme kuralları (maigret ile aynı monoton kural):
+          * Bulunan platformlar ``associated_platforms``'a EKLENİR (silinmez).
+          * Güven mevcut değerin altına İNMEZ.
+          * "Hiçbir yerde yok" iddiası yalnız ``absence_claimable`` ise yazılır;
+            aksi hâlde yalnız gözlem kaydı düşülür.
+        """
+        try:
+            result, timeline = await self._run_spine(
+                "sensor.identity.handle_probe", clean_username, payload
+            )
+        except Exception as exc:  # yoklama asıl OSINT sonucunu asla bozmasın
+            logger.warning("handle_probe skipped: %s: %s", type(exc).__name__, str(exc)[:80])
+            return profile
+
+        probe = getattr(result, "payload", None)
+        scan = probe.to_username_scan() if hasattr(probe, "to_username_scan") else None
+        if scan is None:
+            scan = {
+                "requested_username": clean_username,
+                "available": False,
+                "provider": "handle_probe",
+                "reason": result.unavailable_reason or "unavailable",
+                "found_sites": [],
+            }
+        sealed = {
+            "handle_probe_evidence": timeline.model_dump(mode="json"),
+            "handle_probe_sealed": len(timeline.entries),
+        }
+        updates: Dict[str, Any] = {"handle_probe": scan, **sealed}
+
+        if scan.get("available") and scan.get("found_sites"):
+            platforms = {str(site.get("site", "")).strip() for site in scan["found_sites"]}
+            platforms.discard("")
+            merged = sorted({*profile.associated_platforms, *platforms})
+            coverage = len(platforms) / max(1, int(scan.get("scanned_count") or 1))
+            updates.update({
+                "associated_platforms": merged,
+                "data_confidence": True,
+                "confidence": max(profile.confidence, round(min(coverage, 1.0), 3)),
+            })
+        elif scan.get("available") and scan.get("absence_claimable"):
+            # Kanıtlanabilir yokluk: yalnız hiç gözlem yoksa skor sıfırlanır.
+            if not profile.associated_platforms:
+                updates.update({
+                    "data_confidence": True,
+                    "confidence": 0.0,
+                    "fallback_reason": "cross_platform_probe_no_match",
+                })
+        return profile.model_copy(update=updates)
+
     async def _apply_email_scan(self, profile: OsintProfile, email: str, payload: Dict[str, Any] | None = None) -> OsintProfile:
         """[FAZ 3] Holehe e-posta kayıt taramasını dürüstçe birleştirir.
 
@@ -273,6 +338,9 @@ class OsintInvestigatorAgent:
           `no_target_email` ile dürüst `not_run` kaydı yazılır.
         """
         profile = await self._apply_username_scan(profile, clean_username, payload)
+        # [2026-10-23] Maigret'ten BAĞIMSIZ ikinci yol: kapı (ENABLE_CROSS_PLATFORM)
+        # açıksa kullanıcı adı bilinen platformlarda gerçekten yoklanır.
+        profile = await self._apply_cross_platform_probe(profile, clean_username, payload)
         if profile.connected_emails:
             return await self._apply_email_scan(profile, profile.connected_emails[0], payload)
         if candidate_emails:

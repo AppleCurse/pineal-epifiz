@@ -57,7 +57,7 @@
       "evidence": [
         "satır başı `import httpx` (egress dışı) → 0 dosya (denetim 8 idi)",
         "egress dışı `httpx.AsyncClient(` inşası → 0 nokta (deterministik tarama)",
-        "omurgaya bağlı dosya (open_client kullanan) → 17 dosya",
+        "omurgaya bağlı dosya (open_client kullanan) → 18 dosya",
         "agent_core/capabilities/egress.py:123: def open_client("
       ],
       "note": "Dışa çıkış tek sırtta: inşa yalnız open_client, her dosya omurgaya bağlı.",
@@ -87,7 +87,7 @@
       "status": "closed",
       "evidence": [
         "agent_core/agents/human_behavior.py: `input_data: Dict[str, Any]` imzası kalkmış",
-        "agent_core toplam: 194"
+        "agent_core toplam: 196"
       ],
       "note": "Payload Pydantic modele bağlanmış.",
       "regression": false
@@ -131,7 +131,7 @@
       "check_kind": "static",
       "status": "closed",
       "evidence": [
-        "agent_core/scraper/instagram_ghost.py:215: `_caption_of` istisnayı logluyor, sessiz `pass` yok"
+        "agent_core/scraper/instagram_ghost.py:267: `_caption_of` istisnayı logluyor, sessiz `pass` yok"
       ],
       "note": "Eksik veri artık izlenebilir.",
       "regression": false
