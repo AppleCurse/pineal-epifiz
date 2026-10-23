@@ -238,6 +238,60 @@ def check_scrape_confidence(ig_scraper, ig_data, emit) -> float:
     return confidence
 
 
+#: Profil metninden (bio / gönderi) çıkarılacak adres üst sınırı.
+_MAX_DETECTED_PROFILE_URLS = 12
+
+_URL_RE = re.compile(r"https?://[^\s<>\"'\]\)]+", re.IGNORECASE)
+
+
+def _normalize_url_token(raw: str) -> str:
+    """Sondaki noktalama/parantezleri atar (cümle içi adres kirlenmesin)."""
+    token = (raw or "").strip().strip(".,;:!?)]}>'\"")
+    return token
+
+
+def detected_profile_urls(*texts: Any, extra: Optional[list] = None) -> List[str]:
+    """Metinlerden (bio, gönderi, hazır liste) KOŞULABİLİR profil URL'leri.
+
+    Sözleşme (yoksa uydurma YOK):
+      * Yalnız ``profile_router.classify_url(...).runnable`` olan adresler
+        döner. Linktree/beacons gibi link-in-bio sayfaları da profildir;
+        haber sitesi, YouTube video linki gibi profilden çıkmayan adresler
+        ELENİR — derin tarama yanlış hedefe koşmaz.
+      * Sıra korunur, tekrarlar atılır; üst sınır
+        ``_MAX_DETECTED_PROFILE_URLS``.
+      * Girdi yoksa boş liste döner (boş = "bulunamadı", uydurma değil).
+    """
+    from agent_core.services.profile_router import classify_url
+
+    candidates: List[str] = []
+    # Sıra: önce metinler (bio/gönderi), sonra hazır liste (kazıyıcı alanları).
+    for item in list(texts) + list(extra or []):
+        if isinstance(item, (list, tuple, set)):
+            candidates.extend(str(v) for v in item)
+            continue
+        if not isinstance(item, str):
+            continue
+        for match in _URL_RE.finditer(item):
+            candidates.append(match.group(0))
+
+    out: List[str] = []
+    for raw in candidates:
+        url = _normalize_url_token(raw)
+        if not url or url in out:
+            continue
+        try:
+            route = classify_url(url)
+        except Exception:
+            continue
+        if not route.runnable:
+            continue
+        out.append(url)
+        if len(out) >= _MAX_DETECTED_PROFILE_URLS:
+            break
+    return out
+
+
 def ig_target_profile_update(ig_data: Any) -> dict:
     """InstagramProfile -> target_profile payload alanları ([024]/[025]/[026] fix).
 
@@ -274,6 +328,16 @@ def ig_target_profile_update(ig_data: Any) -> dict:
         "followers": ig_data.follower_count,  # None = ölçülmedi; 0 ölçümdür.
         "following": ig_data.following_count,  # None = ölçülmedi ([024])
         "is_private": ig_data.is_private,
+        # [2026-10-23 · KABLO] Bio'daki harici bağlantılar (Linktree, X,
+        # Threads...) artık ÇÖPE GİTMİYOR: ham liste `external_urls` olarak
+        # taşınır, koşulabilir profiller `detected_urls` olarak derin taramaya
+        # verilir (task_executor). Profil olmayan adres (haber/video) elenir.
+        "external_urls": list(getattr(ig_data, "external_urls", []) or []),
+        "detected_urls": detected_profile_urls(
+            ig_data.biography or "",
+            extra=list(getattr(ig_data, "external_urls", []) or []),
+        ),
+        "platform": "instagram",
     }
 
 
@@ -472,7 +536,11 @@ async def scrape_x(
         )
 
     emit("INFO", f"SCRAPER X: {len(series)} gönderi (twscrape, gerçek zaman damgalı)")
-    return x_target_profile_update(username, series)
+    # [2026-10-23 · KABLO] Sensörün okuduğu GERÇEK biyografi aşağı taşınır;
+    # biyografideki adresler `detected_urls` olarak derin taramaya girer.
+    return x_target_profile_update(
+        username, series, bio=str((result.payload or {}).get("bio") or "")
+    )
 
 
 async def _x_via_agent_reach(
@@ -522,7 +590,11 @@ async def _x_via_agent_reach(
     return profile
 
 
-def x_target_profile_update(username: str, series: List[Dict[str, Any]]) -> Dict[str, Any]:
+def x_target_profile_update(
+    username: str,
+    series: List[Dict[str, Any]],
+    bio: str = "",
+) -> Dict[str, Any]:
     """X gönderi serisini `target_profile` alanlarına çevirir.
 
     Sözleşme (sahte veri YASAK):
@@ -530,8 +602,12 @@ def x_target_profile_update(username: str, series: List[Dict[str, Any]]) -> Dict
       hizada; frequency engine artık X için de gerçek veri görür.
     - `followers`/`following` ÖLÇÜLMEDİYSE `None` durur (0 = ölçüm, None =
       ölçülmedi; eski yolun uydurma 150'ü burada yoktur).
-    - `bio` BOŞ kalır: X akışından biyografi çıkarılmadıysa "" yazılır,
-      arama snippet'i biyografi diye sunulmaz.
+    - `bio` çağıran gerçek bir biyografi verdiyse o yazılır; verilmediyse ""
+      kalır (arama snippet'i biyografi diye sunulmaz).
+    - [2026-10-23 · KABLO] Gönderi metinlerindeki (ve varsa bio'daki) gerçek
+      adresler `external_urls` + `detected_urls` alanlarına çıkar. Yalnız
+      `classify_url(...).runnable` olan profiller taranır; böylece X'ten
+      Instagram/Threads/LinkedIn'a çapraz besleme SIFIR kalmaz.
     """
     posts: List[str] = []
     post_times: List[str] = []
@@ -551,10 +627,13 @@ def x_target_profile_update(username: str, series: List[Dict[str, Any]]) -> Dict
             }
         )
 
+    bio_text = (bio or "").strip()
+    discovered = detected_profile_urls(bio_text, *posts)
+
     return {
         "username": "@" + username.lstrip("@"),
         "name": username.lstrip("@"),
-        "bio": "",
+        "bio": bio_text,
         "posts": posts,
         "post_times": post_times,
         "posts_meta": posts_meta,
@@ -568,6 +647,8 @@ def x_target_profile_update(username: str, series: List[Dict[str, Any]]) -> Dict
         "following": None,   # ölçülmedi
         "is_private": None,  # akış okunduysa False, aksi halde bilinmiyor
         "platform": "x",
+        "external_urls": discovered,
+        "detected_urls": list(discovered),
     }
 
 

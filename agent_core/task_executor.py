@@ -1370,12 +1370,15 @@ class PinealExecutor:
         # API katmanı yalnız adresleri taşır; ikinci bir koşum yolu açılsaydı
         # aynı yetenek iki kez çağrılırdı.
         _deep_items: list[Any] = []
-        _detected_urls = list((input_data.get("target_profile") or {}).get("detected_urls") or [])
-        from agent_core.services.profile_router import classify_url as _classify_profile_url
-        for _site in ((status.osint_footprint or {}).get("username_scan") or {}).get("found_sites") or []:
-            _su = (_site.get("url") if isinstance(_site, dict) else getattr(_site, "url", "")) or ""
-            if _su and _su not in _detected_urls and _classify_profile_url(_su).runnable:
-                _detected_urls.append(_su)
+        # [2026-10-23 · KABLO] Instagram bio linkleri (`external_urls`),
+        # X gönderi metinlerindeki adresler ve OSINT yoklaması bulguları TEK
+        # fonksiyonda birleşir. Kural (yalnız `classify_url.runnable`) ve
+        # üst sınır orada; burası yalnız taşır.
+        from agent_core.services.deep_url_cables import merge_detected_profile_urls
+
+        _detected_urls = merge_detected_profile_urls(
+            input_data.get("target_profile"), status.osint_footprint
+        )
         if _detected_urls:
             input_data.setdefault("target_profile", {})["detected_urls"] = list(_detected_urls)
             try:

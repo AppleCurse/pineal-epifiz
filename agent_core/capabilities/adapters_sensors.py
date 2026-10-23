@@ -197,6 +197,13 @@ class XTwscrapeCapability(BaseCapability):
                 return CapabilityResult(
                     capability_id=self.id, available=False, unavailable_reason="user_not_found"
                 )
+            # [2026-10-23 · KABLO] Profil biyografisi taşınır: içindeki adresler
+            # (`detected_urls`) derin taramaya gider. twscrape sürümleri alanı
+            # `description` ya da `rawDescription` diye adlandırıyor; ikisi de
+            # yoksa "" (uydurma biyografi YOK).
+            bio = str(
+                getattr(user, "description", "") or getattr(user, "rawDescription", "") or ""
+            )
             # [E7-muaf] twscrape'in KENDİ gather'ı (asyncio değil) ve zaten
             # tek çağrı; hatası aşağıdaki try/except ile dürüst
             # CapabilityResult(available=False) hâline gelir.
@@ -260,7 +267,12 @@ class XTwscrapeCapability(BaseCapability):
             capability_id=self.id,
             available=True,
             items=tuple(items),
-            payload={"platform": "x", "username": username, "series": series},
+            payload={
+                "platform": "x",
+                "username": username,
+                "series": series,
+                "bio": bio,
+            },
             notes={"post_count": len(items)},
         )
 

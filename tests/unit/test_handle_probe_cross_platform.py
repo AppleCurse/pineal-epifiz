@@ -24,7 +24,6 @@ import pytest
 from agent_core.services.handle_probe import (
     PROBE_PLATFORMS,
     STATUS_ABSENT,
-    STATUS_CLAIMED,
     STATUS_ERROR,
     STATUS_UNKNOWN,
     probe_handle,
