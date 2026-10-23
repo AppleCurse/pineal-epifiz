@@ -15,7 +15,6 @@ Test: ``tests/unit/test_osint_*.py``, ``tests/unit/test_maigret_scanner.py``,
 
 import logging
 import asyncio
-import dataclasses
 import aiohttp
 import os
 from typing import Dict, Any, Optional
@@ -64,7 +63,7 @@ class OsintInvestigatorAgent:
         kez uygular (kuşak kuşak savunma; beyan kaybolursa kilit gevşemez,
         çünkü çeviri `coerce_minor_case` ile fail-closed yapılır).
         """
-        from agent_core.capabilities.state import policy_state
+        from agent_core.capabilities.state import policy_state, with_operator_consent
         from agent_core.safety import coerce_minor_case
 
         overrides = (payload or {}).get("policy") or {}
@@ -78,12 +77,9 @@ class OsintInvestigatorAgent:
         # `ENABLE_CROSS_PLATFORM` kapısı açılır. Onay aksi hâlde hiçbir şeyi
         # değiştirmez (varsayılan hâlâ KAPALI) — yetki env'den gelmez, oda
         # kaydından gelir ve yalnız o görevi kapsar.
-        if overrides.get("cross_platform_authorized"):
-            state = dataclasses.replace(
-                state,
-                enabled_flags={**dict(state.enabled_flags), "ENABLE_CROSS_PLATFORM": True},
-            )
-        return state
+        return with_operator_consent(
+            state, bool(overrides.get("cross_platform_authorized"))
+        )
 
     @staticmethod
     async def _run_spine(

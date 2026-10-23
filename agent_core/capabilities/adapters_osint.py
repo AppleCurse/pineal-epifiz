@@ -16,7 +16,6 @@ Dürüstlük sözleşmesi (değişmedi):
 
 from __future__ import annotations
 
-import importlib.util
 import os
 from typing import Any
 
@@ -37,8 +36,11 @@ def _flag(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _module_available(name: str) -> bool:
-    return importlib.util.find_spec(name) is not None
+# [2026-10-23 · CI/DEĞİL, GERÇEK HATA] Noktalı ad ("paket.alt modül") ve
+# ebeveyni kurulu değilken `find_spec` `None` değil `ModuleNotFoundError`
+# FIRLATIR; bu, `availability()` çağrısını istisnaya çevirip yeteneği
+# "kapalı" değil "bozuk" gösteriyordu. Tek kaynak: `optional_deps`.
+from agent_core.utils.optional_deps import module_available as _module_available  # noqa: E402
 
 
 class MaigretCapability(BaseCapability):
@@ -169,28 +171,45 @@ class HoleheCapability(BaseCapability):
                 notes=notes,
             )
 
+        # [2026-10-23 · DÜRÜSTLÜK] holehe "kayıtlı" sonucu KANIT DEĞİL, üçüncü
+        # taraf İDDİASIDIR: sitelerin bir kısmı bilinmeyen e-postaya da 200
+        # döndüğü için yanlış pozitif üretir (ölçüm: test@example.com için
+        # 9 sitede "kayıtlı"). Bu yüzden:
+        #   * `epistemic_type="inference"` (gözlem değil çıkarım),
+        #   * metin "reports ... (unverified)" diye yazar,
+        #   * `verification` metriği her kayıtta taşınır.
+        # Böylece rapor/UI bunu doğrulanmış kayıt gibi sunamaz.
+        error_count = int(notes.get("error_count") or 0)
+        scanned_count = int(notes.get("scanned_count") or 0)
+        reliability = "low" if scanned_count and error_count * 2 >= scanned_count else "medium"
         items = []
         for hit in list(getattr(scan, "found_sites", []) or []):
             site = getattr(hit, "site", "") or ""
             items.append(
                 make_evidence(
-                    content=f"email '{email}' registered on {site}",
+                    content=(
+                        f"holehe reports email '{email}' registered on {site} "
+                        "(third-party claim — unverified)"
+                    ),
                     source_engine="holehe",
-                    epistemic_type="observation",
+                    epistemic_type="inference",
                     scope={"kind": "identity_presence", "site": site},
                     source_metrics={
-                        "scanned_count": notes["scanned_count"],
-                        "error_count": notes["error_count"],
+                        "scanned_count": scanned_count,
+                        "error_count": error_count,
+                        "verification": "unverified_third_party",
+                        "reliability": reliability,
                     },
+                    confidence=0.3,
                 )
             )
 
-        if not items and notes["scanned_count"] and notes["error_count"] == 0:
+        if not items and scanned_count and error_count == 0:
             items.append(
                 make_evidence(
                     content=(
                         f"email '{email}' not registered on "
-                        f"{notes['scanned_count']} checked services (zero errors)"
+                        f"{scanned_count} checked services (zero errors)"
                     ),
                     source_engine="holehe",
                     epistemic_type="absence",

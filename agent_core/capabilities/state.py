@@ -16,16 +16,19 @@ Kasıtlı olarak sade tutuldu:
 
 from __future__ import annotations
 
+import dataclasses
 import os
 from typing import Any, Mapping
 
 from agent_core.capabilities.policy import MANAGED_GATE_FLAGS, PolicyState
 
 __all__ = [
+    "CONSENT_GATED_FLAGS",
     "MANAGED_GATE_FLAGS",
     "enabled_flags",
     "parse_bool",
     "policy_state",
+    "with_operator_consent",
 ]
 
 
@@ -49,6 +52,21 @@ def parse_bool(value: str | None, default: bool = False) -> bool:
     return str(value).strip().lower() in _TRUTHY
 
 
+#: Operatörün AÇIK onayıyla açılabilen kapılar.
+#:
+#: [2026-10-23 · ÖLÜ KAPI] Bu iki sensörün bayrağı `.env.example`'da `false`
+#: geliyordu; `POST /api/scraper/authorize-alternative` ile "çapraz arama"
+#: onayı verilse bile kapı KAPALI kalıyordu — yani onay kablosu yalnız
+#: `sensor.identity.handle_probe` için işliyordu, Instagram/X derin taraması
+#: varsayılan kurulumda hiç koşmuyordu (ölçüm: `policy:gate_disabled`).
+#: Bu liste onayın hangi kapıları açtığının TEK kaynağıdır.
+CONSENT_GATED_FLAGS: tuple[str, ...] = (
+    "ENABLE_CROSS_PLATFORM",
+    "ENABLE_X_SENSOR",
+    "ENABLE_IG_SECONDARY",
+)
+
+
 def enabled_flags(env: Mapping[str, str] | None = None) -> dict[str, bool]:
     """Yönetilen tüm kapıların anlık durumu (varsayılan: KAPALI).
 
@@ -56,6 +74,31 @@ def enabled_flags(env: Mapping[str, str] | None = None) -> dict[str, bool]:
     """
     source = os.environ if env is None else env
     return {flag: parse_bool(source.get(flag)) for flag in MANAGED_GATE_FLAGS}
+
+
+def with_operator_consent(
+    state: PolicyState,
+    authorized: bool,
+    env: Mapping[str, str] | None = None,
+) -> PolicyState:
+    """Operatör onayı verildiyse onaya bağlı kapıları açar.
+
+    Sözleşme (dar taraf korunur):
+      * ``authorized=False`` → durum DEĞİŞMEZ (onay yoksa hiçbir kapı açılmaz).
+      * Kapı env'de AÇIKÇA ``false`` yazılmışsa → yine DEĞİŞMEZ; operatörün
+        elle kapattığı bir kapıyı oda onayı ezemez.
+      * Env'de hiç yazılmamış (ya da ``true``) → o görev için açılır.
+    """
+    if not authorized:
+        return state
+    source = os.environ if env is None else env
+    flags = dict(state.enabled_flags)
+    for flag in CONSENT_GATED_FLAGS:
+        raw = str(source.get(flag, "") or "").strip()
+        if raw and not parse_bool(raw):
+            continue  # açıkça kapatılmış — onay ezmez
+        flags[flag] = True
+    return dataclasses.replace(state, enabled_flags=flags)
 
 
 def policy_state(

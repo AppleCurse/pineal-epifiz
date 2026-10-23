@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Sequence, Tuple
 
 from agent_core.capabilities import adapters_osint, bootstrap, run_capability
-from agent_core.capabilities.state import policy_state
+from agent_core.capabilities.state import policy_state, with_operator_consent
 from agent_core.domain.channel_status import ChannelRun, not_run, ok
 from agent_core.domain.evidence_models import EvidenceItem
 from agent_core.safety import coerce_minor_case
@@ -71,11 +71,15 @@ def _build_policy_state(payload: Dict[str, Any] | None = None):
     payload'da yoksa ``None`` kalır ve hız kapısı RET eder (fail-closed).
     """
     overrides = (payload or {}).get("policy") or {}
-    return policy_state(
+    state = policy_state(
         vault_locked=bool(overrides.get("vault_locked", True)),
         rate_ok=overrides.get("rate_ok"),
         minor_case=coerce_minor_case(overrides.get("minor_case")),
     )
+    # [2026-10-23 · ÖLÜ KAPI] Operatör çapraz arama için onay verdiyse
+    # Instagram/X sensörleri de o görevde açılır (env'de AÇIKÇA kapatılmadıysa).
+    # Kasa ve hız kapıları ETKİLENMEZ.
+    return with_operator_consent(state, bool(overrides.get("cross_platform_authorized")))
 
 
 def _plan(urls: Sequence[str], limit: int) -> list[ProfileRoute]:

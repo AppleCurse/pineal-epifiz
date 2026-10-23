@@ -549,7 +549,9 @@ class InstagramGhostScraper:
                         if isinstance(caption, str) and caption.strip():
                             caption_by_shortcode[shortcode] = caption[:2200].strip()
 
-                for i in range(min(len(display_urls), 12)):
+                # [2026-10-23] Kalan sabit tavan (12) KALDIRILDI: bu yol
+                # (Playwright'siz ham HTML) da operatör ayarına uyar.
+                for i in range(min(len(display_urls), _ig_max_posts())):
                     try:
                         sc = shortcodes[i] if i < len(shortcodes) else f"post_{i+1}"
                         url = display_urls[i].replace("\\u0026", "&")

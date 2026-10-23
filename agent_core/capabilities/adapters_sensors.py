@@ -149,8 +149,10 @@ class XTwscrapeCapability(BaseCapability):
     description = "X/Twitter gönderi akışı (gerçek zaman serisi; Frequency motorunu besler)."
 
     def availability(self) -> Availability:
-        if not _flag("ENABLE_X_SENSOR"):
-            return Availability.unavailable("gate_disabled:ENABLE_X_SENSOR")
+        # [2026-10-23 · B1/B2 DERSİ] `availability()` KAPI kararı VERMEZ:
+        # `ENABLE_X_SENSOR` kararı `PolicyKernel`'e aittir (tek gerçek).
+        # Burada iki kez kontrol edilince onayla açılan kapı yine
+        # `gate_disabled` dönüyordu — yetenek "açık" görünürken kalıcı kapalı.
         if not _module_available("twscrape"):
             return Availability.unavailable("dependency_missing:twscrape")
         return Availability.ok()
@@ -293,8 +295,7 @@ class InstagrapiCapability(BaseCapability):
     description = "Instagram ikinci kaynak: Playwright engellenirse sensör düşmez."
 
     def availability(self) -> Availability:
-        if not _flag("ENABLE_IG_SECONDARY"):
-            return Availability.unavailable("gate_disabled:ENABLE_IG_SECONDARY")
+        # [2026-10-23] Kapı kararı `PolicyKernel`'de (bkz. X sensörü notu).
         if not _module_available("instagrapi"):
             return Availability.unavailable("dependency_missing:instagrapi")
         if not (os.getenv("IG_USERNAME", "").strip() and os.getenv("IG_PASSWORD", "")):
