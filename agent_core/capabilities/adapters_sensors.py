@@ -308,7 +308,13 @@ class InstagrapiCapability(BaseCapability):
             return CapabilityResult(
                 capability_id=self.id, available=False, unavailable_reason="invalid_username"
             )
-        limit = int(ctx.params.get("limit") or 20)
+        # [2026-10-23 · TEK AYAR] Ghost kazıyıcı ve bu ikinci kaynak AYNI
+        # operatör tavanını kullanır (`PINEAL_IG_MAX_POSTS`, varsayılan 48).
+        # Önceden ghost 12, bu yol 20 ile sabitti: iki yol farklı sınırla aynı
+        # işi yapıyordu. Çağıran `limit` verirse o kazanır.
+        from agent_core.scraper.instagram_ghost import _ig_max_posts
+
+        limit = int(ctx.params.get("limit") or _ig_max_posts())
 
         def _work() -> dict[str, Any]:
             from instagrapi import Client  # lazy import

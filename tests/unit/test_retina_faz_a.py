@@ -590,3 +590,52 @@ def test_agent_reach_command_prefers_explicit_env_and_never_guesses(monkeypatch)
     #: Depo kalıbı (PINEAL_HARVESTER_CMD ile aynı): PATH'te bulunan komut ADI
     #: olduğu gibi döner — alt süreç onu kendi PATH'iyle çözer.
     assert agent_reach_command() == ["python"]
+
+
+@pytest.mark.asyncio
+async def test_instagrapi_uses_the_same_post_cap_as_ghost(monkeypatch):
+    """[2026-10-23] İki Instagram yolu AYNI operatör tavanını kullanır.
+
+    Eski hâl: ghost kazıyıcı 12, bu ikinci kaynak 20 ile sabitti. Artık ikisi
+    de `PINEAL_IG_MAX_POSTS` (varsayılan 48) okur; çağıran `limit` verirse o
+    kazanır.
+    """
+    import sys
+    import types
+
+    captured: dict[str, int] = {}
+
+    class _Info:
+        full_name = "x"
+        biography = ""
+        follower_count = 1
+        following_count = 1
+        media_count = 1
+
+    class _Client:
+        def login(self, _u, _p):
+            return True
+
+        def user_id_from_username(self, _u):
+            return 7
+
+        def user_info(self, _id):
+            return _Info()
+
+        def user_medias(self, _id, limit):
+            captured["limit"] = limit
+            return []
+
+    monkeypatch.setenv("IG_USERNAME", "u")
+    monkeypatch.setenv("IG_PASSWORD", "p")
+    monkeypatch.setenv("PINEAL_IG_MAX_POSTS", "33")
+    monkeypatch.setitem(
+        sys.modules, "instagrapi", types.SimpleNamespace(Client=lambda: _Client())
+    )
+    monkeypatch.setattr(
+        "agent_core.capabilities.adapters_sensors._module_available", lambda _n: True
+    )
+    from agent_core.capabilities.base import CapabilityContext
+
+    await InstagrapiCapability().run(CapabilityContext(subject="hedef"))
+    assert captured["limit"] == 33, captured
