@@ -1,5 +1,4 @@
 """Unit tests for unified OSINT normalizer / safe getter."""
-import pytest
 from pydantic import BaseModel
 from agent_core.services.osint_normalizer import safe_osint_get, osint_to_dict
 

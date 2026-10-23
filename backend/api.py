@@ -141,12 +141,6 @@ from backend.routes.telemetry import (  # noqa: E402,F401 (yeniden ihraç, dış
     build_telemetry_endpoint,
     capability_status_table as _capability_status_table,
 )
-# [FIX #8] Scraper'ın KENDİNE ÖZLÜ InsufficientEvidenceError'ı (başka bir
-# Exception hiyerarşisi) da yakalanmalı; ayrı sınıflar olduğundan
-# isinstance ile ayrım yapılır, str(type) kontrolü ile değil.
-from agent_core.scraper.instagram_ghost import (
-    InsufficientEvidenceError as ScraperInsufficientEvidenceError,
-)
 
 
 shadow_executor = ShadowExecutor()
@@ -1253,7 +1247,10 @@ def get_room(client_id: str) -> dict:
         vault.pop("provider_keys", None)
 
         # Check if local 9router proxy is configured
-        is_9router = "20128" in (os.getenv("OPENROUTER_BASE_URL", "") + os.getenv("NINEROUTER_BASE_URL", ""))
+        is_9router = (
+            "20128" in os.getenv("OPENROUTER_BASE_URL", "")
+            or "20128" in os.getenv("NINEROUTER_BASE_URL", "")
+        )
         ninerouter_key = os.getenv("NINEROUTER_API_KEY") or os.getenv("PINEAL_LLM_API_KEY") or os.getenv("OPENROUTER_API_KEY")
 
         if is_9router and ninerouter_key and ninerouter_key.startswith("sk-pineal"):
@@ -5623,7 +5620,7 @@ async def api_report_build(req: ReportBuildPayload):
     }
 
 
-from backend.routes.company import (
+from backend.routes.company import (  # noqa: E402,F401 (API-BÖLME 7: yeniden ihraç, dış sözleşme)
     CompanyScanPayload,
     _COMPANY_MODES,
     register_company_routes,

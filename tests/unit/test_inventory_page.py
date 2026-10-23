@@ -37,6 +37,7 @@ GENERATOR = REPO_ROOT / "scripts" / "generate_inventory_page.py"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 API = REPO_ROOT / "backend" / "api.py"
 LANGUAGE_ROUTES = REPO_ROOT / "backend" / "routes" / "language.py"
+COMPANY_ROUTES = REPO_ROOT / "backend" / "routes" / "company.py"
 SPEECH_AUDIO_ROUTES = REPO_ROOT / "backend" / "routes" / "speech_audio.py"
 
 
@@ -86,8 +87,8 @@ def test_category_b_paths_are_visible_in_the_page():
     """B listesindeki dosyalar sayfada GERÇEKTEN listelenir (ad + satır)."""
     gen = _load_generator()
     page = PAGE.read_text(encoding="utf-8")
-    assert len(gen.CATEGORY_B) >= 31, (
-        f"B listesi 31 dosyaydı, şimdi {len(gen.CATEGORY_B)}"
+    assert len(gen.CATEGORY_B) >= 26, (
+        f"B listesi 26 dosya (scripts/archive/ bilerek silindi), şimdi {len(gen.CATEGORY_B)}"
     )
     absent = [rel for rel in gen.CATEGORY_B if rel not in page]
     assert not absent, f"sayfada görünmeyen B dosyaları: {absent}"
@@ -128,6 +129,9 @@ def test_endpoint_rows_match_real_decorators():
     decorators = re.findall(r'@app\.(?:get|post|put|delete|patch|websocket)\("', API.read_text(encoding="utf-8"))
     decorators += re.findall(
         r'^\s*@app\.(?:get|post|put|delete|patch)\("', LANGUAGE_ROUTES.read_text(encoding="utf-8"), re.M
+    )
+    decorators += re.findall(
+        r'^\s*@app\.(?:get|post|put|delete|patch)\("', COMPANY_ROUTES.read_text(encoding="utf-8"), re.M
     )
     decorators += re.findall(
         r'^\s*@router\.(?:get|post|put|delete|patch)\("', SPEECH_AUDIO_ROUTES.read_text(encoding="utf-8"), re.M

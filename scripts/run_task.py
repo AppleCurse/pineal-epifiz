@@ -68,10 +68,10 @@ async def main() -> None:
 
     platform = effective_scraper_type(url, req.get("scraper_type"))
     _log("INFO", f"platform kararı: {platform} (url={url or '<yok>'})")
-    if url and platform == "unsupported_web":
+    if url and platform not in ("instagram", "x"):
         _emit({
             "status": "unsupported_platform",
-            "platform": "unsupported_web",
+            "platform": platform,
             "note": "Tanınmayan platform; tahmine dayalı kazıma yapılmaz ([023]).",
         }, 2)
 
