@@ -532,9 +532,10 @@ class LLMGateway:
         # Not: solar-pro4/ling-3.0-flash promo 2026-09-10'a kadar; sonrası 0.12/0.24 ve
         # daha yükseğe döner — `OPENROUTER_MAX_SPEND_USD` bu tabloyu baz alır.
         # [2026-10-14 · canlı teyit] solar-pro4 promosyonu bitti: $0.03/$0.12 ->
-        # $0.09/$0.36 (OR liste). Nous indirimli kanal ROUTES'ta $0.03/$0.12 kalır;
-        # bu tablo BULUT (OR) maliyetini taşır — eski değer %67 eksik sayıyordu.
-        "upstage/solar-pro4": {"in": 0.09, "out": 0.36},
+        # $0.09/$0.36 (OR liste). [2026-10-23 · CI 39881245895] Canlı OR fiyatı
+        # $0.15/$0.60 okundu. Nous indirimli kanal ROUTES'ta $0.03/$0.12 kalır;
+        # bu tablo BULUT (OR) maliyetini taşır.
+        "upstage/solar-pro4": {"in": 0.15, "out": 0.6},
         "inclusionai/ling-3.0-flash": {"in": 0.021, "out": 0.063},
         # 2026-09-08 araştırma düzeltmesi: OR kataloğu deepseek-v4-flash'i
         # $0.09/$0.18 gösteriyordu (eski $0.0679/$0.168 iki tarafla da uyuşmuyordu).

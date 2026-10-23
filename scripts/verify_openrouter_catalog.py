@@ -96,7 +96,8 @@ REQUIRED_OPENROUTTER = {
     # NOT (kanal farkı): solar-pro4'ün nous indirimli kanalı ROUTES'ta $0.03/$0.12
     # olarak durur — bu pin OR (bulut liste) fiyatını doğrular, nous sözleşmesini
     # değil. İkisi bilinçli olarak farklı kanallardır.
-    "upstage/solar-pro4": (0.09, 0.36),
+    # [2026-10-23 · CI 39881245895] Canlı katalog solar-pro4 için $0.15/$0.60 okudu.
+    "upstage/solar-pro4": (0.15, 0.6),
     "inclusionai/ling-3.0-flash": (0.021, 0.063),
     # [2026-10-15 · CI 38662205946] Çıktı son ölçümde $4.40/1M (önceki $7.00).
     # [2026-10-15 · CI 38664381599] Girdi son ölçümde $0.037/1M.
@@ -132,14 +133,20 @@ REQUIRED_OPENROUTTER = {
 # olabilir; kalıcı çözüm canlı fiyatın periyodik olarak tabloya alınmasıdır
 # (ayrı iş kalemi).
 OBSERVED_OPENROUTER_STATES: dict[str, tuple[tuple[float, float], ...]] = {
+    # CI 38833598719.. → $0.09/$0.36 · CI 39881245895 (PR #152) → $0.15/$0.60
+    "upstage/solar-pro4": (
+        (0.09, 0.36),
+        (0.15, 0.6),
+    ),
     # CI 38787820334 → $0.65/$10.00 · 38821301808/38866434547/38867016705 →
     # $0.037/$7.00 · 38833598719/38840573018/38843226709/38851706200 →
-    # $0.62/$2.42 · 38870244950 → $0.037/$9.00
+    # $0.62/$2.42 · 38870244950 → $0.037/$9.00 · 39881245895 (PR #152) → $0.0341/$7.00
     "z-ai/glm-5.2": (
         (0.65, 10.0),
         (0.037, 7.0),
         (0.62, 2.42),
         (0.037, 9.0),
+        (0.0341, 7.0),
     ),
     # CI 38662205946 → $0.4679/$0.9358 · 38787820334 → $0.395328/$0.790656 ·
     # 38789947274 → $0.392022/$0.784044 · 38794722007/38833598719 →
