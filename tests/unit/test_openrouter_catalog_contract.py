@@ -609,3 +609,91 @@ def test_measured_state_must_match_input_and_output_together(monkeypatch):
     failures, _warnings, unverified = oc.verify_live_openrouter("key")
     assert unverified is None
     assert any("NOT a measured state" in f for f in failures), failures
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GÖZLENEN FİYAT REJİMİ (2026-10-24)
+#
+# Neden: `deepseek/deepseek-v4-pro` iki günde $0.2088..$0.95526 aralığında on
+# bir ayrı değer verdi (her okumada çıktı = girdi × 2). İki ardışık ölçüm
+# arasındaki %22'lik atlama ±%2 bandının dışında kaldı ve kapı yine kırmızı
+# oldu. "Her yeni değeri listeye ekle" yaklaşımı yakınsamıyor; kural artık
+# REJİM + ORAN kontrolü. Aşağıdaki testler rejimin hem kabul hem ret
+# tarafını donduruyor: kural gevşetilirse (her şeyi kabul) veya sıkılaşırsa
+# (rejim içi kotasyonu reddet) test kırmızı olur.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_price_inside_the_observed_regime_passes_with_a_warning(monkeypatch):
+    """Rejim içi, ölçülmüş bir duruma eşit OLMAYAN fiyat → geçer + uyarı.
+
+    $0.50/$1.00 deepseek'in gözlenen aralığında (0.2088..0.95526) ve oranı
+    (0.5) gözlenmiş oranlarla (hepsi 0.5) uyumlu → kotasyon sayılır.
+    """
+    monkeypatch.setattr(
+        oc.urllib.request, "urlopen",
+        lambda *a, **k: _Response(
+            _payload({"deepseek/deepseek-v4-pro": (0.5, 1.0)})
+        ),
+    )
+    failures, warnings, unverified = oc.verify_live_openrouter("key")
+    assert unverified is None
+    assert failures == [], failures
+    assert any("observed price regime" in w for w in warnings), warnings
+
+
+def test_price_outside_the_observed_regime_still_fails(monkeypatch):
+    """Rejim DIŞI fiyat → kırmızı (gerçek rejim değişimi).
+
+    $1.50/$3.00 ölçülen en yüksek girdinin ($0.95526) çok üstünde.
+    """
+    monkeypatch.setattr(
+        oc.urllib.request, "urlopen",
+        lambda *a, **k: _Response(
+            _payload({"deepseek/deepseek-v4-pro": (1.50, 3.00)})
+        ),
+    )
+    failures, _warnings, unverified = oc.verify_live_openrouter("key")
+    assert unverified is None
+    assert any("NOT a measured state" in f for f in failures), failures
+    assert any("outside the observed price regime" in f for f in failures), failures
+
+
+def test_broken_price_structure_fails_even_inside_the_regime(monkeypatch):
+    """Rejim içinde ama GİRDİ/ÇIKTI ORANI hiç gözlenmemiş → kırmızı.
+
+    $0.50/$0.55 rejim aralığında; ama oran 0.909 — deepseek'te her okuma
+    girdi:çıktı = 1:2 verdi. Oran bozulduysa sağlayıcı BAŞKA bir şey
+    fiyatlıyordur; bu bir kotasyon değil yapı değişikliğidir.
+    """
+    monkeypatch.setattr(
+        oc.urllib.request, "urlopen",
+        lambda *a, **k: _Response(
+            _payload({"deepseek/deepseek-v4-pro": (0.5, 0.55)})
+        ),
+    )
+    failures, _warnings, unverified = oc.verify_live_openrouter("key")
+    assert unverified is None
+    assert any("STRUCTURE changed" in f for f in failures), failures
+
+
+def test_zero_output_price_fails_instead_of_dividing_by_zero(monkeypatch):
+    """Çıktı fiyatı 0 gelirse oran hesaplanamaz — sessizce geçmemeli."""
+    monkeypatch.setattr(
+        oc.urllib.request, "urlopen",
+        lambda *a, **k: _Response(
+            _payload({"deepseek/deepseek-v4-pro": (0.5, 0.0)})
+        ),
+    )
+    failures, _warnings, unverified = oc.verify_live_openrouter("key")
+    assert unverified is None
+    assert failures, "sıfır çıktı fiyatı kabul edildi"
+
+
+def test_observed_price_regime_covers_every_recorded_state():
+    """Rejim hesabı kayıtlı durumların tamamını kapsar (uçlar dâhil)."""
+    for model_id, states in oc.OBSERVED_OPENROUTER_STATES.items():
+        lo_in, hi_in, lo_out, hi_out = oc.observed_price_regime(states)
+        for state_in, state_out in states:
+            assert lo_in <= state_in <= hi_in, f"{model_id}: {state_in} rejim dışı"
+            assert lo_out <= state_out <= hi_out, f"{model_id}: {state_out} rejim dışı"

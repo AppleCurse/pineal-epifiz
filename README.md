@@ -356,7 +356,7 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 | Kayıtlı ajanlar | `/api/aspasia/state` → **13** ajan |
 | Kasa kilidi | Kilitliyken `POST /api/initiate` → **423 VAULT_LOCKED** |
 | WebSocket akışı | Yerel istemciyle **63 kare** alındı |
-| Test tabanı | CI'ın kendi komutu (`pytest -q --cov=agent_core --cov=backend --cov-fail-under=80`) → **3101 passed, 6 skipped, 2 xfailed**, kapsam **%86.55** |
+| Test tabanı | CI'ın kendi komutu (`pytest -q --cov=agent_core --cov=backend --cov-fail-under=80`) → **3109 passed, 6 skipped, 2 xfailed**, kapsam **%86.56** |
 | Kod kalitesi | `ruff check .` → **All checks passed!** · `npm run check` → **0 hata / 0 uyarı** · `npm test` (vitest sözleşme testleri) → **5/5** · `npm run build` → ✓ |
 | Denetim bekçileri | `audit_regression.py` → **✓ BEKÇİ GEÇTİ** · `dead_code_audit.py` → **0/0/0/0/0/0/0** (C1/C1b/C2/C3/C4/C5/C6) |
 | Ölçülebilir ilerleme | `backend/api.py` **5754** satır (tavan 5760, düşürülmüş) |
@@ -395,13 +395,13 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 | `rust_core/` | Deneysel, opsiyonel Rust çekirdek (CI'da ayrı derlenir, ürün yoluna bağlı değildir) |
 | `android/` | Android istemcisi (CI'da lint + birim testi) |
 | `functions/` · `worker.ts` | Cloudflare Pages/Workers `/api` ve `/ws` edge vekilleri |
-| `tests/` | 268 test modülü (birim + entegrasyon) |
+| `tests/` | 269 test modülü (birim + entegrasyon) |
 | `scripts/` | Denetim ve doğrulama araçları: ölü kod denetimi, regresyon bekçisi, envanter üreteci, revert doğrulamaları, 9Router ön kontrolü |
 | `docs/` | Tüzük, sözleşmeler, mimari, `docs/reports/` (56 rapor) ve **tam envanter sayfası** |
 | `config/` | Yönlendirme, sağlayıcı kataloğu, karar yapılandırması, RTK politikası |
 
 **Tam ve aranabilir harita:** **[docs/envanter.html](docs/envanter.html)** —
-766 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
+767 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
 ile yenilenir, CI `--check` ile bayatlamayı yakalar.
 
 **Ayrıca:** [ARCHITECTURE.md](ARCHITECTURE.md) · [README_TECHNICAL.md](README_TECHNICAL.md) ·
@@ -412,7 +412,7 @@ ile yenilenir, CI `--check` ile bayatlamayı yakalar.
 ## 15 · Testler ve kalite kapıları
 
 ```bash
-.venv/bin/python -m pytest tests -q --cov --cov-fail-under=80   # 3101 passed
+.venv/bin/python -m pytest tests -q --cov --cov-fail-under=80   # 3109 passed
 .venv/bin/ruff check .                                           # temiz
 cd frontend && npm run check && npm run build                    # 0/0 + derleme
 .venv/bin/python scripts/dead_code_audit.py                      # ölü kod yok
@@ -428,4 +428,22 @@ README'den/koddan koptuğunda ya da hedef test silindiğinde kırmızıya döner
 kanıt sessizce çürüyemez.
 
 CI (`.github/workflows/ci.yml`) bunları ve ayrıca envanter tazeliliğini, sağlayıcı
-kataloğunu, svelte tip kontrolünü, smoke testini, Rust ve Android derlemesini çalıştırır.
+kataloğunu, svelte tip kontrolünü, sözleşme testlerini (`npm test`), smoke testini,
+Rust ve Android derlemesini çalıştırır.
+
+**Kanlı ayrıntı — koşmayan kapı yok:** `9Router Preflight Verification` işi
+operatörün makinesindeki hub'ı (`127.0.0.1:20128`) doğrular; barındırılan runner
+oraya ulaşamaz. Kayıtlı self-hosted runner olmadığı için 2026-10-23'teki üç koşu
+`queued` kalıp **hiç çalışmadı**. Bu yüzden zamanlanmış tetik kaldırıldı: kapı
+artık elle (`workflow_dispatch`, hub'ın yanındaki runner'dan) ya da doğrudan
+`python scripts/preflight_9router.py` ile koşar ve hub erişilemezse **exit 1**
+(fail-closed). Sözleşmesi `tests/unit/test_preflight_runner_contract.py` içinde.
+
+**Fiyat bekçisi neden "rejim" konuşuyor:** `deepseek/deepseek-v4-pro` iki günde
+$0.2088–$0.95526 aralığında on bir ayrı fiyat okudu (her okumada çıktı = girdi ×2).
+Tek bir pini kovalamak yakınsamıyordu; kapı artık (a) bilinen bir ölçülmüş durumu,
+(b) ±%2 bandını, (c) **gözlenen rejim içinde ve girdi/çıktı oranı gözlenmiş
+oranlarla uyumlu** fiyatı kabul eder; rejim dışı ya da oranı bozuk fiyat yine
+`FAIL:` eder. Kalan risk adıyla yazılı: rejim içindeki büyük bir gerçek fiyat
+hareketi ayırt edilemez (aynı aralıktaki her değer zaten kotasyon olarak gözlendi);
+sınırlar `tests/unit/test_openrouter_catalog_contract.py` ile donduruldu.
