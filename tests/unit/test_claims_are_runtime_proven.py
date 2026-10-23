@@ -292,3 +292,41 @@ def test_vault_status_endpoint_returns_only_booleans(monkeypatch):
     for key, value in body.items():
         assert not (isinstance(value, str) and value.startswith("sk-")), f"{key} anahtar sızdırıyor"
     assert {"locked", "has_api_key", "can_scrape"} <= set(body)
+
+
+# ───────────────────────── 5. IMPORT EDİLEN BİLEŞEN GERÇEKTEN RENDER EDİLİYOR
+def test_every_imported_view_component_is_actually_rendered():
+    """`App.svelte` bir bileşeni import edip HİÇ render etmiyorsa o ekran ölüdür.
+
+    [2026-10-23 · main'den gelen kusur] `SpiderFootCockpit` import edildi,
+    `store.ts` varsayılan görünümü `spiderfoot` yapıldı — ama `App.svelte`
+    bu mod için dal açmadığından uygulama açılışta `AtlasPinealCockpit`
+    gösteriyor, SpiderFoot kokpiti hiçbir koşulda ekrana gelmiyordu.
+    `dead_code_audit` C5 bunu YAKALAMAZ: import "kullanım" sayılıyor.
+    Bu test import ile RENDER ayrımını kilitler.
+    """
+    import re as _re
+
+    source = (REPO_ROOT / "frontend/src/App.svelte").read_text(encoding="utf-8")
+    imports = _re.findall(r"^  import (\w+) from '\./components/[^']+'", source, _re.M)
+    assert imports, "App.svelte'te bileşen import'u bulunamadı — test ölçümünü kaybetti"
+
+    # <script> bloğunu at: render kontrolü yalnız markup'ta anlamlı.
+    markup = source.split("</script>", 1)[1]
+    unrendered = [name for name in imports if f"<{name}" not in markup]
+    assert not unrendered, (
+        "import edilmiş ama HİÇ render edilmeyen bileşen(ler): "
+        f"{unrendered} — ekran ölü demektir"
+    )
+
+
+def test_spiderfoot_view_mode_has_a_render_branch():
+    """Varsayılan görünüm `spiderfoot` ise App.svelte'te o dal MUTLAKA olmalı."""
+    app = (REPO_ROOT / "frontend/src/App.svelte").read_text(encoding="utf-8")
+    store = (REPO_ROOT / "frontend/src/store.ts").read_text(encoding="utf-8")
+    default_mode = __import__("re").search(r"\|\| '(\w+)'\s*\)", store)
+    assert default_mode, "store.ts'te varsayılan görünüm okunamadı"
+    mode = default_mode.group(1)
+    assert f"$activeViewMode === '{mode}'" in app, (
+        f"varsayılan görünüm '{mode}' ama App.svelte'te render dalı yok"
+    )

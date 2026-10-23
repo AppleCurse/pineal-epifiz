@@ -439,6 +439,13 @@
     <TacticalWarRoom />
   {:else if $activeViewMode === 'control'}
     <LiveControlPanel />
+  {:else if $activeViewMode === 'spiderfoot'}
+    <!-- [2026-10-23 · KABLO] Bu bileşen import edilmiş ama HİÇ render
+         edilmiyordu: `store.ts` varsayılan görünümü 'spiderfoot' yaptığı için
+         uygulama açılışta yanlış bileşeni (AtlasPinealCockpit) gösteriyor,
+         SpiderFoot kokpiti ise hiçbir koşulda ekrana gelmiyordu.
+         "Import var = çalışıyor" yanılgısı; render dalı ŞART. -->
+    <SpiderFootCockpit />
   {:else}
     <AtlasPinealCockpit />
   {/if}
@@ -459,6 +466,10 @@
       class:is-active={$activeViewMode === 'cockpit'}
       on:click={() => { activeViewMode.set('cockpit'); localStorage.setItem('pineal_view_mode', 'cockpit'); }}
     >KOKPİT</button>
+    <button
+      class:is-active={$activeViewMode === 'spiderfoot'}
+      on:click={() => { activeViewMode.set('spiderfoot'); localStorage.setItem('pineal_view_mode', 'spiderfoot'); }}
+    >SPIDERFOOT</button>
   </nav>
 
   <!--

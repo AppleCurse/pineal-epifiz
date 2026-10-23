@@ -90,8 +90,20 @@ Toplanan biyografi/gönderi adresleri (`detected_urls`) görev yürütücüsünd
 
 ## 4 · Ekranda ne görürsün
 
-Uygulamanın üç görünümü var; sağ üstteki düğmelerle geçiş yapılır
-(`frontend/src/App.svelte:437-461`).
+Uygulamanın **dört** görünümü var; görünüm seçici düğmelerle geçiş yapılır
+(`frontend/src/App.svelte` → `$activeViewMode`). Varsayılan açılış görünümü
+`spiderfoot`'tur (`frontend/src/store.ts`).
+
+> [2026-10-23 · KUSUR] SpiderFoot kokpiti bir süre **import edilmiş ama hiç
+> render edilmemişti**: `store.ts` varsayılanı `spiderfoot` yapmış, `App.svelte`
+> ise o mod için dal açmadığından açılışta `AtlasPinealCockpit` gösteriyordu.
+> Dal eklendi; `tests/unit/test_claims_are_runtime_proven.py` artık her import
+> edilen görünüm bileşeninin markup'ta **render edildiğini** doğrular
+> (`dead_code_audit` bunu yakalayamaz — import "kullanım" sayılır).
+
+**SPIDERFOOT KOKPİTİ** (`SpiderFootCockpit.svelte`, ~1570 satır) — ana operasyon
+kokpiti: canlı boru hattı, etkileşimli düğüm grafiği, kanal/ajan durumu; aynı
+SoT'tan (WS + `/api/aspasia/state`) beslenir.
 
 **MUHAREBE MASASI** (`TacticalWarRoom.svelte`) — adli teftiş masası. Ajanların
 durum pilleri, tespit edilen profiller, seçili ajanın dört sekmeli Röntgeni
@@ -344,7 +356,7 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 | Kayıtlı ajanlar | `/api/aspasia/state` → **13** ajan |
 | Kasa kilidi | Kilitliyken `POST /api/initiate` → **423 VAULT_LOCKED** |
 | WebSocket akışı | Yerel istemciyle **63 kare** alındı |
-| Test tabanı | CI'ın kendi komutu (`pytest -q --cov=agent_core --cov=backend --cov-fail-under=80`) → **3091 passed, 6 skipped, 2 xfailed**, kapsam **%86.56** |
+| Test tabanı | CI'ın kendi komutu (`pytest -q --cov=agent_core --cov=backend --cov-fail-under=80`) → **3093 passed, 6 skipped, 2 xfailed**, kapsam **%86.55** |
 | Kod kalitesi | `ruff check .` → **All checks passed!** · `npm run check` → **0 hata / 0 uyarı** · `npm run build` → ✓ |
 | Denetim bekçileri | `audit_regression.py` → **✓ BEKÇİ GEÇTİ** · `dead_code_audit.py` → **0/0/0/0/0/0** |
 | Ölçülebilir ilerleme | `backend/api.py` **5754** satır (tavan 5760, düşürülmüş) |
@@ -389,7 +401,7 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 | `config/` | Yönlendirme, sağlayıcı kataloğu, karar yapılandırması, RTK politikası |
 
 **Tam ve aranabilir harita:** **[docs/envanter.html](docs/envanter.html)** —
-762 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
+763 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
 ile yenilenir, CI `--check` ile bayatlamayı yakalar.
 
 **Ayrıca:** [ARCHITECTURE.md](ARCHITECTURE.md) · [README_TECHNICAL.md](README_TECHNICAL.md) ·
@@ -400,7 +412,7 @@ ile yenilenir, CI `--check` ile bayatlamayı yakalar.
 ## 15 · Testler ve kalite kapıları
 
 ```bash
-.venv/bin/python -m pytest tests -q --cov --cov-fail-under=80   # 3091 passed
+.venv/bin/python -m pytest tests -q --cov --cov-fail-under=80   # 3093 passed
 .venv/bin/ruff check .                                           # temiz
 cd frontend && npm run check && npm run build                    # 0/0 + derleme
 .venv/bin/python scripts/dead_code_audit.py                      # ölü kod yok
