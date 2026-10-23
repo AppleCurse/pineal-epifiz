@@ -21,7 +21,10 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PY = str(ROOT / ".venv" / "bin" / "python")
+_VENV_PY = ROOT / ".venv" / "bin" / "python"
+# [2026-10-23] .venv her ortamda depo kökünde olmayabilir; yoksa
+# betiği koşturan yorumlayıcı kullanılır (sessiz FileNotFoundError yok).
+PY = str(_VENV_PY) if _VENV_PY.exists() else sys.executable
 
 
 def run_tests(selector: str) -> tuple[int, str]:
@@ -31,24 +34,49 @@ def run_tests(selector: str) -> tuple[int, str]:
     )
     return proc.returncode, (proc.stdout or "")[-2500:]
 
+def _dirty(rel_path: str) -> str:
+    """Dosya HEAD'e göre kirli mi? (revert-doğrulama kirli ağaçta KOŞMAZ)
 
-def revert_step(name: str, target: str, rel_path: str, current: str, reverted: str) -> bool:
+    [2026-10-23] Kanıt, bozuk bir ağaçta üretilemez: bir önceki koşum dosyayı
+    geri yükleyemeden düşerse sonraki koşum "hedef metin bulunamadı" der ve
+    gerçek durum görünmez. Bu kontrol o sessiz durumu imkânsız kılar.
+    """
+    proc = subprocess.run(
+        ["git", "status", "--porcelain", "--", rel_path],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    return (proc.stdout or "").strip()
+
+
+def revert_step(name: str, target: str, rel_path: str, current: str, reverted: str,
+                replace_all: bool = False) -> bool:
     """`current` (düzeltilmiş hâl) → `reverted` (düzeltme geri alınmış hâl).
 
     Dosya yedeği alır, değişimi uygular, hedef testi koşar ve KIRMIZI olduğunu
     doğruladıktan sonra dosyayı GERİ YÜKLER.
     """
     path = ROOT / rel_path
+    dirty = _dirty(rel_path)
+    if dirty:
+        print(f"!! {name}: {rel_path} commit'lenmemiş değişiklik taşıyor — "
+              "revert-doğrulama kirli dosyada koşmaz "
+              f"({dirty.splitlines()[0]})")
+        return False
     backup = Path(tempfile.mkdtemp()) / path.name
     shutil.copy2(path, backup)
-    text = path.read_text(encoding="utf-8")
-    if current not in text:
-        print(f"!! {name}: hedef metin bulunamadı ({rel_path})")
+    try:
+        text = path.read_text(encoding="utf-8")
+        if current not in text:
+            print(f"!! {name}: hedef metin bulunamadı ({rel_path})")
+            return False
+        count = -1 if replace_all else 1
+        path.write_text(text.replace(current, reverted, count), encoding="utf-8")
+        code, out = run_tests(target)
+    finally:
+        # [2026-10-23] Geri yükleme ARTIK `finally` içinde: koşum düşse/kesilse
+        # bile çalışma ağacı bozuk kalmaz (eskiden yalnız mutlu yolda çalışıyordu).
         shutil.copy2(backup, path)
-        return False
-    path.write_text(text.replace(current, reverted, 1), encoding="utf-8")
-    code, out = run_tests(target)
-    shutil.copy2(backup, path)
+        backup.unlink(missing_ok=True)
     ok = code != 0
     print(f"{'PASS' if ok else 'FAIL'} · {name}")
     print(f"      test: {target}")
@@ -90,8 +118,12 @@ def main() -> int:
         "P3-3 doküman: README Lilith kararını ve dosya yolunu yazmıyor",
         "tests/unit/test_p3_lilith_cli.py::test_readme_states_the_cli_only_decision",
         "README.md",
-        current='''**[P3 · 2026-10-16] kararı: CLI-only**''',
-        reverted='''CLI üzerinden çalışan bir içerik paketleyicisidir''',
+        # [2026-10-23] README P9'da düz dile çevrildi; eski çıpa kalmadı.
+        # Karar iki yerde geçiyor (6. bölüm + P3 satırı) → TÜMÜ değiştirilir,
+        # yoksa test tek kalan "CLI-only" ifadesiyle yeşil kalırdı.
+        current="CLI-only",
+        reverted="CLI-DISI",
+        replace_all=True,
     ))
 
     # 4) Ana hat kapısı reddederse CLI dürüst çıkmalı (sessiz "başarılı" yok)

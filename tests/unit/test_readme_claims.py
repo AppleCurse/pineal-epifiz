@@ -184,5 +184,14 @@ def test_readme_inventory_count_matches_the_map():
 
 
 def test_readme_points_to_the_map():
-    """README, sistemin haritasına (docs/envanter.html) bağlanmalı."""
-    assert "docs/envanter.html" in _readme(), "README haritayı bağlamıyor"
+    """README, sistemin haritasına **gerçek bir bağlantıyla** bağlanmalı.
+
+    [2026-10-23] Eskiden yalnız `"docs/envanter.html" in readme` kontrol
+    ediliyordu; dosya adı düz metin olarak bir cümlede geçtiğinde de test
+    yeşil kalıyordu — yani `scripts/revert_verification_p9.py` bağlantıyı
+    kaldırdığında test KIRMIZI olmuyordu (revert-doğrulama sessizce
+    çürümüştü). Artık Markdown **bağlantısı** aranıyor.
+    """
+    assert "[docs/envanter.html](docs/envanter.html)" in _readme(), (
+        "README haritayı bağlamıyor (Markdown bağlantısı yok)"
+    )

@@ -29,7 +29,26 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PY = str(ROOT / ".venv" / "bin" / "python")
+_VENV_PY = ROOT / ".venv" / "bin" / "python"
+# [2026-10-23] .venv her ortamda depo kökünde olmayabilir; yoksa
+# betiği koşturan yorumlayıcı kullanılır (sessiz FileNotFoundError yok).
+PY = str(_VENV_PY) if _VENV_PY.exists() else sys.executable
+
+#: api.py satır tavanı (testin ölçtüğü sınır) — aşım miktarı BURADAN hesaplanır.
+_SIZE_CEILING = 5760
+_API_LINES = len((ROOT / "backend" / "api.py").read_text(encoding="utf-8").splitlines())
+#: Tavana "eşit" kalmak testi geçirir; kanıt için tavanı AŞAN satır gerekir.
+_CEILING_OVERSHOOT = max(1, _SIZE_CEILING - _API_LINES + 1)
+
+
+def _dirty(rel_path: str) -> str:
+    """Dosya HEAD'e göre kirli mi? (revert-doğrulama kirli ağaçta KOŞMAZ)"""
+    proc = subprocess.run(
+        ["git", "status", "--porcelain", "--", rel_path],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    return (proc.stdout or "").strip()
+
 
 #: (ad, hedef dosya, mevcut metin, geri alınmış metin, test)
 CASES: list[tuple[str, str, str, str, str]] = [
@@ -103,12 +122,17 @@ CASES: list[tuple[str, str, str, str, str]] = [
         "test_aspasia_state_body_lives_in_its_own_module",
     ),
     (
-        "P8-10 api.py tavanı aşıyor (6 satır eklenmiş)",
+        # [2026-10-23] Eski hâl SABİT 5 satır ekliyordu; api.py 5754 satıra
+        # inince 5759 ≤ 5760 oldu ve test YEŞİL kaldı — adım hiçbir şeyi
+        # kanıtlamıyordu. Artık tavanı AŞAN sayı hesaplanır.
+        f"P8-10 api.py tavanı aşıyor ({_CEILING_OVERSHOOT} satır eklenmiş)",
         "backend/api.py",
         "from backend.services.aspasia_state import build_state_payload",
         "from backend.services.aspasia_state import build_state_payload\n"
-        "# REVERT: tavanı aşmak için 5 satır eklendi\n"
-        "# 1\n# 2\n# 3\n# 4\n# 5",
+        + "\n".join(
+            f"# REVERT: tavan aşımı {i + 1}/{_CEILING_OVERSHOOT}"
+            for i in range(_CEILING_OVERSHOOT)
+        ),
         "tests/unit/test_api_monolith_ratchet.py::"
         "test_api_module_is_within_the_size_ceiling",
     ),
@@ -128,6 +152,11 @@ def revert_step(
 ) -> bool:
     """Düzeltmeyi geri al → test KIRMIZI olmalı → geri yükle → test YEŞİL olmalı."""
     path = ROOT / rel_path
+    dirty = _dirty(rel_path)
+    if dirty:
+        print(f"!! {name}: {rel_path} commit'lenmemiş değişiklik taşıyor — "
+              f"revert-doğrulama kirli dosyada koşmaz ({dirty.splitlines()[0]})")
+        return False
     backup = Path(tempfile.mkdtemp()) / path.name
     shutil.copy2(path, backup)
     try:
