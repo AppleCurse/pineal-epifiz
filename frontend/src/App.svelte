@@ -13,6 +13,7 @@
   // [P6 · CANLI PANEL] Canlı kontrol paneli: ajan hattı, anlık kanal, muhakeme,
   // kanıt akışı ve çağrı izi — hepsi MEVCUT SoT'tan (WS + /api/aspasia/state).
   import LiveControlPanel from './components/LiveControlPanel.svelte';
+  import SpiderFootCockpit from './components/SpiderFootCockpit.svelte';
   import NeuralTelemetryBoard from './components/visualizers/NeuralTelemetryBoard.svelte';
   import SupportPanel from './components/SupportPanel.svelte';
 
