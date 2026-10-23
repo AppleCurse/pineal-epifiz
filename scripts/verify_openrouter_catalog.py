@@ -128,6 +128,27 @@ REQUIRED_OPENROUTTER = {
 # edilir — yani kapı zayıflatılmaz, yalnız BİLİNEN oynaklık kapsam dışına
 # çıkar. Her durum bir CI koşu kimliğiyle kayıtlıdır (kanıt).
 #
+# ── 2026-10-23: TAM EŞİTLİK LİSTESİ TUTMUYOR (ölçüldü) ─────────────────────
+# `deepseek/deepseek-v4-pro` canlı fiyatı ardışık iki CI koşusunda:
+#   * 39959652727 → $0.894012/$1.78802
+#   * 39962099727 → $0.892272/$1.78454   (≈25 dakika sonra, %0.19 fark)
+# Daha önceki çiftler de aynı desende: $0.392022 vs $0.386976 (%1.3),
+# $0.346434 vs $0.348174 (%0.5). Yani değer her istekte yeniden kotasyon
+# ediliyor (girdi/çıktı oranı her okumada tam 1:2 kalıyor — tek bir kaynak
+# fiyatın para birimi dönüşümüne/kotasyonuna bağlı salınım).
+# Sonuç: "her yeni değeri listeye ekle" yaklaşımı YAKINSAMAZ — liste her
+# koşuda bir değer geride kalır, kapı sürekli kırmızı kalır (main dâhil).
+#
+# Bu yüzden kural iki kademeli hâle getirildi:
+#   1) TAM eşleşme  → geçer (aşağıdaki liste).
+#   2) Bilinen bir ölçülmüş durumun ±%2 (STATE_JITTER_TOLERANCE) bandında
+#      → geçer, ama `::warning` yazılır: hangi duruma yakın olduğu görünür.
+#   3) Bandın dışı → `FAIL:` (gerçek fiyat değişimi: örn. $0.95526 → $0.50).
+# ÖDÜN (açıkça): %2'nin altındaki GERÇEK fiyat değişimleri artık alarm
+# üretmez. Bu bilinçli bir taviz; bant testle donduruldu (bkz.
+# tests/unit/test_openrouter_catalog_contract.py::test_jitter_tolerance_is_small)
+# ve salınmayan modeller bu banttan ETKİLENMEZ — onlarda hâlâ tam eşitlik aranır.
+#
 # UYARI: harcama sayacı (LLMGateway.MODEL_PRICING) TEK değer taşır — son
 # ölçülen durum. Salınım sürdüğü sürece sayacın canlı durumdan saptığı
 # olabilir; kalıcı çözüm canlı fiyatın periyodik olarak tabloya alınmasıdır
@@ -169,6 +190,10 @@ OBSERVED_OPENROUTER_STATES: dict[str, tuple[tuple[float, float], ...]] = {
         (0.894012, 1.78802),
     ),
 }
+
+# Salınan modellerde kabul edilen göreli bant (bkz. yukarıdaki 2026-10-23 notu).
+# Yalnız `OBSERVED_OPENROUTER_STATES` içinde yer alan modellere uygulanır.
+STATE_JITTER_TOLERANCE = 0.02
 
 # ── KAPSAM BOŞLUĞU (dürüstçe adlandırılmış) ──────────────────────────────────
 # `LLMGateway.MODEL_PRICING` şu iki modeli ücretlendirir ama bunlar
@@ -337,14 +362,28 @@ def verify_live_openrouter(
             observed_states = OBSERVED_OPENROUTER_STATES.get(model_id)
             if observed_states:
                 # Salınan model: canlı fiyat BİLİNEN bir ölçülmüş durum olmalı.
+                # Tam eşleşme önce aranır; bulunamazsa bilinen bir durumun
+                # ±STATE_JITTER_TOLERANCE bandı kabul edilir (uyarıyla).
                 matched = None
+                exact = False
                 for state_in, state_out in observed_states:
                     if (
                         abs(actual_in - state_in / 1_000_000) <= 1e-12
                         and abs(actual_out - state_out / 1_000_000) <= 1e-12
                     ):
                         matched = (state_in, state_out)
+                        exact = True
                         break
+                if matched is None:
+                    for state_in, state_out in observed_states:
+                        if (
+                            abs(actual_in - state_in / 1_000_000)
+                            <= state_in / 1_000_000 * STATE_JITTER_TOLERANCE
+                            and abs(actual_out - state_out / 1_000_000)
+                            <= state_out / 1_000_000 * STATE_JITTER_TOLERANCE
+                        ):
+                            matched = (state_in, state_out)
+                            break
                 if matched is None:
                     known = ", ".join(f"${a:g}/${b:g}" for a, b in observed_states)
                     failures.append(
@@ -352,13 +391,22 @@ def verify_live_openrouter(
                         f"${actual_out * 1_000_000:g} per 1M is NOT a measured state "
                         f"(measured states: {known})"
                     )
-                elif matched != (expected_in, expected_out):
-                    # Durum BİLİNİYOR ama sayacın pini farklı: gürültü değil,
-                    # ölçülen gerçek — uyarı olarak yazılır, kapı kırılmaz.
-                    warnings.append(
-                        f"{model_id}: live measured state ${matched[0]:g}/{matched[1]:g} "
-                        f"differs from the accounting pin ${expected_in:g}/${expected_out:g}"
-                    )
+                else:
+                    if not exact:
+                        # Kotasyon salınımı: bilinen durumun bandında.
+                        warnings.append(
+                            f"{model_id}: live price ${actual_in * 1_000_000:g}/"
+                            f"${actual_out * 1_000_000:g} is within "
+                            f"{STATE_JITTER_TOLERANCE:.0%} jitter of measured state "
+                            f"${matched[0]:g}/${matched[1]:g}"
+                        )
+                    if matched != (expected_in, expected_out):
+                        # Durum BİLİNİYOR ama sayacın pini farklı: gürültü değil,
+                        # ölçülen gerçek — uyarı olarak yazılır, kapı kırılmaz.
+                        warnings.append(
+                            f"{model_id}: live measured state ${matched[0]:g}/${matched[1]:g} "
+                            f"differs from the accounting pin ${expected_in:g}/${expected_out:g}"
+                        )
                 continue
             if abs(actual_in - expected_in / 1_000_000) > 1e-12:
                 failures.append(f"{model_id}: live input price ${actual_in * 1_000_000:g}/1M != ${expected_in:g}/1M")

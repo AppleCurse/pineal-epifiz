@@ -356,7 +356,7 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 | Kayıtlı ajanlar | `/api/aspasia/state` → **13** ajan |
 | Kasa kilidi | Kilitliyken `POST /api/initiate` → **423 VAULT_LOCKED** |
 | WebSocket akışı | Yerel istemciyle **63 kare** alındı |
-| Test tabanı | CI'ın kendi komutu (`pytest -q --cov=agent_core --cov=backend --cov-fail-under=80`) → **3093 passed, 6 skipped, 2 xfailed**, kapsam **%86.55** |
+| Test tabanı | CI'ın kendi komutu (`pytest -q --cov=agent_core --cov=backend --cov-fail-under=80`) → **3097 passed, 6 skipped, 2 xfailed**, kapsam **%86.56** |
 | Kod kalitesi | `ruff check .` → **All checks passed!** · `npm run check` → **0 hata / 0 uyarı** · `npm run build` → ✓ |
 | Denetim bekçileri | `audit_regression.py` → **✓ BEKÇİ GEÇTİ** · `dead_code_audit.py` → **0/0/0/0/0/0** |
 | Ölçülebilir ilerleme | `backend/api.py` **5754** satır (tavan 5760, düşürülmüş) |
@@ -412,7 +412,7 @@ ile yenilenir, CI `--check` ile bayatlamayı yakalar.
 ## 15 · Testler ve kalite kapıları
 
 ```bash
-.venv/bin/python -m pytest tests -q --cov --cov-fail-under=80   # 3093 passed
+.venv/bin/python -m pytest tests -q --cov --cov-fail-under=80   # 3097 passed
 .venv/bin/ruff check .                                           # temiz
 cd frontend && npm run check && npm run build                    # 0/0 + derleme
 .venv/bin/python scripts/dead_code_audit.py                      # ölü kod yok

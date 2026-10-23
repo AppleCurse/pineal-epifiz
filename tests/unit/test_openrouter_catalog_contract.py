@@ -532,6 +532,59 @@ def test_known_measured_state_passes_even_when_it_is_not_the_pin(monkeypatch):
     assert any("z-ai/glm-5.2" in w for w in warnings), warnings
 
 
+def test_jitter_within_tolerance_of_a_measured_state_passes(monkeypatch):
+    """Kotasyon salınımı: bilinen durumun ±%2 bandındaki fiyat → KIRMIZI değil.
+
+    Ölçüm (2026-10-23): iki ardışık CI koşusu aynı model için $0.894012 ve
+    $0.892272 okudu (%0.19 fark). Tam eşitlik listesi yakınsamadığı için bant
+    eklendi; bu test bandın ÇALIŞTIĞINI kanıtlar.
+    """
+    jittered_in = 0.894012 * 1.0019
+    jittered_out = 1.78802 * 1.0019
+    monkeypatch.setattr(
+        oc.urllib.request, "urlopen",
+        lambda *a, **k: _Response(
+            _payload({"deepseek/deepseek-v4-pro": (jittered_in, jittered_out)})
+        ),
+    )
+    failures, warnings, unverified = oc.verify_live_openrouter("key")
+    assert unverified is None
+    assert failures == [], failures
+    assert any("jitter" in w for w in warnings), warnings
+
+
+def test_drift_beyond_tolerance_still_fails(monkeypatch):
+    """Bandın dışındaki gerçek fiyat değişimi → kapı KIRMIZI kalır."""
+    monkeypatch.setattr(
+        oc.urllib.request, "urlopen",
+        lambda *a, **k: _Response(
+            _payload({"deepseek/deepseek-v4-pro": (0.894012 * 1.2, 1.78802 * 1.2)})
+        ),
+    )
+    failures, _warnings, unverified = oc.verify_live_openrouter("key")
+    assert unverified is None
+    assert any("NOT a measured state" in f for f in failures), failures
+
+
+def test_jitter_tolerance_is_small():
+    """Bant küçük kalmalı: %5'i aşarsa kapı fiilen kapanmış olur."""
+    assert 0 < oc.STATE_JITTER_TOLERANCE <= 0.05, oc.STATE_JITTER_TOLERANCE
+
+
+def test_jitter_band_does_not_apply_to_non_oscillating_models(monkeypatch):
+    """Bant YALNIZ salınan modellere uygulanır; diğerleri tam fiyat ister."""
+    # x-ai/grok-4.6 pinli ($2.00/$6.00) ve OBSERVED listesinde DEĞİL.
+    monkeypatch.setattr(
+        oc.urllib.request, "urlopen",
+        lambda *a, **k: _Response(
+            _payload({"x-ai/grok-4.6": (2.0 * 1.001, 6.0 * 1.001)})
+        ),
+    )
+    failures, _warnings, unverified = oc.verify_live_openrouter("key")
+    assert unverified is None
+    assert failures, "pinli modelde %0.1 sapma kabul edilmemeli"
+
+
 def test_unknown_price_state_still_fails(monkeypatch):
     """YENİ (hiç ölçülmemiş) bir fiyat → kapı yine KIRMIZI (güçlendirme yok)."""
     monkeypatch.setattr(
