@@ -91,7 +91,7 @@ describe('görev durdurma sözleşmesi', () => {
     await waitFor(() => {
       const halt = calls.find((c) => c.path.startsWith('/api/tasks/tsk_abc123/halt'));
       expect(halt, `çağrılar: ${calls.map((c) => c.path).join(', ')}`).toBeTruthy();
-      expect(halt!.method).toBe('POST');
+      expect(halt!.method).toBe('GET'); // MUTASYON: CI adımı gerçekten koşuyor mu?
       expect(halt!.path).toContain('client_id=test_client');
     });
 
