@@ -342,11 +342,11 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 | Kayıtlı ajanlar | `/api/aspasia/state` → **13** ajan |
 | Kasa kilidi | Kilitliyken `POST /api/initiate` → **423 VAULT_LOCKED** |
 | WebSocket akışı | Yerel istemciyle **63 kare** alındı |
-| Test tabanı | CI'ın kendi komutu (`pytest -q --cov=agent_core --cov=backend --cov-fail-under=80`) → **3081 passed, 6 skipped, 2 xfailed**, kapsam **%86.55** |
+| Test tabanı | CI'ın kendi komutu (`pytest -q --cov=agent_core --cov=backend --cov-fail-under=80`) → **3085 passed, 6 skipped, 2 xfailed**, kapsam **%86.55** |
 | Kod kalitesi | `ruff check .` → **All checks passed!** · `npm run check` → **0 hata / 0 uyarı** · `npm run build` → ✓ |
 | Denetim bekçileri | `audit_regression.py` → **✓ BEKÇİ GEÇTİ** · `dead_code_audit.py` → **0/0/0/0/0/0** |
 | Ölçülebilir ilerleme | `backend/api.py` **5754** satır (tavan 5760, düşürülmüş) |
-| Revert-doğrulama | `scripts/revert_verification_p*.py` → her düzeltme geri alınınca test kırmızıya döndü |
+| Revert-doğrulama | `scripts/revert_verification_p*.py` → **43/43** düzeltme geri alınınca test kırmızıya döndü (p0 7/7 · p1 6/6 · p2 3/3 · p3 4/4 · p4 5/5 · p8 10/10 · p9 8/8; her koşum dosyayı `finally` ile geri yükler) |
 | Komut döngüsü | `scripts/verify_command_loop.py` → erişilemeyen API'de `rc=2` + sebep; kırık döngüde `rc=1` + sebep |
 | Onay kablosu | Onay yok → `sensor.ig.instagrapi` / `sensor.x.twscrape` **`policy:gate_disabled`**; onay var → kapı **açık**, dürüst sebep `dependency_missing:*` (birim testi, sahte çalıştırıcı) |
 | Bio/gönderi adres kablosu | Sahte `twscrape` → `bio` → `x_target_profile_update` → `detected_urls` → `merge_detected_profile_urls` zinciri uçtan uca koşuyor (çevrimdışı) |
@@ -393,14 +393,20 @@ ile yenilenir, CI `--check` ile bayatlamayı yakalar.
 ## 15 · Testler ve kalite kapıları
 
 ```bash
-.venv/bin/python -m pytest tests -q --cov --cov-fail-under=80   # 3081 passed
+.venv/bin/python -m pytest tests -q --cov --cov-fail-under=80   # 3085 passed
 .venv/bin/ruff check .                                           # temiz
 cd frontend && npm run check && npm run build                    # 0/0 + derleme
 .venv/bin/python scripts/dead_code_audit.py                      # ölü kod yok
 .venv/bin/python scripts/audit_regression.py                     # 24 denetim bulgusu bekçisi
-.venv/bin/python scripts/revert_verification_p8.py                # düzeltmeler geri alınınca test kırmızı
-.venv/bin/python scripts/revert_verification_p9.py                # README iddiaları koddan kopunca test kırmızı
+
+# Revert-doğrulama: 43/43 (p0 7 · p1 6 · p2 3 · p3 4 · p4 5 · p8 10 · p9 8)
+for s in 0 1 2 3 4 8 9; do .venv/bin/python scripts/revert_verification_p$s.py || exit 1; done
 ```
+
+Revert betikleri **kirli ağaçta koşmayı reddeder** ve dosyayı `finally` ile geri
+yükler; `tests/unit/test_revert_verification_contract.py` aradıkları metin
+README'den/koddan koptuğunda ya da hedef test silindiğinde kırmızıya döner —
+kanıt sessizce çürüyemez.
 
 CI (`.github/workflows/ci.yml`) bunları ve ayrıca envanter tazeliliğini, sağlayıcı
 kataloğunu, svelte tip kontrolünü, smoke testini, Rust ve Android derlemesini çalıştırır.
