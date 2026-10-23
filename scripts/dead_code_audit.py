@@ -539,6 +539,78 @@ FRONTEND_ENTRIES = ("main.ts", "App.svelte")
 #: Vite/TS tip bildirimi — import edilmez, tsconfig'dan gelir (ölü kod DEĞİL)
 FRONTEND_DECLARATIONS = ("vite-env.d.ts", "app.d.ts")
 
+#: Frontend TEST varlıkları (vitest). Tarayıcı paketine GİRMEZLER, bu yüzden
+#: "giriş noktasından ulaşılamıyor" diye ölü sayılamazlar. Ama koşulmadıkları
+#: sürece de "test" sayılmazlar: `uncollected_frontend_tests()` her birinin
+#: vitest yapılandırmasının `include` kalıplarına gerçekten uyduğunu ölçer.
+FRONTEND_TEST_FILE = re.compile(
+    r"(^|/)(__tests__/.*|[^/]*\.(test|spec)\.ts|test-setup\.ts)$"
+)
+#: Vitest kurulum dosyaları (config `setupFiles`) — test asset'i ama test değil.
+FRONTEND_TEST_SETUP = ("test-setup.ts",)
+
+
+def _is_frontend_test(f: pathlib.Path) -> bool:
+    """Frontend dosyası test varlığı mı (uygulama grafiğinin dışında)?"""
+    try:
+        relpath = f.relative_to(FRONTEND_SRC).as_posix()
+    except ValueError:
+        return False
+    return bool(FRONTEND_TEST_FILE.search(relpath))
+
+
+def _glob_to_regex(pattern: str) -> re.Pattern[str]:
+    """`src/**/*.test.ts` gibi bir vitest kalıbını regex'e çevirir."""
+    out = []
+    for ch in pattern:
+        if ch == "*":
+            out.append("[^/]*")
+        elif ch == "?":
+            out.append("[^/]")
+        else:
+            out.append(re.escape(ch))
+    # `**/` her derinliği (sıfır klasör dâhil) kapsar.
+    glob = "".join(out).replace(".*/[^/]*", "(?:.*/)?[^/]*")
+    return re.compile("^" + glob + "$")
+
+
+def uncollected_frontend_tests() -> list[dict]:
+    """Vitest `include` kalıplarının DIŞINDA kalan frontend test dosyaları.
+
+    [2026-10-24] Sözleşme testleri eklendiğinde ölü-kod dedektörü onları
+    "ulaşılamaz bileşen" diye suçladı. Doğru çözüm onları sessizce muaf
+    tutmak değil: uygulama grafiğinden çıkarılırken KOŞULDUKLARINI da
+    kanıtlamak. Konfigürasyonda eşleşmeyen bir `.test.ts` dosyası, kimsenin
+    çalıştırmadığı bir testtir — burada kırmızıya döner.
+    """
+    config = ROOT / "frontend" / "vitest.config.ts"
+    if not config.exists():
+        return []
+    text = config.read_text(encoding="utf-8", errors="replace")
+    block = re.search(r"include:\s*\[([^\]]*)\]", text)
+    patterns = re.findall(r"""['"]([^'"]+)['"]""", block.group(1)) if block else []
+    if not patterns:
+        return [
+            {"path": "frontend/vitest.config.ts", "reason": "include kalıbı yok"}
+        ]
+    compiled = [(_glob_to_regex(p), p) for p in patterns]
+    findings: list[dict] = []
+    for f in sorted(FRONTEND_SRC.rglob("*")):
+        if f.suffix != ".ts" or not f.is_file():
+            continue
+        if not re.search(r"\.(test|spec)\.ts$", f.name):
+            continue
+        relpath = f.relative_to(ROOT).as_posix()
+        src_rel = f.relative_to(ROOT / "frontend").as_posix()
+        if not any(rx.match(src_rel) for rx, _p in compiled):
+            findings.append(
+                {
+                    "path": relpath,
+                    "reason": "hiçbir vitest `include` kalıbıyla eşleşmiyor",
+                }
+            )
+    return findings
+
 
 def _frontend_imports(f: pathlib.Path) -> list[pathlib.Path]:
     """Bir frontend dosyasının çözülmüş yerel import hedefleri."""
@@ -578,7 +650,9 @@ def dead_frontend() -> list[dict]:
     files = [
         f
         for f in FRONTEND_SRC.rglob("*")
-        if f.suffix in {".svelte", ".ts", ".js"} and "node_modules" not in str(f)
+        if f.suffix in {".svelte", ".ts", ".js"}
+        and "node_modules" not in str(f)
+        and not _is_frontend_test(f)  # test varlıkları uygulama grafiğinde değil
     ]
     dynamic = False
     for f in files:
@@ -634,6 +708,7 @@ def main() -> int:
     agents = dead_agents()
     capabilities, cap_source = dead_capabilities()
     frontend = dead_frontend()
+    uncollected_tests = uncollected_frontend_tests()
 
     payload = {
         "dead_modules": modules,
@@ -642,6 +717,7 @@ def main() -> int:
         "dead_agents": agents,
         "dead_capabilities": capabilities,
         "dead_frontend": frontend,
+        "uncollected_frontend_tests": uncollected_tests,
         "capability_source": cap_source,
         "totals": {
             "modules": len(modules),
@@ -650,6 +726,7 @@ def main() -> int:
             "agents": len(agents),
             "capabilities": len(capabilities),
             "frontend": len(frontend),
+            "uncollected_frontend_tests": len(uncollected_tests),
         },
     }
 
@@ -678,10 +755,14 @@ def main() -> int:
     print(f"\nC5 ÖLÜ FRONTEND BİLEŞENİ ({len(frontend)})")
     for m in frontend:
         print(f"   {m['path']:<58} {m['lines']:>5} satır")
+    print(f"\nC6 KOŞULMAYAN FRONTEND TESTİ ({len(uncollected_tests)}) — vitest `include` dışı")
+    for m in uncollected_tests:
+        print(f"   {m['path']:<58} {m['reason']}")
     print()
     print(
         f"TOPLAM: modül={len(modules)} test-only={len(test_only_modules)} fonksiyon={len(functions)} "
-        f"ajan={len(agents)} yetenek={len(capabilities)} frontend={len(frontend)}"
+        f"ajan={len(agents)} yetenek={len(capabilities)} frontend={len(frontend)} "
+        f"koşulmayan-test={len(uncollected_tests)}"
     )
     return 0 if not any(payload["totals"].values()) else 1
 
