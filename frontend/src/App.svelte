@@ -450,7 +450,7 @@
     <AtlasPinealCockpit />
   {/if}
 
-  <!-- [P6] Görünüm seçici: Muharebe Masası · Kontrol Paneli · Kokpit.
+  <!-- [P6] Görünüm seçici: Muharebe Masası · Kontrol Paneli · SpiderFoot · Kokpit.
        Panel kendi içinde de bu düğmeleri taşır; buradaki seçici her görünümden
        erişilebilir olsun diye vardır. -->
   <nav class="view-switcher" aria-label="Görünüm seçici">
@@ -463,13 +463,13 @@
       on:click={() => { activeViewMode.set('control'); localStorage.setItem('pineal_view_mode', 'control'); }}
     >KONTROL PANELİ</button>
     <button
-      class:is-active={$activeViewMode === 'cockpit'}
-      on:click={() => { activeViewMode.set('cockpit'); localStorage.setItem('pineal_view_mode', 'cockpit'); }}
-    >KOKPİT</button>
-    <button
       class:is-active={$activeViewMode === 'spiderfoot'}
       on:click={() => { activeViewMode.set('spiderfoot'); localStorage.setItem('pineal_view_mode', 'spiderfoot'); }}
     >SPIDERFOOT</button>
+    <button
+      class:is-active={$activeViewMode === 'cockpit'}
+      on:click={() => { activeViewMode.set('cockpit'); localStorage.setItem('pineal_view_mode', 'cockpit'); }}
+    >KOKPİT</button>
   </nav>
 
   <!--
