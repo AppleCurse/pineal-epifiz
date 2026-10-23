@@ -154,7 +154,7 @@ def test_capability_is_closed_until_cross_platform_gate_opens(monkeypatch):
     result = asyncio.run(run_capability(
         "sensor.identity.handle_probe",
         CapabilityContext(subject="hedef"),
-        state=_state(),
+        state=_state(),  # bayrak YOK → politika kapıyı kapatır
     ))
     assert result.available is False
     # Sebep makine-okunur: hangi kapı kapattı (denied_by) + sınıf.
@@ -277,3 +277,59 @@ def test_osint_agent_records_reason_when_capability_closed(monkeypatch):
     assert out.associated_platforms == ["x"], "kapı kapalıyken alanlar değişmemeli"
     assert out.confidence == 0.4
     assert "gate_disabled" in out.handle_probe["reason"]
+
+
+# ------------------------------------- 6) ONAY (consent) KABLOSU uçtan uca
+def test_room_authorization_opens_the_gate_for_that_task_only():
+    """Operatör onayı (`authorized_alternatives`) kapıyı AÇAR — başka yol yok."""
+    from agent_core.agents.osint_investigator import OsintInvestigatorAgent
+
+    without = OsintInvestigatorAgent._policy_state({"policy": {"vault_locked": False}})
+    assert not dict(without.enabled_flags).get("ENABLE_CROSS_PLATFORM", False)
+
+    with_consent = OsintInvestigatorAgent._policy_state({
+        "policy": {"vault_locked": False, "cross_platform_authorized": True},
+    })
+    assert dict(with_consent.enabled_flags).get("ENABLE_CROSS_PLATFORM") is True
+
+
+def test_mission_payload_carries_the_operator_consent(monkeypatch):
+    """`run_mission` onayı payload'a yazar; ajan onu görür."""
+    import inspect
+
+    import backend.api as api
+
+    source = inspect.getsource(api.run_mission)
+    assert "cross_platform_authorized" in source, (
+        "onay kaydı görev payload'ına taşınmıyor — kapı hiç açılmaz"
+    )
+    assert "authorized_alternatives" in source
+
+
+def test_capability_runs_when_the_gate_is_opened_by_consent(monkeypatch):
+    """Kapı onayla açıldığında yoklama GERÇEKTEN koşar (kanıt üretir)."""
+    import agent_core.services.handle_probe as hp
+    from agent_core.capabilities import CapabilityContext, bootstrap, run_capability
+
+    bootstrap()
+    fake = _FakeClient({"instagram": 200, "facebook": 200})
+    original = hp.probe_handle
+
+    async def _patched(username, **kwargs):
+        return await original(username, client=fake)
+
+    monkeypatch.setattr(hp, "probe_handle", _patched)
+    from agent_core.capabilities.policy import PolicyState
+
+    state = PolicyState(
+        vault_locked=False,
+        enabled_flags={"ENABLE_CROSS_PLATFORM": True},
+        rate_ok=True,
+    )
+    result = asyncio.run(run_capability(
+        "sensor.identity.handle_probe",
+        CapabilityContext(subject="hedef"),
+        state=state,
+    ))
+    assert result.available is True
+    assert {item.scope.get("platform") for item in result.items if item.scope} >= {"instagram", "facebook"}

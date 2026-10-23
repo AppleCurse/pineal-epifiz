@@ -15,6 +15,7 @@ Test: ``tests/unit/test_osint_*.py``, ``tests/unit/test_maigret_scanner.py``,
 
 import logging
 import asyncio
+import dataclasses
 import aiohttp
 import os
 from typing import Dict, Any, Optional
@@ -67,11 +68,22 @@ class OsintInvestigatorAgent:
         from agent_core.safety import coerce_minor_case
 
         overrides = (payload or {}).get("policy") or {}
-        return policy_state(
+        state = policy_state(
             vault_locked=bool(overrides.get("vault_locked", True)),
             rate_ok=overrides.get("rate_ok"),
             minor_case=coerce_minor_case(overrides.get("minor_case")),
         )
+        # [2026-10-23 · ONAY KABLOSU] Operatör `/api/scraper/authorize-alternative`
+        # ile çapraz aramaya AÇIKÇA onay verdiyse bu görev için
+        # `ENABLE_CROSS_PLATFORM` kapısı açılır. Onay aksi hâlde hiçbir şeyi
+        # değiştirmez (varsayılan hâlâ KAPALI) — yetki env'den gelmez, oda
+        # kaydından gelir ve yalnız o görevi kapsar.
+        if overrides.get("cross_platform_authorized"):
+            state = dataclasses.replace(
+                state,
+                enabled_flags={**dict(state.enabled_flags), "ENABLE_CROSS_PLATFORM": True},
+            )
+        return state
 
     @staticmethod
     async def _run_spine(

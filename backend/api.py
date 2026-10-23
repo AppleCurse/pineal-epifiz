@@ -2819,9 +2819,21 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
         # kilidi İKİNCİ kez uygular. Kapı zaten zorunlu tuttu; bu satır kuşak
         # kuşak savunmadır — beyan kaybolsa bile kilit gevşemez, çünkü
         # `coerce_minor_case` yarım/bozuk beyanı REDDEDER (fail-closed).
+        # [2026-10-23 · ONAY KABLOSU] Operatör çapraz arama için açık onay
+        # verdiyse (POST /api/scraper/authorize-alternative) bu görevde
+        # `sensor.identity.handle_probe` kapısı açılır. Onay yoksa hiçbir şey
+        # değişmez; env varsayılanı (KAPALI) korunur.
+        _authorized = {
+            str(item.get("alternative"))
+            for item in (get_room(client_id).get("authorized_alternatives") or [])
+            if isinstance(item, dict)
+        }
         payload["policy"] = {
             "vault_locked": not _check_vault_interlock(client_id),
             "minor_case": _minor_case_for(client_id),
+            "cross_platform_authorized": bool(
+                _authorized & {"public_web_search", "cross_platform"}
+            ),
             # [P1 · 2026-10-16] Hız kapısı bilinmiyorsa RET eder (fail-closed).
             # Bu görev yolunda hız durumu ölçülmüyor; repo konvansiyonu (aynı
             # dosyanın X kazıma yolu) `rate_ok=True` verir. Kasa kapısı ve

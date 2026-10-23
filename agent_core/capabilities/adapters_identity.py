@@ -16,7 +16,6 @@ Dürüstlük:
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from agent_core.capabilities.base import (
@@ -29,10 +28,6 @@ from agent_core.capabilities.base import (
 )
 
 __all__ = ["HandleProbeCapability"]
-
-
-def _flag(name: str) -> bool:
-    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 class HandleProbeCapability(BaseCapability):
@@ -51,8 +46,15 @@ class HandleProbeCapability(BaseCapability):
     )
 
     def availability(self) -> Availability:
-        if not _flag("ENABLE_CROSS_PLATFORM"):
-            return Availability.unavailable("gate_disabled:ENABLE_CROSS_PLATFORM")
+        """Bağımlılık yok → her zaman ``ok``. Kapı kararı PolicyKernel'indir.
+
+        [2026-10-23 · B1/B2 dersi] Eski adaptörler env bayrağını BURADA da
+        okuyordu; sonuç "iki farklı gerçek" oluyordu: politika onayla kapıyı
+        açsa bile `availability()` env'e bakıp `gate_disabled` diyebiliyordu.
+        Bu yetenek native (dış paket yok) olduğu için bağımlılık denetimi
+        gerekmez; `ENABLE_CROSS_PLATFORM` kapısını yalnız politika uygular ve
+        ret sebebi `denied_by` alanında makine-okunur görünür.
+        """
         return Availability.ok()
 
     async def run(self, ctx: CapabilityContext) -> CapabilityResult:
