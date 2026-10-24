@@ -270,9 +270,9 @@
     {
       "available": true,
       "desc": "Video kodlama (renderer.report.video)",
-      "importable": false,
+      "importable": true,
       "name": "ffmpeg",
-      "path": "C:\\Users\\gumus\\scoop\\shims\\ffmpeg.EXE"
+      "path": null
     },
     {
       "available": false,
@@ -300,14 +300,14 @@
       "desc": "Edge worker / frontend build",
       "importable": false,
       "name": "node",
-      "path": "C:\\Users\\gumus\\AppData\\Local\\Microsoft\\WinGet\\Packages\\OpenJS.NodeJS.22_Microsoft.Winget.Source_8wekyb3d8bbwe\\node-v22.23.2-win-x64\\node.EXE"
+      "path": "/usr/local/bin/node"
     },
     {
       "available": true,
       "desc": "Edge worker / frontend build (agent-reach kurulumu)",
       "importable": false,
       "name": "npm",
-      "path": "C:\\Users\\gumus\\AppData\\Local\\Microsoft\\WinGet\\Packages\\OpenJS.NodeJS.22_Microsoft.Winget.Source_8wekyb3d8bbwe\\node-v22.23.2-win-x64\\npm.CMD"
+      "path": "/usr/local/bin/npm"
     },
     {
       "available": false,
@@ -538,10 +538,37 @@
     "managed_but_missing_from_example": [],
     "managed_count": 17
   },
+  "llm_engine": {
+    "any_api_key": false,
+    "any_live": false,
+    "api_keys": {
+      "CEREBRAS_API_KEY": false,
+      "DASHSCOPE_API_KEY": false,
+      "DEEPINFRA_API_KEY": false,
+      "DEEPSEEK_API_KEY": false,
+      "FIREWORKS_API_KEY": false,
+      "GEMINI_API_KEY": false,
+      "GROQ_API_KEY": false,
+      "HUGGINGFACE_API_KEY": false,
+      "MISTRAL_API_KEY": false,
+      "NINEROUTER_API_KEY": false,
+      "NOUS_API_KEY": false,
+      "NVIDIA_API_KEY": false,
+      "OPENROUTER_API_KEY": false,
+      "PERPLEXITY_API_KEY": false,
+      "SAMBANOVA_API_KEY": false,
+      "TOGETHER_API_KEY": false
+    },
+    "engine_ok": false,
+    "live_llm_e2e": false,
+    "pineal_router_live": false,
+    "reason": "no_llm_api_key",
+    "use_local_llm": false
+  },
   "olcum": "scripts/golge_denetimi.py",
-  "olcum_zamani": "2026-10-24T02:25:40Z",
-  "platform": "win32",
-  "python": "3.11.9",
+  "olcum_zamani": "2026-10-24T03:34:38Z",
+  "platform": "linux",
+  "python": "3.11.2",
   "sema_surumu": 1,
   "uclar": {
     "count": 72,
@@ -1191,7 +1218,7 @@
     "error": null,
     "items": [
       {
-        "available": true,
+        "available": false,
         "available_gates_open": true,
         "env_gates": [
           "ENABLE_MEDIA_FORENSICS"
@@ -1203,13 +1230,13 @@
         "id": "analyzer.media.frames",
         "kind": "CapabilityKind.ANALYZER",
         "license": "OpenCV (Apache-2.0) — harici bağımlılık",
-        "reason": null,
+        "reason": "gate_disabled:ENABLE_MEDIA_FORENSICS",
         "reason_gates_open": null,
         "unmanaged_gates": [],
-        "wake_class": "hazır"
+        "wake_class": "sadece_kapi"
       },
       {
-        "available": true,
+        "available": false,
         "available_gates_open": true,
         "env_gates": [
           "ENABLE_MEDIA_FORENSICS"
@@ -1221,10 +1248,10 @@
         "id": "analyzer.media.similarity",
         "kind": "CapabilityKind.ANALYZER",
         "license": "OpenCV + kendi pHash uygulaması (dahili)",
-        "reason": null,
+        "reason": "gate_disabled:ENABLE_MEDIA_FORENSICS",
         "reason_gates_open": null,
         "unmanaged_gates": [],
-        "wake_class": "hazır"
+        "wake_class": "sadece_kapi"
       },
       {
         "available": true,
@@ -1254,7 +1281,7 @@
         "id": "extractor.media.transcript",
         "kind": "CapabilityKind.EXTRACTOR",
         "license": "yerel motor (whisper CLI ya da yerel uç) — kod gömülmez",
-        "reason": "no_engine",
+        "reason": "gate_disabled:ENABLE_MEDIA_FORENSICS",
         "reason_gates_open": "no_engine",
         "unmanaged_gates": [],
         "wake_class": "kurulum_gerekli"
@@ -1293,7 +1320,7 @@
         "wake_class": "kurulum_gerekli"
       },
       {
-        "available": true,
+        "available": false,
         "available_gates_open": true,
         "env_gates": [
           "ENABLE_CRAWL4AI"
@@ -1305,13 +1332,13 @@
         "id": "extractor.web.crawl4ai",
         "kind": "CapabilityKind.EXTRACTOR",
         "license": "Apache-2.0",
-        "reason": null,
+        "reason": "gate_disabled:ENABLE_CRAWL4AI",
         "reason_gates_open": null,
         "unmanaged_gates": [],
-        "wake_class": "hazır"
+        "wake_class": "sadece_kapi"
       },
       {
-        "available": true,
+        "available": false,
         "available_gates_open": true,
         "env_gates": [
           "ENABLE_SCRAPLING"
@@ -1323,10 +1350,10 @@
         "id": "extractor.web.scrapling",
         "kind": "CapabilityKind.EXTRACTOR",
         "license": "BSD-3-Clause",
-        "reason": null,
+        "reason": "gate_disabled:ENABLE_SCRAPLING",
         "reason_gates_open": null,
         "unmanaged_gates": [],
-        "wake_class": "hazır"
+        "wake_class": "sadece_kapi"
       },
       {
         "available": true,
@@ -1344,7 +1371,7 @@
         "wake_class": "hazır"
       },
       {
-        "available": true,
+        "available": false,
         "available_gates_open": true,
         "env_gates": [
           "ENABLE_REPORT_FACTORY"
@@ -1356,13 +1383,13 @@
         "id": "renderer.report.diagram",
         "kind": "CapabilityKind.RENDERER",
         "license": "dahili (reportlab/Pillow/ffmpeg harici araçlar)",
-        "reason": null,
+        "reason": "gate_disabled:ENABLE_REPORT_FACTORY",
         "reason_gates_open": null,
         "unmanaged_gates": [],
-        "wake_class": "hazır"
+        "wake_class": "sadece_kapi"
       },
       {
-        "available": true,
+        "available": false,
         "available_gates_open": true,
         "env_gates": [
           "ENABLE_REPORT_FACTORY"
@@ -1374,14 +1401,14 @@
         "id": "renderer.report.pdf",
         "kind": "CapabilityKind.RENDERER",
         "license": "dahili (reportlab/Pillow/ffmpeg harici araçlar)",
-        "reason": null,
+        "reason": "gate_disabled:ENABLE_REPORT_FACTORY",
         "reason_gates_open": null,
         "unmanaged_gates": [],
-        "wake_class": "hazır"
+        "wake_class": "sadece_kapi"
       },
       {
-        "available": true,
-        "available_gates_open": true,
+        "available": false,
+        "available_gates_open": false,
         "env_gates": [
           "ENABLE_REPORT_FACTORY"
         ],
@@ -1392,10 +1419,10 @@
         "id": "renderer.report.video",
         "kind": "CapabilityKind.RENDERER",
         "license": "dahili (reportlab/Pillow/ffmpeg harici araçlar)",
-        "reason": null,
-        "reason_gates_open": null,
+        "reason": "gate_disabled:ENABLE_REPORT_FACTORY",
+        "reason_gates_open": "dependency_missing:ffmpeg",
         "unmanaged_gates": [],
-        "wake_class": "hazır"
+        "wake_class": "kurulum_gerekli"
       },
       {
         "available": false,
@@ -1411,13 +1438,13 @@
         "id": "sensor.company.harvester",
         "kind": "CapabilityKind.SENSOR",
         "license": "GPL-2.0 (harici CLI — kod gömülmez)",
-        "reason": "dependency_missing:theHarvester",
+        "reason": "gate_disabled:ENABLE_COMPANY_TARGETING",
         "reason_gates_open": "dependency_missing:theHarvester",
         "unmanaged_gates": [],
         "wake_class": "kurulum_gerekli"
       },
       {
-        "available": true,
+        "available": false,
         "available_gates_open": true,
         "env_gates": [
           "ENABLE_COMPANY_TARGETING"
@@ -1429,13 +1456,13 @@
         "id": "sensor.company.people",
         "kind": "CapabilityKind.SENSOR",
         "license": "dahili (yalnız HTTP GET + stdlib ayrıştırma)",
-        "reason": null,
+        "reason": "gate_disabled:ENABLE_COMPANY_TARGETING",
         "reason_gates_open": null,
         "unmanaged_gates": [],
-        "wake_class": "hazır"
+        "wake_class": "sadece_kapi"
       },
       {
-        "available": true,
+        "available": false,
         "available_gates_open": true,
         "env_gates": [
           "ENABLE_COMPANY_TARGETING"
@@ -1447,10 +1474,10 @@
         "id": "sensor.company.seo",
         "kind": "CapabilityKind.SENSOR",
         "license": "dahili (yalnız HTTP GET + stdlib ayrıştırma)",
-        "reason": null,
+        "reason": "gate_disabled:ENABLE_COMPANY_TARGETING",
         "reason_gates_open": null,
         "unmanaged_gates": [],
-        "wake_class": "hazır"
+        "wake_class": "sadece_kapi"
       },
       {
         "available": true,
@@ -1471,7 +1498,7 @@
         "wake_class": "hazır"
       },
       {
-        "available": true,
+        "available": false,
         "available_gates_open": true,
         "env_gates": [
           "ENABLE_HOLEHE"
@@ -1483,13 +1510,13 @@
         "id": "sensor.identity.holehe",
         "kind": "CapabilityKind.SENSOR",
         "license": "GPL-3.0 (harici süreç/bağımlılık — kod gömülmez)",
-        "reason": null,
+        "reason": "gate_disabled:ENABLE_HOLEHE",
         "reason_gates_open": null,
         "unmanaged_gates": [],
-        "wake_class": "hazır"
+        "wake_class": "sadece_kapi"
       },
       {
-        "available": true,
+        "available": false,
         "available_gates_open": true,
         "env_gates": [
           "ENABLE_MAIGRET"
@@ -1501,14 +1528,14 @@
         "id": "sensor.identity.maigret",
         "kind": "CapabilityKind.SENSOR",
         "license": "MIT",
-        "reason": null,
+        "reason": "gate_disabled:ENABLE_MAIGRET",
         "reason_gates_open": null,
         "unmanaged_gates": [],
-        "wake_class": "hazır"
+        "wake_class": "sadece_kapi"
       },
       {
-        "available": true,
-        "available_gates_open": true,
+        "available": false,
+        "available_gates_open": false,
         "env_gates": [
           "ENABLE_IG_SECONDARY"
         ],
@@ -1520,13 +1547,13 @@
         "id": "sensor.ig.instagrapi",
         "kind": "CapabilityKind.SENSOR",
         "license": "NOASSERTION (yalnız ikinci kaynak; hukuki inceleme notu)",
-        "reason": null,
-        "reason_gates_open": null,
+        "reason": "credentials_missing:IG_USERNAME/IG_PASSWORD",
+        "reason_gates_open": "credentials_missing:IG_USERNAME/IG_PASSWORD",
         "unmanaged_gates": [],
-        "wake_class": "hazır"
+        "wake_class": "kurulum_gerekli"
       },
       {
-        "available": true,
+        "available": false,
         "available_gates_open": true,
         "env_gates": [
           "ENABLE_MEDIA_FORENSICS"
@@ -1539,10 +1566,10 @@
         "id": "sensor.media.fetch",
         "kind": "CapabilityKind.SENSOR",
         "license": "yt-dlp (Unlicense) · httpx (BSD) — harici araç, kod gömülmez",
-        "reason": null,
+        "reason": "gate_disabled:ENABLE_MEDIA_FORENSICS",
         "reason_gates_open": null,
         "unmanaged_gates": [],
-        "wake_class": "hazır"
+        "wake_class": "sadece_kapi"
       },
       {
         "available": false,

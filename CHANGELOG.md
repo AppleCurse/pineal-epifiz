@@ -36,14 +36,9 @@
 - **Windows çalıştırıcılar:** `scripts/calistir_windows.ps1` +
   `scripts/calistir_windows.bat` — `.venv\Scripts\python.exe` ile denetimi
   çalıştırır, eksik paket/CLI kurulum rehberi içerir.
-- **REMEDIYASYON kılavuzu (`docs/reports/REMEDIYASYON.md`):** 9 hâlâ kapalı
-  yetenek için tek tek gerçek neden, gereken kurulum ve doğrulama komutu.
-  ffmpeg, theHarvester, Instagram şifresi, SearXNG, agent-reach, ses uçları
-  gibi sistem-seviye bağımlılıklar ayrıntılı olarak açıklanmıştır.
-- **requirements-blocked.txt:** 9 kapalı yeteneğin pip-kurulabilir Python
-  bağımlılıkları (openai-whisper, translate-cli, ffmpeg-python). Sistem
-  binary'leri (ffmpeg, piper, theHarvester, agent-reach, SearXNG) burada yok,
-  REMEDIYASYON.md'ye yönlendirme var.
+- **REMEDIYASYON kılavuzu (`docs/reports/REMEDIYASYON.md`):** 10 engeli (9 yetenek + LLM motoru) için tek tek gerçek neden, gereken kurulum ve doğrulama komutu. ffmpeg, theHarvester, Instagram şifresi, SearXNG, agent-reach, ses uçları ve LLM API anahtarı / `LIVE_LLM_E2E` gibi sistem-seviye bağımlılıklar ayrıntılı olarak açıklanmıştır.
+- **LLM motoru tespiti (§10):** `scripts/golge_denetimi.py` artık `OPENROUTER_API_KEY`, `GROQ_API_KEY`, `GEMINI_API_KEY`, `DEEPSEEK_API_KEY` gibi LLM API anahtarlarını ve `LIVE_LLM_E2E` / `PINEAL_ROUTER_LIVE` canlı çağrı bayrağını kontrol eder. `TargetPsycheProfiler` (`PassionMapper`, `FrictionDetector`, `CognitiveProfiler`) ve diğer LLM-güvenli ajanların (`authenticity_auditor`, `depth_analyst`, `human_behavior`, `mirror_truth`, `resonance_synthesizer`) `llm_unavailable` durumu raporlanır.
+- **requirements-blocked.txt:** 9 kapalı yeteneğin pip-kurulabilir Python bağımlılıkları (openai-whisper, translate-cli, ffmpeg-python). Sistem binary'leri (ffmpeg, piper, theHarvester, agent-reach, SearXNG) burada yok, REMEDIYASYON.md'ye yönlendirme var.
 
 ## Unreleased — 2026-10-18 — P9: README yenilemesi + sistemin yeni haritası
 

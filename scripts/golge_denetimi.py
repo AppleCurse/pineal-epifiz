@@ -38,6 +38,7 @@ import argparse
 import ast
 import importlib
 import json
+import os
 import re
 import shutil
 import sys
@@ -540,6 +541,66 @@ def embedded_assets(index: List[tuple[str, str]]) -> List[Dict[str, Any]]:
     return rows
 
 
+# ---------------------------------------------------------- LLM motoru (API anahtarı + canlı çağrı bayrağı)
+def llm_engine_inventory() -> Dict[str, Any]:
+    """LLM motorunun çalışıp çalışmadığını kontrol eder.
+
+    TargetPsycheProfiler (PassionMapper, FrictionDetector, CognitiveProfiler)
+    ve diğer LLM-güvenli ajanlar (authenticity_auditor, depth_analyst,
+    human_behavior, mirror_truth, resonance_synthesizer) şu iki koşulu birlikte
+    karşılamalıdır:
+
+      1. En az bir LLM API anahtarı tanımlı (OPENROUTER_API_KEY, GROQ_API_KEY,
+         GEMINI_API_KEY, DEEPSEEK_API_KEY, vb.)
+      2. Canlı çağrı bayrası açık (LIVE_LLM_E2E=1 veya PINEAL_ROUTER_LIVE=1)
+
+    Herhangi biri eksikse motor `llm_unavailable` döner ve hedef kişi analizi
+    (core_passions, sensitivities, vb.) boş döner.
+    """
+    api_keys = {
+        "OPENROUTER_API_KEY": "OpenRouter (bulut)",
+        "GROQ_API_KEY": "Groq (gpt-oss-120b)",
+        "GEMINI_API_KEY": "Google Gemini",
+        "DEEPSEEK_API_KEY": "DeepSeek",
+        "NINEROUTER_API_KEY": "9Router yerel hub",
+        "MISTRAL_API_KEY": "Mistral",
+        "TOGETHER_API_KEY": "Together",
+        "FIREWORKS_API_KEY": "Fireworks",
+        "DASHSCOPE_API_KEY": "DashScope",
+        "SAMBANOVA_API_KEY": "SambaNova",
+        "NVIDIA_API_KEY": "NVIDIA NIM",
+        "HUGGINGFACE_API_KEY": "HuggingFace",
+        "DEEPINFRA_API_KEY": "DeepInfra",
+        "PERPLEXITY_API_KEY": "Perplexity",
+        "CEREBRAS_API_KEY": "Cerebras",
+        "NOUS_API_KEY": "Nous Research",
+    }
+    found_keys = {name: bool(os.getenv(name, "").strip()) for name in api_keys}
+    any_key = any(found_keys.values())
+    live_e2e = os.getenv("LIVE_LLM_E2E", "0").strip() == "1"
+    router_live = os.getenv("PINEAL_ROUTER_LIVE", "0").strip() == "1"
+    any_live = live_e2e or router_live
+    local_llm = os.getenv("USE_LOCAL_LLM", "false").strip().lower() == "true"
+
+    engine_ok = any_key and any_live
+    reason = None
+    if not any_key:
+        reason = "no_llm_api_key"
+    elif not any_live:
+        reason = "live_llm_disabled"
+
+    return {
+        "any_api_key": any_key,
+        "api_keys": found_keys,
+        "live_llm_e2e": live_e2e,
+        "pineal_router_live": router_live,
+        "any_live": any_live,
+        "use_local_llm": local_llm,
+        "engine_ok": engine_ok,
+        "reason": reason,
+    }
+
+
 # ---------------------------------------------------------- CLI araçları (ffmpeg, theHarvester, ...)
 def cli_tool_inventory() -> List[Dict[str, Any]]:
     """Yeteneklerin ihtiyaç duyduğu CLI araçlarının PATH'teki varlığı.
@@ -603,6 +664,7 @@ def build() -> Dict[str, Any]:
         "erisim": reach,
         "gomulu": assets,
         "cli_tools": cli_tool_inventory(),
+        "llm_engine": llm_engine_inventory(),
     }
 
 
@@ -760,7 +822,6 @@ def markdown(data: Dict[str, Any]) -> str:
     a("_Bu bölüm denetim makinesine özeldir. Windows ortamında ffmpeg / theHarvester_")
     a("_gibi araçların PATH'te olması farklı sonuç verebilir. `shutil.which`_")
     a("_ile PATH, `importlib.util.find_spec` ile Python paketi olarak denetlenir._")
-    a("")
     a("| Araç | Ne için | PATH'te | Python paketi olarak | Durum |")
     a("| --- | --- | --- | --- | --- |")
     for t in data.get("cli_tools", []):
@@ -770,6 +831,42 @@ def markdown(data: Dict[str, Any]) -> str:
             f"{'evet' if t['path'] else 'hayır'} | "
             f"{'evet' if t['importable'] else 'hayır'} | {durum} |"
         )
+    a("")
+
+    le = data.get("llm_engine", {})
+    a("## 10 · LLM motoru (API anahtarı + canlı çağrı bayrağı)")
+    a("")
+    a("_Bu bölüm, TargetPsycheProfiler ve LLM-güvenli ajanların çalışıp çalışmadığını kontrol eder:_")
+    a("_`PassionMapper`, `FrictionDetector`, `CognitiveProfiler`, `authenticity_auditor`,_")
+    a("_`depth_analyst`, `human_behavior`, `mirror_truth`, `resonance_synthesizer`._")
+    a("")
+    if le.get("engine_ok"):
+        a("- **Durum: ✓ ÇALIŞIYOR** — LLM API anahtarı tanımlı ve canlı çağrı bayrağı açık.")
+    else:
+        a("- **Durum: ✗ KAPALI** — LLM motoru çalışmıyor, hedef kişi analizi boş döner (`core_passions=[]`, `sensitivities=[]`).")
+        if le.get("reason") == "no_llm_api_key":
+            a("  - Neden: Hiçbir LLM API anahtarı tanımlı değil (`.env`'de tüm `*_API_KEY` değerleri boş).")
+        elif le.get("reason") == "live_llm_disabled":
+            a("  - Neden: API anahtarı tanımlı ama canlı LLM çağrıları kapalı (`LIVE_LLM_E2E=0`).")
+        else:
+            a("  - Neden: Bilinmeyen yapılandırma sorunu.")
+    a("")
+    a("| Ayar | Değer | Açıklama |")
+    a("| --- | --- | --- | |")
+    a(f"| Herhangi bir API anahtarı | {'evet' if le.get('any_api_key') else 'hayır'} | `OPENROUTER_API_KEY`, `GROQ_API_KEY`, `GEMINI_API_KEY`, `DEEPSEEK_API_KEY` vb. |")
+    a(f"| `LIVE_LLM_E2E` | {'1' if le.get('live_llm_e2e') else '0'} | Canlı LLM çağrılarını açar (`.env`). |")
+    a(f"| `PINEAL_ROUTER_LIVE` | {'1' if le.get('pineal_router_live') else '0'} | Router canlı moda geçişi (`.env`). |")
+    a(f"| `USE_LOCAL_LLM` | {'true' if le.get('use_local_llm') else 'false'} | Yerel LLM (Ollama/LM Studio) kullanımı. |")
+    a("")
+    a("| Tanımlı API anahtarları | Değer |")
+    a("| --- | --- | |")
+    for name, desc in sorted(le.get("api_keys", {}).items()):
+        val = le["api_keys"][name]
+        a(f"| `{name}` | {'✓ tanımlı' if val else '✗ boş'} |")
+    a("")
+    a("**Açmak için:** `.env` dosyasına en az bir `*_API_KEY` (ör. `OPENROUTER_API_KEY=sk-...`)")
+    a("yazın ve `LIVE_LLM_E2E=1` yapın, ardından sunucuyu yeniden başlatın. Yerel LLM için")
+    a("`USE_LOCAL_LLM=true` + `LOCAL_LLM_URL` yeterlidir.")
     a("")
     return "\n".join(L)
 

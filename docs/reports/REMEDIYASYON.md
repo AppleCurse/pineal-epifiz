@@ -1,8 +1,8 @@
-# REMEDIYASYON — 9 hâlâ kapalı yeteneği açmak için ne yapmak lazım
+# REMEDIYASYON — 10 engeli açmak için ne yapmak lazım
 
-Bu dosya `scripts/golge_denetimi.py` tarafından üretilen raporun §7 "Uyanma planı" bölümünün tamamlayıcısıdır. Her kapalı yetenek için **gerçek neden**, **gereken kurulum** ve **doğrulama komutu** yer alır.
+Bu dosya `scripts/golge_denetimi.py` tarafından üretilen raporun §7 "Uyanma planı" ve §10 "LLM motoru" bölümlerinin tamamlayıcısıdır. Her engel için **gerçek neden**, **gereken kurulum** ve **doğrulama komutu** yer alır.
 
-Mevcut durum: **18/27 yetenek açık, 9 yetenek kapalı.**
+Mevcut durum: **18/27 yetenek açık, 9 yetenek kapalı + LLM motoru kapalı.**
 
 ---
 
@@ -237,6 +237,45 @@ piper --help
 python scripts/golge_denetimi.py
 ```
 Raporunda "Kullanılabilir: 27/27" görmelisiniz.
+
+
+## 10 · LLM motoru (TargetPsycheProfiler) — `llm_unavailable`
+
+**Neden:** Instagram (ve diğer platform) verileri çektikten sonra `TargetPsycheProfiler` (ve `PassionMapper`, `FrictionDetector`, `CognitiveProfiler`, `authenticity_auditor`, `depth_analyst`, `human_behavior`, `mirror_truth`, `resonance_synthesizer`) LLM'e sorgu atamıyor. Neden:
+
+1. **Hiçbir LLM API anahtarı tanımlı değil** — `.env`'de `OPENROUTER_API_KEY`, `GROQ_API_KEY`, `GEMINI_API_KEY`, `DEEPSEEK_API_KEY` gibi tüm `*_API_KEY` değerleri boş.
+2. **`LIVE_LLM_E2E=0`** — canlı LLM çağrıları kod tarafından reddedilir (`REAL_LLM_CALL_NOT_EXECUTED`).
+
+Sonuç: `core_passions=[]`, `sensitivities=[]`, `fallback_reason="llm_unavailable"` — hedefin Instagram verisi getirilir ama işlenemez.
+
+**Gerekenler (iki adım, her ikisi de gerekli):**
+
+1. **API anahtarı ekle** — `.env` dosyasına en az bir tane:
+   ```
+   OPENROUTER_API_KEY=sk-or-v1-...
+   # veya GROQ_API_KEY=..., GEMINI_API_KEY=..., DEEPSEEK_API_KEY=...
+   ```
+
+2. **Canlı çağrı bayrağını aç** — `.env` dosyasında:
+   ```
+   LIVE_LLM_E2E=1
+   ```
+
+   Yerel LLM (Ollama/LM Studio) kullanacaksanız bunun yerine:
+   ```
+   USE_LOCAL_LLM=true
+   LOCAL_LLM_URL=http://localhost:11434/v1
+   ```
+
+**Doğrulama:**
+```powershell
+python scripts/golge_denetimi.py
+```
+§10 bölümünde "Durum: ✓ ÇALIŞIYOR" ve "Herhangi bir API anahtarı: evet" görmelisiniz.
+
+**Etkilenen yetenekler/ajanlar:**
+- `TargetPsycheProfiler` → `PassionMapperAgent`, `FrictionDetectorAgent`, `CognitiveProfilerAgent`
+- `authenticity_auditor`, `depth_analyst`, `human_behavior`, `mirror_truth`, `resonance_synthesizer`
 
 ---
 
