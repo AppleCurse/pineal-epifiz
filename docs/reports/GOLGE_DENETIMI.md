@@ -3,38 +3,38 @@
 > Bu dosya `scripts/golge_denetimi.py` tarafından ÜRETİLİR. Elle yazılmış sayı yoktur;
 > yeniden çalıştırıldığında depo neyse rapor odur.
 
-- Ölçüm anı: 2026-10-24T02:25:40Z · Python 3.11.9 · platform `win32`
+- Ölçüm anı: 2026-10-24T03:43:10Z · Python 3.11.2 · platform `linux`
 - **Kritik uyarı:** `dependency_missing` / `no_engine` gibi sebepler ÖLÇÜLDÜĞÜ MAKİNEYE bağlıdır.
   Bu raporu kendi ortamınızda üretmek için: `python scripts/golge_denetimi.py`.
 
 ## 1 · Yetenek defteri
 
-- Defterde **27** yetenek var; bu ortamda **19** tanesi kullanılabilir.
+- Defterde **27** yetenek var; bu ortamda **6** tanesi kullanılabilir.
 
-- Uyanma sınıfı: **19** hazır, **0** yalnız kapı kapalı olduğu için duruyor, **8** kapı açılsa da kurulum/hesap/uç istiyor.
+- Uyanma sınıfı: **6** hazır, **11** yalnız kapı kapalı olduğu için duruyor, **10** kapı açılsa da kurulum/hesap/uç istiyor.
 
 | Yetenek | Tür | Kapılar | Şimdi | Kapılar açıkken | Sebep (kapılar açıkken) |
 | --- | --- | --- | --- | --- | --- |
-| `analyzer.media.frames` | ANALYZER | ENABLE_MEDIA_FORENSICS | AÇIK | AÇIK | — |
-| `analyzer.media.similarity` | ANALYZER | ENABLE_MEDIA_FORENSICS | AÇIK | AÇIK | — |
+| `analyzer.media.frames` | ANALYZER | ENABLE_MEDIA_FORENSICS | KAPALI | AÇIK | — |
+| `analyzer.media.similarity` | ANALYZER | ENABLE_MEDIA_FORENSICS | KAPALI | AÇIK | — |
 | `extractor.identity.socid` | EXTRACTOR | — | AÇIK | AÇIK | — |
 | `extractor.media.transcript` | EXTRACTOR | ENABLE_MEDIA_FORENSICS | KAPALI | KAPALI | no_engine |
 | `extractor.text.language` | EXTRACTOR | — | AÇIK | AÇIK | — |
 | `extractor.text.translate_local` | EXTRACTOR | ENABLE_LOCAL_TRANSLATE | KAPALI | KAPALI | no_engine |
-| `extractor.web.crawl4ai` | EXTRACTOR | ENABLE_CRAWL4AI | AÇIK | AÇIK | — |
-| `extractor.web.scrapling` | EXTRACTOR | ENABLE_SCRAPLING | AÇIK | AÇIK | — |
+| `extractor.web.crawl4ai` | EXTRACTOR | ENABLE_CRAWL4AI | KAPALI | AÇIK | — |
+| `extractor.web.scrapling` | EXTRACTOR | ENABLE_SCRAPLING | KAPALI | AÇIK | — |
 | `extractor.web.trafilatura` | EXTRACTOR | — | AÇIK | AÇIK | — |
-| `renderer.report.diagram` | RENDERER | ENABLE_REPORT_FACTORY | AÇIK | AÇIK | — |
-| `renderer.report.pdf` | RENDERER | ENABLE_REPORT_FACTORY | AÇIK | AÇIK | — |
-| `renderer.report.video` | RENDERER | ENABLE_REPORT_FACTORY | AÇIK | AÇIK | — |
+| `renderer.report.diagram` | RENDERER | ENABLE_REPORT_FACTORY | KAPALI | AÇIK | — |
+| `renderer.report.pdf` | RENDERER | ENABLE_REPORT_FACTORY | KAPALI | AÇIK | — |
+| `renderer.report.video` | RENDERER | ENABLE_REPORT_FACTORY | KAPALI | KAPALI | dependency_missing:ffmpeg |
 | `sensor.company.harvester` | SENSOR | ENABLE_COMPANY_TARGETING | KAPALI | KAPALI | dependency_missing:theHarvester |
-| `sensor.company.people` | SENSOR | ENABLE_COMPANY_TARGETING | AÇIK | AÇIK | — |
-| `sensor.company.seo` | SENSOR | ENABLE_COMPANY_TARGETING | AÇIK | AÇIK | — |
+| `sensor.company.people` | SENSOR | ENABLE_COMPANY_TARGETING | KAPALI | AÇIK | — |
+| `sensor.company.seo` | SENSOR | ENABLE_COMPANY_TARGETING | KAPALI | AÇIK | — |
 | `sensor.identity.handle_probe` | SENSOR | ENABLE_CROSS_PLATFORM | AÇIK | AÇIK | — |
-| `sensor.identity.holehe` | SENSOR | ENABLE_HOLEHE | AÇIK | AÇIK | — |
-| `sensor.identity.maigret` | SENSOR | ENABLE_MAIGRET | AÇIK | AÇIK | — |
-| `sensor.ig.instagrapi` | SENSOR | ENABLE_IG_SECONDARY | AÇIK | AÇIK | — |
-| `sensor.media.fetch` | SENSOR | ENABLE_MEDIA_FORENSICS | AÇIK | AÇIK | — |
+| `sensor.identity.holehe` | SENSOR | ENABLE_HOLEHE | KAPALI | AÇIK | — |
+| `sensor.identity.maigret` | SENSOR | ENABLE_MAIGRET | KAPALI | AÇIK | — |
+| `sensor.ig.instagrapi` | SENSOR | ENABLE_IG_SECONDARY | KAPALI | KAPALI | credentials_missing:IG_USERNAME/IG_PASSWORD |
+| `sensor.media.fetch` | SENSOR | ENABLE_MEDIA_FORENSICS | KAPALI | AÇIK | — |
 | `sensor.search.searxng` | SENSOR | ENABLE_SEARXNG | KAPALI | KAPALI | config_missing:SEARXNG_BASE_URL |
 | `sensor.web.agent_reach` | EXTRACTOR | ENABLE_AGENT_REACH | KAPALI | KAPALI | dependency_missing:agent-reach |
 | `sensor.x.twscrape` | SENSOR | ENABLE_X_SENSOR | AÇIK | AÇIK | — |
@@ -165,13 +165,17 @@
 | Sebep | Yetenek sayısı | Ne gerekiyor |
 | --- | --- | --- |
 | `config_missing` | 1 | eksik yapılandırma → ilgili env değeri (ör. `SEARXNG_BASE_URL`) |
-| `dependency_missing` | 2 | Python/CLI bağımlılığı kurulu değil → `requirements-osint.txt` / `requirements-retina.txt` / `requirements-ml.txt` içindeki paket |
+| `credentials_missing` | 1 | inceleme gerekli |
+| `dependency_missing` | 3 | Python/CLI bağımlılığı kurulu değil → `requirements-osint.txt` / `requirements-retina.txt` / `requirements-ml.txt` içindeki paket |
+| `gate_disabled` | 11 | yalnız şalter: `.env` içinde ilgili `ENABLE_*` = true |
 | `no_engine` | 2 | yerel motor yok → `PINEAL_TRANSLATE_CMD` / `PINEAL_STT_CMD` gibi bir CLI ya da yerel HTTP ucu tanımla |
 | `no_local_endpoint` | 2 | yerel uç tanımlı değil → `PINEAL_TTS_URL` / `PINEAL_STT_URL` (yalnız 127.0.0.1) |
 | `no_local_models` | 1 | yerel model yok → `ENABLE_LOCAL_JURY` için yerel LLM bitiş noktası |
 
 - **config_missing**: `sensor.search.searxng`
-- **dependency_missing**: `sensor.company.harvester`, `sensor.web.agent_reach`
+- **credentials_missing**: `sensor.ig.instagrapi`
+- **dependency_missing**: `renderer.report.video`, `sensor.company.harvester`, `sensor.web.agent_reach`
+- **gate_disabled**: `analyzer.media.frames`, `analyzer.media.similarity`, `extractor.web.crawl4ai`, `extractor.web.scrapling`, `renderer.report.diagram`, `renderer.report.pdf`, `sensor.company.people`, `sensor.company.seo`, `sensor.identity.holehe`, `sensor.identity.maigret`, `sensor.media.fetch`
 - **no_engine**: `extractor.media.transcript`, `extractor.text.translate_local`
 - **no_local_endpoint**: `voice.stt.local`, `voice.tts.local`
 - **no_local_models**: `verifier.jury.local`
@@ -199,13 +203,57 @@ _Not: son sütun gevşek bir metin sayımıdır (ad, kod dosyalarında kaç yerd
 _Bu bölüm denetim makinesine özeldir. Windows ortamında ffmpeg / theHarvester_
 _gibi araçların PATH'te olması farklı sonuç verebilir. `shutil.which`_
 _ile PATH, `importlib.util.find_spec` ile Python paketi olarak denetlenir._
-
 | Araç | Ne için | PATH'te | Python paketi olarak | Durum |
 | --- | --- | --- | --- | --- |
-| `ffmpeg` | Video kodlama (renderer.report.video) | evet | hayır | ✓ mevcut |
+| `ffmpeg` | Video kodlama (renderer.report.video) | hayır | evet | ✓ mevcut |
 | `theHarvester` | Kurum keşif CLI'ı (sensor.company.harvester) | hayır | hayır | ✗ yok |
 | `theharvester` | Kurum keşif CLI'ı (alternatif isim) | hayır | hayır | ✗ yok |
 | `piper` | Yerel TTS (voice.tts.local) | hayır | hayır | ✗ yok |
 | `node` | Edge worker / frontend build | evet | hayır | ✓ mevcut |
 | `npm` | Edge worker / frontend build (agent-reach kurulumu) | evet | hayır | ✓ mevcut |
 | `cargo` | Rust çekirdeği (rust_core) | hayır | hayır | ✗ yok |
+
+## 10 · LLM motoru (API anahtarı + canlı çağrı bayrağı)
+
+_Bu bölüm, TargetPsycheProfiler ve LLM-güvenli ajanların çalışıp çalışmadığını kontrol eder:_
+_`PassionMapper`, `FrictionDetector`, `CognitiveProfiler`, `authenticity_auditor`,_
+_`depth_analyst`, `human_behavior`, `mirror_truth`, `resonance_synthesizer`._
+
+- **Durum: ✗ KAPALI** — LLM motoru çalışmıyor, hedef kişi analizi boş döner (`core_passions=[]`, `sensitivities=[]`).
+  - Neden: Hiçbir LLM API anahtarı tanımlı değil (`.env`'de tüm `*_API_KEY` değerleri boş).
+
+| Ayar | Değer | Açıklama |
+| --- | --- | --- | |
+| Herhangi bir API anahtarı | hayır | `OPENROUTER_API_KEY`, `GROQ_API_KEY`, `GEMINI_API_KEY`, `DEEPSEEK_API_KEY`, `NINEROUTER_API_KEY` vb. |
+| `LIVE_LLM_E2E` | 0 | Canlı LLM çağrılarını açar (`.env`). |
+| `PINEAL_ROUTER_LIVE` | 0 | Router canlı moda geçişi (`.env`). |
+| `NINEROUTER_BASE_URL` | boş | Yerel 9Router uç noktası (örn. `http://127.0.0.1:20128/v1`). |
+| `USE_LOCAL_LLM` | false | Yerel LLM (Ollama/LM Studio) kullanımı. |
+
+| Tanımlı API anahtarları | Değer |
+| --- | --- | |
+| `CEREBRAS_API_KEY` | ✗ boş |
+| `DASHSCOPE_API_KEY` | ✗ boş |
+| `DEEPINFRA_API_KEY` | ✗ boş |
+| `DEEPSEEK_API_KEY` | ✗ boş |
+| `FIREWORKS_API_KEY` | ✗ boş |
+| `GEMINI_API_KEY` | ✗ boş |
+| `GROQ_API_KEY` | ✗ boş |
+| `HUGGINGFACE_API_KEY` | ✗ boş |
+| `MISTRAL_API_KEY` | ✗ boş |
+| `NINEROUTER_API_KEY` | ✗ boş |
+| `NOUS_API_KEY` | ✗ boş |
+| `NVIDIA_API_KEY` | ✗ boş |
+| `OPENROUTER_API_KEY` | ✗ boş |
+| `PERPLEXITY_API_KEY` | ✗ boş |
+| `SAMBANOVA_API_KEY` | ✗ boş |
+| `TOGETHER_API_KEY` | ✗ boş |
+
+**Açmak için:** `.env` dosyasına en az bir `*_API_KEY` (ör. `OPENROUTER_API_KEY=sk-...`
+ya da `NINEROUTER_API_KEY` yerel 9Router için) yazın ve `LIVE_LLM_E2E=1` yapın,
+sonra sunucuyu yeniden başlatın. Yerel 9Router için şu iki satır yeterlidir:
+
+    NINEROUTER_API_KEY=sk-...
+    LIVE_LLM_E2E=1
+
+Yerel LLM için: `USE_LOCAL_LLM=true` + `LOCAL_LLM_URL=http://localhost:11434/v1`
