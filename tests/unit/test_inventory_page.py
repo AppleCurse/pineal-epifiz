@@ -304,12 +304,13 @@ def test_binary_files_carry_no_fake_line_count():
     bir metin izlenimi veriyor ve `toplam satır` istatistiğini şişiriyordu.
     """
     gen = _load_generator()
-    assert gen.is_binary_path("docs/pineal_envanter.zip") is True
-    assert gen.loc_of(REPO_ROOT / "docs" / "pineal_envanter.zip") == 0
+    assert gen.is_binary_path("frontend/src/assets/living_pineal_disk.png") is True
+    assert gen.is_binary_path("docs/pineal_envanter.zip") is True  # üretilirse ikili sayılır
+    assert gen.loc_of(REPO_ROOT / "frontend" / "src" / "assets" / "living_pineal_disk.png") == 0
     assert gen.is_binary_path("backend/routes/language.py") is False
 
     page = PAGE.read_text(encoding="utf-8")
-    for arsiv in ("docs/pineal_envanter.zip",):
+    for arsiv in ("frontend/src/assets/living_pineal_disk.png",):
         eslesme = re.search(
             re.escape(f'<span class="mono">{arsiv}</span>') + r'.*?<td class="loc">([^<]*)</td>',
             page,

@@ -357,7 +357,7 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 | Kasa kilidi | Kilitliyken `POST /api/initiate` → **423 VAULT_LOCKED** |
 | WebSocket akışı | Yerel istemciyle **63 kare** alındı |
 | Test tabanı | CI'ın kendi komutu (`pytest -q --cov=agent_core --cov=backend --cov-fail-under=80`) → **3109 passed, 6 skipped, 2 xfailed**, kapsam **%86.56** |
-| Kod kalitesi | `ruff check .` → **All checks passed!** · `npm run check` → **0 hata / 0 uyarı** · `npm test` (vitest sözleşme testleri) → **5/5** · `npm run build` → ✓ |
+| Kod kalitesi | `ruff check .` → **All checks passed!** · `npm run check` → **0 hata / 0 uyarı** · `npm test` (vitest sözleşme testleri) → **6/6** · `npm run build` → ✓ |
 | Denetim bekçileri | `audit_regression.py` → **✓ BEKÇİ GEÇTİ** · `dead_code_audit.py` → **0/0/0/0/0/0/0** (C1/C1b/C2/C3/C4/C5/C6) |
 | Ölçülebilir ilerleme | `backend/api.py` **5754** satır (tavan 5760, düşürülmüş) |
 | Revert-doğrulama | `scripts/revert_verification_p*.py` → **43/43** düzeltme geri alınınca test kırmızıya döndü (p0 7/7 · p1 6/6 · p2 3/3 · p3 4/4 · p4 5/5 · p8 10/10 · p9 8/8; her koşum dosyayı `finally` ile geri yükler) |
@@ -401,7 +401,7 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 | `config/` | Yönlendirme, sağlayıcı kataloğu, karar yapılandırması, RTK politikası |
 
 **Tam ve aranabilir harita:** **[docs/envanter.html](docs/envanter.html)** —
-819 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
+813 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
 ile yenilenir, CI `--check` ile bayatlamayı yakalar.
 
 **Ayrıca:** [ARCHITECTURE.md](ARCHITECTURE.md) · [README_TECHNICAL.md](README_TECHNICAL.md) ·
