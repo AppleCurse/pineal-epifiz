@@ -45,7 +45,12 @@ from agent_core.engines.frequency_engine import parse_timestamp
 from agent_core.lifecycle.baseline_builder import SignalObservation, ensure_utc
 from agent_core.lifecycle.ig_time import shortcode_from_url, shortcode_time_drift_hours
 from agent_core.lifecycle.media_provenance import CaptureClass
-from agent_core.lifecycle.visual_frames import GAZE_KEYS, VisualFrameRecord, frames_from_visual_evidence
+from agent_core.lifecycle.visual_frames import (
+    FRAME_STAT_SIGNALS,
+    GAZE_KEYS,
+    VisualFrameRecord,
+    frames_from_visual_evidence,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -528,6 +533,15 @@ class VisualFrameExtractor:
             is_authored = 1.0 if capture in ("camera_staged", "edited_composite", "synthetic_or_render") else 0.0
             observations.append(SignalObservation("media.is_incidental_life", ts, is_incidental, ref))
             observations.append(SignalObservation("media.is_authored_or_staged", ts, is_authored, ref))
+
+            # 1b) Yayınlanan görselin ÖLÇÜLMÜŞ özellikleri (editoryal eksen).
+            #     Provenance gerekmez: bunlar odanın değil, YAYINLANAN karenin
+            #     özellikleridir. "Oda karardı" yorumu bu sinyalden ÇIKARILMAZ.
+            if frame.visual_stats:
+                for key, signal_id in FRAME_STAT_SIGNALS.items():
+                    raw = frame.visual_stats.get(key)
+                    if isinstance(raw, (int, float)) and math.isfinite(float(raw)):
+                        observations.append(SignalObservation(signal_id, ts, float(raw), ref))
 
             # 2) Akış ritüelleri: varlık=1.0, YOKLUK=0.0 (yokluk kaydedilmezse ölçülemez).
             objects = {_slug_tag(item) for item in frame.detected_objects if _slug_tag(item)}

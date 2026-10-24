@@ -29,10 +29,30 @@ from agent_core.lifecycle.media_provenance import CaptureClass
 
 LightingClass = Literal["daylight", "indoor", "low_key_dark", "night_artificial", "unknown"]
 
-__all__ = ["LightingClass", "VisualFrameRecord", "frames_from_visual_evidence"]
+__all__ = [
+    "FRAME_STAT_KEYS",
+    "FRAME_STAT_SIGNALS",
+    "GAZE_KEYS",
+    "LightingClass",
+    "VisualFrameRecord",
+    "frames_from_visual_evidence",
+]
 
 #: Somatik eksende okunabilen bakış anahtarları (gaze_metrics çıktısı).
 GAZE_KEYS = ("ear_mean", "head_pitch", "duchenne_contraction", "engagement")
+
+#: Kare özelliği → sinyal kimliği eşlemesi (TEK beyan yeri).
+#: Hepsi 0..1 normalize; yorum değil ÖLÇÜM taşır ve EDİTORYAL eksene gider.
+FRAME_STAT_SIGNALS: dict[str, str] = {
+    "brightness": "media.frame_brightness",
+    "saturation": "media.frame_saturation",
+    "contrast": "media.frame_contrast",
+    "edge_density": "media.frame_edge_density",
+    "colorfulness": "media.frame_colorfulness",
+}
+
+#: Ölçülen özellik anahtarları (sıra deterministik).
+FRAME_STAT_KEYS: tuple[str, ...] = tuple(FRAME_STAT_SIGNALS)
 
 
 class VisualFrameRecord(BaseModel):
@@ -55,6 +75,14 @@ class VisualFrameRecord(BaseModel):
     lighting: LightingClass = "unknown"
     person_count: Optional[int] = Field(default=None, ge=0)
     gaze: Optional[dict[str, float]] = None
+    #: Yayınlanan görselin ÖLÇÜLMÜŞ özellikleri (parlaklık, doygunluk, …).
+    #: Bunlar ``media.frame_*`` sinyallerine gider; oda/ışık yorumu DEĞİLDİR.
+    visual_stats: Optional[dict[str, float]] = None
+    #: İndirilen baytın kimliği (kanıt zinciri; içerik taşınmaz).
+    source_sha256: Optional[str] = None
+    source_bytes: Optional[int] = Field(default=None, ge=0)
+    #: Hangi gönderiye ait olduğu (varsa).
+    post_ref: Optional[str] = None
     #: Üretici bu kare için ölçüm yapabildi mi? False ise kare yok sayılır.
     data_confidence: bool = True
     #: Ölçüm yapılamadıysa neden (uydurma değerin yerine sebep).

@@ -101,6 +101,37 @@ status          = changed | stable | unknown
 Eski "%50 üstü ise confound" kuralı bu yüzden kaldırıldı: her zaman yoğun kurgu
 üreten bir hesabı, hiçbir şey değişmediği hâlde "değişti" diye işaretliyordu.
 
+## Kare hattı (tarihli görsel kanıt)
+
+`agent_core/services/frame_evidence.py` — havuzlanmış `VisualEvidence` özeti
+zaman taşımaz; ondan seri üretmek sahte tarih yazmak olurdu. Bu hat her
+gönderi için **tarihli** kare üretir:
+
+```
+posts / post_times / images (paralel, index hizalı)
+        ↓ seçim (deterministik, maliyet tavanlı, fail-closed)
+    FrameCandidate[frame_id, post_ref, observed_at, image_url]
+        ↓ indirme (SSRF-güvenli, bütçe sınırlı, eşzamanlılık 4)
+        ↓ yerel ölçüm (LLM YOK): parlaklık, doygunluk, kontrast,
+          kenar yoğunluğu, renklilik  → 0..1 normalize
+    VisualFrameRecord(data_confidence=True, capture_class="unknown")
+```
+
+İki kademe: bu hat **birinci** kademedir (0 LLM). İkinci kademe (pahalı
+anlamsal analiz) yalnız `change_point_indices()` işaretlediği karelere
+gider; henüz uygulanmadı, bu yüzden `detected_objects=[]` — **uydurulmaz**.
+
+Dürüst sınırlar:
+
+* `capture_class` = `unknown`: kamera/EXIF/üretim yazılımı kanıtı olmadan
+  "gerçek çekim" demek, kurgu bir kareyi yaşam kanıtı saymak olurdu. Bu yüzden
+  `habitat.*` ve `gaze.*` **kapalı** kalır.
+* Ölçülen özellikler **yayınlanan karenin** özellikleridir → `media.frame_*`
+  sinyalleri (editoryal eksen). "Oda karardı" yorumu bu sinyalden çıkarılmaz.
+* İndirilemeyen/çözülemeyen kare **yokluk değildir**: kayıt üretilmez, sebep
+  `frames_problems` altına yazılır. Bütçe aşılırsa `budget_exceeded=True` ve
+  elde ne varsa o kullanılır (sahte kare eklenmez).
+
 ## Kanıt kimlikleri
 
 `evidence_id = "ev_" + sha256("life_rupture|observed_at|kanonik_anahtar")[:20]`
@@ -195,10 +226,14 @@ kısaltma sessizce ölçüm dışında kalamaz.
 
 ## Henüz yapılmayanlar (dürüst boşluklar)
 
-* `vision_analyzer` şu an **tarihli kare** üretmiyor: `frames` alanı boş
-  geldiğinde `ritual`, `habitat`, `gaze` eksenleri `suppressed` olur ve rapor
-  bunu gerekçesiyle yazar. Gerçek çıkarım için `VisualFrameRecord` üreten bir
-  kare hattı gerekir.
-* Bakış/bedensel ölçümler (FaceMesh + solvePnP) bu katmanda tüketilmeye hazır
-  ama üretilmiyor. 2B kutu türevi "baş eğimi" gibi uydurma metrikler bilerek
+* **İkinci kademe anlamsal analiz yok.** Kare hattı yerel ölçümü üretiyor ama
+  nesne/mekân etiketleri (ritüel sözlüğünün girdisi) ve yüz/bakış ölçümleri
+  üretilmiyor. Bu yüzden `ritual.*`, `habitat.*`, `gaze.*` eksenleri hâlâ
+  `suppressed` ve rapor bunu gerekçesiyle yazıyor. Değişim noktaları
+  (`change_point_indices`) hesaplanıyor; pahalı analiz oraya yönlendirilecek.
+* Bakış/bedensel ölçümler (FaceMesh + solvePnP) tüketilmeye hazır ama
+  üretilmiyor. 2B kutu türevi "baş eğimi" gibi uydurma metrikler bilerek
   desteklenmez.
+* Çok turlu soruşturma döngüsü (`InvestigationLoop`) yok: ajanlar hâlâ tek
+  geçişte koşuyor. Kare hattı, o döngünün ikinci turda kazacağı zamanlı veriyi
+  önce üretir — sıra bu yüzden böyleydi.

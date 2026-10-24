@@ -563,3 +563,61 @@ async def test_executor_records_tier2_allowlist_without_expanding_b6_timeline(
         for item in input_data["evidence_timeline"]["entries"]
     )
     assert input_data.get("message_evidence_context") is None
+
+
+@pytest.mark.asyncio
+async def test_executor_collects_dated_frames_for_lifecycle_layer(executor):
+    """[KARE HATTI] Havuz özeti yetmez: her gönderi TARİHLİ kare üretmeli.
+
+    Kare hattı yaşam kırılması katmanının tek zamanlı görsel kaynağıdır.
+    Kanıtsız provenance ``unknown`` kalır → habitat/bakış açılmaz (uydurma yok).
+    """
+    import base64
+    import io
+    from datetime import datetime, timedelta, timezone
+
+    from PIL import Image
+
+    from agent_core.lifecycle.observation_adapter import ObservationAdapter
+
+    t0 = datetime(2022, 3, 1, tzinfo=timezone.utc)
+    profile = {
+        "bio": "test",
+        "username": "@fixture",
+        "posts": ["gönderi 0", "gönderi 1"],
+        "post_times": [t0.isoformat(), (t0 + timedelta(days=30)).isoformat()],
+        "images": ["https://cdn.example.com/0.jpg", "https://cdn.example.com/1.jpg"],
+        "post_evidence_types": ["platform_post", "platform_post"],
+    }
+
+    def _png(rgb):
+        buffer = io.BytesIO()
+        Image.new("RGB", (48, 48), rgb).save(buffer, format="PNG")
+        return base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+    async def _fetch(url):
+        colour = (240, 240, 240) if url.endswith("0.jpg") else (10, 10, 12)
+        return {"status": "downloaded", "b64": _png(colour), "sha256": "x", "bytes": 10}
+
+    executor.vision_analyzer = MagicMock()
+    executor.vision_analyzer.fetch_image_record = _fetch
+    executor.vision_analyzer.analyze_images = AsyncMock(side_effect=RuntimeError("no llm"))
+
+    input_data = {"target_profile": profile}
+    status = await executor.execute_task(input_data, "task_frames")
+
+    frames = (status.visual_evidence or {}).get("frames") or []
+    assert len(frames) == 2
+    assert [frame["capture_class"] for frame in frames] == ["unknown", "unknown"]
+    assert all(frame["visual_stats"]["brightness"] >= 0.0 for frame in frames)
+
+    observations = ObservationAdapter().transform(
+        None, visual_evidence=status.visual_evidence
+    )
+    signal_ids = {observation.signal_id for observation in observations}
+    assert "media.frame_brightness" in signal_ids
+    assert not [signal_id for signal_id in signal_ids if signal_id.startswith("habitat.")]
+
+    # Kare kanıtı yaşam kırılması raporuna da yansır (ölçüldü/ölçülemedi farkı).
+    assert status.life_rupture is not None
+    assert status.life_rupture["root_cause"] == "UNKNOWN"

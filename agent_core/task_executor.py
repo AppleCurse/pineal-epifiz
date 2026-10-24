@@ -545,6 +545,66 @@ class PinealExecutor:
             "provider": None,
         }
 
+    async def _collect_frame_evidence(self, status: TaskStatus, input_data: dict) -> None:
+        """Gönderi başına TARİHLİ kare kanıtı (LLM'siz birinci kademe).
+
+        Havuzlanmış ``visual_evidence`` zaman taşımaz; zaman taşımayan kanıttan
+        ne baseline kurulur ne değişim ölçülür. Bu adım her gönderi için
+        tarih + yerel ölçüm üretir; anlamsal etiket (nesne/mekân) ÖLÇÜLMEDİĞİ
+        için boş bırakılır — uydurulmaz. ``capture_class`` bu kademede
+        ``unknown``dur: kurgu/gerçek ayrımı kanıtsız yapılmaz, bu yüzden
+        habitat ve bakış eksenleri kapalı kalır.
+
+        Fail-closed: indirilemeyen kare kayıt ÜRETMEZ; sebep teşhis defterine
+        yazılır. Bu adım asla görevi durdurmaz.
+        """
+        from agent_core.services.frame_evidence import collect_frames
+
+        profile = input_data.get("target_profile") or {}
+        images = profile.get("images") if isinstance(profile, dict) else None
+        if not isinstance(images, list) or not images:
+            return
+
+        existing = (status.visual_evidence or {}).get("frames") if isinstance(status.visual_evidence, dict) else None
+        if existing:
+            return  # üretici zaten tarihli kare verdiyse üzerine yazılmaz
+
+        try:
+            collection = await collect_frames(
+                profile,
+                fetch=self.vision_analyzer.fetch_image_record,
+            )
+        except Exception as error:  # noqa: BLE001 — fail-closed, görev durmaz
+            self._log(
+                "WARNING",
+                "[" + status.task_id + "] Kare kanıtı ölçülemedi: " + type(error).__name__,
+            )
+            return
+
+        diagnostics = collection.diagnostics
+        self._log(
+            "INFO",
+            "[" + status.task_id + "] KARE KANITI: aday=" + str(diagnostics.get("candidate_count", 0))
+            + " indirilen=" + str(diagnostics.get("downloaded_count", 0))
+            + " ölçülen=" + str(diagnostics.get("measured_count", 0)),
+        )
+        if not collection.frames:
+            # Sessiz boşluk yok: neden kare üretilemediği kayda geçer.
+            if isinstance(status.visual_evidence, dict):
+                status.visual_evidence["frames_diagnostics"] = collection.to_dict()["diagnostics"]
+                status.visual_evidence["frames_problems"] = collection.problems[:20]
+            if isinstance(input_data.get("visual_evidence"), dict):
+                input_data["visual_evidence"]["frames_problems"] = collection.problems[:20]
+            return
+
+        if not isinstance(status.visual_evidence, dict):
+            status.visual_evidence = {}
+        status.visual_evidence["frames"] = collection.frames
+        status.visual_evidence["frames_diagnostics"] = diagnostics
+        status.visual_evidence["frames_problems"] = collection.problems[:20]
+        if isinstance(input_data.get("visual_evidence"), dict):
+            input_data["visual_evidence"]["frames"] = collection.frames
+
     def _life_rupture_record(self, status: TaskStatus, input_data: dict) -> Dict[str, Any]:
         """Yaşam Kırılması katmanı: kişinin KENDİ geçmişine göre sapma kaydı.
 
@@ -1370,6 +1430,11 @@ class PinealExecutor:
             except Exception as e:
                 self._rack_update("vision_analyzer", "wait")
                 self._log("WARNING", f"[{task_id}] Vision analizi atlandı: {str(e)[:80]}")
+
+        # [KARE HATTI] Havuzlanmış özetin yanına TARİHLİ kare kanıtı eklenir.
+        # Yaşam kırılması katmanı yalnız tarihli kareleri kullanır; havuz
+        # özetinden zaman serisi üretmez (sahte tarih olurdu).
+        await self._collect_frame_evidence(status, input_data)
 
         # [FIX #1] OSINT DISCOVERY FAZINA TAŞINDI. Eski konum tüm ajan
         # loop'unun SONUNDAydı: (a) çıktı input_data'ya yazılmadığı

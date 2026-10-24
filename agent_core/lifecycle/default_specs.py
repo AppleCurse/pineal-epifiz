@@ -40,6 +40,15 @@ DEFAULT_SPECS: list[SignalSpec] = [
     SignalSpec("media.is_incidental_life", kind="binary", min_meaningful_delta=0.5),
     SignalSpec("media.is_authored_or_staged", kind="binary", min_meaningful_delta=0.5),
     SignalSpec("visual.object_richness", kind="count", min_meaningful_delta=1.0),
+    # --- Yayınlanan karenin ölçülen özellikleri (0..1 normalize) -------------
+    # Toleranslar ölçüm gürültüsüne göre: 8 puanlık parlaklık/doygunluk farkı
+    # JPEG yeniden kodlama ve otomatik pozlamayla açıklanabilir; 12 puan
+    # açıklanamaz. Bunlar EDİTORYAL eksendir, "oda/ışık" iddiası değildir.
+    SignalSpec("media.frame_brightness", kind="continuous", min_meaningful_delta=0.08),
+    SignalSpec("media.frame_saturation", kind="continuous", min_meaningful_delta=0.08),
+    SignalSpec("media.frame_contrast", kind="continuous", min_meaningful_delta=0.10),
+    SignalSpec("media.frame_edge_density", kind="continuous", min_meaningful_delta=0.05),
+    SignalSpec("media.frame_colorfulness", kind="continuous", min_meaningful_delta=0.10),
     # --- Akış ritüelleri (sözlük VERİDEN çıkar, kodda liste yok) ---
     SignalSpec("ritual.obj.*", kind="binary", min_meaningful_delta=0.5),
     SignalSpec("ritual.place.*", kind="binary", min_meaningful_delta=0.5),

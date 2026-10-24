@@ -140,6 +140,15 @@ class VisionAnalyzer:
             logger.warning("Görsel indirilemedi: %s", type(e).__name__)
             return record
 
+    async def fetch_image_record(self, image_url: str, client: Optional[httpx.AsyncClient] = None) -> Dict[str, Any]:
+        """SSRF-güvenli indirme kaydı — kare hattının kullandığı GENEL kapı.
+
+        Aynı doğrulama zinciri iki yerde yazılmasın diye açık bir metot:
+        ``frame_evidence`` bu kaydı (b64 dahil) alıp yerel ölçüm yapar.
+        Hata fırlatmaz; başarısızlık ``status``/``reason`` alanlarında döner.
+        """
+        return await self._download_image_record(image_url, client=client)
+
     async def _download_and_encode_image(
         self, image_url: str, client: Optional[httpx.AsyncClient] = None
     ) -> Optional[str]:
