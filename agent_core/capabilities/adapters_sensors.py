@@ -26,6 +26,7 @@ import shutil
 import signal
 import subprocess
 from urllib.parse import urlsplit
+import re
 from typing import Any
 
 from agent_core.capabilities.egress import httpx, open_client  # noqa: F401  (test yamaları httpx adını modulede bekler)
@@ -298,7 +299,9 @@ class InstagrapiCapability(BaseCapability):
         # [2026-10-23] Kapı kararı `PolicyKernel`'de (bkz. X sensörü notu).
         if not _module_available("instagrapi"):
             return Availability.unavailable("dependency_missing:instagrapi")
-        if not (os.getenv("IG_USERNAME", "").strip() and os.getenv("IG_PASSWORD", "")):
+        has_session = bool(os.getenv("IG_SESSIONID", "").strip())
+        has_creds = bool(os.getenv("IG_USERNAME", "").strip() and os.getenv("IG_PASSWORD", ""))
+        if not (has_session or has_creds):
             return Availability.unavailable("credentials_missing:IG_USERNAME/IG_PASSWORD")
         return Availability.ok()
 
@@ -320,15 +323,24 @@ class InstagrapiCapability(BaseCapability):
             from instagrapi import Client  # lazy import
 
             client = Client()
-            client.login(os.environ["IG_USERNAME"], os.environ["IG_PASSWORD"])
+            session_id = os.getenv("IG_SESSIONID", "").strip()
+            if session_id:
+                client.login_by_sessionid(session_id)
+            else:
+                client.login(os.environ["IG_USERNAME"], os.environ["IG_PASSWORD"])
             user_id = client.user_id_from_username(username)
             info = client.user_info(user_id)
             medias = client.user_medias(user_id, limit)
+            bio_text = getattr(info, "biography", "") or ""
+            handles = re.findall(r"@([A-Za-z0-9._]{1,30})", bio_text)
+            ext_url = getattr(info, "external_url", None)
             return {
                 "username": username,
                 "user_id": user_id,
                 "full_name": getattr(info, "full_name", "") or "",
-                "biography": getattr(info, "biography", "") or "",
+                "biography": bio_text,
+                "bio_handles": handles,
+                "external_url": ext_url,
                 "followers": getattr(info, "follower_count", None),
                 "following": getattr(info, "following_count", None),
                 "is_private": bool(getattr(info, "is_private", False)),
@@ -384,6 +396,27 @@ class InstagrapiCapability(BaseCapability):
                 },
             )
         ]
+        for handle in data.get("bio_handles") or []:
+            items.append(
+                make_evidence(
+                    content=f"Instagram @{username} bio mentions account @{handle}",
+                    source_engine="instagrapi",
+                    epistemic_type="observation",
+                    provenance_refs=[profile_url, f"https://www.instagram.com/{handle}/"],
+                    scope={"kind": "bio_handle", "platform": "instagram", "target": handle},
+                )
+            )
+        if data.get("external_url"):
+            items.append(
+                make_evidence(
+                    content=f"Instagram @{username} bio link: {data['external_url']}",
+                    source_engine="instagrapi",
+                    epistemic_type="observation",
+                    provenance_refs=[profile_url, str(data["external_url"])],
+                    scope={"kind": "external_link", "platform": "instagram"},
+                )
+            )
+
         for post in data.get("posts") or []:
             caption = (post.get("caption") or "").strip()
             if not caption:
