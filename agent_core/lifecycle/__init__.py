@@ -1,4 +1,4 @@
-"""Lifecycle package: Baseline, Deviation, Clustering and Rupture reporting."""
+"""Lifecycle package: Baseline, Deviation, Clustering, InvestigationLoop and Rupture reporting."""
 
 from agent_core.lifecycle.baseline_builder import (
     SignalObservation,
@@ -19,6 +19,15 @@ from agent_core.lifecycle.rupture_reporter import (
     report,
 )
 from agent_core.lifecycle.rupture_engine import RuptureEngine
+from agent_core.lifecycle.investigation_loop import (
+    InvestigationLoop,
+    LeadInquirer,
+    InvestigationLedger,
+    TargetedTask,
+    InvestigativeQuestion,
+    QuestionStatus,
+    TurnStage,
+)
 
 __all__ = [
     "SignalObservation",
@@ -34,4 +43,11 @@ __all__ = [
     "RuptureReport",
     "report",
     "RuptureEngine",
+    "InvestigationLoop",
+    "LeadInquirer",
+    "InvestigationLedger",
+    "TargetedTask",
+    "InvestigativeQuestion",
+    "QuestionStatus",
+    "TurnStage",
 ]
