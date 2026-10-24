@@ -3,7 +3,7 @@
 > Bu dosya `scripts/golge_denetimi.py` tarafından ÜRETİLİR. Elle yazılmış sayı yoktur;
 > yeniden çalıştırıldığında depo neyse rapor odur.
 
-- Ölçüm anı: 2026-10-24T00:45:26Z · Python 3.11.9 · platform `win32`
+- Ölçüm anı: 2026-10-24T00:47:20Z · Python 3.11.9 · platform `win32`
 - **Kritik uyarı:** `dependency_missing` / `no_engine` gibi sebepler ÖLÇÜLDÜĞÜ MAKİNEYE bağlıdır.
   Bu raporu kendi ortamınızda üretmek için: `python scripts/golge_denetimi.py`.
 
