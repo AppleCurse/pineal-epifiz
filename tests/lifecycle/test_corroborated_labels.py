@@ -24,7 +24,7 @@ WEEKS = 40
 #: Mutabakat etiketi baseline penceresinin TAMAMINDA var (26 hafta), sonra yok:
 #: sabit baseline (1.0) kırılır → ``constant_break``. Etiket 20. haftada ölseydi
 #: baseline 0.77 merkezli olur ve z=1.79 eşiği aşmadığı için sapma görünmezdi.
-RITUAL_UNTIL = 26
+RITUAL_UNTIL = 20
 
 
 def _profile() -> dict:
@@ -88,6 +88,9 @@ def test_corroborated_labels_open_the_ritual_axis() -> None:
     assert finding.direction in ("disappeared", "decreased")
     assert finding.baseline_value is not None and finding.baseline_value > 0.5
     assert finding.observed_value == 0.0
+    # Yavaş ölen ritüel z-skoruyla KAÇAR (z=1.79 < 2.0); pencere oranı testi
+    # yakalar. Yöntem yazılı olmalı: okuyucu hangi araçla hüküm verildiğini görür.
+    assert finding.deviation_method == "rate_decline"
 
 
 def test_dying_ritual_is_measured_as_zero_not_as_missing() -> None:

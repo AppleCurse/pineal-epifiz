@@ -401,7 +401,7 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 | `config/` | Yönlendirme, sağlayıcı kataloğu, karar yapılandırması, RTK politikası |
 
 **Tam ve aranabilir harita:** **[docs/envanter.html](docs/envanter.html)** —
-816 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
+818 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
 ile yenilenir, CI `--check` ile bayatlamayı yakalar.
 
 **Ayrıca:** [ARCHITECTURE.md](ARCHITECTURE.md) · [README_TECHNICAL.md](README_TECHNICAL.md) ·

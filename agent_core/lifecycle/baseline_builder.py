@@ -37,7 +37,13 @@ from typing import Literal, Optional, Sequence
 import numpy as np
 
 SignalKind = Literal["binary", "continuous", "count", "ratio", "circular"]
-DeviationMethod = Literal["z_score", "constant_break", "insufficient_baseline", "no_baseline"]
+DeviationMethod = Literal[
+    "z_score",
+    "constant_break",
+    "rate_decline",
+    "insufficient_baseline",
+    "no_baseline",
+]
 
 #: Bir sinyalin "güvenilir" sayılması için gereken en az gözlem sayısı.
 MIN_SAMPLES = 5

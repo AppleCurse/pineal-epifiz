@@ -38,6 +38,7 @@ from agent_core.lifecycle.baseline_builder import (
     ensure_utc,
 )
 from agent_core.lifecycle.families import signal_family
+from agent_core.lifecycle.rare_event import RateDecline, assess_rate_decline, window_values
 from agent_core.lifecycle.medium_change import (
     DEFAULT_MEDIUM_THRESHOLD,
     MEDIUM_CHANGE_SIGNAL,
@@ -167,7 +168,91 @@ def detect_deviations(
         )
 
     findings.sort(key=lambda finding: (finding.timestamp, finding.signal_id, finding.observation.source_ref))
+    findings = _merge_rate_declines(
+        findings, baseline, observations, start, end, medium_shifted, assessment.status
+    )
     return findings
+
+
+def _merge_rate_declines(
+    findings: list[DeviationFinding],
+    baseline: BaselineProfile,
+    observations: Sequence[SignalObservation],
+    start: datetime,
+    end: datetime,
+    medium_shifted: bool,
+    medium_status: str,
+) -> list[DeviationFinding]:
+    """İkili sinyallerde ORAN düşüşünü sapma kaydına çevirir.
+
+    Neden ayrı geçiş? Örneklem başına z-testi ikili olayda yanlış araçtır:
+    0/1'in "yayılımı" ölçüm hatası değil payın kendisidir. Yavaş ölen bir
+    ritüel (baseline 20/26 → karşılaştırma 0/14) z=1.79'da kalıp görünmez
+    oluyordu; oran testi aynı veride z=-4.6 verir.
+
+    Zaten sapma kaydı olan sinyale ikinci kayıt EKLENMEZ (çift sayım yok).
+    Kayıt gerçek bir gözleme bağlanır: penceredeki ilk "yok" örneklemine.
+    """
+    covered = {finding.signal_id for finding in findings}
+    base_start, base_end = baseline.baseline_window
+    extra: list[DeviationFinding] = []
+
+    for signal_id in sorted(baseline.baselines):
+        if signal_id in covered:
+            continue
+        signal_baseline = baseline.baselines[signal_id]
+        # Oran testi YALNIZ spec'i ``binary`` diyen sinyale uygulanır. Sayı
+        # sinyali (ör. nesne zenginliği) tesadüfen 0/1 değerleri alsa bile
+        # oran testi anlam taşımaz — semantik spec'ten gelir, veriden tahmin
+        # edilmez.
+        if signal_baseline.kind != "binary":
+            continue
+        baseline_values = window_values(observations, signal_id, base_start, base_end)
+        comparison_values = window_values(observations, signal_id, start, end)
+        if not baseline_values or not comparison_values:
+            continue
+        decline: RateDecline = assess_rate_decline(signal_id, baseline_values, comparison_values)
+        if not decline.is_decline:
+            continue
+
+        anchor = next(
+            (
+                observation
+                for observation in observations
+                if observation.signal_id == signal_id
+                and start <= observation.timestamp <= end
+                and observation.value == 0.0
+            ),
+            None,
+        )
+        if anchor is None:  # pragma: no cover - düşüş varsa 0.0 örneklemi vardır
+            continue
+        family = signal_family(signal_id)
+        extra.append(
+            DeviationFinding(
+                observation=anchor,
+                result=DeviationResult(
+                    signal_id=signal_id,
+                    value=float(anchor.value),
+                    baseline_center=float(decline.baseline_rate or 0.0),
+                    baseline_spread=0.0,
+                    distance=float(decline.absolute_drop or 0.0),
+                    is_deviation=True,
+                    method="rate_decline",
+                    z_score=decline.z,
+                    reason=decline.reason,
+                ),
+                family=family,
+                confounded_by_medium_change=medium_shifted and family in ("habitat", "gaze", "ritual"),
+                medium_change_status=medium_status,
+            )
+        )
+
+    if not extra:
+        return findings
+    merged = findings + extra
+    merged.sort(key=lambda finding: (finding.timestamp, finding.signal_id, finding.observation.source_ref))
+    return merged
 
 
 def to_evidence_item(finding: DeviationFinding, source_engine: str = SOURCE_ENGINE) -> EvidenceItem:

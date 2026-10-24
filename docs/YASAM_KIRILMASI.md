@@ -163,6 +163,29 @@ Sert kurallar:
 * Prompt **örnek nesne listesi vermez**: örnek liste, kişiye/olaya bağlı bir
   "aranan şeyler" listesine dönüşür.
 
+## Yavaş ölen ritüel: oran testi
+
+Örneklem başına z-testi ikili sinyal için **yanlış araçtır**: 0/1 değerinin
+"yayılımı" ölçüm hatası değil payın kendisidir. Gerçek vaka: `ritual.obj.x`
+baseline'da 20/26 (0.77), karşılaştırmada 0/14 → z = 1.79 < 2.0, yani ritüel
+ölüyor ama rapor "sapma yok" diyordu.
+
+`agent_core/lifecycle/rare_event.py` pencere oranlarını karşılaştırır
+(havuzlanmış iki oran z-testi, normal yaklaşım — sınırı yazılı):
+
+| durum | sonuç |
+|---|---|
+| p₀ → p₁, düşüş ≥ 0.30 **ve** z ≤ −2.0 | `declined` / `disappeared` → sapma kaydı |
+| baseline < 20 veya karşılaştırma < 8 gözlem | `insufficient_data` (**"düşüş yok" değil**) |
+| baseline oranı < 0.5 | `not_a_norm` (zaten seyrek, kayıp sayılmaz) |
+| değerler {0,1} değil | `not_binary` (test uygulanmaz) |
+| havuzlanmış varyans 0 | `insufficient_data` (tanımsız ≠ eşit) |
+
+Çift kapı bilinçli: küçük örneklemde büyük düşüş, büyük örneklemde önemsiz
+düşüş sahte alarm üretmesin. Test **yalnız** spec'i `binary` diyen sinyale
+uygulanır — sayı sinyali (nesne zenginliği) tesadüfen 0/1 alsa bile oran testi
+anlam taşımaz.
+
 ## Mutabakat: iddia ne zaman kanıt olur?
 
 `agent_core/services/frame_consensus.py` — tek model iddiası ölçüm değildir;
