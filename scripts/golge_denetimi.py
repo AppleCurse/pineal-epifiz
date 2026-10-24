@@ -39,6 +39,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Set
 
+#: ``.env`` dosyası ``backend/api.py``'de yüklensin; bu denetim betiği de aynı
+#: ortamı görsün ki ``ENABLE_*`` şalterleri gerçekten etkili olsun.
+from dotenv import load_dotenv  # type: ignore
+
+load_dotenv()
+
 REPO = Path(__file__).resolve().parents[1]
 SKIP_DIRS = {
     ".git", "node_modules", "__pycache__", ".venv", "venv", ".pytest_cache",
