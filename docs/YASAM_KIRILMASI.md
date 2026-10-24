@@ -132,6 +132,33 @@ Dürüst sınırlar:
   `frames_problems` altına yazılır. Bütçe aşılırsa `budget_exceeded=True` ve
   elde ne varsa o kullanılır (sahte kare eklenmez).
 
+## Soruşturma döngüsü (sınırlı ikinci bakış)
+
+`agent_core/lifecycle/investigation.py` — rapor "bilmiyorum" listesini yazıp
+susuyordu. Artık o liste **soruya** çevrilir ve yalnız gerçekten cevaplanabilir
+olanlar sorulur:
+
+```
+rapor (1. geçiş) → plan_questions() → q_<12 hex> sorular
+                        ↓ sonda kayıtlı mı?
+             evet  → run_investigation() (tur ≤ 2, soru ≤ 6, süre tavanlı)
+             hayır → soru AÇIK kalır ("sonda kayıtlı değil")
+                        ↓
+   yeni kare geldiyse birleştir → rapor TEK kez yeniden kurulur
+```
+
+Kurallar:
+
+* **Soru kişiye özel değil**: rapordaki ölçüm durumundan türetilir; aynı rapor
+  aynı soruları aynı sırada üretir, `subject_id` değişse de değişmez.
+* **Sonda yoksa cevap yok**: kapanmayan soru `still_unknown` altında gerekçesiyle
+  kalır. Sessizce "kapandı" sayılmaz.
+* **Kanıt getirmeyen sonda başarı değildir**: `no_new_evidence` → döngü durur.
+* **Hata/timeout yutulmaz**: `failed` olarak kaydedilir, döngü patlamaz.
+* Bugün kayıtlı tek sonda **kare penceresi**dir: aynı ölçüm, daha geniş örneklem
+  (12 → 24 kare). Anlamsal (ritüel/mekân) boşluklar için sonda yoktur; bu
+  yüzden o sorular açık kalır ve raporda öyle yazar.
+
 ## Kanıt kimlikleri
 
 `evidence_id = "ev_" + sha256("life_rupture|observed_at|kanonik_anahtar")[:20]`
@@ -234,6 +261,7 @@ kısaltma sessizce ölçüm dışında kalamaz.
 * Bakış/bedensel ölçümler (FaceMesh + solvePnP) tüketilmeye hazır ama
   üretilmiyor. 2B kutu türevi "baş eğimi" gibi uydurma metrikler bilerek
   desteklenmez.
-* Çok turlu soruşturma döngüsü (`InvestigationLoop`) yok: ajanlar hâlâ tek
-  geçişte koşuyor. Kare hattı, o döngünün ikinci turda kazacağı zamanlı veriyi
-  önce üretir — sıra bu yüzden böyleydi.
+* Soruşturma döngüsü **sınırlı**: bugün yalnız kare örneklemini genişletir.
+  Ritüel/mekân/bakış boşlukları için sonda yok — o sorular açık kalır. Yeni bir
+  sonda (ör. ikinci kademe anlamsal analiz) eklendiğinde döngü aynı sözleşmeyle
+  onu da kullanır; ajanlar hâlâ tek geçişte koşuyor.

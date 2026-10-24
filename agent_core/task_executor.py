@@ -569,6 +569,16 @@ class PinealExecutor:
         if existing:
             return  # üretici zaten tarihli kare verdiyse üzerine yazılmaz
 
+        # Görsel URL'leri KORUNUR: sonraki adım ``target_profile["images"]``ı
+        # yerel geçici yollarla değiştiriyor. Kaynak kopya olmadan soruşturma
+        # sondası "görsel yok" görüp boşlukları yanlışlıkla kapatılmaz sanardı.
+        input_data["_frame_sources"] = {
+            "posts": list(profile.get("posts") or []),
+            "post_times": list(profile.get("post_times") or []),
+            "images": list(images),
+            "post_evidence_types": list(profile.get("post_evidence_types") or []) or None,
+        }
+
         try:
             collection = await collect_frames(
                 profile,
@@ -588,22 +598,131 @@ class PinealExecutor:
             + " indirilen=" + str(diagnostics.get("downloaded_count", 0))
             + " ölçülen=" + str(diagnostics.get("measured_count", 0)),
         )
-        if not collection.frames:
-            # Sessiz boşluk yok: neden kare üretilemediği kayda geçer.
-            if isinstance(status.visual_evidence, dict):
-                status.visual_evidence["frames_diagnostics"] = collection.to_dict()["diagnostics"]
-                status.visual_evidence["frames_problems"] = collection.problems[:20]
-            if isinstance(input_data.get("visual_evidence"), dict):
-                input_data["visual_evidence"]["frames_problems"] = collection.problems[:20]
-            return
-
         if not isinstance(status.visual_evidence, dict):
             status.visual_evidence = {}
+        # Analiz ``input_data["visual_evidence"]``i okur: kare YALNIZ durum
+        # nesnesine yazılırsa rapor onu hiç görmez (sessiz kayıp).
+        if not isinstance(input_data.get("visual_evidence"), dict):
+            input_data["visual_evidence"] = {}
+
+        if not collection.frames:
+            # Sessiz boşluk yok: neden kare üretilemediği kayda geçer.
+            status.visual_evidence["frames_diagnostics"] = collection.to_dict()["diagnostics"]
+            status.visual_evidence["frames_problems"] = collection.problems[:20]
+            input_data["visual_evidence"]["frames_problems"] = collection.problems[:20]
+            return
+
         status.visual_evidence["frames"] = collection.frames
         status.visual_evidence["frames_diagnostics"] = diagnostics
         status.visual_evidence["frames_problems"] = collection.problems[:20]
-        if isinstance(input_data.get("visual_evidence"), dict):
-            input_data["visual_evidence"]["frames"] = collection.frames
+        input_data["visual_evidence"]["frames"] = collection.frames
+
+    async def _investigate_life_rupture(self, status: TaskStatus, input_data: dict) -> None:
+        """[SORUŞTURMA] Raporun "bilmiyorum"larını İKİNCİ bakışla kapatmayı dener.
+
+        Tek geçiş ölçemediği şeyi ``unknowns`` altına yazıp susuyordu. Burada
+        ilk rapor sorulara çevrilir ve yalnız GERÇEKTEN cevaplanabilir olanlar
+        sorulur. Sınırlar sert: en fazla 4 soru, tek tur. Sonda kayıtlı değilse
+        soru açık kalır — "kapandı" sayılmaz. Getirilen kareler birleştirilir ve
+        rapor tek kez, ZENGİNLEŞMİŞ kanıtla yeniden kurulur (zincire tek kayıt
+        düşer; mükerrer life_rupture satırı yazılmaz).
+        """
+        from agent_core.lifecycle.investigation import (
+            InvestigationConfig,
+            ProbeOutcome,
+            plan_questions,
+            run_investigation,
+        )
+        from agent_core.lifecycle.pipeline import analyze_life_rupture
+
+        try:
+            first_pass = analyze_life_rupture(
+                input_data.get("target_profile"),
+                visual_evidence=input_data.get("visual_evidence"),
+                frequency_map=status.frequency_map,
+                strata_map=status.strata_map,
+                subject_id=str(status.task_id),
+            ).model_dump(mode="json")
+        except Exception as error:  # noqa: BLE001 — fail-closed, görev durmaz
+            self._log(
+                "WARNING",
+                "[" + status.task_id + "] SORUŞTURMA planlanamadı: " + type(error).__name__,
+            )
+            return
+
+        questions = plan_questions(first_pass, max_questions=4)
+        if not questions:
+            return
+
+        measured = (status.visual_evidence or {}).get("frames") if isinstance(status.visual_evidence, dict) else None
+        probes: Dict[str, Any] = {}
+
+        if measured:
+            async def _frame_window_probe(question, *, budget_seconds: float) -> ProbeOutcome:
+                """Daha GENİŞ kare örneklemi: aynı ölçüm, daha çok zaman noktası."""
+                from agent_core.services.frame_evidence import collect_frames
+
+                try:
+                    collection = await collect_frames(
+                        input_data.get("_frame_sources") or input_data.get("target_profile") or {},
+                        fetch=self.vision_analyzer.fetch_image_record,
+                        max_frames=24,
+                        budget_seconds=min(float(budget_seconds), 45.0),
+                    )
+                except Exception as error:  # noqa: BLE001 — sonda sözleşmesi
+                    return ProbeOutcome(status="failed", detail=type(error).__name__)
+                known = {
+                    str(frame.get("frame_id"))
+                    for frame in (status.visual_evidence or {}).get("frames") or []
+                    if isinstance(frame, dict)
+                }
+                fresh = [
+                    frame for frame in collection.frames if str(frame.get("frame_id")) not in known
+                ]
+                if not fresh:
+                    return ProbeOutcome(
+                        status="no_new_evidence",
+                        detail="genişletilmiş örneklem yeni kare getirmedi",
+                    )
+                return ProbeOutcome(
+                    status="resolved" if question.kind == "frame_coverage_gap" else "no_new_evidence",
+                    detail=f"yeni kare: {len(fresh)}",
+                    observations_added=len(fresh),
+                    frames=fresh,
+                )
+
+            probes["frame_window"] = _frame_window_probe
+
+        result = await run_investigation(
+            first_pass,
+            probes=probes,
+            config=InvestigationConfig(max_questions=4, max_rounds=1, question_timeout_seconds=50.0),
+            questions=questions,
+        )
+
+        if result.extra_frames:
+            merged: Dict[str, dict] = {}
+            for frame in list(measured or []) + list(result.extra_frames):
+                if isinstance(frame, dict) and frame.get("frame_id"):
+                    merged[str(frame["frame_id"])] = frame
+            ordered = sorted(
+                merged.values(), key=lambda frame: (str(frame.get("observed_at")), str(frame.get("frame_id")))
+            )
+            if not isinstance(status.visual_evidence, dict):
+                status.visual_evidence = {}
+            status.visual_evidence["frames"] = ordered
+            if isinstance(input_data.get("visual_evidence"), dict):
+                input_data["visual_evidence"]["frames"] = ordered
+
+        status.investigation = result.to_dict()
+        self._log(
+            "INFO",
+            "[" + status.task_id + "] SORUŞTURMA: soru=" + str(len(questions))
+            + " kapanan=" + str(len(result.resolved))
+            + " açık=" + str(len(result.still_unknown))
+            + " yeni_kare=" + str(len(result.extra_frames))
+            + " dur=" + str(result.diagnostics.get("stop_reason")),
+        )
 
     def _life_rupture_record(self, status: TaskStatus, input_data: dict) -> Dict[str, Any]:
         """Yaşam Kırılması katmanı: kişinin KENDİ geçmişine göre sapma kaydı.
@@ -1842,6 +1961,9 @@ class PinealExecutor:
             # [LIFE-RUPTURE] Boylamsal katman: 7 sütunun ürettiği haritalar +
             # hedef profil + görsel kanıt tek geçişte kişinin kendi baseline'ıyla
             # karşılaştırılır. Deterministik, LLM'siz; rapor mühürlenen zincire girer.
+            # [SORUŞTURMA] Kare boşlukları cevaplanabilir mi? Cevap EVET ise
+            # geniş örneklem çekilir ve rapor ZENGİNLEŞMİŞ kanıtla kurulur.
+            await self._investigate_life_rupture(status, input_data)
             status.evidence_chain.append(self._life_rupture_record(status, input_data))
             self._snapshot(status)
         except Exception as e:

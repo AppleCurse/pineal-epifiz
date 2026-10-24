@@ -621,3 +621,55 @@ async def test_executor_collects_dated_frames_for_lifecycle_layer(executor):
     # Kare kanıtı yaşam kırılması raporuna da yansır (ölçüldü/ölçülemedi farkı).
     assert status.life_rupture is not None
     assert status.life_rupture["root_cause"] == "UNKNOWN"
+
+
+@pytest.mark.asyncio
+async def test_executor_investigates_frame_gaps_and_records_once(executor):
+    """[SORUŞTURMA] Ölçüm boşluğu varsa İKİNCİ bakış denenir; sessiz kapanmaz.
+
+    Kare örneklemi ilk turda tavana takılır (12). Soruşturma daha geniş
+    örneklem ister, gelen kareler birleşir ve rapor tek kez kurulur — zincire
+    mükerrer ``life_rupture`` kaydı DÜŞMEZ.
+    """
+    import base64
+    import io
+    from datetime import datetime, timedelta, timezone
+
+    from PIL import Image
+
+    t0 = datetime(2021, 1, 1, tzinfo=timezone.utc)
+    count = 20
+    profile = {
+        "bio": "test",
+        "username": "@fixture",
+        "posts": [f"gönderi {index}" for index in range(count)],
+        "post_times": [(t0 + timedelta(days=20 * index)).isoformat() for index in range(count)],
+        "images": [f"https://cdn.example.com/{index}.jpg" for index in range(count)],
+        "post_evidence_types": ["platform_post"] * count,
+    }
+
+    def _png(shade):
+        buffer = io.BytesIO()
+        value = 40 + (shade % 6) * 35
+        Image.new("RGB", (48, 48), (value, value, value)).save(buffer, format="PNG")
+        return base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+    async def _fetch(url):
+        index = int(url.rsplit("/", 1)[-1].split(".")[0])
+        return {"status": "downloaded", "b64": _png(index), "sha256": f"s{index}", "bytes": 10}
+
+    executor.vision_analyzer = MagicMock()
+    executor.vision_analyzer.fetch_image_record = _fetch
+    executor.vision_analyzer.analyze_images = AsyncMock(side_effect=RuntimeError("no llm"))
+
+    status = await executor.execute_task({"target_profile": profile}, "task_investigation")
+
+    investigation = status.investigation
+    assert investigation is not None, "kare boşluğu varken soruşturma kaydı beklenir"
+    assert investigation["questions"], "boşluk soruya çevrilmeden kapanmış görünmemeli"
+    # İlk tur 12 kareyle sınırlıydı; soruşturma örneklemi genişletti.
+    frames = (status.visual_evidence or {}).get("frames") or []
+    assert len(frames) == count
+    assert investigation["extra_frame_count"] > 0
+    assert [r["agent"] for r in status.evidence_chain].count("life_rupture") == 1
+    assert status.life_rupture["root_cause"] == "UNKNOWN"

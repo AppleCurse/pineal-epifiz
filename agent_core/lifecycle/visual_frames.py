@@ -19,6 +19,7 @@ Beyan yoksa ``unknown``'dur ve habitat/somatik eksenlerini beslemez.
 
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from typing import Literal, Optional
 
@@ -30,6 +31,7 @@ from agent_core.lifecycle.media_provenance import CaptureClass
 LightingClass = Literal["daylight", "indoor", "low_key_dark", "night_artificial", "unknown"]
 
 __all__ = [
+    "FRAME_SIGNAL_PREFIX",
     "FRAME_STAT_KEYS",
     "FRAME_STAT_SIGNALS",
     "GAZE_KEYS",
@@ -53,6 +55,11 @@ FRAME_STAT_SIGNALS: dict[str, str] = {
 
 #: Ölçülen özellik anahtarları (sıra deterministik).
 FRAME_STAT_KEYS: tuple[str, ...] = tuple(FRAME_STAT_SIGNALS)
+
+#: Kare sinyallerinin ortak öneki — TÜRETİLİR, elle yazılmaz. Elle yazılan
+#: yarım sinyal adı (``media.frame_``) statik taramada "spec'i olmayan sinyal"
+#: gibi görünür; türetme bu tuzağı kapatır.
+FRAME_SIGNAL_PREFIX: str = os.path.commonprefix(sorted(FRAME_STAT_SIGNALS.values()))
 
 
 class VisualFrameRecord(BaseModel):
