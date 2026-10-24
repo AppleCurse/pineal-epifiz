@@ -1832,7 +1832,7 @@ async def _room_sender(room: dict):
             # [BOSS-11] Eskiden yalnız print ediliyordu: kaybolan çerçeve
             # telemetride görünmüyordu. Artık oda durumu DEGRADED işaretlenir.
             _record_frame_error(room, kind, e)
-            print(f"[room_sender] hata: {type(e).__name__}: {e}")
+            logger.warning("[room_sender] hata: %s: %s", type(e).__name__, e)
 
 def _lifecycle(room: dict) -> TaskLifecycleRegistry:
     return room.setdefault("lifecycle", TaskLifecycleRegistry())

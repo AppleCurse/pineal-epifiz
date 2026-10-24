@@ -18,7 +18,7 @@
   }
 
   // Tek dokunulmaz ana şasi görseli (Kayıpsız 16:9 Master Referans) — PINEAL-HERETIC v5.0
-  import cockpitSkin from '../assets/cockpit-v10-reference.png';
+  import cockpitSkin from '../assets/cockpit-v10-reference.webp';
   import livingPinealDisk from '../assets/living_pineal_disk.png';
 
   // --- STATE ---
