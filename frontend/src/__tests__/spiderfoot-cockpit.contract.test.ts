@@ -214,6 +214,46 @@ describe('kasa mandalı sözleşmesi', () => {
   });
 });
 
+describe('gölge analizi ve hafıza kristali sözleşmesi', () => {
+  it('gölge sekmesinde /api/experimental/shadow/analyze ve /api/memory/{target} çağırır', async () => {
+    const calls = installFetch((path) => {
+      if (path.startsWith('/api/experimental/shadow/analyze')) {
+        return jsonResponse({
+          narcissism: 0.8,
+          machiavellianism: 0.7,
+          psychopathy: 0.2,
+          exploitability: 0.85,
+        });
+      }
+      if (path.startsWith('/api/memory/')) {
+        return jsonResponse({ target: 'hedef_kullanici', summary: 'test crystal' });
+      }
+      return undefined;
+    });
+
+    render(SpiderFootCockpit);
+    const tabBtn = screen.getByRole('button', { name: /HEDEF PSİKOLOJİSİ & GÖLGE/ });
+    await fireEvent.click(tabBtn);
+
+    const analyzeBtn = screen.getByRole('button', { name: /ANALİZİ TETİKLE/ });
+    await fireEvent.click(analyzeBtn);
+
+    await waitFor(() => {
+      const call = calls.find((c) => c.path.startsWith('/api/experimental/shadow/analyze'));
+      expect(call).toBeTruthy();
+      expect(call!.method).toBe('POST');
+    });
+
+    const crystalBtn = screen.getByRole('button', { name: /KRİSTALİ ÇEK/ });
+    await fireEvent.click(crystalBtn);
+
+    await waitFor(() => {
+      const call = calls.find((c) => c.path.startsWith('/api/memory/'));
+      expect(call).toBeTruthy();
+    });
+  });
+});
+
 function isProcessingSubscription(): boolean {
   let value = false;
   const unsubscribe = isProcessing.subscribe((v) => (value = v));
