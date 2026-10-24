@@ -1,189 +1,263 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import pytest
 
-from agent_core.lifecycle.baseline_builder import (
-    SignalObservation,
-    build_baseline,
-)
-from agent_core.lifecycle.investigation_loop import (
+from agent_core.domain.evidence_models import EvidenceTimeline, EvidenceTimelineEntry
+from agent_core.investigation.loop import (
+    HypothesisStatus,
+    InquestHypothesis,
+    InquestVerdict,
     InvestigationLoop,
+    InvestigationRound,
     LeadInquirer,
-    InvestigationLedger,
-    QuestionStatus,
-    TargetedTask,
-    TurnStage,
+    MicroTask,
+    MicroTaskCoordinate,
+    make_hypothesis_id,
+    make_task_id,
 )
+from agent_core.lifecycle.baseline_builder import (
+    BaselineProfile,
+    SignalBaseline,
+    SignalObservation,
+)
+from agent_core.lifecycle.deviation_detector import (
+    DeviationDetector,
+)
+from agent_core.lifecycle.rupture_engine import RuptureEngine
 
-T0 = datetime(2022, 1, 1, tzinfo=timezone.utc)
 
-
-def _obs(sid: str, day: int, val: float, ref: str = "") -> SignalObservation:
-    return SignalObservation(
-        signal_id=sid,
-        timestamp=T0 + timedelta(days=day),
-        value=float(val),
-        source_ref=ref or f"{sid}:{day}",
+def _make_sample_baseline(subject_id: str = "subj_001") -> BaselineProfile:
+    b1 = SignalBaseline(
+        signal_id="night_share",
+        mean=0.10,
+        std=0.02,
+        sample_count=20,
+    )
+    b2 = SignalBaseline(
+        signal_id="post_frequency_per_day",
+        mean=1.5,
+        std=0.2,
+        sample_count=20,
+    )
+    b3 = SignalBaseline(
+        signal_id="staged_media_ratio",
+        mean=0.20,
+        std=0.05,
+        sample_count=20,
+    )
+    return BaselineProfile(
+        subject_id=subject_id,
+        window_start=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        window_end=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        baselines={"night_share": b1, "post_frequency_per_day": b2, "staged_media_ratio": b3},
+        correlation_verified=True,
     )
 
 
-def _make_baseline():
-    base_obs = []
-    for d in range(30):
-        base_obs.append(_obs("timing.is_night_post", d, 0.0 if d % 2 == 0 else 0.2))
-        base_obs.append(_obs("visual.is_daylight", d, 1.0 if d % 3 == 0 else 0.8))
-        base_obs.append(_obs("visual.is_isolated", d, 0.0 if d % 5 == 0 else 0.2))
-        base_obs.append(_obs("media.is_authored_or_staged", d, 0.0))
-
-    return build_baseline(
-        subject_id="subject_investigation",
-        observations=base_obs,
-        baseline_start=T0,
-        baseline_end=T0 + timedelta(days=50),
-        min_samples=3,
-    )
+def test_helper_id_generators():
+    hid = make_hypothesis_id("What is the relation?")
+    assert hid.startswith("hyp_")
+    tid = make_task_id(hid, "targeted_drill", "vision")
+    assert tid.startswith("mt_")
 
 
-def test_investigation_loop_runs_minimum_two_turns():
-    """Kural 1: İlk turda asla iş bitmez. En az iki tur zorunludur."""
-    baseline = _make_baseline()
-    initial_obs = [
-        _obs("timing.is_night_post", 0, 0.0),
-        _obs("visual.habitat_object_dog", 5, 1.0),
-        _obs("visual.is_daylight", 300, 0.0),
-    ]
+def test_multi_round_inquest_confirmed():
+    subject_id = "subj_001"
+    base_time = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
+    baseline = _make_sample_baseline(subject_id)
 
-    dispatcher_calls = []
-
-    def mock_dispatcher(turn: int, tasks: list[TargetedTask]):
-        dispatcher_calls.append(turn)
-        # Tur 2'de hedefli görev yanıtı döner
-        return [
-            _obs("visual.habitat_object_dog", 20, 0.0, ref=f"{tasks[0].question_id}:verify")
-            if tasks else _obs("dummy", 10, 0.0)
-        ]
-
-    loop = InvestigationLoop(inquirer=LeadInquirer(min_turns=2, max_turns=4))
-    report, ledger = loop.execute_inquest(
-        subject_id="subject_investigation",
-        initial_observations=initial_obs,
-        baseline=baseline,
-        agent_dispatcher_callable=mock_dispatcher,
-        target_start=T0 + timedelta(days=100),
-        target_end=T0 + timedelta(days=400),
-    )
-
-    # En az 2 tur koşulmuş olmalı
-    assert len(ledger.turns) >= 2
-    assert 1 in dispatcher_calls or 2 in dispatcher_calls
-
-
-def test_turn1_findings_spawn_targeted_tasks():
-    """Kural 2: 1. turun bulguları 2. tur için koordinatlı (tarih ve soru kimlikli) görev üretir."""
-    baseline = _make_baseline()
-    initial_obs = [
-        # Köpek 10. günde görüldü, ama 350. güne kadar bir daha hiç yok (ani kesilme)
-        _obs("visual.habitat_object_dog", 10, 1.0),
-        _obs("timing.is_night_post", 300, 1.0),
-        _obs("timing.is_night_post", 350, 1.0),
-    ]
-
-    captured_tasks = []
-
-    def mock_dispatcher(turn: int, tasks: list[TargetedTask]):
-        captured_tasks.extend(tasks)
+    def dispatcher(round_type: InvestigationRound, tasks: list[MicroTask]) -> list[SignalObservation]:
+        if round_type == InvestigationRound.BROAD_RECON:
+            # Round 1: Returns initial broad signals (significant deviation)
+            return [
+                SignalObservation(
+                    signal_id="night_share",
+                    timestamp=base_time,
+                    value=0.85,
+                    source_ref="recon_batch_1",
+                ),
+                SignalObservation(
+                    signal_id="post_frequency_per_day",
+                    timestamp=base_time,
+                    value=0.0,
+                    source_ref="recon_batch_1",
+                    measurement_status="absence",
+                ),
+            ]
+        elif round_type == InvestigationRound.TARGETED_DRILL:
+            # Round 2: Targeted drill confirms supporting evidence
+            return [
+                SignalObservation(
+                    signal_id="night_share",
+                    timestamp=datetime(2026, 3, 5, 2, 0, tzinfo=timezone.utc),
+                    value=0.90,
+                    source_ref="drill_batch_2",
+                )
+            ]
+        elif round_type == InvestigationRound.FALSIFICATION:
+            # Round 3: Falsification check finds NO counter-evidence
+            return [
+                SignalObservation(
+                    signal_id="night_share",
+                    timestamp=datetime(2026, 3, 10, 3, 0, tzinfo=timezone.utc),
+                    value=0.88,
+                    source_ref="falsify_batch_3",
+                )
+            ]
         return []
 
-    loop = InvestigationLoop(inquirer=LeadInquirer(min_turns=2, max_turns=4))
-    report, ledger = loop.execute_inquest(
-        subject_id="subject_investigation",
-        initial_observations=initial_obs,
-        baseline=baseline,
-        agent_dispatcher_callable=mock_dispatcher,
-        target_start=T0 + timedelta(days=100),
-        target_end=T0 + timedelta(days=400),
+    loop = InvestigationLoop(
+        max_rounds=3,
+        detector=DeviationDetector(baseline),
+        rupture_engine=RuptureEngine(baseline),
+    )
+    report = loop.run_inquest(
+        subject_id=subject_id,
+        dispatcher=dispatcher,
+        baseline_profile=baseline,
+        target_start=base_time,
+        target_end=datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc),
     )
 
-    # 1. turdan sonra köpek kesilmesi için dinamik soru üretilmiş olmalı
-    question_ids = [t.question_id for t in captured_tasks]
-    assert any("disappearance_visual_habitat_object_dog" in q for q in question_ids)
-
-    # Görev hedef ajan ve zaman aralığı koordinatını taşımalı
-    task = next(t for t in captured_tasks if "disappearance_visual_habitat_object_dog" in t.question_id)
-    assert task.target_agent == "vision_analyzer"
-    assert task.target_time_window is not None
+    assert report.total_rounds == 3
+    assert report.verdict == InquestVerdict.CONFIRMED
+    assert not report.circuit_breaker_triggered
+    assert len(report.round_history) == 3
 
 
-def test_falsification_counter_hypothesis_generated():
-    """Kural 3: Beyin kendi hipotezini çürütmek için karşıt hipotez (confounding / kurgu) sorusu üretir."""
-    baseline = _make_baseline()
-    initial_obs = [
-        _obs("visual.habitat_object_dog", 10, 1.0),
-        _obs("timing.is_night_post", 300, 1.0),
-    ]
+def test_rule_1_no_agent_runs_blind_without_coordinates():
+    class BrokenInquirer(LeadInquirer):
+        def generate_targeted_tasks(self, hypotheses, round_type):
+            tasks = super().generate_targeted_tasks(hypotheses, round_type)
+            if tasks:
+                tasks[0].coordinate = MicroTaskCoordinate()
+            return tasks
 
-    all_tasks = []
+    loop = InvestigationLoop(inquirer=BrokenInquirer(), max_rounds=2)
+    with pytest.raises(ValueError, match="Kural 1 ihlali"):
+        loop.run_inquest(
+            subject_id="subj_001",
+            dispatcher=lambda r, t: [
+                SignalObservation(
+                    signal_id="test",
+                    timestamp=datetime.now(timezone.utc),
+                    value=1.0,
+                )
+            ] if r == InvestigationRound.BROAD_RECON else [],
+        )
 
-    def mock_dispatcher(turn: int, tasks: list[TargetedTask]):
-        all_tasks.extend(tasks)
-        # Yeni gözlem döndürerek döngünün 2. ve 3. tura devamını sağla
-        return [_obs("media.is_authored_or_staged", 300 + turn, 0.0)]
 
-    loop = InvestigationLoop(inquirer=LeadInquirer(min_turns=2, max_turns=4))
-    report, ledger = loop.execute_inquest(
-        subject_id="subject_investigation",
-        initial_observations=initial_obs,
-        baseline=baseline,
-        agent_dispatcher_callable=mock_dispatcher,
-        target_start=T0 + timedelta(days=100),
-        target_end=T0 + timedelta(days=400),
+def test_rule_2_unresolved_hypotheses_become_unverified():
+    inquirer = LeadInquirer()
+    hyp = InquestHypothesis(
+        hypothesis_id="hyp_open",
+        question="Unanswered question?",
+        signal_type="unknown_signal",
+        formulated_in_round=1,
+        status=HypothesisStatus.OPEN,
+    )
+    timeline = EvidenceTimeline()
+    report = inquirer.seal_verdict(
+        subject_id="subj_001",
+        total_rounds=2,
+        hypotheses=[hyp],
+        timeline=timeline,
+        rupture_report=None,
+        circuit_breaker=False,
+        round_history=[],
+    )
+    assert hyp.status == HypothesisStatus.UNVERIFIED
+    assert "Unanswered question?" in report.unresolved_questions
+    assert report.verdict == InquestVerdict.INSUFFICIENT_EVIDENCE
+
+
+def test_rule_3_circuit_breaker_halts_on_zero_evidence():
+    subject_id = "subj_001"
+    base_time = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
+
+    def dispatcher(round_type: InvestigationRound, tasks: list[MicroTask]) -> list[SignalObservation]:
+        if round_type == InvestigationRound.BROAD_RECON:
+            return [
+                SignalObservation(
+                    signal_id="night_share",
+                    timestamp=base_time,
+                    value=0.9,
+                )
+            ]
+        # Round 2 yields 0 evidence
+        return []
+
+    loop = InvestigationLoop(max_rounds=3)
+    report = loop.run_inquest(
+        subject_id=subject_id,
+        dispatcher=dispatcher,
     )
 
-    # 2. turda karşı-hipotez (q_counter_) üretilmiş olmalı
-    question_ids = [t.question_id for t in all_tasks]
-    assert any(q.startswith("q_counter_") for q in question_ids)
+    assert report.circuit_breaker_triggered
+    assert report.total_rounds == 2  # Broke early in round 2
+    assert report.verdict == InquestVerdict.INSUFFICIENT_EVIDENCE
 
 
-def test_investigation_loop_stops_at_maximum_four_turns():
-    """Kural 4: Döngü asla sonsuza gitmez. Azami 4 tur emniyet kilidi vardır."""
-    baseline = _make_baseline()
-    initial_obs = [_obs("timing.is_night_post", 300, 1.0)]
+def test_falsification_counter_evidence_triggers_falsified_verdict():
+    subject_id = "subj_001"
+    base_time = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
 
-    def infinite_dispatcher(turn: int, tasks: list[TargetedTask]):
-        # Sürekli yeni gözlem üreten bir ajan olsa bile
-        return [_obs("timing.is_night_post", 300 + turn, 1.0)]
+    def dispatcher(round_type: InvestigationRound, tasks: list[MicroTask]) -> list[SignalObservation]:
+        if round_type == InvestigationRound.BROAD_RECON:
+            return [
+                SignalObservation(
+                    signal_id="night_share",
+                    timestamp=base_time,
+                    value=0.9,
+                )
+            ]
+        elif round_type == InvestigationRound.TARGETED_DRILL:
+            return [
+                SignalObservation(
+                    signal_id="night_share",
+                    timestamp=datetime(2026, 3, 2, 12, 0, tzinfo=timezone.utc),
+                    value=0.9,
+                )
+            ]
+        elif round_type == InvestigationRound.FALSIFICATION:
+            # Round 3 finds counter-evidence!
+            return [
+                SignalObservation(
+                    signal_id="night_share",
+                    timestamp=datetime(2026, 3, 3, 12, 0, tzinfo=timezone.utc),
+                    value=0.1,
+                    source_ref="counter_evidence",
+                )
+            ]
+        return []
 
-    loop = InvestigationLoop(inquirer=LeadInquirer(min_turns=2, max_turns=4))
-    report, ledger = loop.execute_inquest(
-        subject_id="subject_investigation",
-        initial_observations=initial_obs,
-        baseline=baseline,
-        agent_dispatcher_callable=infinite_dispatcher,
-        target_start=T0 + timedelta(days=100),
-        target_end=T0 + timedelta(days=400),
+    loop = InvestigationLoop(max_rounds=3)
+    report = loop.run_inquest(subject_id=subject_id, dispatcher=dispatcher)
+
+    assert report.verdict == InquestVerdict.FALSIFIED
+    assert any(h.status == HypothesisStatus.FALSIFIED for h in report.hypotheses)
+
+
+def test_direct_inquirer_methods():
+    inquirer = LeadInquirer()
+    assert inquirer.circuit_breaker_check(0) is True
+    assert inquirer.circuit_breaker_check(5) is False
+
+    # Direct test of evaluate_round
+    hyp = InquestHypothesis(
+        hypothesis_id="hyp_direct",
+        question="Direct test question?",
+        signal_type="test_signal",
+        formulated_in_round=1,
     )
-
-    # Kesinlikle 4 turda durmalı
-    assert len(ledger.turns) <= 4
-
-
-def test_ledger_permanently_retains_all_turns():
-    """Kural 5: Tüm turların hafızası kalıcıdır. 1. turun gözlemi 3. turda silinmez."""
-    baseline = _make_baseline()
-    initial_obs = [_obs("timing.is_night_post", 10, 0.0, ref="t1_obs")]
-
-    def mock_dispatcher(turn: int, tasks: list[TargetedTask]):
-        return [_obs("timing.is_night_post", 300 + turn, 1.0, ref=f"t{turn}_obs")]
-
-    loop = InvestigationLoop(inquirer=LeadInquirer(min_turns=2, max_turns=4))
-    report, ledger = loop.execute_inquest(
-        subject_id="subject_investigation",
-        initial_observations=initial_obs,
-        baseline=baseline,
-        agent_dispatcher_callable=mock_dispatcher,
-        target_start=T0 + timedelta(days=100),
-        target_end=T0 + timedelta(days=400),
+    entry = EvidenceTimelineEntry(
+        evidence_id="ev_01234567890123456789",
+        timeline_at=datetime.now(timezone.utc),
+        temporal_basis="observed_at",
+        epistemic_type="observation",
+        epistemic_note="direct test",
+        source_engine="test_engine",
+        content="direct test content",
+        source_metrics={"signal_id": "test_signal", "is_counter_evidence": True},
     )
-
-    all_refs = [o.source_ref for o in ledger.all_observations]
-    assert "t1_obs" in all_refs
-    assert any("t2_obs" in r for r in all_refs)
+    inquirer.evaluate_round(2, [hyp], [entry], is_falsification_round=True)
+    assert hyp.status == HypothesisStatus.FALSIFIED

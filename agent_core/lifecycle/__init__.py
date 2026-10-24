@@ -19,15 +19,6 @@ from agent_core.lifecycle.rupture_reporter import (
     report,
 )
 from agent_core.lifecycle.rupture_engine import RuptureEngine
-from agent_core.lifecycle.investigation_loop import (
-    InvestigationLoop,
-    LeadInquirer,
-    InvestigationLedger,
-    TargetedTask,
-    InvestigativeQuestion,
-    QuestionStatus,
-    TurnStage,
-)
 
 __all__ = [
     "SignalObservation",
@@ -43,11 +34,4 @@ __all__ = [
     "RuptureReport",
     "report",
     "RuptureEngine",
-    "InvestigationLoop",
-    "LeadInquirer",
-    "InvestigationLedger",
-    "TargetedTask",
-    "InvestigativeQuestion",
-    "QuestionStatus",
-    "TurnStage",
 ]
