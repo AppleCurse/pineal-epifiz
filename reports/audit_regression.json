@@ -87,7 +87,7 @@
       "status": "closed",
       "evidence": [
         "agent_core/agents/human_behavior.py: `input_data: Dict[str, Any]` imzası kalkmış",
-        "agent_core toplam: 199"
+        "agent_core toplam: 200"
       ],
       "note": "Payload Pydantic modele bağlanmış.",
       "regression": false

@@ -88,13 +88,15 @@ async def test_execute_task_full_flow(executor):
     assert isinstance(status, TaskSnapshot)
     assert status.status == "completed"
     assert status.task_id == "task_1"
-    # 3 rota ajanı + 7-sütun + evidence adapter + neutral timeline + depth.
+    # 3 rota ajanı + 7-sütun + evidence adapter + neutral timeline + depth
+    # + life_rupture.
     # Empty evidence and its empty timeline are both explicit chain records.
     chain_agents = [record["agent"] for record in status.evidence_chain]
-    assert len(chain_agents) == 7, chain_agents
+    assert len(chain_agents) == 8, chain_agents
     assert chain_agents.count("psychodynamic_depth") == 1
     assert chain_agents.count("pineal_7pillar") == 1
     assert chain_agents.count("pillar_evidence_adapter") == 1
+    assert chain_agents.count("life_rupture") == 1
     adapter_record = next(
         record for record in status.evidence_chain
         if record["agent"] == "pillar_evidence_adapter"
@@ -132,8 +134,11 @@ async def test_execute_task_halt_low_confidence(executor):
     status = await executor.execute_task(input_data, "task_2")
     
     assert status.status == "halted_evidence"
-    # Raw pillar plus canonical-evidence and neutral-timeline records.
-    assert len(status.evidence_chain) == 3
+    # Raw pillar + canonical evidence + neutral timeline + LIFE-RUPTURE record.
+    # [LIFE-RUPTURE] Uzunlamasına katman bilerek eklendi: sapma iddiası
+    # üretilmese bile "ölçüldü/ölçülemedi" kaydı zincirde durur.
+    assert len(status.evidence_chain) == 4
+    assert [r["agent"] for r in status.evidence_chain].count("life_rupture") == 1
     
 @pytest.mark.asyncio
 async def test_execute_task_suspicious_research(executor):
@@ -171,8 +176,10 @@ async def test_execute_task_frequency_mismatch(executor):
     status = await executor.execute_task(input_data, "task_4")
     
     assert status.status == "halted_frequency"
-    # Three routed outputs plus raw pillar, canonical evidence, and timeline.
-    assert len(status.evidence_chain) == 6
+    # Three routed outputs + raw pillar + canonical evidence + timeline
+    # + LIFE-RUPTURE (deliberate: longitudinal layer is always sealed).
+    assert len(status.evidence_chain) == 7
+    assert [r["agent"] for r in status.evidence_chain].count("life_rupture") == 1
 
 
 @pytest.mark.asyncio

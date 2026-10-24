@@ -545,6 +545,74 @@ class PinealExecutor:
             "provider": None,
         }
 
+    def _life_rupture_record(self, status: TaskStatus, input_data: dict) -> Dict[str, Any]:
+        """Yaşam Kırılması katmanı: kişinin KENDİ geçmişine göre sapma kaydı.
+
+        Panelin kuralları burada uygulanır:
+          * kişiye özel kod yok — aynı fonksiyon her özne için koşar;
+          * teşhis yok — rapor ``root_cause = UNKNOWN`` taşır;
+          * fail-closed — analiz çökerse sessiz boşluk değil, "ölçülemedi"
+            kaydı zincire düşer.
+
+        Tam rapor (kanıt zaman çizelgesiyle) ZİNCİRE, hafif özet ANLIK
+        GÖRÜNTÜYE yazılır: anlık görüntü her adımda yeniden serileştirilir,
+        yüzlerce kanıt satırını oraya koymak durumu şişirirdi.
+        """
+        from datetime import datetime as _dt, timezone as _tz
+
+        from agent_core.lifecycle.pipeline import analyze_life_rupture
+
+        try:
+            report = analyze_life_rupture(
+                input_data.get("target_profile"),
+                visual_evidence=input_data.get("visual_evidence"),
+                frequency_map=status.frequency_map,
+                strata_map=status.strata_map,
+                subject_id=str(status.task_id),
+            )
+            payload = report.model_dump(mode="json")
+        except Exception as error:  # noqa: BLE001 — fail-closed, kayıt zorunlu
+            self._log(
+                "WARNING",
+                "[" + status.task_id + "] LIFE-RUPTURE ölçülemedi: " + type(error).__name__,
+            )
+            return {
+                "agent": "life_rupture",
+                "evidence_type": "life_rupture_report",
+                "result": {
+                    "schema_version": "life-rupture-v1",
+                    "status": "unavailable",
+                    "reason_code": type(error).__name__,
+                    "root_cause": "UNKNOWN",
+                },
+                "timestamp": _dt.now(_tz.utc).isoformat(),
+            }
+
+        status.life_rupture = {
+            key: payload.get(key)
+            for key in (
+                "schema_version", "status", "family_count", "families",
+                "persistence_days", "cluster_window_start", "cluster_window_end",
+                "medium_shift_rate", "confounded_axes", "root_cause",
+                "prior_pillar_counts_toward_cluster", "evidence_entry_count",
+                "summary", "machine_note", "falsification_checks",
+            )
+        }
+        timeline = payload.get("evidence_timeline") or {}
+        self._log(
+            "INFO",
+            "[" + status.task_id + "] LIFE-RUPTURE: " + str(payload.get("status"))
+            + " · eksen=" + str(payload.get("family_count"))
+            + " · kanıt=" + str(payload.get("evidence_entry_count")),
+        )
+        return {
+            "agent": "life_rupture",
+            "evidence_type": "life_rupture_report",
+            "result": payload,
+            "evidence_timeline_entry_count": len(timeline.get("entries") or []),
+            "timestamp": _dt.now(_tz.utc).isoformat(),
+        }
+
     def _snapshot(self, status: TaskStatus):
         cache_stats = self.llm_gateway.cache.stats() if hasattr(self.llm_gateway, "cache") else {}
         hits = cache_stats.get("hits", 0)
@@ -1702,6 +1770,10 @@ class PinealExecutor:
             )
             self._log("INFO", f"[{task_id}] 7-PILLAR tamamlandı ({elapsed_ms}ms)")
             self._rack_update("pineal_7pillar", "ready")
+            # [LIFE-RUPTURE] Boylamsal katman: 7 sütunun ürettiği haritalar +
+            # hedef profil + görsel kanıt tek geçişte kişinin kendi baseline'ıyla
+            # karşılaştırılır. Deterministik, LLM'siz; rapor mühürlenen zincire girer.
+            status.evidence_chain.append(self._life_rupture_record(status, input_data))
             self._snapshot(status)
         except Exception as e:
             self._rack_update("pineal_7pillar", "wait")
