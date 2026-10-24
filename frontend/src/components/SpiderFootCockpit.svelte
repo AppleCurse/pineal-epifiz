@@ -76,6 +76,19 @@
   let memoryCrystal: any = null;
   let memoryError = '';
 
+  let memoryRecallQuery = '';
+  let isRecallingMemory = false;
+  let memoryRecallResults: any = null;
+  let memoryRecallError = '';
+
+  let isShadowAnalyzing = false;
+  let manualShadowAnalysis: any = null;
+  let shadowAnalyzeError = '';
+
+  let isShadowGenerating = false;
+  let manualShadowResult: any = null;
+  let shadowGenerateError = '';
+
   // --- İLK TEMAS & ETKİLEME KANCASI STÜDYOSU STATE ---
   let hookArchetype: 'authentic_connection' | 'business_collab' | 'intellectual_collab' | 'pattern_interrupt' | 'shadow_hook' | 'custom' = 'authentic_connection';
   let customHookGoal = '';
@@ -811,6 +824,7 @@
 
   // --- DERİN OSINT & GÖLGE EYLEMLERİ ---
   $: darkTriad = $taskStatus?.shadow_profile?.dark_profile || null;
+  $: activeDarkTriad = manualShadowAnalysis || darkTriad;
   $: psychodynamicDepth = $taskStatus?.depth_report || null;
   $: humanBehavior = $taskStatus?.runs?.human_behavior?.output_summary || null;
 
@@ -946,6 +960,98 @@
       memoryError = e.message || 'Hafıza çekilirken hata oluştu.';
     } finally {
       isLoadingMemory = false;
+    }
+  }
+
+  async function runMemoryRecall() {
+    const target = (currentTargetUser || '').trim();
+    if (!target || isRecallingMemory) return;
+    isRecallingMemory = true;
+    memoryRecallError = '';
+    memoryRecallResults = null;
+    try {
+      const q = encodeURIComponent(memoryRecallQuery.trim() || target);
+      const res = await apiFetch(`/api/memory/${encodeURIComponent(target)}/recall?query=${q}&k=8`);
+      const data = await res.json();
+      if (!res.ok) {
+        memoryRecallError = data?.error?.message || data?.detail || 'Hafıza geri çağırma başarısız.';
+      } else {
+        memoryRecallResults = data;
+      }
+    } catch (e: any) {
+      memoryRecallError = e.message || 'Hafıza çağrılırken ağ hatası oluştu.';
+    } finally {
+      isRecallingMemory = false;
+    }
+  }
+
+  async function runShadowAnalyze() {
+    const target = (currentTargetUser || '').trim();
+    if (!target || isShadowAnalyzing) return;
+    isShadowAnalyzing = true;
+    shadowAnalyzeError = '';
+    try {
+      const bio = ($taskStatus?.target_profile?.bio || '').trim();
+      const rawPosts = $taskStatus?.target_profile?.posts || [];
+      const posts = Array.isArray(rawPosts) ? rawPosts : (rawPosts ? [rawPosts] : []);
+      const res = await apiFetch('/api/experimental/shadow/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target: target,
+          bio: bio || target,
+          posts: posts
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        shadowAnalyzeError = data?.error?.message || data?.detail || 'Gölge Dark Triad analizi başarısız.';
+      } else {
+        manualShadowAnalysis = data;
+      }
+    } catch (e: any) {
+      shadowAnalyzeError = e.message || 'Gölge analizi yürütülürken hata oluştu.';
+    } finally {
+      isShadowAnalyzing = false;
+    }
+  }
+
+  async function runShadowGenerate() {
+    const target = (currentTargetUser || '').trim();
+    if (!target || isShadowGenerating) return;
+    isShadowGenerating = true;
+    shadowGenerateError = '';
+    manualShadowResult = null;
+    try {
+      const bio = ($taskStatus?.target_profile?.bio || '').trim();
+      const rawPosts = $taskStatus?.target_profile?.posts || [];
+      const posts = Array.isArray(rawPosts) ? rawPosts : (rawPosts ? [rawPosts] : []);
+      const res = await apiFetch('/api/experimental/shadow/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: get(clientId) || 'default',
+          target_profile: {
+            username: target,
+            bio: bio || target,
+            posts: posts
+          },
+          user_profile: {
+            rituals: ['derin osint', 'bilişsel haritalama'],
+            tone: 'analitik'
+          }
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        shadowGenerateError = data?.error?.message || data?.detail || 'Gölge mesaj üretimi başarısız.';
+      } else {
+        manualShadowResult = data;
+      }
+    } catch (e: any) {
+      shadowGenerateError = e.message || 'Gölge sentezinde ağ hatası oluştu.';
+    } finally {
+      isShadowGenerating = false;
     }
   }
 
@@ -1423,273 +1529,43 @@
           {/if}
         </div>
 
-      <!-- TAB 2.6: DERİN KİMLİK RADARI (MAIGRET/HOLEHE/SOCID/CRAWL) -->
-      {:else if activeTab === 'osint_radar'}
-        <div class="osint-radar-container">
-          <!-- Üst Araç Seçici -->
-          <div class="tool-switcher-bar">
-            <span class="switcher-title">AKTİF OSINT SİLAHI:</span>
-            <div class="sub-tool-chips">
-              <button
-                type="button"
-                class="sub-tool-chip"
-                class:active={osintSubTool === 'maigret'}
-                on:click={() => osintSubTool = 'maigret'}
-              >🔍 MAIGRET (3000+ Sitede Kullanıcı Adı Avı)</button>
-
-              <button
-                type="button"
-                class="sub-tool-chip"
-                class:active={osintSubTool === 'holehe'}
-                on:click={() => osintSubTool = 'holehe'}
-              >📧 HOLEHE (120+ Serviste E-posta Tespiti)</button>
-
-              <button
-                type="button"
-                class="sub-tool-chip"
-                class:active={osintSubTool === 'socid'}
-                on:click={() => osintSubTool = 'socid'}
-              >🆔 SOCID EXTRACTOR (Profil ID & Adli İz)</button>
-
-              <button
-                type="button"
-                class="sub-tool-chip"
-                class:active={osintSubTool === 'crawl'}
-                on:click={() => osintSubTool = 'crawl'}
-              >🕷️ CRAWL4AI (Derin Web Kazıma)</button>
-            </div>
-          </div>
-
-          <!-- 1. MAIGRET PANELİ -->
-          {#if osintSubTool === 'maigret'}
-            <div class="osint-tool-panel">
-              <div class="panel-desc">
-                <strong>Maigret Motoru:</strong> Hedef kullanıcı adını 3000'den fazla sosyal ağ, forum, kod deposu ve web servisinde tarar. Bulunan profilleri doğrudan doğrular.
-              </div>
-              <div class="osint-action-bar">
-                <div class="action-input-wrap">
-                  <span class="action-icon">👤</span>
-                  <input
-                    type="text"
-                    bind:value={maigretInput}
-                    placeholder="Hedef kullanıcı adı (varsayılan: @{currentTargetUser})..."
-                    on:keydown={(e) => e.key === 'Enter' && runMaigretScan()}
-                  />
-                </div>
-                <div class="limit-selector">
-                  <label for="limit-select">Limit:</label>
-                  <select id="limit-select" bind:value={maigretLimit}>
-                    <option value={30}>30 Site (Hızlı)</option>
-                    <option value={50}>50 Site (Standart)</option>
-                    <option value={150}>150 Site (Geniş)</option>
-                    <option value={500}>500 Site (Derin)</option>
-                  </select>
-                </div>
-                <button
-                  type="button"
-                  class="run-scan-btn"
-                  disabled={isMaigretScanning}
-                  on:click={runMaigretScan}
-                >
-                  {#if isMaigretScanning}
-                    <span class="spinner"></span> 3000+ Sitede Aranıyor...
-                  {:else}
-                    ⚡ MAIGRET İLE TARA
-                  {/if}
-                </button>
-              </div>
-
-              {#if maigretError}
-                <div class="osint-error-box">⚠️ {maigretError}</div>
-              {/if}
-
-              {#if maigretResults}
-                <div class="osint-results-card">
-                  <div class="results-head">
-                    <span class="head-bold">MAIGRET TARAMA RAPORU:</span>
-                    <span class="head-stat">Bulunan Hesaplar: {(maigretResults.found_accounts || []).length} / {(maigretResults.total_sites_checked || 0)} site</span>
-                  </div>
-                  {#if (maigretResults.found_accounts || []).length === 0}
-                    <div class="empty-state">Belirtilen limit dahilinde açık hesap bulunamadı veya siteler kısıtlandı.</div>
-                  {:else}
-                    <div class="accounts-grid">
-                      {#each maigretResults.found_accounts as acc}
-                        <div class="account-card">
-                          <span class="plat-badge">{acc.site || 'Platform'}</span>
-                          <a href={acc.url} target="_blank" rel="noopener noreferrer" class="acc-link">{acc.url}</a>
-                          <span class="acc-status-tag">✓ ONAYLI</span>
-                        </div>
-                      {/each}
-                    </div>
-                  {/if}
-                </div>
-              {/if}
-            </div>
-
-          <!-- 2. HOLEHE PANELİ -->
-          {:else if osintSubTool === 'holehe'}
-            <div class="osint-tool-panel">
-              <div class="panel-desc">
-                <strong>Holehe Motoru:</strong> Bir e-posta adresinin şifre sıfırlama uç noktalarını tetiklemeden Instagram, Twitter, GitHub, Spotify vb. 120+ servise kayıtlı olup olmadığını tespit eder.
-              </div>
-              <div class="osint-action-bar">
-                <div class="action-input-wrap">
-                  <span class="action-icon">📧</span>
-                  <input
-                    type="email"
-                    bind:value={holeheInput}
-                    placeholder="Hedefin e-posta adresi (örn: hedef@gmail.com)..."
-                    on:keydown={(e) => e.key === 'Enter' && runHoleheScan()}
-                  />
-                </div>
-                <button
-                  type="button"
-                  class="run-scan-btn"
-                  disabled={isHoleheScanning}
-                  on:click={runHoleheScan}
-                >
-                  {#if isHoleheScanning}
-                    <span class="spinner"></span> 120 Servis Yoklanıyor...
-                  {:else}
-                    ⚡ E-POSTA İZLERİNİ TARA
-                  {/if}
-                </button>
-              </div>
-
-              {#if holeheError}
-                <div class="osint-error-box">⚠️ {holeheError}</div>
-              {/if}
-
-              {#if holeheResults}
-                <div class="osint-results-card">
-                  <div class="results-head">
-                    <span class="head-bold">HOLEHE HESAP BULGULARI ({holeheResults.email}):</span>
-                  </div>
-                  {#if (holeheResults.found_accounts || []).length === 0}
-                    <div class="empty-state">Bu e-posta adresine bağlı açık hesap tespit edilemedi.</div>
-                  {:else}
-                    <div class="accounts-grid">
-                      {#each holeheResults.found_accounts as acc}
-                        <div class="account-card" class:registered={acc.exists}>
-                          <span class="plat-badge">{acc.site}</span>
-                          <span class="holehe-status">{acc.exists ? '✓ KAYITLI HESAP VAR' : 'KAYIT YOK'}</span>
-                        </div>
-                      {/each}
-                    </div>
-                  {/if}
-                </div>
-              {/if}
-            </div>
-
-          <!-- 3. SOCID EXTRACTOR PANELİ -->
-          {:else if osintSubTool === 'socid'}
-            <div class="osint-tool-panel">
-              <div class="panel-desc">
-                <strong>Socid Extractor:</strong> Profil URL'lerinden sunucu tarafı gizli kimlikleri (User ID, Katılım Tarihi, Avatar Hash, Yönlendirmeler) çıkarır.
-              </div>
-              <div class="osint-action-bar">
-                <div class="action-input-wrap">
-                  <span class="action-icon">🆔</span>
-                  <input
-                    type="url"
-                    bind:value={socidInput}
-                    placeholder="Profil URL'si (örn: https://instagram.com/hedef veya https://github.com/hedef)..."
-                    on:keydown={(e) => e.key === 'Enter' && runSocidScan()}
-                  />
-                </div>
-                <button
-                  type="button"
-                  class="run-scan-btn"
-                  disabled={isSocidScanning}
-                  on:click={runSocidScan}
-                >
-                  {#if isSocidScanning}
-                    <span class="spinner"></span> Kimlik Ayrıştırılıyor...
-                  {:else}
-                    ⚡ ADLİ KİMLİK ÇIKAR
-                  {/if}
-                </button>
-              </div>
-
-              {#if socidError}
-                <div class="osint-error-box">⚠️ {socidError}</div>
-              {/if}
-
-              {#if socidResults}
-                <div class="osint-results-card">
-                  <div class="results-head">
-                    <span class="head-bold">SOCID ADLİ KİMLİK METADATASI:</span>
-                  </div>
-                  <pre class="json-code-box">{JSON.stringify(socidResults, null, 2)}</pre>
-                </div>
-              {/if}
-            </div>
-
-          <!-- 4. CRAWL4AI DERİN METİN KAZIMA -->
-          {:else if osintSubTool === 'crawl'}
-            <div class="osint-tool-panel">
-              <div class="panel-desc">
-                <strong>Crawl4AI Motoru:</strong> Dış web sitelerini, blogları veya biyografi bağlantılarını (Linktree, web siteleri) güvenlik bariyerlerini aşarak temiz Markdown biçiminde kazır.
-              </div>
-              <div class="osint-action-bar">
-                <div class="action-input-wrap">
-                  <span class="action-icon">🕸️</span>
-                  <input
-                    type="url"
-                    bind:value={crawlInput}
-                    placeholder="Kazınacak web sitesi URL'si (örn: https://hedefsite.com)..."
-                    on:keydown={(e) => e.key === 'Enter' && runCrawlFetch()}
-                  />
-                </div>
-                <button
-                  type="button"
-                  class="run-scan-btn"
-                  disabled={isCrawlScanning}
-                  on:click={runCrawlFetch}
-                >
-                  {#if isCrawlScanning}
-                    <span class="spinner"></span> Kazınıyor...
-                  {:else}
-                    ⚡ DERİN METİN KAZI
-                  {/if}
-                </button>
-              </div>
-
-              {#if crawlError}
-                <div class="osint-error-box">⚠️ {crawlError}</div>
-              {/if}
-
-              {#if crawlResults}
-                <div class="osint-results-card">
-                  <div class="results-head">
-                    <span class="head-bold">KAZILAN İÇERİK ({crawlResults.title || 'Başlıksız'}):</span>
-                  </div>
-                  <pre class="markdown-preview-box">{crawlResults.markdown || 'İçerik çekilemedi.'}</pre>
-                </div>
-              {/if}
-            </div>
-          {/if}
-        </div>
-
-      <!-- TAB 2.7: HEDEF PSİKOLOJİSİ & GÖLGE (DARK TRIAD / DEPTH / MEMORY) -->
+      <!-- TAB 2.6: HEDEF PSİKOLOJİSİ & GÖLGE (DARK TRIAD / DEPTH / MEMORY) -->
       {:else if activeTab === 'psychology_shadow'}
         <div class="shadow-container">
           <!-- 1. Karanlık Üçlü & Zaafiyet Matrisi -->
           <div class="shadow-section">
             <div class="section-title">
-              <span>🎭 KARANLIK ÜÇLÜ VE MANİPÜLASYON AÇIKLARI (DARK TRIAD)</span>
-              <span class="sec-meta">Bilişsel zaafiyet ve ego savunma indeksi</span>
+              <div class="title-with-meta">
+                <span>🎭 KARANLIK ÜÇLÜ VE MANİPÜLASYON AÇIKLARI (DARK TRIAD)</span>
+                <span class="sec-meta">Bilişsel zaafiyet ve ego savunma indeksi</span>
+              </div>
+              <button
+                type="button"
+                class="crystal-btn shadow-run-btn"
+                disabled={isShadowAnalyzing}
+                on:click={runShadowAnalyze}
+              >
+                {#if isShadowAnalyzing}
+                  <span class="spinner"></span> Analiz Ediliyor...
+                {:else}
+                  🌑 ANALİZİ TETİKLE (/api/experimental/shadow/analyze)
+                {/if}
+              </button>
             </div>
+
+            {#if shadowAnalyzeError}
+              <div class="osint-error-box">⚠️ {shadowAnalyzeError}</div>
+            {/if}
 
             <div class="metrics-grid">
               <!-- Narsisizm -->
               <div class="metric-card">
                 <div class="metric-top">
                   <span class="metric-name">👑 NARSİSİZM DÜZEYİ</span>
-                  <span class="metric-val">{darkTriad?.narcissism ? `%${Math.round(darkTriad.narcissism * 100)}` : 'Ölçümlenmedi'}</span>
+                  <span class="metric-val">{activeDarkTriad?.narcissism ? `%${Math.round(activeDarkTriad.narcissism * 100)}` : 'Ölçümlenmedi'}</span>
                 </div>
                 <div class="score-bar-wrap">
-                  <div class="score-bar-fill narc" style="width: {Math.round((darkTriad?.narcissism || 0.15) * 100)}%"></div>
+                  <div class="score-bar-fill narc" style="width: {Math.round((activeDarkTriad?.narcissism || 0.15) * 100)}%"></div>
                 </div>
                 <p class="metric-desc">Övgüye duyarlılık, benlik vitrini ve statü teyit ihtiyacı.</p>
               </div>
@@ -1698,10 +1574,10 @@
               <div class="metric-card">
                 <div class="metric-top">
                   <span class="metric-name">🦊 MAKYAVELİZM (STRATEJİ)</span>
-                  <span class="metric-val">{darkTriad?.machiavellianism ? `%${Math.round(darkTriad.machiavellianism * 100)}` : 'Dengeli'}</span>
+                  <span class="metric-val">{activeDarkTriad?.machiavellianism ? `%${Math.round(activeDarkTriad.machiavellianism * 100)}` : 'Dengeli'}</span>
                 </div>
                 <div class="score-bar-wrap">
-                  <div class="score-bar-fill mach" style="width: {Math.round((darkTriad?.machiavellianism || 0.25) * 100)}%"></div>
+                  <div class="score-bar-fill mach" style="width: {Math.round((activeDarkTriad?.machiavellianism || 0.25) * 100)}%"></div>
                 </div>
                 <p class="metric-desc">Fayda odaklı ilişkiler, hesaplı adımlar ve pragmatizm derecesi.</p>
               </div>
@@ -1710,10 +1586,10 @@
               <div class="metric-card">
                 <div class="metric-top">
                   <span class="metric-name">🧊 DUYARSIZLIK / SOĞUKLUK</span>
-                  <span class="metric-val">{darkTriad?.psychopathy ? `%${Math.round(darkTriad.psychopathy * 100)}` : 'Düşük'}</span>
+                  <span class="metric-val">{activeDarkTriad?.psychopathy ? `%${Math.round(activeDarkTriad.psychopathy * 100)}` : 'Düşük'}</span>
                 </div>
                 <div class="score-bar-wrap">
-                  <div class="score-bar-fill psych" style="width: {Math.round((darkTriad?.psychopathy || 0.08) * 100)}%"></div>
+                  <div class="score-bar-fill psych" style="width: {Math.round((activeDarkTriad?.psychopathy || 0.08) * 100)}%"></div>
                 </div>
                 <p class="metric-desc">Duygusal bağışıklık, empati katsayısı ve mesafe koyma hızı.</p>
               </div>
@@ -1722,22 +1598,47 @@
               <div class="metric-card highlight">
                 <div class="metric-top">
                   <span class="metric-name">🔓 İLETİŞİM AÇIK KAPI İNDEKSİ</span>
-                  <span class="metric-val">{darkTriad?.exploitability ? `%${Math.round(darkTriad.exploitability * 100)}` : '%82'}</span>
+                  <span class="metric-val">{activeDarkTriad?.exploitability ? `%${Math.round(activeDarkTriad.exploitability * 100)}` : '%82'}</span>
                 </div>
                 <div class="score-bar-wrap">
-                  <div class="score-bar-fill exploit" style="width: {Math.round((darkTriad?.exploitability || 0.82) * 100)}%"></div>
+                  <div class="score-bar-fill exploit" style="width: {Math.round((activeDarkTriad?.exploitability || 0.82) * 100)}%"></div>
                 </div>
                 <p class="metric-desc">Hedefin gardını düşüren temel zaafiyetler üzerinden temas kurma potansiyeli.</p>
               </div>
             </div>
+
+            {#if activeDarkTriad?.theme_analysis}
+              <div class="theme-clusters-box">
+                <span class="theme-title">🏷️ OTOMATİK TEMA KÜMELERİ & ÇIKARIMLAR:</span>
+                <pre class="json-code-box">{JSON.stringify(activeDarkTriad.theme_analysis, null, 2)}</pre>
+              </div>
+            {/if}
           </div>
 
           <!-- 2. Psikodinamik Derinlik & Aşil Topuğu -->
           <div class="shadow-section">
             <div class="section-title">
-              <span>🎯 AŞİL TOPUĞU VE GİZLİ YARA (CORE WOUND & ACHILLES)</span>
-              <span class="sec-meta">Bilişsel profil analizi bulguları</span>
+              <div class="title-with-meta">
+                <span>🎯 AŞİL TOPUĞU VE GİZLİ YARA (CORE WOUND & ACHILLES)</span>
+                <span class="sec-meta">Bilişsel profil analizi ve NLP gölge motoru</span>
+              </div>
+              <button
+                type="button"
+                class="crystal-btn shadow-run-btn"
+                disabled={isShadowGenerating}
+                on:click={runShadowGenerate}
+              >
+                {#if isShadowGenerating}
+                  <span class="spinner"></span> Sentezleniyor...
+                {:else}
+                  ⚡ GÖLGE SENTEZİ TETİKLE (/api/experimental/shadow/generate)
+                {/if}
+              </button>
             </div>
+
+            {#if shadowGenerateError}
+              <div class="osint-error-box">⚠️ {shadowGenerateError}</div>
+            {/if}
 
             <div class="achilles-grid">
               <div class="achilles-box">
@@ -1747,15 +1648,43 @@
 
               <div class="achilles-box dark">
                 <span class="ach-label">🌑 GÖLGE PERSPEKTİFİ (SHADOW STRATEGY):</span>
-                <p class="ach-text">{$taskStatus?.shadow_profile?.strategy || 'Geri çekil ve boşluk bırak; savunmasını doğrudan kırmak yerine merak uyandırarak adım atmasını sağla.'}</p>
+                <p class="ach-text">{manualShadowResult?.strategy || $taskStatus?.shadow_profile?.strategy || 'Geri çekil ve boşluk bırak; savunmasını doğrudan kırmak yerine merak uyandırarak adım atmasını sağla.'}</p>
               </div>
             </div>
+
+            {#if manualShadowResult}
+              <div class="shadow-result-box">
+                <div class="shadow-res-header">
+                  <span class="res-strat">VEKTÖR STRATEJİSİ: {manualShadowResult.strategy || 'Bilinmiyor'}</span>
+                  <span class="res-conf">GÜVEN: %{Math.round((manualShadowResult.confidence || 0) * 100)}</span>
+                </div>
+                {#if manualShadowResult.message}
+                  <div class="shadow-res-msg">
+                    <strong>Gölge Mesajı:</strong> {manualShadowResult.message}
+                  </div>
+                {/if}
+                {#if manualShadowResult.nlp_sequence?.length}
+                  <div class="shadow-nlp-seq">
+                    <span class="nlp-title">NLP Komut Katmanları (Pace / Command / Closure):</span>
+                    {#each manualShadowResult.nlp_sequence as step}
+                      <div class="nlp-step-row">
+                        <span class="nlp-phase">{step.phase}</span>
+                        <span class="nlp-text">{step.text}</span>
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+            {/if}
           </div>
 
-          <!-- 3. Hafıza Kristali (Kalıcı Bellek) -->
+          <!-- 3. Hafıza Kristali (Kalıcı Bellek) & Recall -->
           <div class="shadow-section">
             <div class="section-title">
-              <span>💎 HEDEFİN KALICI HAFIZA KRİSTALİ (CANONICAL MEMORY)</span>
+              <div class="title-with-meta">
+                <span>💎 HEDEFİN KALICI HAFIZA KRİSTALİ (CANONICAL MEMORY)</span>
+                <span class="sec-meta">Doğrulanmış adli kanıt ve deterministik hatıralar</span>
+              </div>
               <button
                 type="button"
                 class="crystal-btn"
@@ -1765,7 +1694,7 @@
                 {#if isLoadingMemory}
                   <span class="spinner"></span> Yükleniyor...
                 {:else}
-                  💎 HAFIZADAN KRİSTALİ ÇEK (@{currentTargetUser})
+                  💎 KRİSTALİ ÇEK (@{currentTargetUser})
                 {/if}
               </button>
             </div>
@@ -1774,11 +1703,74 @@
               <div class="osint-error-box">ℹ️ {memoryError}</div>
             {/if}
 
+            <!-- RECALL HATIRA SORGULAYICI -->
+            <div class="recall-bar">
+              <input
+                type="text"
+                class="recall-input"
+                bind:value={memoryRecallQuery}
+                placeholder="Hatıra ve kanıt sorgusu (örn: Instagram, bio, token, konum)..."
+                on:keydown={(e) => e.key === 'Enter' && runMemoryRecall()}
+              />
+              <button
+                type="button"
+                class="crystal-btn"
+                disabled={isRecallingMemory}
+                on:click={runMemoryRecall}
+              >
+                {#if isRecallingMemory}
+                  <span class="spinner"></span> Çağrılıyor...
+                {:else}
+                  🔍 HATIRALARI ÇAĞIR (RECALL)
+                {/if}
+              </button>
+            </div>
+
+            {#if memoryRecallError}
+              <div class="osint-error-box">⚠️ {memoryRecallError}</div>
+            {/if}
+
+            {#if memoryRecallResults}
+              <div class="recall-results-box">
+                <div class="recall-header">
+                  <span>GERİ ÇAĞRILAN HATIRALAR ({memoryRecallResults.hits?.length || 0})</span>
+                  {#if memoryRecallResults.reason}
+                    <span class="recall-reason">Gerekçe: {memoryRecallResults.reason}</span>
+                  {/if}
+                </div>
+                {#if memoryRecallResults.hits?.length}
+                  <div class="recall-hits-list">
+                    {#each memoryRecallResults.hits as hit}
+                      <div class="recall-hit-card">
+                        <div class="hit-top">
+                          <span class="hit-frag">#{hit.fragment_id}</span>
+                          <span class="hit-score">Skor: {hit.score?.toFixed(2) || '0.00'} · Benzerlik: %{Math.round((hit.similarity || 0) * 100)}</span>
+                        </div>
+                        <div class="hit-text">{hit.text}</div>
+                        {#if hit.reasons?.length}
+                          <div class="hit-reasons">
+                            {#each hit.reasons as r}
+                              <span class="reason-tag">{r}</span>
+                            {/each}
+                          </div>
+                        {/if}
+                      </div>
+                    {/each}
+                  </div>
+                {:else}
+                  <div class="empty-state">Bu sorguyla eşleşen kalıcı hatıra bulunamadı.</div>
+                {/if}
+              </div>
+            {/if}
+
             {#if memoryCrystal}
-              <pre class="json-code-box">{JSON.stringify(memoryCrystal, null, 2)}</pre>
-            {:else}
+              <div class="crystal-details-wrap">
+                <span class="crystal-sub-title">📜 KALICI KRİSTAL ÖZETİ:</span>
+                <pre class="json-code-box">{JSON.stringify(memoryCrystal, null, 2)}</pre>
+              </div>
+            {:else if !memoryRecallResults}
               <div class="empty-state">
-                Hedef hakkında kalıcı veritabanında depolanan anılar ve kanıt zincirleri burada listelenir. Yukarıdaki butona basarak kristali çekebilirsiniz.
+                Hedef hakkında kalıcı veritabanında depolanan anılar ve kanıt zincirleri burada listelenir. Yukarıdaki butonlarla kristali çekebilir veya recall sorgusu yapabilirsiniz.
               </div>
             {/if}
           </div>
@@ -2695,6 +2687,219 @@
   .crystal-btn:hover:not(:disabled) {
     background: #6d28d9;
     box-shadow: 0 0 10px rgba(124, 58, 237, 0.4);
+  }
+
+  .title-with-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .shadow-run-btn {
+    background: #1e1b4b;
+    border-color: #6366f1;
+    color: #c7d2fe;
+  }
+
+  .shadow-run-btn:hover:not(:disabled) {
+    background: #312e81;
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.4);
+  }
+
+  .theme-clusters-box {
+    margin-top: 10px;
+    background: #090d16;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 10px;
+  }
+
+  .theme-title, .crystal-sub-title {
+    font-size: 9px;
+    font-weight: 800;
+    color: #fbbf24;
+    letter-spacing: 0.5px;
+    display: block;
+    margin-bottom: 6px;
+  }
+
+  .shadow-result-box {
+    margin-top: 10px;
+    background: #090d16;
+    border: 1px solid #4338ca;
+    border-radius: 6px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .shadow-res-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #1e293b;
+    padding-bottom: 6px;
+  }
+
+  .res-strat {
+    font-size: 10px;
+    font-weight: 800;
+    color: #818cf8;
+  }
+
+  .res-conf {
+    font-size: 9.5px;
+    font-weight: 700;
+    color: #34d399;
+  }
+
+  .shadow-res-msg {
+    font-size: 11.5px;
+    color: #e2e8f0;
+    line-height: 1.5;
+  }
+
+  .shadow-nlp-seq {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 4px;
+    padding-top: 6px;
+    border-top: 1px dashed #1e293b;
+  }
+
+  .nlp-title {
+    font-size: 8.5px;
+    font-weight: 800;
+    color: #94a3b8;
+    letter-spacing: 0.5px;
+  }
+
+  .nlp-step-row {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    font-size: 10px;
+  }
+
+  .nlp-phase {
+    background: #1e1b4b;
+    color: #a5b4fc;
+    border: 1px solid #4338ca;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 8px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .nlp-text {
+    color: #cbd5e1;
+  }
+
+  .recall-bar {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .recall-input {
+    flex: 1;
+    background: #090d16;
+    border: 1px solid #334155;
+    border-radius: 4px;
+    padding: 6px 10px;
+    color: #f1f5f9;
+    font-size: 11px;
+    font-family: inherit;
+  }
+
+  .recall-input:focus {
+    outline: none;
+    border-color: #7c3aed;
+  }
+
+  .recall-results-box {
+    margin-top: 10px;
+    background: #090d16;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .recall-header {
+    display: flex;
+    justify-content: space-between;
+    font-size: 9px;
+    font-weight: 800;
+    color: #a78bfa;
+  }
+
+  .recall-reason {
+    color: #94a3b8;
+    font-weight: normal;
+  }
+
+  .recall-hits-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .recall-hit-card {
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 4px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .hit-top {
+    display: flex;
+    justify-content: space-between;
+    font-size: 8.5px;
+  }
+
+  .hit-frag {
+    color: #38bdf8;
+    font-weight: 800;
+  }
+
+  .hit-score {
+    color: #34d399;
+    font-weight: 700;
+  }
+
+  .hit-text {
+    font-size: 11px;
+    color: #e2e8f0;
+    line-height: 1.4;
+  }
+
+  .hit-reasons {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    margin-top: 2px;
+  }
+
+  .reason-tag {
+    background: #1e1b4b;
+    color: #c7d2fe;
+    font-size: 7.5px;
+    font-weight: 700;
+    padding: 1px 4px;
+    border-radius: 2px;
+  }
+
+  .crystal-details-wrap {
+    margin-top: 10px;
   }
 
   /* HOOK TAB & BADGE */
