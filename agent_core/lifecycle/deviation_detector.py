@@ -1,103 +1,315 @@
-"""Deviation Detector - Baseline-Normalized Behavior Drift Detection.
+"""Sapma dedektörü — baseline'a göre sapmayı KANIT kaydına çevirir.
 
-Kişinin kendi taban çizgisine (BaselineProfile) göre istatistiksel sapmaları tespit eder.
-EvidenceTimelineEntry'nin zorunlu tüm alanlarını (epistemic_note dahil) eksiksiz sağlar.
-Ölçülemeyen veriyi (not_measurable) asla sıfır (yokluk) saymaz.
+Dört kural (hepsi testlidir):
+    1. **Deterministik kimlik**: ``evidence_id`` rastgele üretilmez.
+       ``sha256(source_engine|temporal_basis|kanonik_anahtar)[:20]`` — aynı
+       gözlem + aynı sonuç her koşuda aynı kimliği verir. Rastgele kimlik,
+       SHA-256 kanıt mührünü kırar ve "bu kanıt nereden geldi?" sorusunu
+       cevapsız bırakır.
+    2. **Yokluk ≠ gözlem**: ``ritual.*`` sinyalinde 0.0, "gözlemledim ki sıfır"
+       değil "bu etiket bu karede YOK" demektir → ``epistemic_type="absence"``.
+    3. **Confound yapısal**: "aynı pencerede üretim biçimi de değişti" bilgisi
+       metin sonuna iliştirilen bir not DEĞİL, ``source_metrics`` içinde
+       makine-okunur alandır (``confounded_by_medium_change``).
+    4. **İsim tutarlılığı**: sinyal adları ``default_specs`` ile birebir aynıdır;
+       ``media.is_authored`` gibi bir kısaltma resolve edilemez, sessizce
+       baseline dışında kalırdı.
+
+Sınır: bu modül teşhis koymaz. Yalnız "hangi sinyal, ne zaman, kişinin kendi
+merkezinden ne kadar saptı" sorusunu kanıt kaydına yazar.
+
+Tüketici: ``agent_core.lifecycle.pipeline``, ``cluster_analyzer``.
+Test: ``tests/lifecycle/test_lifecycle_deviation_detector.py``.
 """
 
 from __future__ import annotations
 
 import hashlib
+from dataclasses import dataclass
 from datetime import datetime
-from typing import List
-from agent_core.domain.evidence_models import EvidenceTimeline, EvidenceTimelineEntry
-from agent_core.lifecycle.baseline_builder import BaselineProfile, SignalObservation
+from typing import Any, Literal, Optional, Sequence
+
+from agent_core.domain.evidence_models import EvidenceItem, EvidenceTimeline
+from agent_core.lifecycle.baseline_builder import (
+    DEFAULT_DEVIATION_Z,
+    BaselineProfile,
+    DeviationResult,
+    SignalObservation,
+    ensure_utc,
+)
+from agent_core.lifecycle.families import signal_family
+from agent_core.lifecycle.rare_event import RateDecline, assess_rate_decline, window_values
+from agent_core.lifecycle.medium_change import (
+    DEFAULT_MEDIUM_THRESHOLD,
+    MEDIUM_CHANGE_SIGNAL,
+    MediumChangeAssessment,
+    assess_medium_change,
+    rate_in_window,
+)
+from agent_core.services.evidence_timeline import build_evidence_timeline as _canonical_timeline
+
+#: Geriye dönük uyum için eski ad; tek kaynak ``medium_change`` modülüdür.
+MEDIUM_SIGNAL = MEDIUM_CHANGE_SIGNAL
+MEDIUM_SHIFT_THRESHOLD = DEFAULT_MEDIUM_THRESHOLD
+
+EpistemicKind = Literal["observation", "absence", "inference"]
+
+__all__ = [
+    "DeviationFinding",
+    "MEDIUM_SIGNAL",
+    "MEDIUM_SHIFT_THRESHOLD",
+    "build_evidence_timeline",
+    "detect_deviations",
+    "medium_shift_rate",
+    "make_evidence_id",
+    "to_evidence_item",
+]
+
+SOURCE_ENGINE = "life_rupture"
 
 
-def make_evidence_id(signal_id: str, ts: datetime, val: float, ref: str) -> str:
-    raw = f"{signal_id}|{ts.isoformat()}|{val:.4f}|{ref}"
-    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:20]
-    return f"ev_{digest}"
+def make_evidence_id(source_engine: str, temporal_basis: str, canonical_key: str) -> str:
+    """``^ev_[0-9a-f]{20}$`` sözleşmesine uyan deterministik kimlik."""
+    payload = f"{source_engine}|{temporal_basis}|{canonical_key}".encode("utf-8")
+    return "ev_" + hashlib.sha256(payload).hexdigest()[:20]
 
 
-class DeviationDetector:
-    def __init__(self, baseline: BaselineProfile, z_threshold: float = 2.0) -> None:
-        self.baseline = baseline
-        self.z_threshold = z_threshold
+def _canonical_key(observation: SignalObservation, result: DeviationResult) -> str:
+    return (
+        f"{observation.signal_id}|{observation.source_ref}|{observation.timestamp.isoformat()}|"
+        f"{observation.value:.10g}|{result.method}"
+    )
 
-    def detect(
-        self,
-        observations: List[SignalObservation],
-        target_start: datetime,
-        target_end: datetime,
-    ) -> EvidenceTimeline:
-        entries: List[EvidenceTimelineEntry] = []
 
-        for obs in observations:
-            if not (target_start <= obs.timestamp <= target_end):
-                continue
+def _epistemic_kind(finding: "DeviationFinding") -> EpistemicKind:
+    return "absence" if finding.is_absence else "observation"
 
-            # Ölçülemeyen veri kontrolü: asla sıfır veya sapma kabul edilmez
-            if obs.measurement_status == "not_measurable":
-                ev_id = make_evidence_id(obs.signal_id, obs.timestamp, -999.0, obs.source_ref)
-                entries.append(EvidenceTimelineEntry(
-                    evidence_id=ev_id,
-                    timeline_at=obs.timestamp,
-                    temporal_basis="observed_at",
-                    epistemic_type="observation",
-                    epistemic_note="Kaynak analiz edilemedi/indirilemedi; ölçüm yapılamadı (not_measurable). Sıfır kabul edilmez.",
-                    source_engine="deviation_detector",
-                    content=f"Sinyal '{obs.signal_id}' için kaynak ölçülemedi (not_measurable).",
-                    source_metrics={
-                        "signal_id": obs.signal_id,
-                        "measurement_status": "not_measurable",
-                        "source_ref": obs.source_ref,
-                    },
-                ))
-                continue
 
-            if obs.measurement_status == "invalid":
-                continue
+@dataclass(frozen=True)
+class DeviationFinding:
+    """Bir sapma: gözlem + baseline sonucu + eksen bilgisi."""
 
-            if obs.signal_id not in self.baseline.baselines:
-                continue
+    observation: SignalObservation
+    result: DeviationResult
+    family: str
+    confounded_by_medium_change: bool = False
+    medium_change_status: str = "unknown"
 
-            base = self.baseline.baselines[obs.signal_id]
-            if base.is_deviation(obs.value, self.z_threshold):
-                dist = base.distance(obs.value)
-                method = "constant_break" if base.is_constant else "z_score"
-                ev_id = make_evidence_id(obs.signal_id, obs.timestamp, obs.value, obs.source_ref)
+    @property
+    def signal_id(self) -> str:
+        return self.observation.signal_id
 
-                # Yokluk mu (analiz edilmiş kaynakta bulunmama) yoksa pozitif sapma mı?
-                is_absence = (base.mean > 0 and obs.value == 0 and ("object" in obs.signal_id or "is_" in obs.signal_id))
-                epistemic_type = "absence" if is_absence else "observation"
+    @property
+    def timestamp(self) -> datetime:
+        return self.observation.timestamp
 
-                if is_absence:
-                    note = f"Doğrulanan kaynakta '{obs.signal_id}' bulunamadı (yokluk tespiti). Taban: {base.mean:.2f}"
-                else:
-                    note = f"Ölçüm yöntemi: {method}, gözlem: {obs.value:.2f}, taban: {base.mean:.2f}, mesafe: {dist:.2f}, eşik: {self.z_threshold}"
+    @property
+    def is_absence(self) -> bool:
+        """``True`` ise bu kayıt "gözledim ki sıfır" değil "bu karede YOK"dur."""
+        return self.family == "ritual" and self.observation.value == 0.0
 
-                entries.append(EvidenceTimelineEntry(
-                    evidence_id=ev_id,
-                    timeline_at=obs.timestamp,
-                    temporal_basis="observed_at",
-                    epistemic_type=epistemic_type,
-                    epistemic_note=note,
-                    source_engine="deviation_detector",
-                    content=(
-                        f"Sinyal '{obs.signal_id}' taban çizgiden saptı: "
-                        f"Gözlem={obs.value:.2f}, Taban={base.mean:.2f}"
-                    ),
-                    source_metrics={
-                        "signal_id": obs.signal_id,
-                        "value": obs.value,
-                        "baseline_center": base.mean,
-                        "distance": dist,
-                        "method": method,
-                        "source_ref": obs.source_ref,
-                        "measurement_status": "measured",
-                    },
-                ))
 
-        # ponytail: Kronolojik sıralama; liste içi kararlılık için timeline_at ve evidence_id ile sıralanır.
-        return EvidenceTimeline(entries=sorted(entries, key=lambda e: (e.timeline_at or datetime.min, e.evidence_id)))
+def medium_shift_rate(
+    observations: Sequence[SignalObservation],
+    window_start: datetime,
+    window_end: datetime,
+) -> Optional[float]:
+    """Pencerede kurgulanmış/stüdyo üretim oranı (ölçülmediyse None).
+
+    TEK BAŞINA confound kanıtı DEĞİLDİR: kişinin kendi baseline oranıyla
+    karşılaştırma ``medium_change.assess_medium_change`` içinde yapılır.
+    """
+    return rate_in_window(observations, window_start, window_end)[0]
+
+
+def detect_deviations(
+    baseline: BaselineProfile,
+    observations: Sequence[SignalObservation],
+    window_start: datetime,
+    window_end: datetime,
+    *,
+    z_threshold: float = DEFAULT_DEVIATION_Z,
+    medium_change: Optional[MediumChangeAssessment] = None,
+) -> list[DeviationFinding]:
+    """Hedef penceredeki sapmaları bulur (kronolojik).
+
+    Confound KARŞILAŞTIRMALIDIR: üretim biçimi kişinin kendi baseline dönemine
+    göre değiştiyse (ve iki tarafta da ölçülebildiyse) habitat/somatik/ritüel
+    sapmaları "yaşam koşulu değişimi" olarak okunamaz. Tek başına yüksek kurgu
+    oranı confound değildir; ``unknown`` ise "confound yok" demek değildir.
+    """
+    start, end = ensure_utc(window_start), ensure_utc(window_end)
+    target = [obs for obs in observations if start <= obs.timestamp <= end]
+
+    assessment = medium_change or assess_medium_change(
+        observations,
+        baseline.baseline_window[0],
+        baseline.baseline_window[1],
+        start,
+        end,
+    )
+    medium_shifted = assessment.is_shifted
+
+    findings: list[DeviationFinding] = []
+    for observation in target:
+        result = baseline.evaluate(observation, z_threshold=z_threshold)
+        if not result.is_deviation:
+            continue
+        family = signal_family(observation.signal_id)
+        confounded = medium_shifted and family in ("habitat", "gaze", "ritual")
+        findings.append(
+            DeviationFinding(
+                observation=observation,
+                result=result,
+                family=family,
+                confounded_by_medium_change=confounded,
+                medium_change_status=assessment.status,
+            )
+        )
+
+    findings.sort(key=lambda finding: (finding.timestamp, finding.signal_id, finding.observation.source_ref))
+    findings = _merge_rate_declines(
+        findings, baseline, observations, start, end, medium_shifted, assessment.status
+    )
+    return findings
+
+
+def _merge_rate_declines(
+    findings: list[DeviationFinding],
+    baseline: BaselineProfile,
+    observations: Sequence[SignalObservation],
+    start: datetime,
+    end: datetime,
+    medium_shifted: bool,
+    medium_status: str,
+) -> list[DeviationFinding]:
+    """İkili sinyallerde ORAN düşüşünü sapma kaydına çevirir.
+
+    Neden ayrı geçiş? Örneklem başına z-testi ikili olayda yanlış araçtır:
+    0/1'in "yayılımı" ölçüm hatası değil payın kendisidir. Yavaş ölen bir
+    ritüel (baseline 20/26 → karşılaştırma 0/14) z=1.79'da kalıp görünmez
+    oluyordu; oran testi aynı veride z=-4.6 verir.
+
+    Zaten sapma kaydı olan sinyale ikinci kayıt EKLENMEZ (çift sayım yok).
+    Kayıt gerçek bir gözleme bağlanır: penceredeki ilk "yok" örneklemine.
+    """
+    covered = {finding.signal_id for finding in findings}
+    base_start, base_end = baseline.baseline_window
+    extra: list[DeviationFinding] = []
+
+    for signal_id in sorted(baseline.baselines):
+        if signal_id in covered:
+            continue
+        signal_baseline = baseline.baselines[signal_id]
+        # Oran testi YALNIZ spec'i ``binary`` diyen sinyale uygulanır. Sayı
+        # sinyali (ör. nesne zenginliği) tesadüfen 0/1 değerleri alsa bile
+        # oran testi anlam taşımaz — semantik spec'ten gelir, veriden tahmin
+        # edilmez.
+        if signal_baseline.kind != "binary":
+            continue
+        baseline_values = window_values(observations, signal_id, base_start, base_end)
+        comparison_values = window_values(observations, signal_id, start, end)
+        if not baseline_values or not comparison_values:
+            continue
+        decline: RateDecline = assess_rate_decline(signal_id, baseline_values, comparison_values)
+        if not decline.is_decline:
+            continue
+
+        anchor = next(
+            (
+                observation
+                for observation in observations
+                if observation.signal_id == signal_id
+                and start <= observation.timestamp <= end
+                and observation.value == 0.0
+            ),
+            None,
+        )
+        if anchor is None:  # pragma: no cover - düşüş varsa 0.0 örneklemi vardır
+            continue
+        family = signal_family(signal_id)
+        extra.append(
+            DeviationFinding(
+                observation=anchor,
+                result=DeviationResult(
+                    signal_id=signal_id,
+                    value=float(anchor.value),
+                    baseline_center=float(decline.baseline_rate or 0.0),
+                    baseline_spread=0.0,
+                    distance=float(decline.absolute_drop or 0.0),
+                    is_deviation=True,
+                    method="rate_decline",
+                    z_score=decline.z,
+                    reason=decline.reason,
+                ),
+                family=family,
+                confounded_by_medium_change=medium_shifted and family in ("habitat", "gaze", "ritual"),
+                medium_change_status=medium_status,
+            )
+        )
+
+    if not extra:
+        return findings
+    merged = findings + extra
+    merged.sort(key=lambda finding: (finding.timestamp, finding.signal_id, finding.observation.source_ref))
+    return merged
+
+
+def to_evidence_item(finding: DeviationFinding, source_engine: str = SOURCE_ENGINE) -> EvidenceItem:
+    """Bir sapmayı kanonik ``EvidenceItem`` sözleşmesine çevirir.
+
+    Zaman çizelgesi sıralaması ve epistemik not metni burada YENİDEN
+    yazılmaz: ``agent_core.services.evidence_timeline`` tek uygulamadır
+    (pillar kanıtlarıyla aynı kapıdan geçer).
+    """
+    observation = finding.observation
+    result = finding.result
+    kind = _epistemic_kind(finding)
+    evidence_id = make_evidence_id(source_engine, "observed_at", _canonical_key(observation, result))
+
+    metrics: dict[str, Any] = {
+        "signal_id": observation.signal_id,
+        "family": finding.family,
+        "source_ref": observation.source_ref,
+        "value": observation.value,
+        "baseline_center": result.baseline_center,
+        "baseline_spread": result.baseline_spread,
+        "distance": result.distance,
+        "method": result.method,
+        "confounded_by_medium_change": finding.confounded_by_medium_change,
+        "medium_change_status": finding.medium_change_status,
+    }
+    if result.z_score is not None:
+        metrics["z_score"] = result.z_score
+
+    content = (
+        f"{observation.signal_id}: kişisel merkez {result.baseline_center:.4g} → "
+        f"gözlenen {observation.value:.4g} (fark {result.distance:.4g}, yöntem {result.method})"
+    )
+    if finding.confounded_by_medium_change:
+        content += "; aynı pencerede üretim biçimi de değişti (confound kaydı)"
+
+    return EvidenceItem(
+        evidence_id=evidence_id,
+        epistemic_type=kind,
+        source_engine=source_engine,
+        content=content,
+        provenance_refs=[observation.source_ref],
+        scope={
+            "signal_id": observation.signal_id,
+            "family": finding.family,
+            "deviation_method": result.method,
+            "life_rupture_schema": "life-rupture-v1",
+        },
+        observed_at=observation.timestamp,
+        source_metrics=metrics,
+    )
+
+
+def build_evidence_timeline(
+    findings: Sequence[DeviationFinding], source_engine: str = SOURCE_ENGINE
+) -> EvidenceTimeline:
+    """Sapmaları kronolojik, tiplenmiş ve mühürlenebilir zaman çizelgesine çevirir."""
+    return _canonical_timeline(
+        to_evidence_item(finding, source_engine=source_engine) for finding in findings
+    )

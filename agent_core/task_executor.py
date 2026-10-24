@@ -545,6 +545,433 @@ class PinealExecutor:
             "provider": None,
         }
 
+    async def _collect_frame_evidence(self, status: TaskStatus, input_data: dict) -> None:
+        """Gönderi başına TARİHLİ kare kanıtı (LLM'siz birinci kademe).
+
+        Havuzlanmış ``visual_evidence`` zaman taşımaz; zaman taşımayan kanıttan
+        ne baseline kurulur ne değişim ölçülür. Bu adım her gönderi için
+        tarih + yerel ölçüm üretir; anlamsal etiket (nesne/mekân) ÖLÇÜLMEDİĞİ
+        için boş bırakılır — uydurulmaz. ``capture_class`` bu kademede
+        ``unknown``dur: kurgu/gerçek ayrımı kanıtsız yapılmaz, bu yüzden
+        habitat ve bakış eksenleri kapalı kalır.
+
+        Fail-closed: indirilemeyen kare kayıt ÜRETMEZ; sebep teşhis defterine
+        yazılır. Bu adım asla görevi durdurmaz.
+        """
+        from agent_core.services.frame_evidence import collect_frames
+
+        profile = input_data.get("target_profile") or {}
+        images = profile.get("images") if isinstance(profile, dict) else None
+        if not isinstance(images, list) or not images:
+            return
+
+        existing = (status.visual_evidence or {}).get("frames") if isinstance(status.visual_evidence, dict) else None
+        if existing:
+            return  # üretici zaten tarihli kare verdiyse üzerine yazılmaz
+
+        # Görsel URL'leri KORUNUR: sonraki adım ``target_profile["images"]``ı
+        # yerel geçici yollarla değiştiriyor. Kaynak kopya olmadan soruşturma
+        # sondası "görsel yok" görüp boşlukları yanlışlıkla kapatılmaz sanardı.
+        input_data["_frame_sources"] = {
+            "posts": list(profile.get("posts") or []),
+            "post_times": list(profile.get("post_times") or []),
+            "images": list(images),
+            "post_evidence_types": list(profile.get("post_evidence_types") or []) or None,
+        }
+
+        try:
+            collection = await collect_frames(
+                profile,
+                fetch=self.vision_analyzer.fetch_image_record,
+            )
+        except Exception as error:  # noqa: BLE001 — fail-closed, görev durmaz
+            self._log(
+                "WARNING",
+                "[" + status.task_id + "] Kare kanıtı ölçülemedi: " + type(error).__name__,
+            )
+            return
+
+        diagnostics = collection.diagnostics
+        self._log(
+            "INFO",
+            "[" + status.task_id + "] KARE KANITI: aday=" + str(diagnostics.get("candidate_count", 0))
+            + " indirilen=" + str(diagnostics.get("downloaded_count", 0))
+            + " ölçülen=" + str(diagnostics.get("measured_count", 0)),
+        )
+        if not isinstance(status.visual_evidence, dict):
+            status.visual_evidence = {}
+        # Analiz ``input_data["visual_evidence"]``i okur: kare YALNIZ durum
+        # nesnesine yazılırsa rapor onu hiç görmez (sessiz kayıp).
+        if not isinstance(input_data.get("visual_evidence"), dict):
+            input_data["visual_evidence"] = {}
+
+        if not collection.frames:
+            # Sessiz boşluk yok: neden kare üretilemediği kayda geçer.
+            status.visual_evidence["frames_diagnostics"] = collection.to_dict()["diagnostics"]
+            status.visual_evidence["frames_problems"] = collection.problems[:20]
+            input_data["visual_evidence"]["frames_problems"] = collection.problems[:20]
+            return
+
+        status.visual_evidence["frames"] = collection.frames
+        status.visual_evidence["frames_diagnostics"] = diagnostics
+        status.visual_evidence["frames_problems"] = collection.problems[:20]
+        input_data["visual_evidence"]["frames"] = collection.frames
+
+    async def _analyze_frame_semantics(self, status: TaskStatus, input_data: dict) -> None:
+        """[KADEME 2] Değişim noktalarındaki karelere İKİ BAĞIMSIZ model geçişi.
+
+        Birinci kademe yalnız ÖLÇÜM üretir (parlaklık, kontrast...). "Bu karede
+        ne var?" sorusunun cevabı bir iddiadır; bu yüzden etiketler ölçüm
+        alanlarına (``detected_objects`` / ``environment_and_places``)
+        YAZILMAZ — yazılsaydı halüsinasyon "ritüel kayboldu" iddiasına dönerdi.
+
+        İki defter:
+          * ``semantic_inferences`` — her geçişin etiketi, ``inference``;
+            küme kanıtı DEĞİL.
+          * ``corroborated_*`` — yalnız iki FARKLI modelin aynı etiketi verdiği
+            kare etiketleri, ``observation_grade="corroborated"``. Ritüel
+            sözlüğünü besleyen tek kaynak budur.
+
+        Bağımsızlık gerçek olmalı: iki geçiş aynı modele giderse bu tekrardır ve
+        terfi YOKTUR (``same_model_repeat``). Tek yetenekli model varsa ikinci
+        geçiş hiç yapılmaz — uydurma bağımsızlık üretilmez.
+        """
+        from agent_core.services.frame_consensus import (
+            LabelView,
+            build_consensus,
+            labels_by_frame,
+            model_id_or_unknown,
+        )
+        from agent_core.services.frame_evidence import frame_change_point_ids
+        from agent_core.services.frame_semantics import (
+            FRAME_SEMANTIC_PROMPT_VERSION,
+            collect_semantic_inferences,
+        )
+
+        status.semantic_inferences = []
+        evidence = status.visual_evidence if isinstance(status.visual_evidence, dict) else {}
+        frames = evidence.get("frames") or []
+        if not frames:
+            return
+
+        sources = input_data.get("_frame_sources") if isinstance(input_data.get("_frame_sources"), dict) else {}
+        images = sources.get("images") if isinstance(sources.get("images"), list) else []
+        by_ref = {
+            f"post_{index:04d}": url
+            for index, url in enumerate(images)
+            if isinstance(url, str) and url.startswith("http")
+        }
+
+        change_points = frame_change_point_ids(frames)
+
+        async def _ask_for(model: str):
+            async def _ask(frame, prompt):
+                """Tek kare: SSRF-güvenli indirici + şemalı JSON çağrısı."""
+                post_ref = str(frame.get("post_ref") or "")
+                url = by_ref.get(post_ref)
+                if not url:
+                    return {"status": "failed", "reason": "source_url_missing"}
+                try:
+                    record = await self.vision_analyzer.fetch_image_record(url)
+                except Exception as error:  # noqa: BLE001 — sonda sözleşmesi
+                    return {"status": "failed", "reason": type(error).__name__}
+                if not isinstance(record, dict) or record.get("status") != "downloaded" or not record.get("b64"):
+                    reason = (record or {}).get("reason") if isinstance(record, dict) else "fetch_failed"
+                    return {"status": "failed", "reason": str(reason or "fetch_failed")}
+
+                class FrameLabelPayload(BaseModel):
+                    labels: List[Dict[str, Any]] = []
+
+                try:
+                    result = await self.llm_gateway.query_json(
+                        prompt=prompt,
+                        schema=FrameLabelPayload,
+                        temperature=0.0,
+                        tier=1,
+                        model=model,
+                        images=[f"data:image/jpeg;base64,{record['b64']}"],
+                        task="vision",
+                        agent_name="frame_semantics",
+                    )
+                except Exception as error:  # noqa: BLE001 — fail-closed
+                    return {"status": "failed", "reason": type(error).__name__}
+                payload = result.model_dump() if hasattr(result, "model_dump") else result
+                return payload if isinstance(payload, dict) else {"status": "failed", "reason": "bad_payload"}
+
+            return _ask
+
+        try:
+            chain = list(self.llm_gateway.capable_chain(task="vision", agent_name="frame_semantics"))
+        except Exception as error:  # noqa: BLE001 — model zinciri yoksa etiket de yok
+            evidence["semantic_problems"] = [f"no_capable_model:{type(error).__name__}"]
+            return
+
+        models = []
+        for model in chain:
+            normalised = model_id_or_unknown(model)
+            if normalised and normalised not in models:
+                models.append(normalised)
+        models = models[:2]
+        if not models:
+            evidence["semantic_problems"] = ["no_capable_model"]
+            return
+
+        views: list = []
+        problems: list[str] = []
+        diagnostics: dict = {}
+        inference_rows: dict[str, dict] = {}
+        for slot, model in enumerate(models):
+            try:
+                collection = await collect_semantic_inferences(
+                    frames,
+                    ask=await _ask_for(model),
+                    change_point_ids=change_points,
+                )
+            except Exception as error:  # noqa: BLE001 — görev durmaz
+                problems.append(f"semantic_pass_failed:{slot}:{type(error).__name__}")
+                continue
+            problems.extend(collection.problems[:10])
+            diagnostics[f"pass_{slot}"] = dict(collection.diagnostics)
+            for row in collection.inferences:
+                inference_rows.setdefault(row["inference_id"], row)
+            views.append(
+                LabelView(
+                    view_id=f"view_{slot}",
+                    model_id=model,
+                    prompt_version=FRAME_SEMANTIC_PROMPT_VERSION,
+                    labels=tuple(collection.inferences),
+                )
+            )
+
+        if not views:  # pragma: no cover - tek yol: capable_chain boş
+            evidence["semantic_problems"] = problems[:20] or ["no_semantic_pass"]
+            return
+
+        consensus = build_consensus(views)
+        grouped = labels_by_frame(consensus.corroborated)
+        counts: dict[str, int] = {}
+        for row in consensus.corroborated:
+            label = str(row.get("label") or "")
+            amount = int(row.get("agreement_count") or 0)
+            if label and amount > counts.get(label, 0):
+                counts[label] = amount
+
+        for frame in frames:
+            if not isinstance(frame, dict):
+                continue
+            bucket = grouped.get(str(frame.get("frame_id") or ""))
+            if not bucket:
+                continue
+            frame["corroborated_objects"] = list(bucket["objects"])
+            frame["corroborated_places"] = list(bucket["places"])
+            frame["corroboration_counts"] = {
+                label: counts[label] for label in bucket["objects"] + bucket["places"] if label in counts
+            }
+
+        status.semantic_inferences = sorted(
+            inference_rows.values(),
+            key=lambda row: (row["observed_at"], row["frame_id"], row["kind"], row["label_slug"]),
+        )
+        evidence["semantic_diagnostics"] = {
+            "prompt_version": FRAME_SEMANTIC_PROMPT_VERSION,
+            "attempted_models": models,
+            "passes": diagnostics,
+            "consensus": consensus.diagnostics,
+        }
+        evidence["semantic_problems"] = (problems + consensus.rejected)[:20]
+        evidence["semantic_consensus"] = consensus.to_dict()
+        self._log(
+            "INFO",
+            "[" + status.task_id + "] KARE SEMANTİĞİ: model=" + ",".join(models)
+            + " etiket=" + str(len(status.semantic_inferences))
+            + " mutabakat=" + str(len(consensus.corroborated))
+            + " gerekçe=" + str(len(consensus.rejected)),
+        )
+
+    async def _investigate_life_rupture(self, status: TaskStatus, input_data: dict) -> None:
+        """[SORUŞTURMA] Raporun "bilmiyorum"larını İKİNCİ bakışla kapatmayı dener.
+
+        Tek geçiş ölçemediği şeyi ``unknowns`` altına yazıp susuyordu. Burada
+        ilk rapor sorulara çevrilir ve yalnız GERÇEKTEN cevaplanabilir olanlar
+        sorulur. Sınırlar sert: en fazla 4 soru, tek tur. Sonda kayıtlı değilse
+        soru açık kalır — "kapandı" sayılmaz. Getirilen kareler birleştirilir ve
+        rapor tek kez, ZENGİNLEŞMİŞ kanıtla yeniden kurulur (zincire tek kayıt
+        düşer; mükerrer life_rupture satırı yazılmaz).
+        """
+        from agent_core.lifecycle.investigation import (
+            InvestigationConfig,
+            ProbeOutcome,
+            plan_questions,
+            run_investigation,
+        )
+        from agent_core.lifecycle.pipeline import analyze_life_rupture
+
+        try:
+            first_pass = analyze_life_rupture(
+                input_data.get("target_profile"),
+                visual_evidence=input_data.get("visual_evidence"),
+                frequency_map=status.frequency_map,
+                strata_map=status.strata_map,
+                subject_id=str(status.task_id),
+            ).model_dump(mode="json")
+        except Exception as error:  # noqa: BLE001 — fail-closed, görev durmaz
+            self._log(
+                "WARNING",
+                "[" + status.task_id + "] SORUŞTURMA planlanamadı: " + type(error).__name__,
+            )
+            return
+
+        questions = plan_questions(first_pass, max_questions=4)
+        if not questions:
+            return
+
+        measured = (status.visual_evidence or {}).get("frames") if isinstance(status.visual_evidence, dict) else None
+        probes: Dict[str, Any] = {}
+
+        if measured:
+            async def _frame_window_probe(question, *, budget_seconds: float) -> ProbeOutcome:
+                """Daha GENİŞ kare örneklemi: aynı ölçüm, daha çok zaman noktası."""
+                from agent_core.services.frame_evidence import collect_frames
+
+                try:
+                    collection = await collect_frames(
+                        input_data.get("_frame_sources") or input_data.get("target_profile") or {},
+                        fetch=self.vision_analyzer.fetch_image_record,
+                        max_frames=24,
+                        budget_seconds=min(float(budget_seconds), 45.0),
+                    )
+                except Exception as error:  # noqa: BLE001 — sonda sözleşmesi
+                    return ProbeOutcome(status="failed", detail=type(error).__name__)
+                known = {
+                    str(frame.get("frame_id"))
+                    for frame in (status.visual_evidence or {}).get("frames") or []
+                    if isinstance(frame, dict)
+                }
+                fresh = [
+                    frame for frame in collection.frames if str(frame.get("frame_id")) not in known
+                ]
+                if not fresh:
+                    return ProbeOutcome(
+                        status="no_new_evidence",
+                        detail="genişletilmiş örneklem yeni kare getirmedi",
+                    )
+                return ProbeOutcome(
+                    status="resolved" if question.kind == "frame_coverage_gap" else "no_new_evidence",
+                    detail=f"yeni kare: {len(fresh)}",
+                    observations_added=len(fresh),
+                    frames=fresh,
+                )
+
+            probes["frame_window"] = _frame_window_probe
+
+        result = await run_investigation(
+            first_pass,
+            probes=probes,
+            config=InvestigationConfig(max_questions=4, max_rounds=1, question_timeout_seconds=50.0),
+            questions=questions,
+        )
+
+        if result.extra_frames:
+            merged: Dict[str, dict] = {}
+            for frame in list(measured or []) + list(result.extra_frames):
+                if isinstance(frame, dict) and frame.get("frame_id"):
+                    merged[str(frame["frame_id"])] = frame
+            ordered = sorted(
+                merged.values(), key=lambda frame: (str(frame.get("observed_at")), str(frame.get("frame_id")))
+            )
+            if not isinstance(status.visual_evidence, dict):
+                status.visual_evidence = {}
+            status.visual_evidence["frames"] = ordered
+            if isinstance(input_data.get("visual_evidence"), dict):
+                input_data["visual_evidence"]["frames"] = ordered
+
+        status.investigation = result.to_dict()
+        self._log(
+            "INFO",
+            "[" + status.task_id + "] SORUŞTURMA: soru=" + str(len(questions))
+            + " kapanan=" + str(len(result.resolved))
+            + " açık=" + str(len(result.still_unknown))
+            + " yeni_kare=" + str(len(result.extra_frames))
+            + " dur=" + str(result.diagnostics.get("stop_reason")),
+        )
+
+    def _life_rupture_record(self, status: TaskStatus, input_data: dict) -> Dict[str, Any]:
+        """Yaşam Kırılması katmanı: kişinin KENDİ geçmişine göre sapma kaydı.
+
+        Panelin kuralları burada uygulanır:
+          * kişiye özel kod yok — aynı fonksiyon her özne için koşar;
+          * teşhis yok — rapor ``root_cause = UNKNOWN`` taşır;
+          * fail-closed — analiz çökerse sessiz boşluk değil, "ölçülemedi"
+            kaydı zincire düşer.
+
+        Tam rapor (kanıt zaman çizelgesiyle) ZİNCİRE, hafif özet ANLIK
+        GÖRÜNTÜYE yazılır: anlık görüntü her adımda yeniden serileştirilir,
+        yüzlerce kanıt satırını oraya koymak durumu şişirirdi.
+        """
+        from datetime import datetime as _dt, timezone as _tz
+
+        from agent_core.lifecycle.pipeline import analyze_life_rupture
+
+        try:
+            report = analyze_life_rupture(
+                input_data.get("target_profile"),
+                visual_evidence=input_data.get("visual_evidence"),
+                frequency_map=status.frequency_map,
+                strata_map=status.strata_map,
+                subject_id=str(status.task_id),
+                # Kapanmayan sorular RAPORA da yazılır: rapor tek başına
+                # okunduğunda "neyi ölçemedim" görünür kalır.
+                investigation=getattr(status, "investigation", None),
+                semantic_inferences=getattr(status, "semantic_inferences", None),
+            )
+            payload = report.model_dump(mode="json")
+        except Exception as error:  # noqa: BLE001 — fail-closed, kayıt zorunlu
+            self._log(
+                "WARNING",
+                "[" + status.task_id + "] LIFE-RUPTURE ölçülemedi: " + type(error).__name__,
+            )
+            return {
+                "agent": "life_rupture",
+                "evidence_type": "life_rupture_report",
+                "result": {
+                    "schema_version": "life-rupture-v1",
+                    "status": "unavailable",
+                    "reason_code": type(error).__name__,
+                    "root_cause": "UNKNOWN",
+                },
+                "timestamp": _dt.now(_tz.utc).isoformat(),
+            }
+
+        status.life_rupture = {
+            key: payload.get(key)
+            for key in (
+                "schema_version", "report_id", "status", "cluster_state",
+                "family_count", "families", "persistence_days",
+                "cluster_window_start", "cluster_window_end",
+                "candidate_signal_count", "confirmed_independent_signal_count",
+                "independence_assessment", "medium_change_assessment",
+                "medium_shift_rate", "confounded_axes", "root_cause",
+                "decision_summary", "contradictions", "recoveries", "unknowns",
+                "prior_pillar_counts_toward_cluster", "evidence_entry_count",
+                "summary", "machine_note", "falsification_checks",
+                "semantic_inference_count", "semantic_inferences_count_toward_cluster",
+            )
+        }
+        timeline = payload.get("evidence_timeline") or {}
+        self._log(
+            "INFO",
+            "[" + status.task_id + "] LIFE-RUPTURE: " + str(payload.get("status"))
+            + " · eksen=" + str(payload.get("family_count"))
+            + " · kanıt=" + str(payload.get("evidence_entry_count")),
+        )
+        return {
+            "agent": "life_rupture",
+            "evidence_type": "life_rupture_report",
+            "result": payload,
+            "evidence_timeline_entry_count": len(timeline.get("entries") or []),
+            "timestamp": _dt.now(_tz.utc).isoformat(),
+        }
+
     def _snapshot(self, status: TaskStatus):
         cache_stats = self.llm_gateway.cache.stats() if hasattr(self.llm_gateway, "cache") else {}
         hits = cache_stats.get("hits", 0)
@@ -1299,6 +1726,11 @@ class PinealExecutor:
                 self._rack_update("vision_analyzer", "wait")
                 self._log("WARNING", f"[{task_id}] Vision analizi atlandı: {str(e)[:80]}")
 
+        # [KARE HATTI] Havuzlanmış özetin yanına TARİHLİ kare kanıtı eklenir.
+        # Yaşam kırılması katmanı yalnız tarihli kareleri kullanır; havuz
+        # özetinden zaman serisi üretmez (sahte tarih olurdu).
+        await self._collect_frame_evidence(status, input_data)
+
         # [FIX #1] OSINT DISCOVERY FAZINA TAŞINDI. Eski konum tüm ajan
         # loop'unun SONUNDAydı: (a) çıktı input_data'ya yazılmadığı
         # için hiçbir ajan onu kullanamıyordu, (b) derinlik motoru
@@ -1702,6 +2134,16 @@ class PinealExecutor:
             )
             self._log("INFO", f"[{task_id}] 7-PILLAR tamamlandı ({elapsed_ms}ms)")
             self._rack_update("pineal_7pillar", "ready")
+            # [LIFE-RUPTURE] Boylamsal katman: 7 sütunun ürettiği haritalar +
+            # hedef profil + görsel kanıt tek geçişte kişinin kendi baseline'ıyla
+            # karşılaştırılır. Deterministik, LLM'siz; rapor mühürlenen zincire girer.
+            # [SORUŞTURMA] Kare boşlukları cevaplanabilir mi? Cevap EVET ise
+            # geniş örneklem çekilir ve rapor ZENGİNLEŞMİŞ kanıtla kurulur.
+            await self._investigate_life_rupture(status, input_data)
+            # [KADEME 2] Yalnız DEĞİŞİM NOKTALARINA bakılır; etiketler ölçüm
+            # alanına değil, ayrı çıkarım defterine yazılır.
+            await self._analyze_frame_semantics(status, input_data)
+            status.evidence_chain.append(self._life_rupture_record(status, input_data))
             self._snapshot(status)
         except Exception as e:
             self._rack_update("pineal_7pillar", "wait")

@@ -1,37 +1,16 @@
-"""Lifecycle package: Baseline, Deviation, Clustering, InvestigationLoop and Rupture reporting."""
+"""Boylamsal (longitudinal) yaşam kırılması hattı.
 
-from agent_core.lifecycle.baseline_builder import (
-    SignalObservation,
-    SignalBaseline,
-    BaselineProfile,
-    build_baseline,
-)
-from agent_core.lifecycle.observation_adapter import ObservationAdapter
-from agent_core.lifecycle.deviation_detector import DeviationDetector
-from agent_core.lifecycle.cluster_analyzer import (
-    ClusterAnalyzer,
-    DeviationEvent,
-    SignalCluster,
-)
-from agent_core.lifecycle.rupture_reporter import (
-    RuptureFinding,
-    RuptureReport,
-    report,
-)
-from agent_core.lifecycle.rupture_engine import RuptureEngine
+Not: ``agent_core/services/task_lifecycle.py`` GÖREV yaşam döngüsüdür (durum
+makinesi); bu paket ise KİŞİNİN zamana yayılmış verisinden kişisel baseline,
+sapma ve kırılma üretir. İkisi karıştırılmamalıdır.
 
-__all__ = [
-    "SignalObservation",
-    "SignalBaseline",
-    "BaselineProfile",
-    "build_baseline",
-    "ObservationAdapter",
-    "DeviationDetector",
-    "ClusterAnalyzer",
-    "DeviationEvent",
-    "SignalCluster",
-    "RuptureFinding",
-    "RuptureReport",
-    "report",
-    "RuptureEngine",
-]
+Akış: ``observation_adapter`` → ``baseline_builder`` → ``deviation_detector``
+→ ``cluster_analyzer`` → ``report``; tek giriş noktası ``pipeline``.
+"""
+
+from __future__ import annotations
+
+from agent_core.lifecycle.pipeline import analyze_life_rupture
+from agent_core.lifecycle.report import LifeRuptureReport
+
+__all__ = ["LifeRuptureReport", "analyze_life_rupture"]
