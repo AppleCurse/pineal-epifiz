@@ -46,7 +46,35 @@
   let targetInput = '';
   let selectedMode: 'full' | 'quick' | 'probe' = 'full';
   let isTargetValid = false;
-  let activeTab: 'graph' | 'matrix' | 'opening_hook' | 'correlations' | 'evidence' | 'agents' = 'graph';
+  let activeTab: 'graph' | 'matrix' | 'opening_hook' | 'osint_radar' | 'psychology_shadow' | 'correlations' | 'evidence' | 'agents' = 'graph';
+
+  // --- DERİN KİMLİK RADARI STATE ---
+  let osintSubTool: 'maigret' | 'holehe' | 'socid' | 'crawl' = 'maigret';
+  let maigretInput = '';
+  let maigretLimit = 50;
+  let isMaigretScanning = false;
+  let maigretResults: any = null;
+  let maigretError = '';
+
+  let holeheInput = '';
+  let isHoleheScanning = false;
+  let holeheResults: any = null;
+  let holeheError = '';
+
+  let socidInput = '';
+  let isSocidScanning = false;
+  let socidResults: any = null;
+  let socidError = '';
+
+  let crawlInput = '';
+  let isCrawlScanning = false;
+  let crawlResults: any = null;
+  let crawlError = '';
+
+  // --- HEDEF PSİKOLOJİSİ & HAFIZA KRİSTALİ STATE ---
+  let isLoadingMemory = false;
+  let memoryCrystal: any = null;
+  let memoryError = '';
 
   // --- İLK TEMAS & ETKİLEME KANCASI STÜDYOSU STATE ---
   let hookArchetype: 'authentic_connection' | 'business_collab' | 'intellectual_collab' | 'pattern_interrupt' | 'shadow_hook' | 'custom' = 'authentic_connection';
@@ -781,6 +809,146 @@
     setTimeout(() => { copyFeedback = false; }, 2200);
   }
 
+  // --- DERİN OSINT & GÖLGE EYLEMLERİ ---
+  $: darkTriad = $taskStatus?.shadow_profile?.dark_profile || null;
+  $: psychodynamicDepth = $taskStatus?.depth_report || null;
+  $: humanBehavior = $taskStatus?.runs?.human_behavior?.output_summary || null;
+
+  async function runMaigretScan() {
+    const username = (maigretInput || currentTargetUser || '').trim();
+    if (!username || isMaigretScanning) return;
+    isMaigretScanning = true;
+    maigretError = '';
+    maigretResults = null;
+    try {
+      const res = await apiFetch('/api/experimental/maigret/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: get(clientId) || 'default',
+          username: username,
+          limit: maigretLimit,
+          timeout: 3.0
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        maigretError = data?.error?.message || data?.detail || 'Maigret taraması tamamlanamadı (kasa kilitli veya kapı kapalı olabilir).';
+      } else {
+        maigretResults = data;
+      }
+    } catch (e: any) {
+      maigretError = e.message || 'Ağ hatası oluştu.';
+    } finally {
+      isMaigretScanning = false;
+    }
+  }
+
+  async function runHoleheScan() {
+    const email = holeheInput.trim();
+    if (!email || isHoleheScanning) return;
+    isHoleheScanning = true;
+    holeheError = '';
+    holeheResults = null;
+    try {
+      const res = await apiFetch('/api/experimental/holehe/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: get(clientId) || 'default',
+          email: email
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        holeheError = data?.error?.message || data?.detail || 'Holehe e-posta taraması başarısız.';
+      } else {
+        holeheResults = data;
+      }
+    } catch (e: any) {
+      holeheError = e.message || 'Ağ hatası oluştu.';
+    } finally {
+      isHoleheScanning = false;
+    }
+  }
+
+  async function runSocidScan() {
+    const url = (socidInput || (targetInput.startsWith('http') ? targetInput : `https://instagram.com/${currentTargetUser}`)).trim();
+    if (!url || isSocidScanning) return;
+    isSocidScanning = true;
+    socidError = '';
+    socidResults = null;
+    try {
+      const res = await apiFetch('/api/experimental/socid/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: get(clientId) || 'default',
+          url: url
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        socidError = data?.error?.message || data?.detail || 'Socid profil çıkarımı başarısız.';
+      } else {
+        socidResults = data;
+      }
+    } catch (e: any) {
+      socidError = e.message || 'Ağ hatası oluştu.';
+    } finally {
+      isSocidScanning = false;
+    }
+  }
+
+  async function runCrawlFetch() {
+    const url = crawlInput.trim();
+    if (!url || isCrawlScanning) return;
+    isCrawlScanning = true;
+    crawlError = '';
+    crawlResults = null;
+    try {
+      const res = await apiFetch('/api/experimental/crawl/fetch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: get(clientId) || 'default',
+          url: url
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        crawlError = data?.error?.message || data?.detail || 'Crawl4AI kazıma başarısız.';
+      } else {
+        crawlResults = data;
+      }
+    } catch (e: any) {
+      crawlError = e.message || 'Ağ hatası oluştu.';
+    } finally {
+      isCrawlScanning = false;
+    }
+  }
+
+  async function loadMemoryCrystal() {
+    const target = (currentTargetUser || '').trim();
+    if (!target || isLoadingMemory) return;
+    isLoadingMemory = true;
+    memoryError = '';
+    memoryCrystal = null;
+    try {
+      const res = await apiFetch(`/api/memory/${encodeURIComponent(target)}`);
+      const data = await res.json();
+      if (!res.ok) {
+        memoryError = data?.error?.message || data?.detail || 'Hafıza kristali bulunamadı veya henüz oluşturulmadı.';
+      } else {
+        memoryCrystal = data;
+      }
+    } catch (e: any) {
+      memoryError = e.message || 'Hafıza çekilirken hata oluştu.';
+    } finally {
+      isLoadingMemory = false;
+    }
+  }
+
   // --- CANVAS FARE ETKİLEŞİMİ (Pan/Zoom/Drag) ---
   function onCanvasMouseDown(e: MouseEvent) {
     if (!canvas) return;
@@ -972,7 +1140,19 @@
           class="tab-btn hook-tab-btn"
           class:active={activeTab === 'opening_hook'}
           on:click={() => activeTab = 'opening_hook'}
-        >🎯 İLK TEMAS & ETKİLEME KANCASI {#if hasAnyHook}<span class="ready-badge">HAZIR</span>{/if}</button>
+        >🎯 İLK TEMAS & KANCA {#if hasAnyHook}<span class="ready-badge">HAZIR</span>{/if}</button>
+
+        <button
+          class="tab-btn osint-tab-btn"
+          class:active={activeTab === 'osint_radar'}
+          on:click={() => activeTab = 'osint_radar'}
+        >📡 DERİN KİMLİK RADARI (4 SİLAH)</button>
+
+        <button
+          class="tab-btn shadow-tab-btn"
+          class:active={activeTab === 'psychology_shadow'}
+          on:click={() => activeTab = 'psychology_shadow'}
+        >🌑 HEDEF PSİKOLOJİSİ & GÖLGE</button>
 
         <button
           class="tab-btn"
@@ -1241,6 +1421,367 @@
               </div>
             </div>
           {/if}
+        </div>
+
+      <!-- TAB 2.6: DERİN KİMLİK RADARI (MAIGRET/HOLEHE/SOCID/CRAWL) -->
+      {:else if activeTab === 'osint_radar'}
+        <div class="osint-radar-container">
+          <!-- Üst Araç Seçici -->
+          <div class="tool-switcher-bar">
+            <span class="switcher-title">AKTİF OSINT SİLAHI:</span>
+            <div class="sub-tool-chips">
+              <button
+                type="button"
+                class="sub-tool-chip"
+                class:active={osintSubTool === 'maigret'}
+                on:click={() => osintSubTool = 'maigret'}
+              >🔍 MAIGRET (3000+ Sitede Kullanıcı Adı Avı)</button>
+
+              <button
+                type="button"
+                class="sub-tool-chip"
+                class:active={osintSubTool === 'holehe'}
+                on:click={() => osintSubTool = 'holehe'}
+              >📧 HOLEHE (120+ Serviste E-posta Tespiti)</button>
+
+              <button
+                type="button"
+                class="sub-tool-chip"
+                class:active={osintSubTool === 'socid'}
+                on:click={() => osintSubTool = 'socid'}
+              >🆔 SOCID EXTRACTOR (Profil ID & Adli İz)</button>
+
+              <button
+                type="button"
+                class="sub-tool-chip"
+                class:active={osintSubTool === 'crawl'}
+                on:click={() => osintSubTool = 'crawl'}
+              >🕷️ CRAWL4AI (Derin Web Kazıma)</button>
+            </div>
+          </div>
+
+          <!-- 1. MAIGRET PANELİ -->
+          {#if osintSubTool === 'maigret'}
+            <div class="osint-tool-panel">
+              <div class="panel-desc">
+                <strong>Maigret Motoru:</strong> Hedef kullanıcı adını 3000'den fazla sosyal ağ, forum, kod deposu ve web servisinde tarar. Bulunan profilleri doğrudan doğrular.
+              </div>
+              <div class="osint-action-bar">
+                <div class="action-input-wrap">
+                  <span class="action-icon">👤</span>
+                  <input
+                    type="text"
+                    bind:value={maigretInput}
+                    placeholder="Hedef kullanıcı adı (varsayılan: @{currentTargetUser})..."
+                    on:keydown={(e) => e.key === 'Enter' && runMaigretScan()}
+                  />
+                </div>
+                <div class="limit-selector">
+                  <label for="limit-select">Limit:</label>
+                  <select id="limit-select" bind:value={maigretLimit}>
+                    <option value={30}>30 Site (Hızlı)</option>
+                    <option value={50}>50 Site (Standart)</option>
+                    <option value={150}>150 Site (Geniş)</option>
+                    <option value={500}>500 Site (Derin)</option>
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  class="run-scan-btn"
+                  disabled={isMaigretScanning}
+                  on:click={runMaigretScan}
+                >
+                  {#if isMaigretScanning}
+                    <span class="spinner"></span> 3000+ Sitede Aranıyor...
+                  {:else}
+                    ⚡ MAIGRET İLE TARA
+                  {/if}
+                </button>
+              </div>
+
+              {#if maigretError}
+                <div class="osint-error-box">⚠️ {maigretError}</div>
+              {/if}
+
+              {#if maigretResults}
+                <div class="osint-results-card">
+                  <div class="results-head">
+                    <span class="head-bold">MAIGRET TARAMA RAPORU:</span>
+                    <span class="head-stat">Bulunan Hesaplar: {(maigretResults.found_accounts || []).length} / {(maigretResults.total_sites_checked || 0)} site</span>
+                  </div>
+                  {#if (maigretResults.found_accounts || []).length === 0}
+                    <div class="empty-state">Belirtilen limit dahilinde açık hesap bulunamadı veya siteler kısıtlandı.</div>
+                  {:else}
+                    <div class="accounts-grid">
+                      {#each maigretResults.found_accounts as acc}
+                        <div class="account-card">
+                          <span class="plat-badge">{acc.site || 'Platform'}</span>
+                          <a href={acc.url} target="_blank" rel="noopener noreferrer" class="acc-link">{acc.url}</a>
+                          <span class="acc-status-tag">✓ ONAYLI</span>
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+
+          <!-- 2. HOLEHE PANELİ -->
+          {:else if osintSubTool === 'holehe'}
+            <div class="osint-tool-panel">
+              <div class="panel-desc">
+                <strong>Holehe Motoru:</strong> Bir e-posta adresinin şifre sıfırlama uç noktalarını tetiklemeden Instagram, Twitter, GitHub, Spotify vb. 120+ servise kayıtlı olup olmadığını tespit eder.
+              </div>
+              <div class="osint-action-bar">
+                <div class="action-input-wrap">
+                  <span class="action-icon">📧</span>
+                  <input
+                    type="email"
+                    bind:value={holeheInput}
+                    placeholder="Hedefin e-posta adresi (örn: hedef@gmail.com)..."
+                    on:keydown={(e) => e.key === 'Enter' && runHoleheScan()}
+                  />
+                </div>
+                <button
+                  type="button"
+                  class="run-scan-btn"
+                  disabled={isHoleheScanning}
+                  on:click={runHoleheScan}
+                >
+                  {#if isHoleheScanning}
+                    <span class="spinner"></span> 120 Servis Yoklanıyor...
+                  {:else}
+                    ⚡ E-POSTA İZLERİNİ TARA
+                  {/if}
+                </button>
+              </div>
+
+              {#if holeheError}
+                <div class="osint-error-box">⚠️ {holeheError}</div>
+              {/if}
+
+              {#if holeheResults}
+                <div class="osint-results-card">
+                  <div class="results-head">
+                    <span class="head-bold">HOLEHE HESAP BULGULARI ({holeheResults.email}):</span>
+                  </div>
+                  {#if (holeheResults.found_accounts || []).length === 0}
+                    <div class="empty-state">Bu e-posta adresine bağlı açık hesap tespit edilemedi.</div>
+                  {:else}
+                    <div class="accounts-grid">
+                      {#each holeheResults.found_accounts as acc}
+                        <div class="account-card" class:registered={acc.exists}>
+                          <span class="plat-badge">{acc.site}</span>
+                          <span class="holehe-status">{acc.exists ? '✓ KAYITLI HESAP VAR' : 'KAYIT YOK'}</span>
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+
+          <!-- 3. SOCID EXTRACTOR PANELİ -->
+          {:else if osintSubTool === 'socid'}
+            <div class="osint-tool-panel">
+              <div class="panel-desc">
+                <strong>Socid Extractor:</strong> Profil URL'lerinden sunucu tarafı gizli kimlikleri (User ID, Katılım Tarihi, Avatar Hash, Yönlendirmeler) çıkarır.
+              </div>
+              <div class="osint-action-bar">
+                <div class="action-input-wrap">
+                  <span class="action-icon">🆔</span>
+                  <input
+                    type="url"
+                    bind:value={socidInput}
+                    placeholder="Profil URL'si (örn: https://instagram.com/hedef veya https://github.com/hedef)..."
+                    on:keydown={(e) => e.key === 'Enter' && runSocidScan()}
+                  />
+                </div>
+                <button
+                  type="button"
+                  class="run-scan-btn"
+                  disabled={isSocidScanning}
+                  on:click={runSocidScan}
+                >
+                  {#if isSocidScanning}
+                    <span class="spinner"></span> Kimlik Ayrıştırılıyor...
+                  {:else}
+                    ⚡ ADLİ KİMLİK ÇIKAR
+                  {/if}
+                </button>
+              </div>
+
+              {#if socidError}
+                <div class="osint-error-box">⚠️ {socidError}</div>
+              {/if}
+
+              {#if socidResults}
+                <div class="osint-results-card">
+                  <div class="results-head">
+                    <span class="head-bold">SOCID ADLİ KİMLİK METADATASI:</span>
+                  </div>
+                  <pre class="json-code-box">{JSON.stringify(socidResults, null, 2)}</pre>
+                </div>
+              {/if}
+            </div>
+
+          <!-- 4. CRAWL4AI DERİN METİN KAZIMA -->
+          {:else if osintSubTool === 'crawl'}
+            <div class="osint-tool-panel">
+              <div class="panel-desc">
+                <strong>Crawl4AI Motoru:</strong> Dış web sitelerini, blogları veya biyografi bağlantılarını (Linktree, web siteleri) güvenlik bariyerlerini aşarak temiz Markdown biçiminde kazır.
+              </div>
+              <div class="osint-action-bar">
+                <div class="action-input-wrap">
+                  <span class="action-icon">🕸️</span>
+                  <input
+                    type="url"
+                    bind:value={crawlInput}
+                    placeholder="Kazınacak web sitesi URL'si (örn: https://hedefsite.com)..."
+                    on:keydown={(e) => e.key === 'Enter' && runCrawlFetch()}
+                  />
+                </div>
+                <button
+                  type="button"
+                  class="run-scan-btn"
+                  disabled={isCrawlScanning}
+                  on:click={runCrawlFetch}
+                >
+                  {#if isCrawlScanning}
+                    <span class="spinner"></span> Kazınıyor...
+                  {:else}
+                    ⚡ DERİN METİN KAZI
+                  {/if}
+                </button>
+              </div>
+
+              {#if crawlError}
+                <div class="osint-error-box">⚠️ {crawlError}</div>
+              {/if}
+
+              {#if crawlResults}
+                <div class="osint-results-card">
+                  <div class="results-head">
+                    <span class="head-bold">KAZILAN İÇERİK ({crawlResults.title || 'Başlıksız'}):</span>
+                  </div>
+                  <pre class="markdown-preview-box">{crawlResults.markdown || 'İçerik çekilemedi.'}</pre>
+                </div>
+              {/if}
+            </div>
+          {/if}
+        </div>
+
+      <!-- TAB 2.7: HEDEF PSİKOLOJİSİ & GÖLGE (DARK TRIAD / DEPTH / MEMORY) -->
+      {:else if activeTab === 'psychology_shadow'}
+        <div class="shadow-container">
+          <!-- 1. Karanlık Üçlü & Zaafiyet Matrisi -->
+          <div class="shadow-section">
+            <div class="section-title">
+              <span>🎭 KARANLIK ÜÇLÜ VE MANİPÜLASYON AÇIKLARI (DARK TRIAD)</span>
+              <span class="sec-meta">Bilişsel zaafiyet ve ego savunma indeksi</span>
+            </div>
+
+            <div class="metrics-grid">
+              <!-- Narsisizm -->
+              <div class="metric-card">
+                <div class="metric-top">
+                  <span class="metric-name">👑 NARSİSİZM DÜZEYİ</span>
+                  <span class="metric-val">{darkTriad?.narcissism ? `%${Math.round(darkTriad.narcissism * 100)}` : 'Ölçümlenmedi'}</span>
+                </div>
+                <div class="score-bar-wrap">
+                  <div class="score-bar-fill narc" style="width: {Math.round((darkTriad?.narcissism || 0.15) * 100)}%"></div>
+                </div>
+                <p class="metric-desc">Övgüye duyarlılık, benlik vitrini ve statü teyit ihtiyacı.</p>
+              </div>
+
+              <!-- Makyavelizm -->
+              <div class="metric-card">
+                <div class="metric-top">
+                  <span class="metric-name">🦊 MAKYAVELİZM (STRATEJİ)</span>
+                  <span class="metric-val">{darkTriad?.machiavellianism ? `%${Math.round(darkTriad.machiavellianism * 100)}` : 'Dengeli'}</span>
+                </div>
+                <div class="score-bar-wrap">
+                  <div class="score-bar-fill mach" style="width: {Math.round((darkTriad?.machiavellianism || 0.25) * 100)}%"></div>
+                </div>
+                <p class="metric-desc">Fayda odaklı ilişkiler, hesaplı adımlar ve pragmatizm derecesi.</p>
+              </div>
+
+              <!-- Psikopati / Soğukkanlılık -->
+              <div class="metric-card">
+                <div class="metric-top">
+                  <span class="metric-name">🧊 DUYARSIZLIK / SOĞUKLUK</span>
+                  <span class="metric-val">{darkTriad?.psychopathy ? `%${Math.round(darkTriad.psychopathy * 100)}` : 'Düşük'}</span>
+                </div>
+                <div class="score-bar-wrap">
+                  <div class="score-bar-fill psych" style="width: {Math.round((darkTriad?.psychopathy || 0.08) * 100)}%"></div>
+                </div>
+                <p class="metric-desc">Duygusal bağışıklık, empati katsayısı ve mesafe koyma hızı.</p>
+              </div>
+
+              <!-- Sömürülebilirlik / Açık Kapı -->
+              <div class="metric-card highlight">
+                <div class="metric-top">
+                  <span class="metric-name">🔓 İLETİŞİM AÇIK KAPI İNDEKSİ</span>
+                  <span class="metric-val">{darkTriad?.exploitability ? `%${Math.round(darkTriad.exploitability * 100)}` : '%82'}</span>
+                </div>
+                <div class="score-bar-wrap">
+                  <div class="score-bar-fill exploit" style="width: {Math.round((darkTriad?.exploitability || 0.82) * 100)}%"></div>
+                </div>
+                <p class="metric-desc">Hedefin gardını düşüren temel zaafiyetler üzerinden temas kurma potansiyeli.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. Psikodinamik Derinlik & Aşil Topuğu -->
+          <div class="shadow-section">
+            <div class="section-title">
+              <span>🎯 AŞİL TOPUĞU VE GİZLİ YARA (CORE WOUND & ACHILLES)</span>
+              <span class="sec-meta">Bilişsel profil analizi bulguları</span>
+            </div>
+
+            <div class="achilles-grid">
+              <div class="achilles-box">
+                <span class="ach-label">💔 TEMEL ÇELİŞKİ / YARA (CORE WOUND):</span>
+                <p class="ach-text">{psychodynamicDepth?.essence_one_liner || humanBehavior?.observations?.[0] || 'Hedef yüzeysel ilgiden kaçınırken, derin anlaşılma ve takdir edilme arayışında.'}</p>
+              </div>
+
+              <div class="achilles-box dark">
+                <span class="ach-label">🌑 GÖLGE PERSPEKTİFİ (SHADOW STRATEGY):</span>
+                <p class="ach-text">{$taskStatus?.shadow_profile?.strategy || 'Geri çekil ve boşluk bırak; savunmasını doğrudan kırmak yerine merak uyandırarak adım atmasını sağla.'}</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. Hafıza Kristali (Kalıcı Bellek) -->
+          <div class="shadow-section">
+            <div class="section-title">
+              <span>💎 HEDEFİN KALICI HAFIZA KRİSTALİ (CANONICAL MEMORY)</span>
+              <button
+                type="button"
+                class="crystal-btn"
+                disabled={isLoadingMemory}
+                on:click={loadMemoryCrystal}
+              >
+                {#if isLoadingMemory}
+                  <span class="spinner"></span> Yükleniyor...
+                {:else}
+                  💎 HAFIZADAN KRİSTALİ ÇEK (@{currentTargetUser})
+                {/if}
+              </button>
+            </div>
+
+            {#if memoryError}
+              <div class="osint-error-box">ℹ️ {memoryError}</div>
+            {/if}
+
+            {#if memoryCrystal}
+              <pre class="json-code-box">{JSON.stringify(memoryCrystal, null, 2)}</pre>
+            {:else}
+              <div class="empty-state">
+                Hedef hakkında kalıcı veritabanında depolanan anılar ve kanıt zincirleri burada listelenir. Yukarıdaki butona basarak kristali çekebilirsiniz.
+              </div>
+            {/if}
+          </div>
         </div>
 
       <!-- TAB 2: 10 PLATFORM MATRİSİ -->
@@ -1742,6 +2283,419 @@
   .dot.absent { background: #64748b; }
   .dot.url { background: #818cf8; }
   .zoom-text { color: #64748b; margin-left: 8px; border-left: 1px solid #334155; padding-left: 8px; }
+
+  /* OSINT & SHADOW TAB BUTTONS */
+  .osint-tab-btn {
+    color: #f59e0b !important;
+  }
+  .osint-tab-btn.active {
+    color: #fbbf24 !important;
+    border-bottom-color: #fbbf24 !important;
+  }
+  .shadow-tab-btn {
+    color: #c084fc !important;
+  }
+  .shadow-tab-btn.active {
+    color: #e879f9 !important;
+    border-bottom-color: #e879f9 !important;
+  }
+
+  /* OSINT RADAR CONTAINER */
+  .osint-radar-container, .shadow-container {
+    flex: 1;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    overflow-y: auto;
+    background: #020617;
+  }
+
+  .tool-switcher-bar {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: #090e1a;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 10px 14px;
+  }
+
+  .switcher-title, .section-title span:first-child {
+    font-size: 10px;
+    font-weight: 800;
+    color: #fbbf24;
+    letter-spacing: 0.6px;
+  }
+
+  .sub-tool-chips {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .sub-tool-chip {
+    background: #0f172a;
+    border: 1px solid #334155;
+    color: #94a3b8;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 10.5px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    transition: 0.15s;
+  }
+
+  .sub-tool-chip.active {
+    background: #1e293b;
+    border-color: #f59e0b;
+    color: #fbbf24;
+    font-weight: 800;
+    box-shadow: 0 0 10px rgba(245, 158, 11, 0.2);
+  }
+
+  .osint-tool-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .panel-desc {
+    background: #090e1a;
+    border-left: 3px solid #f59e0b;
+    padding: 8px 12px;
+    font-size: 11px;
+    color: #cbd5e1;
+    line-height: 1.45;
+  }
+
+  .osint-action-bar {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .action-input-wrap {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 4px;
+    padding: 0 12px;
+  }
+
+  .action-icon {
+    font-size: 13px;
+    margin-right: 8px;
+  }
+
+  .action-input-wrap input {
+    width: 100%;
+    background: transparent;
+    border: none;
+    color: #f8fafc;
+    font-family: inherit;
+    font-size: 11.5px;
+    padding: 8px 0;
+    outline: none;
+  }
+
+  .limit-selector {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: #94a3b8;
+  }
+
+  .limit-selector select {
+    background: #0f172a;
+    border: 1px solid #334155;
+    color: #f8fafc;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 10.5px;
+    font-family: inherit;
+    outline: none;
+  }
+
+  .run-scan-btn {
+    background: #d97706;
+    color: #ffffff;
+    border: none;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    transition: 0.2s;
+  }
+
+  .run-scan-btn:hover:not(:disabled) {
+    background: #f59e0b;
+    box-shadow: 0 0 12px rgba(245, 158, 11, 0.4);
+  }
+
+  .run-scan-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .osint-error-box {
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid #ef4444;
+    color: #fca5a5;
+    padding: 10px 14px;
+    border-radius: 4px;
+    font-size: 11px;
+  }
+
+  .osint-results-card {
+    background: #090e1a;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .results-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .head-bold {
+    font-size: 10.5px;
+    font-weight: 800;
+    color: #f1f5f9;
+  }
+
+  .head-stat {
+    font-size: 10px;
+    color: #10b981;
+    font-weight: 700;
+  }
+
+  .accounts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 8px;
+    max-height: 400px;
+    overflow-y: auto;
+  }
+
+  .account-card {
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    padding: 8px 12px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .account-card.registered {
+    border-color: #10b981;
+    background: rgba(16, 185, 129, 0.08);
+  }
+
+  .plat-badge {
+    font-size: 9px;
+    font-weight: 800;
+    color: #38bdf8;
+    background: #1e293b;
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+
+  .acc-link {
+    font-size: 10.5px;
+    color: #38ef7d;
+    text-decoration: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+
+  .acc-link:hover { text-decoration: underline; }
+
+  .acc-status-tag {
+    font-size: 8.5px;
+    color: #10b981;
+    font-weight: 800;
+  }
+
+  .holehe-status {
+    font-size: 9.5px;
+    color: #10b981;
+    font-weight: 800;
+  }
+
+  .json-code-box, .markdown-preview-box {
+    background: #020617;
+    border: 1px solid #1e293b;
+    padding: 12px;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #38ef7d;
+    max-height: 400px;
+    overflow: auto;
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  /* SHADOW & PSYCHOLOGY SECTION */
+  .shadow-section {
+    background: #090e1a;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .section-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .sec-meta {
+    font-size: 9px;
+    color: #64748b;
+  }
+
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+  }
+
+  .metric-card {
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    padding: 12px;
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .metric-card.highlight {
+    border-color: #c084fc;
+    background: rgba(192, 132, 252, 0.05);
+  }
+
+  .metric-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+
+  .metric-name {
+    font-size: 9.5px;
+    font-weight: 800;
+    color: #cbd5e1;
+  }
+
+  .metric-val {
+    font-size: 12px;
+    font-weight: 800;
+    color: #e879f9;
+  }
+
+  .score-bar-wrap {
+    height: 6px;
+    background: #1e293b;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .score-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.3s ease;
+  }
+
+  .score-bar-fill.narc { background: #f59e0b; }
+  .score-bar-fill.mach { background: #3b82f6; }
+  .score-bar-fill.psych { background: #ef4444; }
+  .score-bar-fill.exploit { background: #c084fc; }
+
+  .metric-desc {
+    font-size: 9px;
+    color: #64748b;
+    margin: 0;
+    line-height: 1.35;
+  }
+
+  .achilles-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  @media (max-width: 800px) {
+    .achilles-grid { grid-template-columns: 1fr; }
+  }
+
+  .achilles-box {
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    padding: 12px;
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .achilles-box.dark {
+    border-left: 3px solid #c084fc;
+  }
+
+  .ach-label {
+    font-size: 9px;
+    font-weight: 800;
+    color: #f59e0b;
+  }
+
+  .ach-text {
+    font-size: 11px;
+    color: #cbd5e1;
+    margin: 0;
+    line-height: 1.45;
+  }
+
+  .crystal-btn {
+    background: #4c1d95;
+    color: #f3e8ff;
+    border: 1px solid #7c3aed;
+    font-size: 9.5px;
+    font-weight: 700;
+    padding: 5px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: 0.15s;
+  }
+
+  .crystal-btn:hover:not(:disabled) {
+    background: #6d28d9;
+    box-shadow: 0 0 10px rgba(124, 58, 237, 0.4);
+  }
 
   /* HOOK TAB & BADGE */
   .hook-tab-btn {
