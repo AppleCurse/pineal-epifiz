@@ -26,7 +26,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from agent_core.domain.evidence_models import EvidenceTimeline
 
@@ -150,6 +150,25 @@ class LifeRuptureReport(BaseModel):
     #: Pillar Strata'nın ön-hesaplanmış erken/geç kayıtları (bağımsız sayılmaz).
     prior_pillar_evidence: list[dict[str, Any]] = Field(default_factory=list)
     prior_pillar_counts_toward_cluster: Literal[False] = False
+
+    #: İkinci kademe model etiketleri — ÖLÇÜM DEĞİL, ÇIKARIM.
+    #: ``ritual.*`` sözlüğü buradan beslenmez; bu yüzden küme kanıtı sayılmaz.
+    semantic_inferences: list[dict[str, Any]] = Field(default_factory=list)
+    semantic_inference_count: int = 0
+    semantic_inferences_count_toward_cluster: Literal[False] = False
+
+    @field_validator("semantic_inferences")
+    @classmethod
+    def _inferences_stay_inferences(cls, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Model iddiası rapora ``observation`` olarak GİREMEZ (sözleşme kilidi)."""
+        for row in rows:
+            if not isinstance(row, dict):
+                raise ValueError("semantic_inferences satırı sözlük olmalı")
+            if row.get("epistemic_type") != "inference":
+                raise ValueError("semantic_inferences yalnız epistemic_type='inference' taşır")
+            if row.get("counts_toward_cluster") is not False:
+                raise ValueError("semantic_inferences küme kanıtı sayılamaz")
+        return rows
 
     evidence_timeline: Optional[EvidenceTimeline] = None
     evidence_entry_count: int = 0

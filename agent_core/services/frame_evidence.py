@@ -49,6 +49,7 @@ __all__ = [
     "change_point_indices",
     "collect_frames",
     "decode_image",
+    "frame_change_point_ids",
     "measure_frame_features",
     "select_frame_candidates",
 ]
@@ -350,6 +351,23 @@ def _decode_and_measure(record: Mapping[str, Any]) -> tuple[Optional[FrameFeatur
     return features, None
 
 
+def frame_change_point_ids(frames: Sequence[Mapping[str, Any]]) -> list[str]:
+    """Ölçülmüş karelerde değişim noktalarının ``frame_id``leri.
+
+    Pahalı ikinci kademe (anlamsal çıkarım) yalnız buraya bakar. Hiçbir kare
+    ölçülmemişse liste BOŞ döner — "değişim yok" demek değildir, "bakılacak
+    ölçüm yok" demektir; ikisini karıştırmamak için boş liste + ses yok.
+    """
+    rows = [frame for frame in frames or () if isinstance(frame, Mapping) and frame.get("frame_id")]
+    if not rows:
+        return []
+    features = [_features_from_stats(frame.get("visual_stats")) for frame in rows]
+    if any(feature is None for feature in features):
+        return []
+    points = change_point_indices([feature for feature in features if feature is not None])
+    return [str(rows[index]["frame_id"]) for index in points]
+
+
 def _features_from_stats(stats: Any) -> Optional[FrameFeatures]:
     """``visual_stats`` sözlüğünü yeniden ``FrameFeatures``e çevirir (salt okuma)."""
     if not isinstance(stats, Mapping):
@@ -459,14 +477,12 @@ async def collect_frames(
     collection.diagnostics["measured_count"] = len(frames)
     # İkinci kademe (pahalı anlamsal analiz) nereye harcanacak? Değişim
     # noktaları burada hesaplanır ki liste yalnız ÖLÇÜLMÜŞ kareleri göstersin.
-    ordered = [_features_from_stats(frame.get("visual_stats")) for frame in frames]
-    features = [item for item in ordered if item is not None]
-    if len(features) == len(frames):
-        points = change_point_indices(features)
-        collection.diagnostics["change_points"] = points
-        collection.diagnostics["change_point_frame_ids"] = [frames[index]["frame_id"] for index in points]
-    else:  # pragma: no cover - savunma: ölçüm sözlüğü bozulursa
-        collection.diagnostics["change_points"] = []
-        collection.diagnostics["change_point_frame_ids"] = []
+    point_ids = frame_change_point_ids(frames)
+    collection.diagnostics["change_point_count"] = len(point_ids)
+    collection.diagnostics["change_point_frame_ids"] = point_ids
+    collection.diagnostics["change_points"] = [
+        index for index, frame in enumerate(frames) if str(frame.get("frame_id")) in set(point_ids)
+    ]
+    if not point_ids and frames:  # pragma: no cover - savunma: ölçüm sözlüğü bozulursa
         collection.problems.append("change_point_unavailable")
     return collection

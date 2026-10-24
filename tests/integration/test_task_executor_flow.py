@@ -685,3 +685,112 @@ async def test_executor_investigates_frame_gaps_and_records_once(executor):
     assert any(
         str(unknown).startswith("soruşturma açık: ") for unknown in record["result"]["unknowns"]
     ), "soruşturma boşlukları rapora yazılmalı"
+
+
+@pytest.mark.asyncio
+async def test_executor_asks_model_only_at_change_points_and_keeps_inference_separate(executor):
+    """[KADEME 2] Model etiketi ÖLÇÜM alanına yazılmaz; ritüel sözlüğünü beslemez.
+
+    Ölçüm (tier-1) ile iddia (tier-2) ayrı defterlerde yaşar. Etiket
+    ``detected_objects``e yazılsaydı, model halüsinasyonu "ritüel kayboldu"
+    iddiasına dönüşürdü.
+    """
+    import base64
+    import io
+    from datetime import datetime, timedelta, timezone
+
+    from pydantic import BaseModel
+    from PIL import Image
+
+    t0 = datetime(2021, 1, 1, tzinfo=timezone.utc)
+    count = 8
+    profile = {
+        "posts": [f"gönderi {index}" for index in range(count)],
+        "post_times": [(t0 + timedelta(days=30 * index)).isoformat() for index in range(count)],
+        "images": [f"https://cdn.example.com/{index}.jpg" for index in range(count)],
+        "post_evidence_types": ["platform_post"] * count,
+    }
+
+    def _png(value):
+        buffer = io.BytesIO()
+        Image.new("RGB", (48, 48), (value, value, value)).save(buffer, format="PNG")
+        return base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+    async def _fetch(url):
+        index = int(url.rsplit("/", 1)[-1].split(".")[0])
+        value = 240 if index < count // 2 else 12
+        return {"status": "downloaded", "b64": _png(value), "sha256": f"s{index}", "bytes": 10}
+
+    class _Labels(BaseModel):
+        labels: list = []
+
+    vision_calls: list[str] = []
+
+    async def _query_json_chain(**kwargs):
+        vision_calls.append(kwargs.get("agent_name"))
+        return _Labels(
+            labels=[
+                {"label": "kitchen table", "kind": "object"},
+                {"label": "yalnız adam", "kind": "object"},  # teşhis sızmaz
+            ]
+        )
+
+    executor.vision_analyzer = MagicMock()
+    executor.vision_analyzer.fetch_image_record = _fetch
+    executor.vision_analyzer.analyze_images = AsyncMock(side_effect=RuntimeError("no llm"))
+    executor.llm_gateway.query_json_chain = AsyncMock(side_effect=_query_json_chain)
+
+    status = await executor.execute_task({"target_profile": profile}, "task_semantics")
+
+    # Model YALNIZ değişim noktalarına soruldu (tüm karelere değil).
+    frames = (status.visual_evidence or {}).get("frames") or []
+    assert len(frames) == count
+    assert 0 < len(vision_calls) <= 4
+    # Etiketler çıkarım defterinde; teşhis etiketi reddedildi.
+    labels = [row["label"] for row in status.semantic_inferences]
+    assert set(labels) == {"kitchen table"}
+    assert len({row["frame_id"] for row in status.semantic_inferences}) == len(labels)
+    assert status.semantic_inferences[0]["counts_toward_cluster"] is False
+    # ÖLÇÜM alanı boş kaldı: modele yazdırılmadı.
+    assert all(frame["detected_objects"] == [] for frame in frames)
+
+    record = next(r for r in status.evidence_chain if r["agent"] == "life_rupture")
+    assert record["result"]["semantic_inference_count"] == len(labels)
+    assert record["result"]["semantic_inferences_count_toward_cluster"] is False
+    assert any("model çıkarımıdır" in str(unknown) for unknown in record["result"]["unknowns"])
+
+
+@pytest.mark.asyncio
+async def test_executor_semantic_failure_does_not_fabricate_labels(executor):
+    """Model çökerse etiket UYDURULMAZ; sebep yazılır."""
+    import base64
+    import io
+    from datetime import datetime, timedelta, timezone
+
+    from PIL import Image
+
+    t0 = datetime(2021, 1, 1, tzinfo=timezone.utc)
+    profile = {
+        "posts": ["a", "b", "c"],
+        "post_times": [(t0 + timedelta(days=30 * i)).isoformat() for i in range(3)],
+        "images": [f"https://cdn.example.com/{i}.jpg" for i in range(3)],
+        "post_evidence_types": ["platform_post"] * 3,
+    }
+    buffer = io.BytesIO()
+    Image.new("RGB", (48, 48), (100, 100, 100)).save(buffer, format="PNG")
+    encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+    async def _fetch(url):
+        return {"status": "downloaded", "b64": encoded, "sha256": "x", "bytes": 10}
+
+    executor.vision_analyzer = MagicMock()
+    executor.vision_analyzer.fetch_image_record = _fetch
+    executor.vision_analyzer.analyze_images = AsyncMock(side_effect=RuntimeError("no llm"))
+    executor.llm_gateway.query_json_chain = AsyncMock(side_effect=RuntimeError("provider down"))
+
+    status = await executor.execute_task({"target_profile": profile}, "task_semantics_fail")
+
+    assert status.semantic_inferences == []
+    problems = (status.visual_evidence or {}).get("semantic_problems") or []
+    assert any("semantic_call_failed" in problem for problem in problems)
+    assert all(frame["detected_objects"] == [] for frame in (status.visual_evidence or {}).get("frames") or [])

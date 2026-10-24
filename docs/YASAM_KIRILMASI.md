@@ -132,6 +132,37 @@ Dürüst sınırlar:
   `frames_problems` altına yazılır. Bütçe aşılırsa `budget_exceeded=True` ve
   elde ne varsa o kullanılır (sahte kare eklenmez).
 
+## İkinci kademe: kare semantiği (ölçüm değil, ÇIKARIM)
+
+`agent_core/services/frame_semantics.py` — "bu karede ne var?" sorusunun cevabı
+bir modelin **iddiasıdır**. Birinci kademenin ölçümleriyle aynı kaba konursa,
+modelin cümlesi ölçüm gibi raporlanır. Bu yüzden ayrı defter:
+
+```
+ölçülmüş kare (tier-1) → frame_change_point_ids() → yalnız değişim noktaları
+                                                      ↓ en fazla 4 kare
+                                              model (vision LLM)
+                                                      ↓
+        SemanticInference[epistemic_type="inference", counts_toward_cluster=False]
+```
+
+Sert kurallar:
+
+* **Etiket ölçüm alanına YAZILMAZ.** `detected_objects` /
+  `environment_and_places` ölçüm alanlarıdır ve `ritual.*` sözlüğünü besler.
+  Model etiketi oraya yazılsaydı tek bir halüsinasyon "ritüel kayboldu"
+  iddiasına dönüşürdü. Bu yüzden `ritual.*` sözlüğü **hâlâ kapalı**.
+* **Küme kanıtı sayılmaz.** `semantic_inferences_count_toward_cluster` daima
+  `False`; rapor modeli bunu doğrular (tampered satır `ValidationError`).
+* **Teşhis etiketi reddedilir.** `depresif`, `yalnız`, `kaygılı` gibi kök taşıyan
+  etiketler kayda geçmez (`rejected_interpretation`).
+* **Maliyet duvarı**: yalnız değişim noktaları modele gider (en fazla 4 kare);
+  değişim noktası yoksa hiçbir kare gönderilmez.
+* **Model yoksa etiket yok**: hata/boş cevap kayıt üretmez, sebep
+  `semantic_problems` altına yazılır. Boş cevap "temiz kare" sayılmaz.
+* Prompt **örnek nesne listesi vermez**: örnek liste, kişiye/olaya bağlı bir
+  "aranan şeyler" listesine dönüşür.
+
 ## Soruşturma döngüsü (sınırlı ikinci bakış)
 
 `agent_core/lifecycle/investigation.py` — rapor "bilmiyorum" listesini yazıp
@@ -253,11 +284,12 @@ kısaltma sessizce ölçüm dışında kalamaz.
 
 ## Henüz yapılmayanlar (dürüst boşluklar)
 
-* **İkinci kademe anlamsal analiz yok.** Kare hattı yerel ölçümü üretiyor ama
-  nesne/mekân etiketleri (ritüel sözlüğünün girdisi) ve yüz/bakış ölçümleri
-  üretilmiyor. Bu yüzden `ritual.*`, `habitat.*`, `gaze.*` eksenleri hâlâ
-  `suppressed` ve rapor bunu gerekçesiyle yazıyor. Değişim noktaları
-  (`change_point_indices`) hesaplanıyor; pahalı analiz oraya yönlendirilecek.
+* **İkinci kademe etiketleri ölçüm değildir.** Model artık değişim
+  noktalarındaki kareler için nesne/mekân etiketi üretiyor, ama bu etiketler
+  `inference` olarak saklanır ve `ritual.*` sözlüğünü **beslemez**. Sözlüğün
+  dolması için etiketlerin *ölçülmüş* hale gelmesi gerekir (bağımsız
+  doğrulama/ikinci model mutabakatı) — o adım yok, bu yüzden `ritual.*`,
+  `habitat.*`, `gaze.*` hâlâ `suppressed` ve rapor bunu gerekçesiyle yazıyor.
 * Bakış/bedensel ölçümler (FaceMesh + solvePnP) tüketilmeye hazır ama
   üretilmiyor. 2B kutu türevi "baş eğimi" gibi uydurma metrikler bilerek
   desteklenmez.

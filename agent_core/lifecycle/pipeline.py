@@ -597,6 +597,43 @@ def _summary(
     return lines
 
 
+def _inference_rows(semantic_inferences: Any) -> list[dict[str, Any]]:
+    """İkinci kademe çıkarımlarını rapora girecek biçime indirger.
+
+    Sözleşme burada zorlanır: satır ``epistemic_type="inference"`` ve
+    ``counts_toward_cluster=False`` taşımıyorsa ALINMAZ (modele güvenilmez).
+    """
+    if semantic_inferences is None:
+        return []
+    rows: Any = semantic_inferences
+    if not isinstance(rows, (list, tuple)):
+        to_dict = getattr(semantic_inferences, "to_dict", None)
+        if callable(to_dict):
+            payload = to_dict()
+            if isinstance(payload, Mapping):
+                rows = payload.get("semantic_inferences") or []
+    if not isinstance(rows, (list, tuple)):
+        return []
+    clean: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        if row.get("epistemic_type") != "inference":
+            continue
+        if row.get("counts_toward_cluster") is not False:
+            continue
+        clean.append(dict(row))
+    clean.sort(
+        key=lambda row: (
+            str(row.get("observed_at")),
+            str(row.get("frame_id")),
+            str(row.get("kind")),
+            str(row.get("label_slug")),
+        )
+    )
+    return clean
+
+
 def _investigation_digest(investigation: Any) -> tuple[dict[str, Any], list[str]]:
     """Soruşturma sonucunu rapora sığacak kadar küçük, dürüst bir özete çevirir.
 
@@ -652,12 +689,15 @@ def analyze_life_rupture(
     medium_threshold: float = DEFAULT_MEDIUM_THRESHOLD,
     include_timeline: bool = True,
     investigation: Any = None,
+    semantic_inferences: Any = None,
 ) -> LifeRuptureReport:
     """Tek çağrıda boylamsal analiz. Hata fırlatmaz; durumu raporlar.
 
     ``investigation``: soruşturma döngüsünün özeti (``InvestigationResult`` ya
     da ``to_dict()``i). Verilirse kapanmayan sorular raporun ``unknowns``
     listesine yazılır — rapor tek başına okunduğunda da görünür olur.
+    ``semantic_inferences``: ikinci kademe model etiketleri. Rapora ÇIKARIM
+    olarak girer, ``ritual.*`` sözlüğünü BESLEMEZ ve küme kanıtı sayılmaz.
     """
     report = _analyze_life_rupture_core(
         target_profile,
@@ -677,15 +717,35 @@ def analyze_life_rupture(
         include_timeline=include_timeline,
     )
     summary, unanswered = _investigation_digest(investigation)
-    if not summary:
+    inference_rows = _inference_rows(semantic_inferences)
+    if not summary and not inference_rows:
         return report
+
     diagnostics = dict(report.diagnostics)
-    diagnostics["investigation"] = summary
+    unknowns = list(report.unknowns)
+    if summary:
+        diagnostics["investigation"] = summary
+        unknowns = list(dict.fromkeys(unknowns + unanswered))
+    if inference_rows:
+        diagnostics["semantic_inference_count"] = len(inference_rows)
+        diagnostics["semantic_inferences_count_toward_cluster"] = False
+        # Sessiz boşluk yok: etiketlerin ölçüm OLMADIĞI raporda yazılı.
+        unknowns = list(
+            dict.fromkeys(
+                unknowns
+                + [
+                    "kare etiketleri model çıkarımıdır (ölçüm değil): "
+                    f"{len(inference_rows)} etiket küme kanıtı sayılmadı"
+                ]
+            )
+        )
     return _finalize(
         report.model_copy(
             update={
                 "diagnostics": diagnostics,
-                "unknowns": list(dict.fromkeys(list(report.unknowns) + unanswered)),
+                "unknowns": unknowns,
+                "semantic_inferences": inference_rows,
+                "semantic_inference_count": len(inference_rows),
             }
         )
     )

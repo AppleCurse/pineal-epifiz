@@ -617,6 +617,90 @@ class PinealExecutor:
         status.visual_evidence["frames_problems"] = collection.problems[:20]
         input_data["visual_evidence"]["frames"] = collection.frames
 
+    async def _analyze_frame_semantics(self, status: TaskStatus, input_data: dict) -> None:
+        """[KADEME 2] Değişim noktalarındaki karelere model etiketi sorar.
+
+        Birinci kademe yalnız ÖLÇÜM üretir (parlaklık, kontrast...). "Bu karede
+        ne var?" sorusunun cevabı bir iddiadır; bu yüzden etiketler ölçüm
+        alanlarına (``detected_objects`` / ``environment_and_places``) YAZILMAZ
+        — yazılsaydı halüsinasyon "ritüel kayboldu" iddiasına dönüşürdü.
+        Etiketler ``semantic_inferences`` altında, ``epistemic_type=inference``
+        ve ``counts_toward_cluster=False`` olarak yaşar.
+
+        Maliyet duvarı: yalnız değişim noktaları (en fazla 4 kare) modele gider.
+        Hata/boş cevap kayıt üretmez; sebep teşhis defterine yazılır.
+        """
+        from agent_core.services.frame_evidence import frame_change_point_ids
+        from agent_core.services.frame_semantics import collect_semantic_inferences
+
+        evidence = status.visual_evidence if isinstance(status.visual_evidence, dict) else {}
+        frames = evidence.get("frames") or []
+        if not frames:
+            return
+
+        sources = input_data.get("_frame_sources") if isinstance(input_data.get("_frame_sources"), dict) else {}
+        images = sources.get("images") if isinstance(sources.get("images"), list) else []
+        by_ref = {
+            f"post_{index:04d}": url
+            for index, url in enumerate(images)
+            if isinstance(url, str) and url.startswith("http")
+        }
+
+        async def _ask(frame, prompt):
+            """Tek kare: SSRF-güvenli indirici + şemalı JSON çağrısı."""
+            post_ref = str(frame.get("post_ref") or "")
+            url = by_ref.get(post_ref)
+            if not url:
+                return {"status": "failed", "reason": "source_url_missing"}
+            try:
+                record = await self.vision_analyzer.fetch_image_record(url)
+            except Exception as error:  # noqa: BLE001 — sonda sözleşmesi
+                return {"status": "failed", "reason": type(error).__name__}
+            if not isinstance(record, dict) or record.get("status") != "downloaded" or not record.get("b64"):
+                reason = (record or {}).get("reason") if isinstance(record, dict) else "fetch_failed"
+                return {"status": "failed", "reason": str(reason or "fetch_failed")}
+
+            class FrameLabelPayload(BaseModel):
+                labels: List[Dict[str, Any]] = []
+
+            try:
+                result = await self.llm_gateway.query_json_chain(
+                    prompt=prompt,
+                    schema=FrameLabelPayload,
+                    task="vision",
+                    temperature=0.0,
+                    images=[f"data:image/jpeg;base64,{record['b64']}"],
+                    agent_name="frame_semantics",
+                )
+            except Exception as error:  # noqa: BLE001 — fail-closed
+                return {"status": "failed", "reason": type(error).__name__}
+            payload = result.model_dump() if hasattr(result, "model_dump") else result
+            return payload if isinstance(payload, dict) else {"status": "failed", "reason": "bad_payload"}
+
+        try:
+            collection = await collect_semantic_inferences(
+                frames,
+                ask=_ask,
+                change_point_ids=frame_change_point_ids(frames),
+            )
+        except Exception as error:  # noqa: BLE001 — görev durmaz
+            self._log(
+                "WARNING",
+                "[" + status.task_id + "] KARE SEMANTİĞİ ölçülemedi: " + type(error).__name__,
+            )
+            return
+
+        status.semantic_inferences = collection.inferences
+        evidence["semantic_diagnostics"] = collection.diagnostics
+        evidence["semantic_problems"] = collection.problems[:20]
+        self._log(
+            "INFO",
+            "[" + status.task_id + "] KARE SEMANTİĞİ: aday="
+            + str(collection.diagnostics.get("candidate_frame_count", 0))
+            + " etiket=" + str(len(collection.inferences))
+            + " ret=" + str(collection.diagnostics.get("rejected_label_count", 0)),
+        )
+
     async def _investigate_life_rupture(self, status: TaskStatus, input_data: dict) -> None:
         """[SORUŞTURMA] Raporun "bilmiyorum"larını İKİNCİ bakışla kapatmayı dener.
 
@@ -751,6 +835,7 @@ class PinealExecutor:
                 # Kapanmayan sorular RAPORA da yazılır: rapor tek başına
                 # okunduğunda "neyi ölçemedim" görünür kalır.
                 investigation=getattr(status, "investigation", None),
+                semantic_inferences=getattr(status, "semantic_inferences", None),
             )
             payload = report.model_dump(mode="json")
         except Exception as error:  # noqa: BLE001 — fail-closed, kayıt zorunlu
@@ -782,6 +867,7 @@ class PinealExecutor:
                 "decision_summary", "contradictions", "recoveries", "unknowns",
                 "prior_pillar_counts_toward_cluster", "evidence_entry_count",
                 "summary", "machine_note", "falsification_checks",
+                "semantic_inference_count", "semantic_inferences_count_toward_cluster",
             )
         }
         timeline = payload.get("evidence_timeline") or {}
@@ -1967,6 +2053,9 @@ class PinealExecutor:
             # [SORUŞTURMA] Kare boşlukları cevaplanabilir mi? Cevap EVET ise
             # geniş örneklem çekilir ve rapor ZENGİNLEŞMİŞ kanıtla kurulur.
             await self._investigate_life_rupture(status, input_data)
+            # [KADEME 2] Yalnız DEĞİŞİM NOKTALARINA bakılır; etiketler ölçüm
+            # alanına değil, ayrı çıkarım defterine yazılır.
+            await self._analyze_frame_semantics(status, input_data)
             status.evidence_chain.append(self._life_rupture_record(status, input_data))
             self._snapshot(status)
         except Exception as e:
