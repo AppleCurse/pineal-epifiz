@@ -268,9 +268,9 @@
   },
   "cli_tools": [
     {
-      "available": false,
+      "available": true,
       "desc": "Video kodlama (renderer.report.video)",
-      "importable": false,
+      "importable": true,
       "name": "ffmpeg",
       "path": null
     },
@@ -300,14 +300,14 @@
       "desc": "Edge worker / frontend build",
       "importable": false,
       "name": "node",
-      "path": "C:\\Users\\gumus\\AppData\\Local\\Microsoft\\WinGet\\Packages\\OpenJS.NodeJS.22_Microsoft.Winget.Source_8wekyb3d8bbwe\\node-v22.23.2-win-x64\\node.EXE"
+      "path": "/usr/local/bin/node"
     },
     {
       "available": true,
       "desc": "Edge worker / frontend build (agent-reach kurulumu)",
       "importable": false,
       "name": "npm",
-      "path": "C:\\Users\\gumus\\AppData\\Local\\Microsoft\\WinGet\\Packages\\OpenJS.NodeJS.22_Microsoft.Winget.Source_8wekyb3d8bbwe\\node-v22.23.2-win-x64\\npm.CMD"
+      "path": "/usr/local/bin/npm"
     },
     {
       "available": false,
@@ -539,9 +539,9 @@
     "managed_count": 17
   },
   "olcum": "scripts/golge_denetimi.py",
-  "olcum_zamani": "2026-10-24T00:47:20Z",
-  "platform": "win32",
-  "python": "3.11.9",
+  "olcum_zamani": "2026-10-24T01:05:38Z",
+  "platform": "linux",
+  "python": "3.11.2",
   "sema_surumu": 1,
   "uclar": {
     "count": 72,
@@ -1287,14 +1287,14 @@
         "id": "extractor.text.translate_local",
         "kind": "CapabilityKind.EXTRACTOR",
         "license": "harici süreç/yerel uç (kod gömülmez)",
-        "reason": "gate_disabled:ENABLE_LOCAL_TRANSLATE",
+        "reason": "no_engine",
         "reason_gates_open": "no_engine",
         "unmanaged_gates": [],
         "wake_class": "kurulum_gerekli"
       },
       {
-        "available": false,
-        "available_gates_open": false,
+        "available": true,
+        "available_gates_open": true,
         "env_gates": [
           "ENABLE_CRAWL4AI"
         ],
@@ -1305,10 +1305,10 @@
         "id": "extractor.web.crawl4ai",
         "kind": "CapabilityKind.EXTRACTOR",
         "license": "Apache-2.0",
-        "reason": "dependency_missing:crawl4ai",
-        "reason_gates_open": "dependency_missing:crawl4ai",
+        "reason": null,
+        "reason_gates_open": null,
         "unmanaged_gates": [],
-        "wake_class": "kurulum_gerekli"
+        "wake_class": "hazır"
       },
       {
         "available": true,
@@ -1557,7 +1557,7 @@
         "id": "sensor.search.searxng",
         "kind": "CapabilityKind.SENSOR",
         "license": "AGPL-3.0 (ayrı servis — kod gömülmez, HTTP ile çağrılır)",
-        "reason": "gate_disabled:ENABLE_SEARXNG",
+        "reason": "config_missing:SEARXNG_BASE_URL",
         "reason_gates_open": "config_missing:SEARXNG_BASE_URL",
         "unmanaged_gates": [],
         "wake_class": "kurulum_gerekli"
@@ -1575,7 +1575,7 @@
         "id": "sensor.web.agent_reach",
         "kind": "CapabilityKind.EXTRACTOR",
         "license": "MIT (harici CLI süreci)",
-        "reason": "gate_disabled:ENABLE_AGENT_REACH",
+        "reason": "dependency_missing:agent-reach",
         "reason_gates_open": "dependency_missing:agent-reach",
         "unmanaged_gates": [],
         "wake_class": "kurulum_gerekli"
@@ -1600,8 +1600,8 @@
         "wake_class": "hazır"
       },
       {
-        "available": false,
-        "available_gates_open": false,
+        "available": true,
+        "available_gates_open": true,
         "env_gates": [
           "ENABLE_LOCAL_JURY"
         ],
@@ -1612,10 +1612,10 @@
         "id": "verifier.jury.local",
         "kind": "CapabilityKind.VERIFIER",
         "license": "yerel uç (ollama/llama.cpp/vLLM); kod gömülmez",
-        "reason": "no_local_models",
-        "reason_gates_open": "no_local_models",
+        "reason": null,
+        "reason_gates_open": null,
         "unmanaged_gates": [],
-        "wake_class": "kurulum_gerekli"
+        "wake_class": "hazır"
       },
       {
         "available": true,

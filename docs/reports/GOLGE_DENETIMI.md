@@ -3,15 +3,15 @@
 > Bu dosya `scripts/golge_denetimi.py` tarafından ÜRETİLİR. Elle yazılmış sayı yoktur;
 > yeniden çalıştırıldığında depo neyse rapor odur.
 
-- Ölçüm anı: 2026-10-24T00:47:20Z · Python 3.11.9 · platform `win32`
+- Ölçüm anı: 2026-10-24T01:05:38Z · Python 3.11.2 · platform `linux`
 - **Kritik uyarı:** `dependency_missing` / `no_engine` gibi sebepler ÖLÇÜLDÜĞÜ MAKİNEYE bağlıdır.
   Bu raporu kendi ortamınızda üretmek için: `python scripts/golge_denetimi.py`.
 
 ## 1 · Yetenek defteri
 
-- Defterde **27** yetenek var; bu ortamda **16** tanesi kullanılabilir.
+- Defterde **27** yetenek var; bu ortamda **18** tanesi kullanılabilir.
 
-- Uyanma sınıfı: **16** hazır, **0** yalnız kapı kapalı olduğu için duruyor, **11** kapı açılsa da kurulum/hesap/uç istiyor.
+- Uyanma sınıfı: **18** hazır, **0** yalnız kapı kapalı olduğu için duruyor, **9** kapı açılsa da kurulum/hesap/uç istiyor.
 
 | Yetenek | Tür | Kapılar | Şimdi | Kapılar açıkken | Sebep (kapılar açıkken) |
 | --- | --- | --- | --- | --- | --- |
@@ -21,7 +21,7 @@
 | `extractor.media.transcript` | EXTRACTOR | ENABLE_MEDIA_FORENSICS | KAPALI | KAPALI | no_engine |
 | `extractor.text.language` | EXTRACTOR | — | AÇIK | AÇIK | — |
 | `extractor.text.translate_local` | EXTRACTOR | ENABLE_LOCAL_TRANSLATE | KAPALI | KAPALI | no_engine |
-| `extractor.web.crawl4ai` | EXTRACTOR | ENABLE_CRAWL4AI | KAPALI | KAPALI | dependency_missing:crawl4ai |
+| `extractor.web.crawl4ai` | EXTRACTOR | ENABLE_CRAWL4AI | AÇIK | AÇIK | — |
 | `extractor.web.scrapling` | EXTRACTOR | ENABLE_SCRAPLING | AÇIK | AÇIK | — |
 | `extractor.web.trafilatura` | EXTRACTOR | — | AÇIK | AÇIK | — |
 | `renderer.report.diagram` | RENDERER | ENABLE_REPORT_FACTORY | AÇIK | AÇIK | — |
@@ -38,7 +38,7 @@
 | `sensor.search.searxng` | SENSOR | ENABLE_SEARXNG | KAPALI | KAPALI | config_missing:SEARXNG_BASE_URL |
 | `sensor.web.agent_reach` | EXTRACTOR | ENABLE_AGENT_REACH | KAPALI | KAPALI | dependency_missing:agent-reach |
 | `sensor.x.twscrape` | SENSOR | ENABLE_X_SENSOR | AÇIK | AÇIK | — |
-| `verifier.jury.local` | VERIFIER | ENABLE_LOCAL_JURY | KAPALI | KAPALI | no_local_models |
+| `verifier.jury.local` | VERIFIER | ENABLE_LOCAL_JURY | AÇIK | AÇIK | — |
 | `voice.report.script` | RENDERER | — | AÇIK | AÇIK | — |
 | `voice.stt.local` | EXTRACTOR | ENABLE_LOCAL_STT | KAPALI | KAPALI | no_local_endpoint |
 | `voice.tts.local` | RENDERER | ENABLE_LOCAL_TTS | KAPALI | KAPALI | no_local_endpoint |
@@ -166,17 +166,15 @@
 | --- | --- | --- |
 | `config_missing` | 1 | eksik yapılandırma → ilgili env değeri (ör. `SEARXNG_BASE_URL`) |
 | `credentials_missing` | 1 | inceleme gerekli |
-| `dependency_missing` | 4 | Python/CLI bağımlılığı kurulu değil → `requirements-osint.txt` / `requirements-retina.txt` / `requirements-ml.txt` içindeki paket |
+| `dependency_missing` | 3 | Python/CLI bağımlılığı kurulu değil → `requirements-osint.txt` / `requirements-retina.txt` / `requirements-ml.txt` içindeki paket |
 | `no_engine` | 2 | yerel motor yok → `PINEAL_TRANSLATE_CMD` / `PINEAL_STT_CMD` gibi bir CLI ya da yerel HTTP ucu tanımla |
 | `no_local_endpoint` | 2 | yerel uç tanımlı değil → `PINEAL_TTS_URL` / `PINEAL_STT_URL` (yalnız 127.0.0.1) |
-| `no_local_models` | 1 | yerel model yok → `ENABLE_LOCAL_JURY` için yerel LLM bitiş noktası |
 
 - **config_missing**: `sensor.search.searxng`
 - **credentials_missing**: `sensor.ig.instagrapi`
-- **dependency_missing**: `extractor.web.crawl4ai`, `renderer.report.video`, `sensor.company.harvester`, `sensor.web.agent_reach`
+- **dependency_missing**: `renderer.report.video`, `sensor.company.harvester`, `sensor.web.agent_reach`
 - **no_engine**: `extractor.media.transcript`, `extractor.text.translate_local`
 - **no_local_endpoint**: `voice.stt.local`, `voice.tts.local`
-- **no_local_models**: `verifier.jury.local`
 
 ## 8 · Depoda duran gömülü varlıklar
 
@@ -204,7 +202,7 @@ _ile PATH, `importlib.util.find_spec` ile Python paketi olarak denetlenir._
 
 | Araç | Ne için | PATH'te | Python paketi olarak | Durum |
 | --- | --- | --- | --- | --- |
-| `ffmpeg` | Video kodlama (renderer.report.video) | hayır | hayır | ✗ yok |
+| `ffmpeg` | Video kodlama (renderer.report.video) | hayır | evet | ✓ mevcut |
 | `theHarvester` | Kurum keşif CLI'ı (sensor.company.harvester) | hayır | hayır | ✗ yok |
 | `theharvester` | Kurum keşif CLI'ı (alternatif isim) | hayır | hayır | ✗ yok |
 | `piper` | Yerel TTS (voice.tts.local) | hayır | hayır | ✗ yok |

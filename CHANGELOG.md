@@ -25,6 +25,25 @@
 - **Beyan edilmiş zayıflık:** giriş noktası listesi betiğin içinde açıkça
   yazılıdır (8 adet). Yeni bir CLI eklenip listeye yazılmazsa betik onu ölü kod
   sanar — bu, raporun tek kör noktasıdır ve raporda da böyle yazılıdır.
+- **CLI aracı tespiti (§9):** `scripts/golge_denetimi.py` artık `shutil.which`
+  + `importlib.util.find_spec` ile ffmpeg, theHarvester, piper, node, npm,
+  cargo gibi CLI araçlarının PATH'teki varlığını raporlar. Denetim makinesine
+  özeldir; Windows'ta farklı sonuç çıkarabilir.
+- **Uyandır betiği (`scripts/uyandir.py`):** kur-önce plan (hazır /
+  sadece_kapi / kurulum_gerekli), `--uygula guvenli|hepsi|ENABLE_X,ENABLE_Y`,
+  `.env` yedekli yazma, bilinmeyen kapıda gürültülü hata, mevcut satırları ve
+  hizalı yorumları korur. `--uygula hepsi` tüm 17 yönetilen kapıyı açar.
+- **Windows çalıştırıcılar:** `scripts/calistir_windows.ps1` +
+  `scripts/calistir_windows.bat` — `.venv\Scripts\python.exe` ile denetimi
+  çalıştırır, eksik paket/CLI kurulum rehberi içerir.
+- **REMEDIYASYON kılavuzu (`docs/reports/REMEDIYASYON.md`):** 9 hâlâ kapalı
+  yetenek için tek tek gerçek neden, gereken kurulum ve doğrulama komutu.
+  ffmpeg, theHarvester, Instagram şifresi, SearXNG, agent-reach, ses uçları
+  gibi sistem-seviye bağımlılıklar ayrıntılı olarak açıklanmıştır.
+- **requirements-blocked.txt:** 9 kapalı yeteneğin pip-kurulabilir Python
+  bağımlılıkları (openai-whisper, translate-cli, ffmpeg-python). Sistem
+  binary'leri (ffmpeg, piper, theHarvester, agent-reach, SearXNG) burada yok,
+  REMEDIYASYON.md'ye yönlendirme var.
 
 ## Unreleased — 2026-10-18 — P9: README yenilemesi + sistemin yeni haritası
 
