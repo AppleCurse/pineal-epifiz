@@ -102,17 +102,30 @@ def _target_with_medium_shift() -> list[SignalObservation]:
         _obs(MEDIUM_SIGNAL, 310, 1.0),
         _obs(MEDIUM_SIGNAL, 320, 1.0),
         _obs(MEDIUM_SIGNAL, 330, 1.0),
-        _obs(MEDIUM_SIGNAL, 340, 0.0),  # oran 0.8 > 0.5
+        _obs(MEDIUM_SIGNAL, 340, 0.0),  # oran 0.8
         _obs("ritual.obj.kitchen_table", 300, 0.0),
         _obs("habitat.is_daylight", 300, 0.0),
     ]
     return target
 
 
+def _baseline_observations() -> list[SignalObservation]:
+    return (
+        [_obs("timing.is_night_post", day, 0.0) for day in range(10)]
+        + [_obs(MEDIUM_SIGNAL, day, 0.0) for day in range(10)]
+        + [_obs("ritual.obj.kitchen_table", day, 1.0) for day in range(10)]
+        + [_obs("habitat.is_daylight", day, 1.0) for day in range(10)]
+    )
+
+
 def test_confound_flag_is_structural_not_text_appendix() -> None:
+    """Confound KARŞILAŞTIRMALIDIR: baseline oranı ile hedef oranı kıyaslanır."""
     baseline = _baseline()
     findings = detect_deviations(
-        baseline, _target_with_medium_shift(), T0 + timedelta(days=250), T0 + timedelta(days=400)
+        baseline,
+        _baseline_observations() + _target_with_medium_shift(),
+        T0 + timedelta(days=250),
+        T0 + timedelta(days=400),
     )
     timeline = build_evidence_timeline(findings)
 
@@ -121,16 +134,56 @@ def test_confound_flag_is_structural_not_text_appendix() -> None:
     assert by_signal["habitat.is_daylight"].source_metrics["confounded_by_medium_change"] is True
     # Üretim biçiminin kendisi confound DEĞİLDİR: kendi eksenidir.
     assert by_signal[MEDIUM_SIGNAL].source_metrics["confounded_by_medium_change"] is False
+    assert by_signal["ritual.obj.kitchen_table"].source_metrics["medium_change_status"] == "changed"
+
+
+def test_target_only_input_cannot_claim_confound() -> None:
+    """Baseline penceresi verilmezse karşılaştırma yapılamaz: sonuç ``unknown``.
+
+    Ölçülemeyen durum "confound yok" sayılmaz; kayıt bunu taşır.
+    """
+    baseline = _baseline()
+    findings = detect_deviations(
+        baseline, _target_with_medium_shift(), T0 + timedelta(days=250), T0 + timedelta(days=400)
+    )
+    assert findings
+    assert all(finding.confounded_by_medium_change is False for finding in findings)
+    assert all(finding.medium_change_status == "unknown" for finding in findings)
+
+
+def test_high_but_stable_authored_rate_is_not_confound() -> None:
+    """Sözleşme #7: oran yüksek ama BASELINE'da da yüksek → confound değildir."""
+    observations = (
+        [_obs("timing.is_night_post", day, 0.0) for day in range(10)]
+        + [_obs(MEDIUM_SIGNAL, day, 1.0) for day in range(10)]
+        + [_obs("ritual.obj.kitchen_table", day, 1.0) for day in range(10)]
+    )
+    baseline = build_baseline(
+        "s", observations, T0, T0 + timedelta(days=200), registry=default_registry(), strict=True
+    )
+    target = [
+        _obs(MEDIUM_SIGNAL, 300 + 10 * i, 1.0) for i in range(6)
+    ] + [_obs("ritual.obj.kitchen_table", 300, 0.0)]
+    findings = detect_deviations(
+        baseline, observations + target, T0 + timedelta(days=250), T0 + timedelta(days=400)
+    )
+
+    ritual = next(f for f in findings if f.signal_id == "ritual.obj.kitchen_table")
+    assert ritual.medium_change_status == "stable"
+    assert ritual.confounded_by_medium_change is False
+    assert any(f.signal_id == MEDIUM_SIGNAL for f in findings) is False  # 1.0 → 1.0 sapma değil
 
 
 def test_no_confound_when_medium_stays_incidental() -> None:
     baseline = _baseline()
-    target = [
+    observations = _baseline_observations() + [
         _obs(MEDIUM_SIGNAL, 300, 0.0),
         _obs(MEDIUM_SIGNAL, 310, 0.0),
         _obs("ritual.obj.kitchen_table", 300, 0.0),
     ]
-    findings = detect_deviations(baseline, target, T0 + timedelta(days=250), T0 + timedelta(days=400))
+    findings = detect_deviations(
+        baseline, observations, T0 + timedelta(days=250), T0 + timedelta(days=400)
+    )
     assert all(finding.confounded_by_medium_change is False for finding in findings)
 
 

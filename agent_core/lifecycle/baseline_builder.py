@@ -348,7 +348,13 @@ class BaselineProfile:
         return sorted(sid for sid, baseline in self.baselines.items() if baseline.is_reliable)
 
     def correlation_between(self, a: str, b: str) -> Optional[float]:
-        """İki sinyal arasındaki Pearson korelasyonu (yoksa None)."""
+        """İki sinyal arasındaki Pearson korelasyonu — ÖLÇÜLEMEDİYSE ``None``.
+
+        ``None`` "ilişki yok" demek DEĞİLDİR. Sabit bir seride Pearson
+        tanımsızdır (0/0); eski kod bunu ``nan_to_num`` ile 0.0'a çeviriyor ve
+        "bağımsız" hükmü doğuruyordu. Ölçülemeyen ilişki bağımsızlık kanıtı
+        sayılmaz; çağıran taraf ``unknown`` durumuna düşer.
+        """
         if self.signal_correlation is None or a == b:
             return None
         try:
@@ -356,7 +362,8 @@ class BaselineProfile:
             ib = self.signal_order.index(b)
         except ValueError:
             return None
-        return float(self.signal_correlation[ia, ib])
+        value = float(self.signal_correlation[ia, ib])
+        return value if math.isfinite(value) else None
 
 
 # ---------------------------------------------------------------------------
@@ -405,7 +412,9 @@ def _compute_correlation(
         return None
     with np.errstate(invalid="ignore", divide="ignore"):
         corr = np.corrcoef(matrix, rowvar=False)
-    return np.nan_to_num(corr, nan=0.0)
+    # NaN KORUNUR: sabit seride korelasyon tanımsızdır. 0.0'a çevirmek
+    # "ilişki yok" uydurmak olurdu (bkz. correlation_between).
+    return np.asarray(corr, dtype=float)
 
 
 # ---------------------------------------------------------------------------

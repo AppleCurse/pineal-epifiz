@@ -117,7 +117,21 @@ async def test_execute_task_full_flow(executor):
                  "gravity_map", "pulse_map", "key_matrix"):
         assert pillars[name] is not None, f"{name} mühürde yok"
     assert pillars["version"] == "pillar-full-v1"
-    
+
+    # [LIFE-RUPTURE] Boylamsal katman gerçek yürütme akışında çağrılır ve
+    # sonucu görev sözleşmesine yazılır. Teşhis YOK: kök neden UNKNOWN.
+    assert status.life_rupture is not None
+    assert status.life_rupture["root_cause"] == "UNKNOWN"
+    assert status.life_rupture["schema_version"] == "life-rupture-v1"
+    assert str(status.life_rupture["report_id"]).startswith("lr_")
+    assert status.life_rupture["cluster_state"] in (
+        "DETECTED", "CANDIDATE", "INSUFFICIENT_EVIDENCE",
+        "NO_SIGNIFICANT_CLUSTER", "CONFOUNDED",
+    )
+    life_record = next(r for r in status.evidence_chain if r["agent"] == "life_rupture")
+    assert life_record["result"]["schema_version"] == "life-rupture-v1"
+    assert "evidence_timeline_entry_count" in life_record
+
     # Ensure memory was updated
     executor.memory.merge_evidence.assert_called_once()
     

@@ -591,9 +591,13 @@ class PinealExecutor:
         status.life_rupture = {
             key: payload.get(key)
             for key in (
-                "schema_version", "status", "family_count", "families",
-                "persistence_days", "cluster_window_start", "cluster_window_end",
+                "schema_version", "report_id", "status", "cluster_state",
+                "family_count", "families", "persistence_days",
+                "cluster_window_start", "cluster_window_end",
+                "candidate_signal_count", "confirmed_independent_signal_count",
+                "independence_assessment", "medium_change_assessment",
                 "medium_shift_rate", "confounded_axes", "root_cause",
+                "decision_summary", "contradictions", "recoveries", "unknowns",
                 "prior_pillar_counts_toward_cluster", "evidence_entry_count",
                 "summary", "machine_note", "falsification_checks",
             )

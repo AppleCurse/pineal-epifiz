@@ -38,11 +38,18 @@ from agent_core.lifecycle.baseline_builder import (
     ensure_utc,
 )
 from agent_core.lifecycle.families import signal_family
+from agent_core.lifecycle.medium_change import (
+    DEFAULT_MEDIUM_THRESHOLD,
+    MEDIUM_CHANGE_SIGNAL,
+    MediumChangeAssessment,
+    assess_medium_change,
+    rate_in_window,
+)
 from agent_core.services.evidence_timeline import build_evidence_timeline as _canonical_timeline
 
-MEDIUM_SIGNAL = "media.is_authored_or_staged"
-#: Üretim biçimi oranı bu eşiğin üstündeyse pencere "kurgu ağırlıklı"dır.
-MEDIUM_SHIFT_THRESHOLD = 0.5
+#: Geriye dönük uyum için eski ad; tek kaynak ``medium_change`` modülüdür.
+MEDIUM_SIGNAL = MEDIUM_CHANGE_SIGNAL
+MEDIUM_SHIFT_THRESHOLD = DEFAULT_MEDIUM_THRESHOLD
 
 EpistemicKind = Literal["observation", "absence", "inference"]
 
@@ -85,6 +92,7 @@ class DeviationFinding:
     result: DeviationResult
     family: str
     confounded_by_medium_change: bool = False
+    medium_change_status: str = "unknown"
 
     @property
     def signal_id(self) -> str:
@@ -105,16 +113,12 @@ def medium_shift_rate(
     window_start: datetime,
     window_end: datetime,
 ) -> Optional[float]:
-    """Pencerede kurgulanmış/stüdyo üretim oranı (ölçülmediyse None)."""
-    start, end = ensure_utc(window_start), ensure_utc(window_end)
-    values = [
-        obs.value
-        for obs in observations
-        if obs.signal_id == MEDIUM_SIGNAL and start <= obs.timestamp <= end
-    ]
-    if not values:
-        return None
-    return sum(values) / len(values)
+    """Pencerede kurgulanmış/stüdyo üretim oranı (ölçülmediyse None).
+
+    TEK BAŞINA confound kanıtı DEĞİLDİR: kişinin kendi baseline oranıyla
+    karşılaştırma ``medium_change.assess_medium_change`` içinde yapılır.
+    """
+    return rate_in_window(observations, window_start, window_end)[0]
 
 
 def detect_deviations(
@@ -124,18 +128,26 @@ def detect_deviations(
     window_end: datetime,
     *,
     z_threshold: float = DEFAULT_DEVIATION_Z,
+    medium_change: Optional[MediumChangeAssessment] = None,
 ) -> list[DeviationFinding]:
     """Hedef penceredeki sapmaları bulur (kronolojik).
 
-    Confound denetimi PENCERE düzeyinde yapılır: üretim biçimi aynı pencerede
-    kurguya kaydıysa habitat/somatik/ritüel sapmaları "yaşam koşulu değişimi"
-    olarak okunamaz — kayıt bunu taşır, yorum katmanı görür.
+    Confound KARŞILAŞTIRMALIDIR: üretim biçimi kişinin kendi baseline dönemine
+    göre değiştiyse (ve iki tarafta da ölçülebildiyse) habitat/somatik/ritüel
+    sapmaları "yaşam koşulu değişimi" olarak okunamaz. Tek başına yüksek kurgu
+    oranı confound değildir; ``unknown`` ise "confound yok" demek değildir.
     """
     start, end = ensure_utc(window_start), ensure_utc(window_end)
     target = [obs for obs in observations if start <= obs.timestamp <= end]
 
-    authored_rate = medium_shift_rate(target, start, end)
-    medium_shifted = authored_rate is not None and authored_rate > MEDIUM_SHIFT_THRESHOLD
+    assessment = medium_change or assess_medium_change(
+        observations,
+        baseline.baseline_window[0],
+        baseline.baseline_window[1],
+        start,
+        end,
+    )
+    medium_shifted = assessment.is_shifted
 
     findings: list[DeviationFinding] = []
     for observation in target:
@@ -150,6 +162,7 @@ def detect_deviations(
                 result=result,
                 family=family,
                 confounded_by_medium_change=confounded,
+                medium_change_status=assessment.status,
             )
         )
 
@@ -179,6 +192,7 @@ def to_evidence_item(finding: DeviationFinding, source_engine: str = SOURCE_ENGI
         "distance": result.distance,
         "method": result.method,
         "confounded_by_medium_change": finding.confounded_by_medium_change,
+        "medium_change_status": finding.medium_change_status,
     }
     if result.z_score is not None:
         metrics["z_score"] = result.z_score
