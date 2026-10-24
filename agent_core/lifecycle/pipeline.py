@@ -597,6 +597,67 @@ def _summary(
     return lines
 
 
+def _grade_counts(observations: list[SignalObservation]) -> dict[str, int]:
+    """Gözlemlerin kanıt derecelerini sayar (ölçüm ≠ mutabakat).
+
+    Derecesi yazılmamış gözlem ``measured`` sayılır: tier-1 numeric ölçümler ve
+    metin/zaman sinyalleri doğrudan veriden gelir. ``corroborated`` yalnız
+    mutabakatla güçlendirilmiş kare etiketlerinden doğan sinyallerdir.
+    """
+    counts: dict[str, int] = {}
+    for observation in observations:
+        grade = "measured"
+        if isinstance(observation.context, Mapping):
+            raw = observation.context.get("evidence_grade")
+            if isinstance(raw, str) and raw:
+                grade = raw
+        counts[grade] = counts.get(grade, 0) + 1
+    return counts
+
+
+def _labels_from_frames(visual_evidence: Any) -> list[dict[str, Any]]:
+    """Karelerdeki mutabakat etiketlerini raporda görünür hale getirir.
+
+    Etiket raporda ``observation_grade="corroborated"`` olarak listelenir ki
+    okuyucu hangi sinyalin araç ölçümü, hangisinin model mutabakatı olduğunu
+    ayırt edebilsin. Karede yoksa liste boş kalır — uydurma satır yazılmaz.
+    """
+    if not isinstance(visual_evidence, Mapping):
+        return []
+    frames = visual_evidence.get("frames")
+    if not isinstance(frames, (list, tuple)):
+        return []
+    rows: list[dict[str, Any]] = []
+    for frame in frames:
+        if not isinstance(frame, Mapping):
+            continue
+        frame_id = str(frame.get("frame_id") or "")
+        observed_at = str(frame.get("observed_at") or "")
+        if not frame_id:
+            continue
+        for kind, key in (("object", "corroborated_objects"), ("place", "corroborated_places")):
+            for label in frame.get(key) or []:
+                if not isinstance(label, str) or not label.strip():
+                    continue
+                rows.append(
+                    {
+                        "corroboration_id": "cl_" + hashlib.sha256(
+                            f"report|{frame_id}|{kind}|{label}".encode("utf-8")
+                        ).hexdigest()[:20],
+                        "frame_id": frame_id,
+                        "observed_at": observed_at,
+                        "label": label,
+                        "kind": kind,
+                        "observation_grade": "corroborated",
+                        "agreement_count": int(frame.get("corroboration_counts", {}).get(label, 2))
+                        if isinstance(frame.get("corroboration_counts"), Mapping)
+                        else 2,
+                    }
+                )
+    rows.sort(key=lambda row: (row["observed_at"], row["frame_id"], row["kind"], row["label"]))
+    return rows
+
+
 def _inference_rows(semantic_inferences: Any) -> list[dict[str, Any]]:
     """İkinci kademe çıkarımlarını rapora girecek biçime indirger.
 
@@ -718,7 +779,10 @@ def analyze_life_rupture(
     )
     summary, unanswered = _investigation_digest(investigation)
     inference_rows = _inference_rows(semantic_inferences)
-    if not summary and not inference_rows:
+    grades = dict(report.diagnostics.get("evidence_grade_counts") or {})
+    label_rows = _labels_from_frames(visual_evidence)
+    corroborated_signals = int(grades.get("corroborated", 0))
+    if not summary and not inference_rows and not label_rows and not corroborated_signals:
         return report
 
     diagnostics = dict(report.diagnostics)
@@ -739,6 +803,20 @@ def analyze_life_rupture(
                 ]
             )
         )
+    if corroborated_signals or label_rows:
+        # Sessiz boşluk yok: hangi sinyalin araç ölçümü, hangisinin model
+        # mutabakatı olduğu raporda YAZILI.
+        unknowns = list(
+            dict.fromkeys(
+                unknowns
+                + [
+                    "kanıt dereceleri: "
+                    + ", ".join(f"{grade}={count}" for grade, count in sorted(grades.items()))
+                    + f"; {corroborated_signals} sinyal iki bağımsız modelin mutabakatına dayanır "
+                    "(araç ölçümü değil)"
+                ]
+            )
+        )
     return _finalize(
         report.model_copy(
             update={
@@ -746,6 +824,9 @@ def analyze_life_rupture(
                 "unknowns": unknowns,
                 "semantic_inferences": inference_rows,
                 "semantic_inference_count": len(inference_rows),
+                "evidence_grade_counts": grades,
+                "corroborated_signal_count": corroborated_signals,
+                "corroborated_labels": label_rows,
             }
         )
     )
@@ -778,6 +859,9 @@ def _analyze_life_rupture_core(
         diagnostics=diagnostics,
         now=now,
     )
+    # Kanıt dereceleri burada sayılır: rapor ``measured`` ile ``corroborated``ı
+    # ayrı gösterir, ikisini aynı kefeye koymaz.
+    diagnostics.evidence_grade_counts = _grade_counts(observations)
 
     config = {
         "cluster_window_days": window_days,

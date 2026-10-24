@@ -163,6 +163,37 @@ Sert kurallar:
 * Prompt **örnek nesne listesi vermez**: örnek liste, kişiye/olaya bağlı bir
   "aranan şeyler" listesine dönüşür.
 
+## Mutabakat: iddia ne zaman kanıt olur?
+
+`agent_core/services/frame_consensus.py` — tek model iddiası ölçüm değildir;
+ama ritüel sözlüğünün dolması için etiketin güvenilir hale gelmesi gerekir. Bu
+modül güveni **ölçerek** verir:
+
+```
+görünüm A (model M1) ─┐
+                      ├─ aynı kare + aynı tür + aynı slug → corroborated
+görünüm B (model M2) ─┘
+```
+
+| durum | sonuç |
+|---|---|
+| iki farklı model aynı etiketi verdi | `observation_grade="corroborated"` → ritüel sözlüğünü besler |
+| aynı model iki kez | `same_model_repeat` → **terfi yok** (tekrar, mutabakat değil) |
+| model kimliği bilinmiyor (`unknown`) | bağımsız SAYILMAZ → terfi yok |
+| farklı prompt sürümü | `prompt_mismatch` → karşılaştırma yok |
+| tek görünüm | `insufficient_independent_views` → terfi yok |
+
+Kritik ayrım: bu satırlar `observation`dır ama `observation_grade="corroborated"`dur.
+Araç ölçümü (`measured`) ile aynı kefeye konmaz:
+
+* rapor `evidence_grade_counts` ile ikisini AYRI sayar,
+* `corroborated_signal_count` bu sinyallerin sayısıdır,
+* `unknowns` şunu yazar: "N sinyal iki bağımsız modelin mutabakatına dayanır
+  (araç ölçümü değil)".
+
+Böylece `ritual.obj.*` ekseni açılır — ama okuyucu hangi sinyalin kamera
+ölçümü, hangisinin iki modelin anlaşması olduğunu **her zaman** görür.
+
 ## Soruşturma döngüsü (sınırlı ikinci bakış)
 
 `agent_core/lifecycle/investigation.py` — rapor "bilmiyorum" listesini yazıp
@@ -284,12 +315,11 @@ kısaltma sessizce ölçüm dışında kalamaz.
 
 ## Henüz yapılmayanlar (dürüst boşluklar)
 
-* **İkinci kademe etiketleri ölçüm değildir.** Model artık değişim
-  noktalarındaki kareler için nesne/mekân etiketi üretiyor, ama bu etiketler
-  `inference` olarak saklanır ve `ritual.*` sözlüğünü **beslemez**. Sözlüğün
-  dolması için etiketlerin *ölçülmüş* hale gelmesi gerekir (bağımsız
-  doğrulama/ikinci model mutabakatı) — o adım yok, bu yüzden `ritual.*`,
-  `habitat.*`, `gaze.*` hâlâ `suppressed` ve rapor bunu gerekçesiyle yazıyor.
+* **Ritüel ekseni artık mutabakatla açılabilir**, ama yalnız iki *farklı*
+  modelin aynı etiketi vermesiyle. Tek modelin iddiası (veya aynı modelin iki
+  kez aynı şeyi söylemesi) sözlüğü **beslemez**. Ayrıntı: yukarıdaki "Mutabakat"
+  bölümü. `habitat.*` ve `gaze.*` hâlâ kapalı: onlar için provenance/yüz ölçümü
+  gerekir ve bu kademe onu üretmiyor.
 * Bakış/bedensel ölçümler (FaceMesh + solvePnP) tüketilmeye hazır ama
   üretilmiyor. 2B kutu türevi "baş eğimi" gibi uydurma metrikler bilerek
   desteklenmez.

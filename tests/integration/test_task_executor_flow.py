@@ -726,8 +726,8 @@ async def test_executor_asks_model_only_at_change_points_and_keeps_inference_sep
 
     vision_calls: list[str] = []
 
-    async def _query_json_chain(**kwargs):
-        vision_calls.append(kwargs.get("agent_name"))
+    async def _query_json(**kwargs):
+        vision_calls.append(kwargs.get("model"))
         return _Labels(
             labels=[
                 {"label": "kitchen table", "kind": "object"},
@@ -738,14 +738,17 @@ async def test_executor_asks_model_only_at_change_points_and_keeps_inference_sep
     executor.vision_analyzer = MagicMock()
     executor.vision_analyzer.fetch_image_record = _fetch
     executor.vision_analyzer.analyze_images = AsyncMock(side_effect=RuntimeError("no llm"))
-    executor.llm_gateway.query_json_chain = AsyncMock(side_effect=_query_json_chain)
+    executor.llm_gateway.capable_chain = MagicMock(return_value=["model_a", "model_b"])
+    executor.llm_gateway.query_json = AsyncMock(side_effect=_query_json)
 
     status = await executor.execute_task({"target_profile": profile}, "task_semantics")
 
-    # Model YALNIZ değişim noktalarına soruldu (tüm karelere değil).
+    # Model YALNIZ değişim noktalarına soruldu (tüm karelere değil) ve
+    # İKİ FARKLI modele soruldu (bağımsızlık gerçek olmalı).
     frames = (status.visual_evidence or {}).get("frames") or []
     assert len(frames) == count
-    assert 0 < len(vision_calls) <= 4
+    assert set(vision_calls) == {"model_a", "model_b"}
+    assert max(vision_calls.count(model) for model in set(vision_calls)) <= 4
     # Etiketler çıkarım defterinde; teşhis etiketi reddedildi.
     labels = [row["label"] for row in status.semantic_inferences]
     assert set(labels) == {"kitchen table"}
@@ -754,8 +757,22 @@ async def test_executor_asks_model_only_at_change_points_and_keeps_inference_sep
     # ÖLÇÜM alanı boş kaldı: modele yazdırılmadı.
     assert all(frame["detected_objects"] == [] for frame in frames)
 
+    # İki model aynı etiketi verdi → mutabakat: ritüel sözlüğünün tek kaynağı.
+    # Yalnız DEĞİŞİM NOKTALARINDAKİ kareler etiketlidir (maliyet duvarı).
+    labelled = [frame for frame in frames if frame.get("corroborated_objects")]
+    assert labelled, "mutabakat etiketi kareye yazılmalı"
+    assert all(frame["corroborated_objects"] == ["kitchen table"] for frame in labelled)
+    assert len(labelled) <= 4
+    assert all(frame["detected_objects"] == [] for frame in frames)  # ölçüm alanı TEMİZ
+
     record = next(r for r in status.evidence_chain if r["agent"] == "life_rupture")
     assert record["result"]["semantic_inference_count"] == len(labels)
+    assert record["result"]["corroborated_labels"], "mutabakat rapora yazılmalı"
+    assert record["result"]["corroborated_signal_count"] > 0
+    assert record["result"]["evidence_grade_counts"].get("corroborated", 0) > 0
+    assert any("kanıt dereceleri" in str(unknown) for unknown in record["result"]["unknowns"]), (
+        "hangi sinyalin araç ölçümü, hangisinin mutabakat olduğu raporda yazılmalı"
+    )
     assert record["result"]["semantic_inferences_count_toward_cluster"] is False
     assert any("model çıkarımıdır" in str(unknown) for unknown in record["result"]["unknowns"])
 
@@ -786,7 +803,8 @@ async def test_executor_semantic_failure_does_not_fabricate_labels(executor):
     executor.vision_analyzer = MagicMock()
     executor.vision_analyzer.fetch_image_record = _fetch
     executor.vision_analyzer.analyze_images = AsyncMock(side_effect=RuntimeError("no llm"))
-    executor.llm_gateway.query_json_chain = AsyncMock(side_effect=RuntimeError("provider down"))
+    executor.llm_gateway.capable_chain = MagicMock(return_value=["model_a", "model_b"])
+    executor.llm_gateway.query_json = AsyncMock(side_effect=RuntimeError("provider down"))
 
     status = await executor.execute_task({"target_profile": profile}, "task_semantics_fail")
 
@@ -794,3 +812,61 @@ async def test_executor_semantic_failure_does_not_fabricate_labels(executor):
     problems = (status.visual_evidence or {}).get("semantic_problems") or []
     assert any("semantic_call_failed" in problem for problem in problems)
     assert all(frame["detected_objects"] == [] for frame in (status.visual_evidence or {}).get("frames") or [])
+
+
+@pytest.mark.asyncio
+async def test_same_model_twice_never_becomes_consensus(executor):
+    """Tek model iki kez = TEKRAR, mutabakat değil. Ritüel ekseni AÇILMAZ."""
+    import base64
+    import io
+    from datetime import datetime, timedelta, timezone
+
+    from pydantic import BaseModel
+    from PIL import Image
+
+    t0 = datetime(2021, 1, 1, tzinfo=timezone.utc)
+    count = 5
+    profile = {
+        "posts": [f"gönderi {index}" for index in range(count)],
+        "post_times": [(t0 + timedelta(days=30 * index)).isoformat() for index in range(count)],
+        "images": [f"https://cdn.example.com/{index}.jpg" for index in range(count)],
+        "post_evidence_types": ["platform_post"] * count,
+    }
+    buffer = io.BytesIO()
+    Image.new("RGB", (48, 48), (120, 120, 120)).save(buffer, format="PNG")
+    encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+    async def _fetch(url):
+        return {"status": "downloaded", "b64": encoded, "sha256": "x", "bytes": 10}
+
+    class _Labels(BaseModel):
+        labels: list = []
+
+    calls: list[str] = []
+
+    async def _query_json(**kwargs):
+        calls.append(kwargs.get("model"))
+        return _Labels(labels=[{"label": "kitchen table", "kind": "object"}])
+
+    executor.vision_analyzer = MagicMock()
+    executor.vision_analyzer.fetch_image_record = _fetch
+    executor.vision_analyzer.analyze_images = AsyncMock(side_effect=RuntimeError("no llm"))
+    # Tek yetenekli model: ikinci geçiş YAPILMAZ (uydurma bağımsızlık yok).
+    executor.llm_gateway.capable_chain = MagicMock(return_value=["model_a"])
+    executor.llm_gateway.query_json = AsyncMock(side_effect=_query_json)
+
+    status = await executor.execute_task({"target_profile": profile}, "task_single_model")
+
+    assert set(calls) == {"model_a"}
+    frames = (status.visual_evidence or {}).get("frames") or []
+    assert all(not frame.get("corroborated_objects") for frame in frames)
+    consensus = (status.visual_evidence or {}).get("semantic_consensus") or {}
+    assert consensus["diagnostics"]["corroborated_count"] == 0
+    assert any("insufficient_independent_views" in problem for problem in consensus["problems"])
+
+    record = next(r for r in status.evidence_chain if r["agent"] == "life_rupture")
+    assert record["result"]["corroborated_signal_count"] == 0
+    assert record["result"]["corroborated_labels"] == []
+    # İddia yine de kaydedilir — ama çıkarım olarak, kanıt olarak değil.
+    assert status.semantic_inferences
+    assert all(row["counts_toward_cluster"] is False for row in status.semantic_inferences)

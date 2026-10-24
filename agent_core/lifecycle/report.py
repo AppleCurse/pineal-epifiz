@@ -157,6 +157,25 @@ class LifeRuptureReport(BaseModel):
     semantic_inference_count: int = 0
     semantic_inferences_count_toward_cluster: Literal[False] = False
 
+    #: Kanıt dereceleri: ``measured`` (araç ölçümü) ve ``corroborated`` (iki
+    #: bağımsız modelin mutabakatı). İkisi AYNI kefeye konmaz.
+    evidence_grade_counts: dict[str, int] = Field(default_factory=dict)
+    corroborated_signal_count: int = 0
+    corroborated_labels: list[dict[str, Any]] = Field(default_factory=list)
+
+    @field_validator("corroborated_labels")
+    @classmethod
+    def _corroborated_rows_are_corroborated(cls, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Mutabakat satırı ``measured`` diye rapora GİREMEZ."""
+        for row in rows:
+            if not isinstance(row, dict):
+                raise ValueError("corroborated_labels satırı sözlük olmalı")
+            if row.get("observation_grade") != "corroborated":
+                raise ValueError("corroborated_labels yalnız observation_grade='corroborated' taşır")
+            if int(row.get("agreement_count") or 0) < 2:
+                raise ValueError("corroborated_labels en az 2 bağımsız görünüm ister")
+        return rows
+
     @field_validator("semantic_inferences")
     @classmethod
     def _inferences_stay_inferences(cls, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

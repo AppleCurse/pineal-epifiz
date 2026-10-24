@@ -618,21 +618,37 @@ class PinealExecutor:
         input_data["visual_evidence"]["frames"] = collection.frames
 
     async def _analyze_frame_semantics(self, status: TaskStatus, input_data: dict) -> None:
-        """[KADEME 2] Değişim noktalarındaki karelere model etiketi sorar.
+        """[KADEME 2] Değişim noktalarındaki karelere İKİ BAĞIMSIZ model geçişi.
 
         Birinci kademe yalnız ÖLÇÜM üretir (parlaklık, kontrast...). "Bu karede
         ne var?" sorusunun cevabı bir iddiadır; bu yüzden etiketler ölçüm
-        alanlarına (``detected_objects`` / ``environment_and_places``) YAZILMAZ
-        — yazılsaydı halüsinasyon "ritüel kayboldu" iddiasına dönüşürdü.
-        Etiketler ``semantic_inferences`` altında, ``epistemic_type=inference``
-        ve ``counts_toward_cluster=False`` olarak yaşar.
+        alanlarına (``detected_objects`` / ``environment_and_places``)
+        YAZILMAZ — yazılsaydı halüsinasyon "ritüel kayboldu" iddiasına dönerdi.
 
-        Maliyet duvarı: yalnız değişim noktaları (en fazla 4 kare) modele gider.
-        Hata/boş cevap kayıt üretmez; sebep teşhis defterine yazılır.
+        İki defter:
+          * ``semantic_inferences`` — her geçişin etiketi, ``inference``;
+            küme kanıtı DEĞİL.
+          * ``corroborated_*`` — yalnız iki FARKLI modelin aynı etiketi verdiği
+            kare etiketleri, ``observation_grade="corroborated"``. Ritüel
+            sözlüğünü besleyen tek kaynak budur.
+
+        Bağımsızlık gerçek olmalı: iki geçiş aynı modele giderse bu tekrardır ve
+        terfi YOKTUR (``same_model_repeat``). Tek yetenekli model varsa ikinci
+        geçiş hiç yapılmaz — uydurma bağımsızlık üretilmez.
         """
+        from agent_core.services.frame_consensus import (
+            LabelView,
+            build_consensus,
+            labels_by_frame,
+            model_id_or_unknown,
+        )
         from agent_core.services.frame_evidence import frame_change_point_ids
-        from agent_core.services.frame_semantics import collect_semantic_inferences
+        from agent_core.services.frame_semantics import (
+            FRAME_SEMANTIC_PROMPT_VERSION,
+            collect_semantic_inferences,
+        )
 
+        status.semantic_inferences = []
         evidence = status.visual_evidence if isinstance(status.visual_evidence, dict) else {}
         frames = evidence.get("frames") or []
         if not frames:
@@ -646,59 +662,130 @@ class PinealExecutor:
             if isinstance(url, str) and url.startswith("http")
         }
 
-        async def _ask(frame, prompt):
-            """Tek kare: SSRF-güvenli indirici + şemalı JSON çağrısı."""
-            post_ref = str(frame.get("post_ref") or "")
-            url = by_ref.get(post_ref)
-            if not url:
-                return {"status": "failed", "reason": "source_url_missing"}
-            try:
-                record = await self.vision_analyzer.fetch_image_record(url)
-            except Exception as error:  # noqa: BLE001 — sonda sözleşmesi
-                return {"status": "failed", "reason": type(error).__name__}
-            if not isinstance(record, dict) or record.get("status") != "downloaded" or not record.get("b64"):
-                reason = (record or {}).get("reason") if isinstance(record, dict) else "fetch_failed"
-                return {"status": "failed", "reason": str(reason or "fetch_failed")}
+        change_points = frame_change_point_ids(frames)
 
-            class FrameLabelPayload(BaseModel):
-                labels: List[Dict[str, Any]] = []
+        async def _ask_for(model: str):
+            async def _ask(frame, prompt):
+                """Tek kare: SSRF-güvenli indirici + şemalı JSON çağrısı."""
+                post_ref = str(frame.get("post_ref") or "")
+                url = by_ref.get(post_ref)
+                if not url:
+                    return {"status": "failed", "reason": "source_url_missing"}
+                try:
+                    record = await self.vision_analyzer.fetch_image_record(url)
+                except Exception as error:  # noqa: BLE001 — sonda sözleşmesi
+                    return {"status": "failed", "reason": type(error).__name__}
+                if not isinstance(record, dict) or record.get("status") != "downloaded" or not record.get("b64"):
+                    reason = (record or {}).get("reason") if isinstance(record, dict) else "fetch_failed"
+                    return {"status": "failed", "reason": str(reason or "fetch_failed")}
 
-            try:
-                result = await self.llm_gateway.query_json_chain(
-                    prompt=prompt,
-                    schema=FrameLabelPayload,
-                    task="vision",
-                    temperature=0.0,
-                    images=[f"data:image/jpeg;base64,{record['b64']}"],
-                    agent_name="frame_semantics",
-                )
-            except Exception as error:  # noqa: BLE001 — fail-closed
-                return {"status": "failed", "reason": type(error).__name__}
-            payload = result.model_dump() if hasattr(result, "model_dump") else result
-            return payload if isinstance(payload, dict) else {"status": "failed", "reason": "bad_payload"}
+                class FrameLabelPayload(BaseModel):
+                    labels: List[Dict[str, Any]] = []
+
+                try:
+                    result = await self.llm_gateway.query_json(
+                        prompt=prompt,
+                        schema=FrameLabelPayload,
+                        temperature=0.0,
+                        tier=1,
+                        model=model,
+                        images=[f"data:image/jpeg;base64,{record['b64']}"],
+                        task="vision",
+                        agent_name="frame_semantics",
+                    )
+                except Exception as error:  # noqa: BLE001 — fail-closed
+                    return {"status": "failed", "reason": type(error).__name__}
+                payload = result.model_dump() if hasattr(result, "model_dump") else result
+                return payload if isinstance(payload, dict) else {"status": "failed", "reason": "bad_payload"}
+
+            return _ask
 
         try:
-            collection = await collect_semantic_inferences(
-                frames,
-                ask=_ask,
-                change_point_ids=frame_change_point_ids(frames),
-            )
-        except Exception as error:  # noqa: BLE001 — görev durmaz
-            self._log(
-                "WARNING",
-                "[" + status.task_id + "] KARE SEMANTİĞİ ölçülemedi: " + type(error).__name__,
-            )
+            chain = list(self.llm_gateway.capable_chain(task="vision", agent_name="frame_semantics"))
+        except Exception as error:  # noqa: BLE001 — model zinciri yoksa etiket de yok
+            evidence["semantic_problems"] = [f"no_capable_model:{type(error).__name__}"]
             return
 
-        status.semantic_inferences = collection.inferences
-        evidence["semantic_diagnostics"] = collection.diagnostics
-        evidence["semantic_problems"] = collection.problems[:20]
+        models = []
+        for model in chain:
+            normalised = model_id_or_unknown(model)
+            if normalised and normalised not in models:
+                models.append(normalised)
+        models = models[:2]
+        if not models:
+            evidence["semantic_problems"] = ["no_capable_model"]
+            return
+
+        views: list = []
+        problems: list[str] = []
+        diagnostics: dict = {}
+        inference_rows: dict[str, dict] = {}
+        for slot, model in enumerate(models):
+            try:
+                collection = await collect_semantic_inferences(
+                    frames,
+                    ask=await _ask_for(model),
+                    change_point_ids=change_points,
+                )
+            except Exception as error:  # noqa: BLE001 — görev durmaz
+                problems.append(f"semantic_pass_failed:{slot}:{type(error).__name__}")
+                continue
+            problems.extend(collection.problems[:10])
+            diagnostics[f"pass_{slot}"] = dict(collection.diagnostics)
+            for row in collection.inferences:
+                inference_rows.setdefault(row["inference_id"], row)
+            views.append(
+                LabelView(
+                    view_id=f"view_{slot}",
+                    model_id=model,
+                    prompt_version=FRAME_SEMANTIC_PROMPT_VERSION,
+                    labels=tuple(collection.inferences),
+                )
+            )
+
+        if not views:  # pragma: no cover - tek yol: capable_chain boş
+            evidence["semantic_problems"] = problems[:20] or ["no_semantic_pass"]
+            return
+
+        consensus = build_consensus(views)
+        grouped = labels_by_frame(consensus.corroborated)
+        counts: dict[str, int] = {}
+        for row in consensus.corroborated:
+            label = str(row.get("label") or "")
+            amount = int(row.get("agreement_count") or 0)
+            if label and amount > counts.get(label, 0):
+                counts[label] = amount
+
+        for frame in frames:
+            if not isinstance(frame, dict):
+                continue
+            bucket = grouped.get(str(frame.get("frame_id") or ""))
+            if not bucket:
+                continue
+            frame["corroborated_objects"] = list(bucket["objects"])
+            frame["corroborated_places"] = list(bucket["places"])
+            frame["corroboration_counts"] = {
+                label: counts[label] for label in bucket["objects"] + bucket["places"] if label in counts
+            }
+
+        status.semantic_inferences = sorted(
+            inference_rows.values(),
+            key=lambda row: (row["observed_at"], row["frame_id"], row["kind"], row["label_slug"]),
+        )
+        evidence["semantic_diagnostics"] = {
+            "prompt_version": FRAME_SEMANTIC_PROMPT_VERSION,
+            "attempted_models": models,
+            "passes": diagnostics,
+            "consensus": consensus.diagnostics,
+        }
+        evidence["semantic_problems"] = (problems + consensus.rejected)[:20]
+        evidence["semantic_consensus"] = consensus.to_dict()
         self._log(
             "INFO",
-            "[" + status.task_id + "] KARE SEMANTİĞİ: aday="
-            + str(collection.diagnostics.get("candidate_frame_count", 0))
-            + " etiket=" + str(len(collection.inferences))
-            + " ret=" + str(collection.diagnostics.get("rejected_label_count", 0)),
+            "[" + status.task_id + "] KARE SEMANTİĞİ: model=" + ",".join(models)
+            + " etiket=" + str(len(status.semantic_inferences))
+            + " mutabakat=" + str(len(consensus.corroborated))
+            + " gerekçe=" + str(len(consensus.rejected)),
         )
 
     async def _investigate_life_rupture(self, status: TaskStatus, input_data: dict) -> None:

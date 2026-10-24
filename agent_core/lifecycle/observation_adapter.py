@@ -117,6 +117,8 @@ class AdapterDiagnostics:
     vocabulary_until: Optional[datetime] = None
     object_vocabulary_size: int = 0
     place_vocabulary_size: int = 0
+    #: Etiket → kanıt derecesi dağılımı (ölçüm vs mutabakat).
+    evidence_grade_counts: dict[str, int] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
 
     def warn(self, message: str) -> None:
@@ -137,6 +139,7 @@ class AdapterDiagnostics:
             "vocabulary_until": self.vocabulary_until.isoformat() if self.vocabulary_until else None,
             "object_vocabulary_size": self.object_vocabulary_size,
             "place_vocabulary_size": self.place_vocabulary_size,
+            "evidence_grade_counts": dict(self.evidence_grade_counts),
             "warnings": list(self.warnings),
         }
 
@@ -432,6 +435,9 @@ class VisualFrameExtractor:
         self.min_presence_ratio = min_presence_ratio
         self.object_vocabulary: tuple[str, ...] = ()
         self.place_vocabulary: tuple[str, ...] = ()
+        #: Etiket → kanıt derecesi ({"measured", "corroborated"}). Ölçüm ile
+        #: mutabakat aynı kefeye konmaz; rapor bunu ayrı sayar.
+        self.tag_grades: dict[str, str] = {}
 
     def _load_frames(self, inputs: AdapterInputs) -> list[VisualFrameRecord]:
         diagnostics = inputs.diagnostics
@@ -486,18 +492,39 @@ class VisualFrameExtractor:
         return verified
 
     def _build_vocabularies(self, frames: Sequence[VisualFrameRecord]) -> None:
+        """Sözlük İKİ kaynaktan: araç ölçümü ve mutabakatla güçlendirilmiş etiket.
+
+        Kaynak ayrımı kaybolmaz: her etiketin hangi kaynaktan geldiği
+        ``self.tag_grades``te tutulur ve gözlem bağlamına yazılır. Ölçüm
+        (``detected_objects``) varsa o kazanır; mutabakat (``corroborated_*``)
+        yalnız ölçüm yokken devreye girer.
+        """
+        self.tag_grades = {}
         if not frames:
             self.object_vocabulary = ()
             self.place_vocabulary = ()
             return
         cutoff = self.vocabulary_until or (frames[0].observed_at + timedelta(days=self.vocabulary_window_days))
         discovery = [frame for frame in frames if frame.observed_at <= cutoff]
+
+        measured_objects = [self._tags(frame.detected_objects) for frame in discovery]
+        measured_places = [self._tags(frame.environment_and_places) for frame in discovery]
+        corroborated_objects = [self._tags(frame.corroborated_objects) for frame in discovery]
+        corroborated_places = [self._tags(frame.corroborated_places) for frame in discovery]
+
         self.object_vocabulary = self._discover(
-            [{_slug_tag(item) for item in frame.detected_objects if _slug_tag(item)} for frame in discovery]
+            [measured | corroborated for measured, corroborated in zip(measured_objects, corroborated_objects)]
         )
         self.place_vocabulary = self._discover(
-            [{_slug_tag(item) for item in frame.environment_and_places if _slug_tag(item)} for frame in discovery]
+            [measured | corroborated for measured, corroborated in zip(measured_places, corroborated_places)]
         )
+        measured_tags = set().union(*measured_objects, *measured_places) if discovery else set()
+        for tag in list(self.object_vocabulary) + list(self.place_vocabulary):
+            self.tag_grades[tag] = "measured" if tag in measured_tags else "corroborated"
+
+    @staticmethod
+    def _tags(values: Sequence[Any]) -> set[str]:
+        return {_slug_tag(item) for item in values if _slug_tag(item)}
 
     def _discover(self, tag_sets: Sequence[set[str]]) -> tuple[str, ...]:
         if not tag_sets:
@@ -544,18 +571,34 @@ class VisualFrameExtractor:
                         observations.append(SignalObservation(signal_id, ts, float(raw), ref))
 
             # 2) Akış ritüelleri: varlık=1.0, YOKLUK=0.0 (yokluk kaydedilmezse ölçülemez).
-            objects = {_slug_tag(item) for item in frame.detected_objects if _slug_tag(item)}
-            places = {_slug_tag(item) for item in frame.environment_and_places if _slug_tag(item)}
+            measured_objects = {_slug_tag(item) for item in frame.detected_objects if _slug_tag(item)}
+            measured_places = {_slug_tag(item) for item in frame.environment_and_places if _slug_tag(item)}
+            # Varlık iki kaynaktan okunur (ölçüm + mutabakat); YOKLUK yalnız
+            # iki kaynak da sessizse yazılır.
+            objects = measured_objects | self._tags(frame.corroborated_objects)
+            places = measured_places | self._tags(frame.corroborated_places)
             observations.append(
                 SignalObservation("visual.object_richness", ts, float(len(objects)), ref)
             )
             for tag in self.object_vocabulary:
                 observations.append(
-                    SignalObservation(f"ritual.obj.{tag}", ts, 1.0 if tag in objects else 0.0, ref)
+                    SignalObservation(
+                        f"ritual.obj.{tag}",
+                        ts,
+                        1.0 if tag in objects else 0.0,
+                        ref,
+                        {"evidence_grade": self.tag_grades.get(tag, "corroborated")},
+                    )
                 )
             for tag in self.place_vocabulary:
                 observations.append(
-                    SignalObservation(f"ritual.place.{tag}", ts, 1.0 if tag in places else 0.0, ref)
+                    SignalObservation(
+                        f"ritual.place.{tag}",
+                        ts,
+                        1.0 if tag in places else 0.0,
+                        ref,
+                        {"evidence_grade": self.tag_grades.get(tag, "corroborated")},
+                    )
                 )
 
             # 3) Habitat: YALNIZCA gerçek çekim + ölçülebilir arka plan.

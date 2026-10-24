@@ -78,6 +78,13 @@ class VisualFrameRecord(BaseModel):
     has_measurable_background: bool = False
     detected_objects: list[str] = Field(default_factory=list)
     environment_and_places: list[str] = Field(default_factory=list)
+    #: İki BAĞIMSIZ modelin mutabakatıyla güçlendirilmiş etiketler
+    #: (``frame_consensus``). Ölçüm alanlarından AYRI tutulur: karışırsa
+    #: "ölçtüm" ile "iki model aynı şeyi söyledi" aynı kefeye girer.
+    corroborated_objects: list[str] = Field(default_factory=list)
+    corroborated_places: list[str] = Field(default_factory=list)
+    #: Etiket → kaç BAĞIMSIZ görünümün aynı etiketi verdiği (mutabakat sayısı).
+    corroboration_counts: dict[str, int] = Field(default_factory=dict)
     activity_signals: list[str] = Field(default_factory=list)
     lighting: LightingClass = "unknown"
     person_count: Optional[int] = Field(default=None, ge=0)
