@@ -26,6 +26,7 @@ __all__ = [
     "CONSENT_GATED_FLAGS",
     "MANAGED_GATE_FLAGS",
     "enabled_flags",
+    "flag_enabled",
     "parse_bool",
     "policy_state",
     "with_operator_consent",
@@ -65,6 +66,20 @@ CONSENT_GATED_FLAGS: tuple[str, ...] = (
     "ENABLE_X_SENSOR",
     "ENABLE_IG_SECONDARY",
 )
+
+
+def flag_enabled(flag: str, env: Mapping[str, str] | None = None) -> bool:
+    """Tek bir bayrağın AÇIK olup olmadığı — ``parse_bool`` kurallarıyla.
+
+    [GÖLGE DENETİMİ 2026-10-24] Bu yardımcı, "kapıyı okuyan her yer kendi
+    kuralını yazsın" kusurunu kapatır. Önceden dört ayrı dosya
+    ``os.getenv("ENABLE_INTERPRETER", "false").lower() == "true"`` diyordu;
+    bu kural ``1``/``yes``/``on`` değerlerini YOK sayıyordu. Sonuç: operatör
+    ``ENABLE_INTERPRETER=1`` yazdığında ``policy_state()`` kapıyı AÇIK
+    görürken ajan kapalı davranıyordu (iki farklı gerçek). Artık tek kural var.
+    """
+    source = os.environ if env is None else env
+    return parse_bool(source.get(flag))
 
 
 def enabled_flags(env: Mapping[str, str] | None = None) -> dict[str, bool]:
