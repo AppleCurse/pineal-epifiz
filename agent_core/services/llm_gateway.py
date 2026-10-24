@@ -34,6 +34,7 @@ import contextvars
 import hashlib
 import inspect
 import json
+import logging
 import os
 import threading
 import time
@@ -54,6 +55,8 @@ from pathlib import Path
 from agent_core.services.response_cache import build_cache_from_env
 from agent_core.services.task_routing_resolver import resolve_task_chain
 from agent_core.services.token_compressor import compress_prompt, CompressionLevel
+
+logger = logging.getLogger(__name__)
 
 _RTK_POLICY_PATH = Path(__file__).resolve().parent.parent.parent / "config" / "rtk_policy.json"
 _RTK_SAFE_DEFAULT: dict[str, Any] = {
@@ -1336,6 +1339,8 @@ class LLMGateway:
             if isinstance(exc, (APITimeoutError, APIConnectionError)):
                 return True
         except Exception:
+            # Bilinçli: openai yoksa ya da iç yardımcı hata verirse sınıflandırma
+            # sonraki kademelere düşer. Her hata yolunda çalıştığı için loglanmaz.
             pass
 
         err = str(exc).lower()
@@ -1386,6 +1391,8 @@ class LLMGateway:
             if isinstance(exc, (APITimeoutError, APIConnectionError)):
                 return True
         except Exception:
+            # Bilinçli: openai yoksa ya da iç yardımcı hata verirse sınıflandırma
+            # sonraki kademelere düşer. Her hata yolunda çalıştığı için loglanmaz.
             pass
         if isinstance(exc, (TimeoutError, ConnectionError, OSError)):
             return True
@@ -1507,7 +1514,11 @@ class LLMGateway:
             else:
                 governor.record_failure(route.provider_id, "*")
         except Exception:
-            pass
+            # Muhasebe hatası çağrıyı bozmamalı ama kota sayacı sapar: görünür kıl.
+            logger.warning(
+                "Kota muhasebesi yazılamadı (provider=%s, success=%s)",
+                route.provider_id, success, exc_info=True,
+            )
 
     def _route_cooldown_remaining(self, provider_id: str) -> float:
         return max(0.0, self._provider_block_until.get(provider_id, 0.0) - time.monotonic())
@@ -1725,6 +1736,7 @@ class LLMGateway:
             try:
                 provider = catalog.get_provider(provider_id)
             except Exception:
+                logger.debug("Sağlayıcı katalogda bulunamadı: %s", provider_id, exc_info=True)
                 continue
             if provider.protocol is not ProviderProtocol.OPENAI_CHAT or not provider.base_url:
                 continue
@@ -1827,7 +1839,11 @@ class LLMGateway:
                 if getattr(st, "status", st) is QuotaStatus.EXHAUSTED:
                     continue
             except Exception:
-                pass
+                # Fail-open (bilinçli): kota durumu okunamazsa rota sunulmaya devam eder.
+                logger.warning(
+                    "Kota durumu okunamadı (provider=%s); fail-open: rota sunuluyor",
+                    provider_id, exc_info=True,
+                )
             variants.append((
                 _price_sum(pricing),
                 0,
@@ -1995,7 +2011,11 @@ class LLMGateway:
                     skipped[provider_id] = {"reason": "exhausted", **info}
                     continue
             except Exception:
-                pass
+                # Fail-open (bilinçli): kota durumu okunamazsa rota sunulmaya devam eder.
+                logger.warning(
+                    "Kota durumu okunamadı (provider=%s); fail-open: rota sunuluyor",
+                    provider_id, exc_info=True,
+                )
             offered.append({
                 "route_key": f"{matched_id}@{provider_id}", "provider": provider_id,
                 "model": matched_id, "priced": priced, "source": matched_source,
@@ -3143,7 +3163,9 @@ class LLMGateway:
             try:
                 await close_upstream()
             except Exception:
-                pass
+                # Temizlik hatası asıl hatayı/iptali gölgelememeli; adı 'exc' DEĞİL
+                # (dış `except ... as exc` kapsamını bozmaz).
+                logger.debug("Upstream temiz kapatılamadı", exc_info=True)
             log_call(error="CANCELLED", cost_usd=cost)
             raise
         except Exception as exc:
@@ -3151,7 +3173,9 @@ class LLMGateway:
             try:
                 await close_upstream()
             except Exception:
-                pass
+                # Temizlik hatası asıl hatayı/iptali gölgelememeli; adı 'exc' DEĞİL
+                # (dış `except ... as exc` kapsamını bozmaz).
+                logger.debug("Upstream temiz kapatılamadı", exc_info=True)
             log_call(error=type(exc).__name__, cost_usd=cost)
             raise
 
@@ -3169,7 +3193,9 @@ class LLMGateway:
             try:
                 await close_upstream()
             except Exception:
-                pass
+                # Temizlik hatası asıl hatayı/iptali gölgelememeli; adı 'exc' DEĞİL
+                # (dış `except ... as exc` kapsamını bozmaz).
+                logger.debug("Upstream temiz kapatılamadı", exc_info=True)
             log_call(
                 error=f"MODEL_SUBSTITUTION_DENIED::{str(error)[:200]}",
                 cost_usd=cost,
@@ -3264,20 +3290,20 @@ class LLMGateway:
             for b in reversed(blocks):
                 try:
                     return json.loads(b)
-                except Exception:
+                except (ValueError, RecursionError):
                     pass
         elif "```" in text:
             blocks = [b.split("```")[0].strip() for b in text.split("```")[1:]]
             for b in reversed(blocks):
                 try:
                     return json.loads(b)
-                except Exception:
+                except (ValueError, RecursionError):
                     pass
 
         # 2. Doğrudan parse dene
         try:
             return json.loads(text)
-        except Exception:
+        except (ValueError, RecursionError):
             pass
 
         # 3. Metin içindeki tüm JSON nesnelerini tara
