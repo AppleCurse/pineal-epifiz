@@ -19,6 +19,10 @@ okuma + yetenek defteri); hiçbir sayı elle yazılmaz, hiçbir yetenek
                         (ölü kod / CLI-only araç / yanlışlıkla kopmuş hat).
   7. ``gomulu``       — depoda duran ama ürüne bağlanmayan varlıklar
                         (rust_core, android, worker.ts, functions/, release/...).
+  8. ``cli_tools``    — PATH'teki CLI araçları (ffmpeg, theHarvester, piper,
+                        ...) ve Python paketi olarak import edilebilirlik.
+                        Denetim makinesine özeldir; Windows'ta farklı sonuç
+                        çıkabilir.
 
 Kullanım::
 
@@ -32,8 +36,10 @@ from __future__ import annotations
 
 import argparse
 import ast
+import importlib
 import json
 import re
+import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -534,6 +540,43 @@ def embedded_assets(index: List[tuple[str, str]]) -> List[Dict[str, Any]]:
     return rows
 
 
+# ---------------------------------------------------------- CLI araçları (ffmpeg, theHarvester, ...)
+def cli_tool_inventory() -> List[Dict[str, Any]]:
+    """Yeteneklerin ihtiyaç duyduğu CLI araçlarının PATH'teki varlığı.
+
+    Python paketleri `importlib.util.find_spec` ile, CLI araçları ise
+    `shutil.which` ile kontrol edilir. Bu sayfa denetim makinesine özeldir;
+    Windows'taki kullanıcı kendi ortamında farklı sonuç görebilir.
+    """
+    checks = [
+        ("ffmpeg", "Video kodlama (renderer.report.video)"),
+        ("theHarvester", "Kurum keşif CLI'ı (sensor.company.harvester)"),
+        ("theharvester", "Kurum keşif CLI'ı (alternatif isim)"),
+        ("piper", "Yerel TTS (voice.tts.local)"),
+        ("node", "Edge worker / frontend build"),
+        ("npm", "Edge worker / frontend build (agent-reach kurulumu)"),
+        ("cargo", "Rust çekirdeği (rust_core)"),
+    ]
+    rows = []
+    for name, desc in checks:
+        found = shutil.which(name)
+        #: Python paketi olarak da kontrol et (bazı CLI'lar hem modül hem komuttur).
+        try:
+            importable = importlib.util.find_spec(name) is not None
+        except (ImportError, ValueError, AttributeError):
+            importable = False
+        rows.append(
+            {
+                "name": name,
+                "desc": desc,
+                "path": found,
+                "importable": importable,
+                "available": bool(found or importable),
+            }
+        )
+    return rows
+
+
 # ---------------------------------------------------------------------- rapor
 def build() -> Dict[str, Any]:
     index = _text_index()
@@ -559,6 +602,7 @@ def build() -> Dict[str, Any]:
         "kapilar": gates,
         "erisim": reach,
         "gomulu": assets,
+        "cli_tools": cli_tool_inventory(),
     }
 
 
@@ -710,6 +754,22 @@ def markdown(data: Dict[str, Any]) -> str:
         refs = r.get("code_refs") or []
         a(f"| `{r['path']}` | {r['desc']} | {'evet' if r['exists'] else 'hayır'} | "
           f"{len(refs) if refs else '**0**'} |")
+    a("")
+    a("## 9 · CLI araçları (PATH / import tespiti)")
+    a("")
+    a("_Bu bölüm denetim makinesine özeldir. Windows ortamında ffmpeg / theHarvester_")
+    a("_gibi araçların PATH'te olması farklı sonuç verebilir. `shutil.which`_")
+    a("_ile PATH, `importlib.util.find_spec` ile Python paketi olarak denetlenir._")
+    a("")
+    a("| Araç | Ne için | PATH'te | Python paketi olarak | Durum |")
+    a("| --- | --- | --- | --- | --- |")
+    for t in data.get("cli_tools", []):
+        durum = "✓ mevcut" if t["available"] else "✗ yok"
+        a(
+            f"| `{t['name']}` | {t['desc']} | "
+            f"{'evet' if t['path'] else 'hayır'} | "
+            f"{'evet' if t['importable'] else 'hayır'} | {durum} |"
+        )
     a("")
     return "\n".join(L)
 

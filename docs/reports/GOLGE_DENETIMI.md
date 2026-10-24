@@ -3,7 +3,7 @@
 > Bu dosya `scripts/golge_denetimi.py` tarafından ÜRETİLİR. Elle yazılmış sayı yoktur;
 > yeniden çalıştırıldığında depo neyse rapor odur.
 
-- Ölçüm anı: 2026-10-24T00:25:51Z · Python 3.11.2 · platform `linux`
+- Ölçüm anı: 2026-10-24T00:33:58Z · Python 3.11.2 · platform `linux`
 - **Kritik uyarı:** `dependency_missing` / `no_engine` gibi sebepler ÖLÇÜLDÜĞÜ MAKİNEYE bağlıdır.
   Bu raporu kendi ortamınızda üretmek için: `python scripts/golge_denetimi.py`.
 
@@ -197,3 +197,19 @@ _Not: son sütun gevşek bir metin sayımıdır (ad, kod dosyalarında kaç yerd
 | `skills` | SKILL.md araç defteri | evet | 4 |
 | `docs/envanter.html` | Envanter sayfası | evet | 12 |
 | `config/agent_tiers.json` | Ajan kademe planı | evet | 3 |
+
+## 9 · CLI araçları (PATH / import tespiti)
+
+_Bu bölüm denetim makinesine özeldir. Windows ortamında ffmpeg / theHarvester_
+_gibi araçların PATH'te olması farklı sonuç verebilir. `shutil.which`_
+_ile PATH, `importlib.util.find_spec` ile Python paketi olarak denetlenir._
+
+| Araç | Ne için | PATH'te | Python paketi olarak | Durum |
+| --- | --- | --- | --- | --- |
+| `ffmpeg` | Video kodlama (renderer.report.video) | hayır | hayır | ✗ yok |
+| `theHarvester` | Kurum keşif CLI'ı (sensor.company.harvester) | hayır | hayır | ✗ yok |
+| `theharvester` | Kurum keşif CLI'ı (alternatif isim) | hayır | hayır | ✗ yok |
+| `piper` | Yerel TTS (voice.tts.local) | hayır | hayır | ✗ yok |
+| `node` | Edge worker / frontend build | evet | hayır | ✓ mevcut |
+| `npm` | Edge worker / frontend build (agent-reach kurulumu) | evet | hayır | ✓ mevcut |
+| `cargo` | Rust çekirdeği (rust_core) | hayır | hayır | ✗ yok |

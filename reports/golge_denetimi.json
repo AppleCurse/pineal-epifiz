@@ -266,6 +266,57 @@
     ],
     "wired_count": 13
   },
+  "cli_tools": [
+    {
+      "available": false,
+      "desc": "Video kodlama (renderer.report.video)",
+      "importable": false,
+      "name": "ffmpeg",
+      "path": null
+    },
+    {
+      "available": false,
+      "desc": "Kurum keşif CLI'ı (sensor.company.harvester)",
+      "importable": false,
+      "name": "theHarvester",
+      "path": null
+    },
+    {
+      "available": false,
+      "desc": "Kurum keşif CLI'ı (alternatif isim)",
+      "importable": false,
+      "name": "theharvester",
+      "path": null
+    },
+    {
+      "available": false,
+      "desc": "Yerel TTS (voice.tts.local)",
+      "importable": false,
+      "name": "piper",
+      "path": null
+    },
+    {
+      "available": true,
+      "desc": "Edge worker / frontend build",
+      "importable": false,
+      "name": "node",
+      "path": "/usr/local/bin/node"
+    },
+    {
+      "available": true,
+      "desc": "Edge worker / frontend build (agent-reach kurulumu)",
+      "importable": false,
+      "name": "npm",
+      "path": "/usr/local/bin/npm"
+    },
+    {
+      "available": false,
+      "desc": "Rust çekirdeği (rust_core)",
+      "importable": false,
+      "name": "cargo",
+      "path": null
+    }
+  ],
   "erisim": {
     "entrypoints": [
       "backend/api.py",
@@ -488,7 +539,7 @@
     "managed_count": 17
   },
   "olcum": "scripts/golge_denetimi.py",
-  "olcum_zamani": "2026-10-24T00:25:51Z",
+  "olcum_zamani": "2026-10-24T00:33:58Z",
   "platform": "linux",
   "python": "3.11.2",
   "sema_surumu": 1,
@@ -1262,7 +1313,7 @@
         "id": "extractor.web.scrapling",
         "kind": "CapabilityKind.EXTRACTOR",
         "license": "BSD-3-Clause",
-        "reason": "gate_disabled:ENABLE_SCRAPLING",
+        "reason": "dependency_missing:scrapling",
         "reason_gates_open": "dependency_missing:scrapling",
         "unmanaged_gates": [],
         "wake_class": "kurulum_gerekli"
