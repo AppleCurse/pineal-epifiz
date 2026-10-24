@@ -3,7 +3,7 @@
 > Bu dosya `scripts/golge_denetimi.py` tarafından ÜRETİLİR. Elle yazılmış sayı yoktur;
 > yeniden çalıştırıldığında depo neyse rapor odur.
 
-- Ölçüm anı: 2026-10-24T03:34:38Z · Python 3.11.2 · platform `linux`
+- Ölçüm anı: 2026-10-24T03:43:10Z · Python 3.11.2 · platform `linux`
 - **Kritik uyarı:** `dependency_missing` / `no_engine` gibi sebepler ÖLÇÜLDÜĞÜ MAKİNEYE bağlıdır.
   Bu raporu kendi ortamınızda üretmek için: `python scripts/golge_denetimi.py`.
 
@@ -224,9 +224,10 @@ _`depth_analyst`, `human_behavior`, `mirror_truth`, `resonance_synthesizer`._
 
 | Ayar | Değer | Açıklama |
 | --- | --- | --- | |
-| Herhangi bir API anahtarı | hayır | `OPENROUTER_API_KEY`, `GROQ_API_KEY`, `GEMINI_API_KEY`, `DEEPSEEK_API_KEY` vb. |
+| Herhangi bir API anahtarı | hayır | `OPENROUTER_API_KEY`, `GROQ_API_KEY`, `GEMINI_API_KEY`, `DEEPSEEK_API_KEY`, `NINEROUTER_API_KEY` vb. |
 | `LIVE_LLM_E2E` | 0 | Canlı LLM çağrılarını açar (`.env`). |
 | `PINEAL_ROUTER_LIVE` | 0 | Router canlı moda geçişi (`.env`). |
+| `NINEROUTER_BASE_URL` | boş | Yerel 9Router uç noktası (örn. `http://127.0.0.1:20128/v1`). |
 | `USE_LOCAL_LLM` | false | Yerel LLM (Ollama/LM Studio) kullanımı. |
 
 | Tanımlı API anahtarları | Değer |
@@ -248,6 +249,11 @@ _`depth_analyst`, `human_behavior`, `mirror_truth`, `resonance_synthesizer`._
 | `SAMBANOVA_API_KEY` | ✗ boş |
 | `TOGETHER_API_KEY` | ✗ boş |
 
-**Açmak için:** `.env` dosyasına en az bir `*_API_KEY` (ör. `OPENROUTER_API_KEY=sk-...`)
-yazın ve `LIVE_LLM_E2E=1` yapın, ardından sunucuyu yeniden başlatın. Yerel LLM için
-`USE_LOCAL_LLM=true` + `LOCAL_LLM_URL` yeterlidir.
+**Açmak için:** `.env` dosyasına en az bir `*_API_KEY` (ör. `OPENROUTER_API_KEY=sk-...`
+ya da `NINEROUTER_API_KEY` yerel 9Router için) yazın ve `LIVE_LLM_E2E=1` yapın,
+sonra sunucuyu yeniden başlatın. Yerel 9Router için şu iki satır yeterlidir:
+
+    NINEROUTER_API_KEY=sk-...
+    LIVE_LLM_E2E=1
+
+Yerel LLM için: `USE_LOCAL_LLM=true` + `LOCAL_LLM_URL=http://localhost:11434/v1`

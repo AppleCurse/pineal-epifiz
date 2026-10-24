@@ -261,6 +261,13 @@ Sonuç: `core_passions=[]`, `sensitivities=[]`, `fallback_reason="llm_unavailabl
    LIVE_LLM_E2E=1
    ```
 
+   **Yerel 9Router (önerilen)** — senin makinende `http://127.0.0.1:20128` üzerinde çalışan 218 modelli 9Router'ı doğrudan kullan:
+   ```
+   NINEROUTER_API_KEY=sk-pineal-7e2df94beab1df4cee646ebb769aca80
+   LIVE_LLM_E2E=1
+   ```
+   (`NINEROUTER_BASE_URL=http://127.0.0.1:20128/v1` zaten `.env.example`'da varsayılan olarak tanımlı.)
+
    Yerel LLM (Ollama/LM Studio) kullanacaksanız bunun yerine:
    ```
    USE_LOCAL_LLM=true

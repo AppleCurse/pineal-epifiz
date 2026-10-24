@@ -551,9 +551,10 @@ def llm_engine_inventory() -> Dict[str, Any]:
     karşılamalıdır:
 
       1. En az bir LLM API anahtarı tanımlı (OPENROUTER_API_KEY, GROQ_API_KEY,
-         GEMINI_API_KEY, DEEPSEEK_API_KEY, vb.)
+         GEMINI_API_KEY, DEEPSEEK_API_KEY, NINEROUTER_API_KEY, vb.)
       2. Canlı çağrı bayrası açık (LIVE_LLM_E2E=1 veya PINEAL_ROUTER_LIVE=1)
 
+    Yerel 9Router kullanılıyorsa NINEROUTER_BASE_URL da tanımlı olmalıdır.
     Herhangi biri eksikse motor `llm_unavailable` döner ve hedef kişi analizi
     (core_passions, sensitivities, vb.) boş döner.
     """
@@ -581,6 +582,8 @@ def llm_engine_inventory() -> Dict[str, Any]:
     router_live = os.getenv("PINEAL_ROUTER_LIVE", "0").strip() == "1"
     any_live = live_e2e or router_live
     local_llm = os.getenv("USE_LOCAL_LLM", "false").strip().lower() == "true"
+    ninerouter_base_url = os.getenv("NINEROUTER_BASE_URL", "").strip()
+    ninerouter_configured = bool(found_keys.get("NINEROUTER_API_KEY") and ninerouter_base_url)
 
     engine_ok = any_key and any_live
     reason = None
@@ -592,6 +595,8 @@ def llm_engine_inventory() -> Dict[str, Any]:
     return {
         "any_api_key": any_key,
         "api_keys": found_keys,
+        "ninerouter_base_url": ninerouter_base_url,
+        "ninerouter_configured": ninerouter_configured,
         "live_llm_e2e": live_e2e,
         "pineal_router_live": router_live,
         "any_live": any_live,
@@ -853,9 +858,10 @@ def markdown(data: Dict[str, Any]) -> str:
     a("")
     a("| Ayar | Değer | Açıklama |")
     a("| --- | --- | --- | |")
-    a(f"| Herhangi bir API anahtarı | {'evet' if le.get('any_api_key') else 'hayır'} | `OPENROUTER_API_KEY`, `GROQ_API_KEY`, `GEMINI_API_KEY`, `DEEPSEEK_API_KEY` vb. |")
+    a(f"| Herhangi bir API anahtarı | {'evet' if le.get('any_api_key') else 'hayır'} | `OPENROUTER_API_KEY`, `GROQ_API_KEY`, `GEMINI_API_KEY`, `DEEPSEEK_API_KEY`, `NINEROUTER_API_KEY` vb. |")
     a(f"| `LIVE_LLM_E2E` | {'1' if le.get('live_llm_e2e') else '0'} | Canlı LLM çağrılarını açar (`.env`). |")
     a(f"| `PINEAL_ROUTER_LIVE` | {'1' if le.get('pineal_router_live') else '0'} | Router canlı moda geçişi (`.env`). |")
+    a(f"| `NINEROUTER_BASE_URL` | {le.get('ninerouter_base_url') or 'boş'} | Yerel 9Router uç noktası (örn. `http://127.0.0.1:20128/v1`). |")
     a(f"| `USE_LOCAL_LLM` | {'true' if le.get('use_local_llm') else 'false'} | Yerel LLM (Ollama/LM Studio) kullanımı. |")
     a("")
     a("| Tanımlı API anahtarları | Değer |")
@@ -864,9 +870,14 @@ def markdown(data: Dict[str, Any]) -> str:
         val = le["api_keys"][name]
         a(f"| `{name}` | {'✓ tanımlı' if val else '✗ boş'} |")
     a("")
-    a("**Açmak için:** `.env` dosyasına en az bir `*_API_KEY` (ör. `OPENROUTER_API_KEY=sk-...`)")
-    a("yazın ve `LIVE_LLM_E2E=1` yapın, ardından sunucuyu yeniden başlatın. Yerel LLM için")
-    a("`USE_LOCAL_LLM=true` + `LOCAL_LLM_URL` yeterlidir.")
+    a("**Açmak için:** `.env` dosyasına en az bir `*_API_KEY` (ör. `OPENROUTER_API_KEY=sk-...`")
+    a("ya da `NINEROUTER_API_KEY` yerel 9Router için) yazın ve `LIVE_LLM_E2E=1` yapın,")
+    a("sonra sunucuyu yeniden başlatın. Yerel 9Router için şu iki satır yeterlidir:")
+    a("")
+    a("    NINEROUTER_API_KEY=sk-...")
+    a("    LIVE_LLM_E2E=1")
+    a("")
+    a("Yerel LLM için: `USE_LOCAL_LLM=true` + `LOCAL_LLM_URL=http://localhost:11434/v1`")
     a("")
     return "\n".join(L)
 
