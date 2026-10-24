@@ -268,9 +268,9 @@
   },
   "cli_tools": [
     {
-      "available": false,
+      "available": true,
       "desc": "Video kodlama (renderer.report.video)",
-      "importable": false,
+      "importable": true,
       "name": "ffmpeg",
       "path": null
     },
@@ -539,7 +539,7 @@
     "managed_count": 17
   },
   "olcum": "scripts/golge_denetimi.py",
-  "olcum_zamani": "2026-10-24T00:33:58Z",
+  "olcum_zamani": "2026-10-24T00:42:17Z",
   "platform": "linux",
   "python": "3.11.2",
   "sema_surumu": 1,
@@ -1301,8 +1301,8 @@
         "wake_class": "hazır"
       },
       {
-        "available": false,
-        "available_gates_open": false,
+        "available": true,
+        "available_gates_open": true,
         "env_gates": [
           "ENABLE_SCRAPLING"
         ],
@@ -1313,14 +1313,14 @@
         "id": "extractor.web.scrapling",
         "kind": "CapabilityKind.EXTRACTOR",
         "license": "BSD-3-Clause",
-        "reason": "dependency_missing:scrapling",
-        "reason_gates_open": "dependency_missing:scrapling",
+        "reason": null,
+        "reason_gates_open": null,
         "unmanaged_gates": [],
-        "wake_class": "kurulum_gerekli"
+        "wake_class": "hazır"
       },
       {
-        "available": false,
-        "available_gates_open": false,
+        "available": true,
+        "available_gates_open": true,
         "env_gates": [],
         "gates": [
           "vault"
@@ -1328,10 +1328,10 @@
         "id": "extractor.web.trafilatura",
         "kind": "CapabilityKind.EXTRACTOR",
         "license": "Apache-2.0",
-        "reason": "dependency_missing:trafilatura",
-        "reason_gates_open": "dependency_missing:trafilatura",
+        "reason": null,
+        "reason_gates_open": null,
         "unmanaged_gates": [],
-        "wake_class": "kurulum_gerekli"
+        "wake_class": "hazır"
       },
       {
         "available": true,
@@ -1510,8 +1510,8 @@
         "id": "sensor.ig.instagrapi",
         "kind": "CapabilityKind.SENSOR",
         "license": "NOASSERTION (yalnız ikinci kaynak; hukuki inceleme notu)",
-        "reason": "dependency_missing:instagrapi",
-        "reason_gates_open": "dependency_missing:instagrapi",
+        "reason": "credentials_missing:IG_USERNAME/IG_PASSWORD",
+        "reason_gates_open": "credentials_missing:IG_USERNAME/IG_PASSWORD",
         "unmanaged_gates": [],
         "wake_class": "kurulum_gerekli"
       },
@@ -1571,8 +1571,8 @@
         "wake_class": "kurulum_gerekli"
       },
       {
-        "available": false,
-        "available_gates_open": false,
+        "available": true,
+        "available_gates_open": true,
         "env_gates": [
           "ENABLE_X_SENSOR"
         ],
@@ -1584,10 +1584,10 @@
         "id": "sensor.x.twscrape",
         "kind": "CapabilityKind.SENSOR",
         "license": "MIT",
-        "reason": "dependency_missing:twscrape",
-        "reason_gates_open": "dependency_missing:twscrape",
+        "reason": null,
+        "reason_gates_open": null,
         "unmanaged_gates": [],
-        "wake_class": "kurulum_gerekli"
+        "wake_class": "hazır"
       },
       {
         "available": true,
