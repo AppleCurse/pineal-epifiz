@@ -425,9 +425,7 @@
     }
   ],
   "kapilar": {
-    "code_but_unmanaged": [
-      "ENABLE_INTERPRETER"
-    ],
+    "code_but_unmanaged": [],
     "code_gates": [
       "ENABLE_AGENT_REACH",
       "ENABLE_COMPANY_TARGETING",
@@ -466,9 +464,7 @@
       "ENABLE_SEARXNG",
       "ENABLE_X_SENSOR"
     ],
-    "example_but_unmanaged": [
-      "ENABLE_INTERPRETER"
-    ],
+    "example_but_unmanaged": [],
     "managed": [
       "ENABLE_AGENT_REACH",
       "ENABLE_COMPANY_TARGETING",
@@ -476,6 +472,7 @@
       "ENABLE_CROSS_PLATFORM",
       "ENABLE_HOLEHE",
       "ENABLE_IG_SECONDARY",
+      "ENABLE_INTERPRETER",
       "ENABLE_LOCAL_JURY",
       "ENABLE_LOCAL_STT",
       "ENABLE_LOCAL_TRANSLATE",
@@ -488,10 +485,10 @@
       "ENABLE_X_SENSOR"
     ],
     "managed_but_missing_from_example": [],
-    "managed_count": 16
+    "managed_count": 17
   },
   "olcum": "scripts/golge_denetimi.py",
-  "olcum_zamani": "2026-10-23T23:53:25Z",
+  "olcum_zamani": "2026-10-24T00:13:04Z",
   "platform": "linux",
   "python": "3.11.2",
   "sema_surumu": 1,
@@ -1287,7 +1284,7 @@
       },
       {
         "available": false,
-        "available_gates_open": false,
+        "available_gates_open": true,
         "env_gates": [
           "ENABLE_REPORT_FACTORY"
         ],
@@ -1299,13 +1296,13 @@
         "kind": "CapabilityKind.RENDERER",
         "license": "dahili (reportlab/Pillow/ffmpeg harici araçlar)",
         "reason": "gate_disabled:ENABLE_REPORT_FACTORY",
-        "reason_gates_open": "dependency_missing:Pillow",
+        "reason_gates_open": null,
         "unmanaged_gates": [],
-        "wake_class": "kurulum_gerekli"
+        "wake_class": "sadece_kapi"
       },
       {
         "available": false,
-        "available_gates_open": false,
+        "available_gates_open": true,
         "env_gates": [
           "ENABLE_REPORT_FACTORY"
         ],
@@ -1317,9 +1314,9 @@
         "kind": "CapabilityKind.RENDERER",
         "license": "dahili (reportlab/Pillow/ffmpeg harici araçlar)",
         "reason": "gate_disabled:ENABLE_REPORT_FACTORY",
-        "reason_gates_open": "dependency_missing:reportlab",
+        "reason_gates_open": null,
         "unmanaged_gates": [],
-        "wake_class": "kurulum_gerekli"
+        "wake_class": "sadece_kapi"
       },
       {
         "available": false,
@@ -1618,6 +1615,7 @@
       "ENABLE_CROSS_PLATFORM",
       "ENABLE_HOLEHE",
       "ENABLE_IG_SECONDARY",
+      "ENABLE_INTERPRETER",
       "ENABLE_LOCAL_JURY",
       "ENABLE_LOCAL_STT",
       "ENABLE_LOCAL_TRANSLATE",

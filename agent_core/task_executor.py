@@ -232,8 +232,10 @@ class PinealExecutor:
             "shadow_executor": ShadowExecutor(llm_gateway=self.llm_gateway),
             "depth_analyst": DepthAnalyst(self.llm_gateway),
         }
-        import os as _os2
-        if _os2.getenv("ENABLE_INTERPRETER", "false").lower() == "true":
+        # [GÖLGE DENETİMİ 2026-10-24] Kapı TEK kaynaktan okunur (state.flag_enabled):
+        # `1/true/yes/on` hepsi açık sayılır, `policy_state()` ile aynı gerçek.
+        from agent_core.capabilities.state import flag_enabled as _flag_enabled
+        if _flag_enabled("ENABLE_INTERPRETER"):
             self.agents["interpreter"] = InterpreterAgent(self.llm_gateway)
         # Agent Rack tracker - optional, graceful degrade
         self._agent_tracker = None

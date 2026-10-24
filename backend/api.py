@@ -4875,7 +4875,8 @@ async def interpreter_execute(req: InterpreterPayload):
     # bkz. PolicyKernel._GATE_ORDER — kasa, ENABLE_* bayraklarından öncedir).
     if (locked := _require_vault_open(req.client_id)) is not None:
         return locked
-    if os.getenv("ENABLE_INTERPRETER", "false").lower() != "true":
+    from agent_core.capabilities.state import flag_enabled as _flag_enabled
+    if not _flag_enabled("ENABLE_INTERPRETER"):
         raise HTTPException(status_code=403, detail="Interpreter endpoint is disabled by default for security.")
         
     room = get_room(req.client_id)

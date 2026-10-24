@@ -59,6 +59,15 @@ MANAGED_GATE_FLAGS: tuple[str, ...] = (
     "ENABLE_COMPANY_TARGETING",
     # [FAZ D · D5] Rapor fabrikası: kanıt dışa aktarımı; varsayılan KAPALI.
     "ENABLE_REPORT_FACTORY",
+    # [GÖLGE DENETİMİ 2026-10-24] `ENABLE_INTERPRETER` GERÇEK bir kapıydı ama
+    # yönetilen listede değildi: dört ayrı yerde `os.getenv(...).lower()=="true"`
+    # ile doğrudan okunuyor, bu yüzden `policy_state()` ve dolayısıyla
+    # `/api/mcp/status` + telemetri onu HİÇ görmüyordu (operatöre "böyle bir
+    # şalter yok" gibi görünüyordu). Liste dışı kalan bir bayrak aynı zamanda
+    # `PolicyKernel`'de `unknown_gate` üretir. Artık tek kaynaktan yönetilir ve
+    # okuma `state.flag_enabled()` üzerinden yapılır (kabul edilen doğru
+    # değerler: 1/true/yes/on/enabled — büyük-küçük harf duyarsız).
+    "ENABLE_INTERPRETER",
     # [FAZ D · D3] Medya adli hattı: indirme/kare/transkript; varsayılan KAPALI.
     "ENABLE_MEDIA_FORENSICS",
     # [DENETİM 2026-10-14 · B1] Ses kapıları adaptörlerde vardı, listede YOKTU:

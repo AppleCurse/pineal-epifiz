@@ -3,7 +3,7 @@
 > Bu dosya `scripts/golge_denetimi.py` tarafından ÜRETİLİR. Elle yazılmış sayı yoktur;
 > yeniden çalıştırıldığında depo neyse rapor odur.
 
-- Ölçüm anı: 2026-10-23T23:53:25Z · Python 3.11.2 · platform `linux`
+- Ölçüm anı: 2026-10-24T00:13:04Z · Python 3.11.2 · platform `linux`
 - **Kritik uyarı:** `dependency_missing` / `no_engine` gibi sebepler ÖLÇÜLDÜĞÜ MAKİNEYE bağlıdır.
   Bu raporu kendi ortamınızda üretmek için: `python scripts/golge_denetimi.py`.
 
@@ -11,7 +11,7 @@
 
 - Defterde **27** yetenek var; bu ortamda **3** tanesi kullanılabilir.
 
-- Uyanma sınıfı: **3** hazır, **5** yalnız kapı kapalı olduğu için duruyor, **19** kapı açılsa da kurulum/hesap/uç istiyor.
+- Uyanma sınıfı: **3** hazır, **7** yalnız kapı kapalı olduğu için duruyor, **17** kapı açılsa da kurulum/hesap/uç istiyor.
 
 | Yetenek | Tür | Kapılar | Şimdi | Kapılar açıkken | Sebep (kapılar açıkken) |
 | --- | --- | --- | --- | --- | --- |
@@ -24,8 +24,8 @@
 | `extractor.web.crawl4ai` | EXTRACTOR | ENABLE_CRAWL4AI | KAPALI | KAPALI | dependency_missing:crawl4ai |
 | `extractor.web.scrapling` | EXTRACTOR | ENABLE_SCRAPLING | KAPALI | KAPALI | dependency_missing:scrapling |
 | `extractor.web.trafilatura` | EXTRACTOR | — | KAPALI | KAPALI | dependency_missing:trafilatura |
-| `renderer.report.diagram` | RENDERER | ENABLE_REPORT_FACTORY | KAPALI | KAPALI | dependency_missing:Pillow |
-| `renderer.report.pdf` | RENDERER | ENABLE_REPORT_FACTORY | KAPALI | KAPALI | dependency_missing:reportlab |
+| `renderer.report.diagram` | RENDERER | ENABLE_REPORT_FACTORY | KAPALI | AÇIK | — |
+| `renderer.report.pdf` | RENDERER | ENABLE_REPORT_FACTORY | KAPALI | AÇIK | — |
 | `renderer.report.video` | RENDERER | ENABLE_REPORT_FACTORY | KAPALI | KAPALI | dependency_missing:ffmpeg |
 | `sensor.company.harvester` | SENSOR | ENABLE_COMPANY_TARGETING | KAPALI | KAPALI | dependency_missing:theHarvester |
 | `sensor.company.people` | SENSOR | ENABLE_COMPANY_TARGETING | KAPALI | AÇIK | — |
@@ -156,10 +156,10 @@
 
 ## 5 · Kapılar (env)
 
-- Yönetilen kapı: **16**
-- Kodda okunan ama YÖNETİLMEYEN: `ENABLE_INTERPRETER`
+- Yönetilen kapı: **17**
+- Kodda okunan ama YÖNETİLMEYEN: —
 - Yönetilen ama `.env.example`'da olmayan: —
-- Örnekte olup yönetilmeyen: `ENABLE_INTERPRETER`
+- Örnekte olup yönetilmeyen: —
 
 ## 6 · Erişilemeyen modüller (giriş noktalarından AST ile)
 
@@ -171,15 +171,15 @@
 | Sebep | Yetenek sayısı | Ne gerekiyor |
 | --- | --- | --- |
 | `config_missing` | 1 | eksik yapılandırma → ilgili env değeri (ör. `SEARXNG_BASE_URL`) |
-| `dependency_missing` | 13 | Python/CLI bağımlılığı kurulu değil → `requirements-osint.txt` / `requirements-retina.txt` / `requirements-ml.txt` içindeki paket |
-| `gate_disabled` | 5 | yalnız şalter: `.env` içinde ilgili `ENABLE_*` = true |
+| `dependency_missing` | 11 | Python/CLI bağımlılığı kurulu değil → `requirements-osint.txt` / `requirements-retina.txt` / `requirements-ml.txt` içindeki paket |
+| `gate_disabled` | 7 | yalnız şalter: `.env` içinde ilgili `ENABLE_*` = true |
 | `no_engine` | 2 | yerel motor yok → `PINEAL_TRANSLATE_CMD` / `PINEAL_STT_CMD` gibi bir CLI ya da yerel HTTP ucu tanımla |
 | `no_local_endpoint` | 2 | yerel uç tanımlı değil → `PINEAL_TTS_URL` / `PINEAL_STT_URL` (yalnız 127.0.0.1) |
 | `no_local_models` | 1 | yerel model yok → `ENABLE_LOCAL_JURY` için yerel LLM bitiş noktası |
 
 - **config_missing**: `sensor.search.searxng`
-- **dependency_missing**: `extractor.identity.socid`, `extractor.web.crawl4ai`, `extractor.web.scrapling`, `extractor.web.trafilatura`, `renderer.report.diagram`, `renderer.report.pdf`, `renderer.report.video`, `sensor.company.harvester`, `sensor.identity.holehe`, `sensor.identity.maigret`, `sensor.ig.instagrapi`, `sensor.web.agent_reach`, `sensor.x.twscrape`
-- **gate_disabled**: `analyzer.media.frames`, `analyzer.media.similarity`, `sensor.company.people`, `sensor.company.seo`, `sensor.media.fetch`
+- **dependency_missing**: `extractor.identity.socid`, `extractor.web.crawl4ai`, `extractor.web.scrapling`, `extractor.web.trafilatura`, `renderer.report.video`, `sensor.company.harvester`, `sensor.identity.holehe`, `sensor.identity.maigret`, `sensor.ig.instagrapi`, `sensor.web.agent_reach`, `sensor.x.twscrape`
+- **gate_disabled**: `analyzer.media.frames`, `analyzer.media.similarity`, `renderer.report.diagram`, `renderer.report.pdf`, `sensor.company.people`, `sensor.company.seo`, `sensor.media.fetch`
 - **no_engine**: `extractor.media.transcript`, `extractor.text.translate_local`
 - **no_local_endpoint**: `voice.stt.local`, `voice.tts.local`
 - **no_local_models**: `verifier.jury.local`
