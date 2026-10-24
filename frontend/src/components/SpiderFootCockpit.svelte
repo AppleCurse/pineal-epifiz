@@ -46,7 +46,14 @@
   let targetInput = '';
   let selectedMode: 'full' | 'quick' | 'probe' = 'full';
   let isTargetValid = false;
-  let activeTab: 'graph' | 'matrix' | 'correlations' | 'evidence' | 'agents' = 'graph';
+  let activeTab: 'graph' | 'matrix' | 'opening_hook' | 'correlations' | 'evidence' | 'agents' = 'graph';
+
+  // --- İLK TEMAS & ETKİLEME KANCASI STÜDYOSU STATE ---
+  let hookArchetype: 'authentic_connection' | 'business_collab' | 'intellectual_collab' | 'pattern_interrupt' | 'shadow_hook' | 'custom' = 'authentic_connection';
+  let customHookGoal = '';
+  let isGeneratingHook = false;
+  let customHookResult: any = null;
+  let copyFeedback = false;
   let selectedNode: GraphNode | null = null;
   // /api/initiate'in döndürdüğü GERÇEK görev kimliği. Eskiden burada
   // `mis_<rastgele>` uyduruluyor ve hiçbir yere gönderilmiyordu: durdurma
@@ -680,6 +687,100 @@
     }
   });
 
+  // --- İLK TEMAS REAKTİF VERİ KÖPRÜSÜ ---
+  $: currentTargetUser = $taskStatus?.target_profile?.username || (targetInput ? targetInput.replace(/^[@/]+/, '').split('/')[0] : 'hedef');
+  $: liveBridge = $taskStatus?.holistic_profile?.bridge || $taskStatus?.runs?.resonance_synthesizer?.output_summary || null;
+  $: livePattern = $taskStatus?.runs?.pattern_interrupt?.output_summary || null;
+  $: liveShadow = $taskStatus?.shadow_profile || $taskStatus?.runs?.shadow_executor?.output_summary || null;
+  $: liveCognitive = $taskStatus?.holistic_profile?.cognitive || $taskStatus?.runs?.cognitive_profiler?.output_summary || null;
+  $: livePassions = $taskStatus?.holistic_profile?.passions || $taskStatus?.runs?.passion_mapper?.output_summary || null;
+  $: liveFrictions = $taskStatus?.holistic_profile?.frictions || $taskStatus?.runs?.friction_detector?.output_summary || null;
+  $: liveDepth = $taskStatus?.depth_report || $taskStatus?.runs?.depth_analyst?.output_summary || null;
+
+  $: activeOpeningMessage = customHookResult?.opening_message
+    || (hookArchetype === 'pattern_interrupt' && livePattern?.message ? livePattern.message : null)
+    || (hookArchetype === 'shadow_hook' && liveShadow?.message ? liveShadow.message : null)
+    || liveBridge?.suggested_opening_message
+    || livePattern?.message
+    || liveShadow?.message
+    || '';
+
+  $: activeTopic = customHookResult?.opening_topic
+    || liveBridge?.authentic_opening_topic
+    || (livePassions?.core_passions?.[0] ? String(livePassions.core_passions[0]) : 'İlk Temas');
+
+  $: activeRationale = customHookResult?.rationale
+    || (hookArchetype === 'pattern_interrupt' ? livePattern?.strategy : null)
+    || (hookArchetype === 'shadow_hook' ? liveShadow?.strategy : null)
+    || liveBridge?.conversation_starter_rationale
+    || livePattern?.strategy
+    || liveShadow?.strategy
+    || 'Hedefin bilişsel üslubuna ve ilgi alanlarına göre optimize edilmiş doğrudan ilk temas.';
+
+  $: activeDialogueTree = customHookResult?.dialogue_tree
+    || (livePattern?.dialogue_tree && livePattern.dialogue_tree.length > 0 ? livePattern.dialogue_tree.map((d: any) => ({
+        scenario: d.scenario_type || 'savunmaci',
+        target_reaction: d.expected_target_reaction || 'Beni nereden tanıyorsun?',
+        our_counter_move: d.our_counter_move || 'Paylaşımlarınıza denk geldim.'
+      })) : null)
+    || [
+        {
+          scenario: 'savunmaci',
+          target_reaction: 'Beni nereden buldunuz / Neden yazıyorsunuz?',
+          our_counter_move: 'Çalışmalarınız ve bakış açınız dikkatimi çekti, yüzeysel bir temas yerine doğrudan değer odaklı selam vermek istedim.'
+        },
+        {
+          scenario: 'agresif',
+          target_reaction: 'Vaktim yok / İlgilenmiyorum.',
+          our_counter_move: 'Çok haklısınız, zamanınızı almayayım; çalışmalarınızda başarılar dilerim.'
+        },
+        {
+          scenario: 'merakli',
+          target_reaction: 'Teşekkürler, hangi detay dikkatinizi çekti?',
+          our_counter_move: 'Özellikle son paylaşımlarınızdaki özgün perspektifiniz; bu yaklaşımı nasıl geliştirdiniz?'
+        }
+      ];
+
+  $: hasAnyHook = Boolean(activeOpeningMessage || liveBridge?.suggested_opening_message || livePattern?.message || liveShadow?.message);
+
+  async function generateCustomHook() {
+    if (isGeneratingHook) return;
+    isGeneratingHook = true;
+    try {
+      const res = await apiFetch('/api/hook/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: get(clientId) || 'default',
+          task_id: activeTaskId,
+          intent: hookArchetype,
+          custom_goal: customHookGoal,
+          target_username: currentTargetUser,
+          target_profile: $taskStatus?.target_profile,
+          passions: livePassions,
+          frictions: liveFrictions,
+          cognitive: liveCognitive,
+          depth_report: liveDepth,
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        customHookResult = data;
+      }
+    } catch (e) {
+      console.error('Kanca üretimi hatası:', e);
+    } finally {
+      isGeneratingHook = false;
+    }
+  }
+
+  function copyHookToClipboard(text: string) {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    copyFeedback = true;
+    setTimeout(() => { copyFeedback = false; }, 2200);
+  }
+
   // --- CANVAS FARE ETKİLEŞİMİ (Pan/Zoom/Drag) ---
   function onCanvasMouseDown(e: MouseEvent) {
     if (!canvas) return;
@@ -868,6 +969,12 @@
         >📊 10 PLATFORM RADARI</button>
 
         <button
+          class="tab-btn hook-tab-btn"
+          class:active={activeTab === 'opening_hook'}
+          on:click={() => activeTab = 'opening_hook'}
+        >🎯 İLK TEMAS & ETKİLEME KANCASI {#if hasAnyHook}<span class="ready-badge">HAZIR</span>{/if}</button>
+
+        <button
           class="tab-btn"
           class:active={activeTab === 'evidence'}
           on:click={() => activeTab = 'evidence'}
@@ -899,6 +1006,241 @@
             <span class="legend-item"><span class="dot url"></span> Bio/Dış Link</span>
             <span class="zoom-text">Yakınlaştır: Fare Tekerleği · Kaydır: Sürükle</span>
           </div>
+        </div>
+
+      <!-- TAB 2.5: İLK TEMAS & ETKİLEME KANCASI STÜDYOSU -->
+      {:else if activeTab === 'opening_hook'}
+        <div class="hook-studio-container">
+          <!-- 1. Hedef Bilişsel Sentez Başlığı -->
+          <div class="target-intel-bar">
+            <div class="intel-col">
+              <span class="intel-label">HEDEF KİMLİK</span>
+              <span class="intel-value target-highlight">@{currentTargetUser}</span>
+            </div>
+            <div class="intel-col">
+              <span class="intel-label">İLETİŞİM TONU</span>
+              <span class="intel-value">{liveCognitive?.communication_tone || 'Dengeli / Analitik'}</span>
+            </div>
+            <div class="intel-col">
+              <span class="intel-label">BİRİNCİL TUTKU</span>
+              <span class="intel-value passion">{livePassions?.core_passions?.[0] || 'Gözlemleniyor...'}</span>
+            </div>
+            <div class="intel-col">
+              <span class="intel-label">HASSASİYET / MAYIN</span>
+              <span class="intel-value friction">{liveFrictions?.sensitivities?.[0] || 'Klişeler & Yüzeysellik'}</span>
+            </div>
+            <div class="intel-col">
+              <span class="intel-label">BİLİŞSEL GÜVEN</span>
+              <span class="intel-value badge-conf">%{Math.round((liveBridge?.confidence || 0.92) * 100)}</span>
+            </div>
+          </div>
+
+          <!-- 2. Arketip & İletişim Niyeti Seçici -->
+          <div class="archetype-bar">
+            <span class="bar-title">İLETİŞİM NİYETİ & KANCA STRATEJİSİ:</span>
+            <div class="archetype-chips">
+              <button
+                type="button"
+                class="arch-chip"
+                class:selected={hookArchetype === 'authentic_connection'}
+                on:click={() => { hookArchetype = 'authentic_connection'; customHookResult = null; }}
+              >🤝 Sahici Rezonans</button>
+
+              <button
+                type="button"
+                class="arch-chip"
+                class:selected={hookArchetype === 'business_collab'}
+                on:click={() => { hookArchetype = 'business_collab'; customHookResult = null; }}
+              >💼 İş & Ortaklık Teklifi</button>
+
+              <button
+                type="button"
+                class="arch-chip"
+                class:selected={hookArchetype === 'intellectual_collab'}
+                on:click={() => { hookArchetype = 'intellectual_collab'; customHookResult = null; }}
+              >💡 Entelektüel Kanca</button>
+
+              <button
+                type="button"
+                class="arch-chip"
+                class:selected={hookArchetype === 'pattern_interrupt'}
+                on:click={() => { hookArchetype = 'pattern_interrupt'; customHookResult = null; }}
+              >⚡ Kalıp Kırıcı</button>
+
+              <button
+                type="button"
+                class="arch-chip"
+                class:selected={hookArchetype === 'shadow_hook'}
+                on:click={() => { hookArchetype = 'shadow_hook'; customHookResult = null; }}
+              >🌑 Gölge & NLP</button>
+
+              <button
+                type="button"
+                class="arch-chip"
+                class:selected={hookArchetype === 'custom'}
+                on:click={() => { hookArchetype = 'custom'; customHookResult = null; }}
+              >🎯 Özel Operasyonel Hedef</button>
+            </div>
+          </div>
+
+          <!-- 3. Özel Amaç Girişi & Yeniden Üret Butonu -->
+          <div class="custom-goal-row">
+            <div class="goal-input-wrap">
+              <span class="goal-icon">💬</span>
+              <input
+                type="text"
+                bind:value={customHookGoal}
+                placeholder="Özel niyetinizi belirtin (örn: 'Birlikte podcast kaydetmek istiyoruz', 'Yatırım turumuz için randevu rica et')..."
+                on:keydown={(e) => e.key === 'Enter' && generateCustomHook()}
+              />
+            </div>
+            <button
+              type="button"
+              class="generate-hook-btn"
+              disabled={isGeneratingHook}
+              on:click={generateCustomHook}
+            >
+              {#if isGeneratingHook}
+                <span class="spinner"></span> Sentezleniyor...
+              {:else}
+                ⚡ HEDEFE ÖZEL KANCA ÜRET
+              {/if}
+            </button>
+          </div>
+
+          <!-- 4. Ana Vurucu Mesaj Kartı -->
+          <div class="hero-hook-card">
+            <div class="hook-card-header">
+              <div class="hook-badge-row">
+                <span class="hook-type-pill">
+                  {hookArchetype === 'business_collab' ? '💼 İŞ BİRLİĞİ & ORTAKLIK' :
+                   hookArchetype === 'intellectual_collab' ? '💡 ENTELEKTÜEL SİNERJİ' :
+                   hookArchetype === 'pattern_interrupt' ? '⚡ KALIP KIRICI GÖZLEM' :
+                   hookArchetype === 'shadow_hook' ? '🌑 GÖLGE BİLİNÇALTI KANCASI' :
+                   hookArchetype === 'custom' ? '🎯 ÖZEL OPERASYONEL KANCA' :
+                   '🤝 SAHİCİ DİYALOG KÖPRÜSÜ'}
+                </span>
+                <span class="topic-tag">🎯 Konu: {activeTopic}</span>
+              </div>
+              <button
+                type="button"
+                class="copy-btn"
+                class:copied={copyFeedback}
+                on:click={() => copyHookToClipboard(activeOpeningMessage)}
+              >
+                {copyFeedback ? '✓ KOPYALANDI!' : '📋 PANOYA KOPYALA'}
+              </button>
+            </div>
+
+            <div class="message-content-box">
+              {#if activeOpeningMessage}
+                <p class="opening-message-text">"{activeOpeningMessage}"</p>
+              {:else}
+                <div class="empty-hook-prompt">
+                  <p class="placeholder-text">Henüz açılış kancası üretilmedi. Yukarıdan iletişim amacını seçip <strong>"⚡ HEDEFE ÖZEL KANCA ÜRET"</strong> düğmesine basın veya sol üstten tarama başlatın.</p>
+                </div>
+              {/if}
+            </div>
+
+            <!-- Stratejik Mantık & Bilişsel Gerekçe -->
+            <div class="rationale-box">
+              <span class="rat-icon">🧠</span>
+              <div class="rat-body">
+                <span class="rat-title">NEDEN BU MESAJ? (BİLİŞSEL SAVUNMA ANALİZİ):</span>
+                <p class="rat-text">{activeRationale}</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- 5. Karşı-Hamle & Olası Tepki Senaryoları (Diyalog Ağacı) -->
+          <div class="dialogue-tree-section">
+            <div class="section-head">
+              <span class="head-title">🌲 3 DALLI TEPKİ & KARŞI-HAMLE MATRİSİ</span>
+              <span class="head-sub">Hedef bu mesaja nasıl dönerse dönsün, sonraki hamleniz hazır:</span>
+            </div>
+
+            <div class="branches-grid">
+              {#each activeDialogueTree as branch}
+                <div class="branch-card {branch.scenario}">
+                  <div class="branch-header">
+                    <span class="scenario-icon">
+                      {branch.scenario === 'agresif' ? '😤' : branch.scenario === 'merakli' ? '✨' : '🛡️'}
+                    </span>
+                    <span class="scenario-label">
+                      {branch.scenario === 'agresif' ? 'SOĞUK / AGRESİF TEPKİ' :
+                       branch.scenario === 'merakli' ? 'MERAKLI / SICAK TEPKİ' :
+                       'ŞÜPHECİ / SAVUNMACI TEPKİ'}
+                    </span>
+                  </div>
+                  <div class="target-said">
+                    <span class="label">Hedefin Sözü:</span>
+                    <p class="quote">"{branch.target_reaction}"</p>
+                  </div>
+                  <div class="our-response">
+                    <span class="label">Önerilen Karşı-Hamle:</span>
+                    <p class="response-text">{branch.our_counter_move}</p>
+                  </div>
+                </div>
+              {/each}
+            </div>
+          </div>
+
+          <!-- 6. Sistem Tarafından Üretilen Alternatif Kancalar -->
+          {#if liveBridge?.suggested_opening_message || livePattern?.message || liveShadow?.message}
+            <div class="variants-bar">
+              <span class="var-title">TARAMA ESNASINDA TESPİT EDİLEN DİĞER KANCALAR:</span>
+              <div class="var-buttons">
+                {#if liveBridge?.suggested_opening_message}
+                  <button
+                    type="button"
+                    class="var-btn"
+                    on:click={() => {
+                      customHookResult = {
+                        opening_message: liveBridge.suggested_opening_message,
+                        opening_topic: liveBridge.authentic_opening_topic,
+                        rationale: liveBridge.conversation_starter_rationale,
+                        archetype: 'authentic_connection',
+                        dialogue_tree: activeDialogueTree
+                      };
+                      hookArchetype = 'authentic_connection';
+                    }}
+                  >🤝 Rezonans Kancası</button>
+                {/if}
+                {#if livePattern?.message}
+                  <button
+                    type="button"
+                    class="var-btn"
+                    on:click={() => {
+                      customHookResult = {
+                        opening_message: livePattern.message,
+                        opening_topic: 'Kalıp Kırma',
+                        rationale: livePattern.strategy,
+                        archetype: 'pattern_interrupt',
+                        dialogue_tree: livePattern.dialogue_tree || activeDialogueTree
+                      };
+                      hookArchetype = 'pattern_interrupt';
+                    }}
+                  >⚡ Kalıp Kırıcı Mesaj</button>
+                {/if}
+                {#if liveShadow?.message}
+                  <button
+                    type="button"
+                    class="var-btn"
+                    on:click={() => {
+                      customHookResult = {
+                        opening_message: liveShadow.message,
+                        opening_topic: 'Gölge Dinamiği',
+                        rationale: liveShadow.strategy,
+                        archetype: 'shadow_hook',
+                        dialogue_tree: activeDialogueTree
+                      };
+                      hookArchetype = 'shadow_hook';
+                    }}
+                  >🌑 Gölge NLP Mesajı</button>
+                {/if}
+              </div>
+            </div>
+          {/if}
         </div>
 
       <!-- TAB 2: 10 PLATFORM MATRİSİ -->
@@ -1400,6 +1742,441 @@
   .dot.absent { background: #64748b; }
   .dot.url { background: #818cf8; }
   .zoom-text { color: #64748b; margin-left: 8px; border-left: 1px solid #334155; padding-left: 8px; }
+
+  /* HOOK TAB & BADGE */
+  .hook-tab-btn {
+    color: #38bdf8 !important;
+    position: relative;
+  }
+
+  .hook-tab-btn.active {
+    color: #38ef7d !important;
+    border-bottom-color: #38ef7d !important;
+  }
+
+  .ready-badge {
+    background: #059669;
+    color: #ffffff;
+    font-size: 8px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-left: 5px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+  }
+
+  /* HOOK STUDIO CONTAINER */
+  .hook-studio-container {
+    flex: 1;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    overflow-y: auto;
+    background: #020617;
+  }
+
+  .target-intel-bar {
+    display: flex;
+    background: #090d16;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 10px 16px;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+
+  .intel-col {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .intel-label {
+    font-size: 8.5px;
+    color: #64748b;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+  }
+
+  .intel-value {
+    font-size: 11px;
+    color: #f1f5f9;
+    font-weight: 600;
+  }
+
+  .intel-value.target-highlight {
+    color: #38ef7d;
+    font-weight: 800;
+  }
+
+  .intel-value.passion {
+    color: #38bdf8;
+  }
+
+  .intel-value.friction {
+    color: #f87171;
+  }
+
+  .intel-value.badge-conf {
+    color: #f59e0b;
+  }
+
+  .archetype-bar {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .bar-title {
+    font-size: 9.5px;
+    color: #94a3b8;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+
+  .archetype-chips {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .arch-chip {
+    background: #0f172a;
+    border: 1px solid #334155;
+    color: #94a3b8;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 10.5px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    transition: 0.15s;
+  }
+
+  .arch-chip:hover {
+    color: #f8fafc;
+    border-color: #475569;
+  }
+
+  .arch-chip.selected {
+    background: #1e293b;
+    border-color: #38ef7d;
+    color: #38ef7d;
+    font-weight: 700;
+    box-shadow: 0 0 10px rgba(56, 239, 125, 0.15);
+  }
+
+  .custom-goal-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .goal-input-wrap {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 4px;
+    padding: 0 12px;
+  }
+
+  .goal-icon {
+    font-size: 13px;
+    margin-right: 8px;
+  }
+
+  .goal-input-wrap input {
+    width: 100%;
+    background: transparent;
+    border: none;
+    color: #f8fafc;
+    font-family: inherit;
+    font-size: 11.5px;
+    padding: 8px 0;
+    outline: none;
+  }
+
+  .generate-hook-btn {
+    background: #059669;
+    color: #ffffff;
+    border: none;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: 0.2s;
+    white-space: nowrap;
+  }
+
+  .generate-hook-btn:hover:not(:disabled) {
+    background: #10b981;
+    box-shadow: 0 0 12px rgba(16, 185, 129, 0.4);
+  }
+
+  .generate-hook-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* HERO HOOK CARD */
+  .hero-hook-card {
+    background: #090e1a;
+    border: 1px solid #1e3a8a;
+    border-radius: 6px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  }
+
+  .hook-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .hook-badge-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .hook-type-pill {
+    background: rgba(59, 130, 246, 0.15);
+    border: 1px solid #2563eb;
+    color: #60a5fa;
+    font-size: 9.5px;
+    font-weight: 800;
+    padding: 3px 8px;
+    border-radius: 4px;
+    letter-spacing: 0.6px;
+  }
+
+  .topic-tag {
+    font-size: 10px;
+    color: #94a3b8;
+    font-weight: 600;
+  }
+
+  .copy-btn {
+    background: #1e293b;
+    border: 1px solid #3b82f6;
+    color: #60a5fa;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 10.5px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+    transition: 0.15s;
+  }
+
+  .copy-btn:hover {
+    background: #2563eb;
+    color: #ffffff;
+  }
+
+  .copy-btn.copied {
+    background: #059669;
+    border-color: #10b981;
+    color: #ffffff;
+  }
+
+  .message-content-box {
+    background: #020617;
+    border: 1px solid #1e293b;
+    border-radius: 4px;
+    padding: 14px;
+  }
+
+  .opening-message-text {
+    font-family: 'JetBrains Mono', monospace, Courier, monospace;
+    font-size: 13.5px;
+    line-height: 1.6;
+    color: #38ef7d;
+    margin: 0;
+  }
+
+  .empty-hook-prompt {
+    padding: 10px 0;
+  }
+
+  .placeholder-text {
+    color: #64748b;
+    font-size: 11px;
+    margin: 0;
+  }
+
+  .rationale-box {
+    display: flex;
+    gap: 10px;
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid #1e293b;
+    padding: 10px 12px;
+    border-radius: 4px;
+    align-items: flex-start;
+  }
+
+  .rat-icon {
+    font-size: 14px;
+    margin-top: 1px;
+  }
+
+  .rat-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .rat-title {
+    font-size: 9px;
+    font-weight: 800;
+    color: #f59e0b;
+    letter-spacing: 0.5px;
+  }
+
+  .rat-text {
+    font-size: 11px;
+    color: #cbd5e1;
+    margin: 0;
+    line-height: 1.45;
+  }
+
+  /* DIALOGUE TREE */
+  .dialogue-tree-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+
+  .head-title {
+    font-size: 10.5px;
+    font-weight: 800;
+    color: #f1f5f9;
+    letter-spacing: 0.5px;
+  }
+
+  .head-sub {
+    font-size: 9px;
+    color: #64748b;
+  }
+
+  .branches-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 12px;
+  }
+
+  .branch-card {
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 5px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .branch-card.savunmaci { border-left: 3px solid #f59e0b; }
+  .branch-card.agresif { border-left: 3px solid #ef4444; }
+  .branch-card.merakli { border-left: 3px solid #10b981; }
+
+  .branch-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .scenario-icon { font-size: 13px; }
+
+  .scenario-label {
+    font-size: 9.5px;
+    font-weight: 800;
+    color: #cbd5e1;
+    letter-spacing: 0.5px;
+  }
+
+  .target-said, .our-response {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .target-said .label, .our-response .label {
+    font-size: 8.5px;
+    font-weight: 700;
+    color: #64748b;
+  }
+
+  .target-said .quote {
+    font-size: 10.5px;
+    color: #f87171;
+    font-style: italic;
+    margin: 0;
+  }
+
+  .our-response .response-text {
+    font-size: 10.5px;
+    color: #38ef7d;
+    margin: 0;
+    line-height: 1.4;
+  }
+
+  /* VARIANTS BAR */
+  .variants-bar {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: #090e1a;
+    border: 1px dashed #334155;
+    padding: 10px 14px;
+    border-radius: 4px;
+  }
+
+  .var-title {
+    font-size: 9px;
+    color: #64748b;
+    font-weight: 700;
+  }
+
+  .var-buttons {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .var-btn {
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #94a3b8;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 5px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: 0.15s;
+  }
+
+  .var-btn:hover {
+    color: #38ef7d;
+    border-color: #38ef7d;
+  }
 
   /* MATRİS GRID */
   .matrix-grid {

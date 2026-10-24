@@ -2309,6 +2309,7 @@ class InitiatePayload(BaseModel):
     # verisiyle birlikte tasinir — ama AJAN SECIMI degil; sozlesme tek
     # kaynagi CognitiveRouter.GOAL_FOCUS. Bos = eski davranis (compat).
     aspasia_goals: List[str] = Field(default_factory=list, max_length=64)
+    outreach_intent: str = Field(default="", max_length=32_000)
     # [037] fix: aggressiveness/evidence_th kabul ediliyordu ama HİÇBİR davranışa
     # bağlanmamıştı (ölü API sözleşmesi). Kaldırıldı; eşik ayarı gerekiyorsa
     # DecisionConfig üzerinden gerçek davranışla bağlanmalı. Eski istemcilerin
@@ -2453,6 +2454,7 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
             # Amaç kaybi fix: Aspasia goal'leri payload'da yasar; router yoksa
             # eski plani aynen kurar. Gecerlilik/uydurma filtresi router'da.
             "aspasia_goals": list(req.aspasia_goals or []),
+            "outreach_intent": (getattr(req, "outreach_intent", "") or "").strip(),
         }
         
         # Otonom Cookie Rotasyonu — canlı LCD oturumu önceliklidir.
@@ -3644,13 +3646,10 @@ def _check_vault_interlock(client_id: str) -> bool:
 # ayrı modüle taşındı (`backend/routes/mobile_coach.py`): Android doğrudan
 # Gemini'yi çağırmak yerine bu uçtan geçer. Satır yerine MODÜL çıkarıldı.
 from backend.routes.mobile_coach import register_mobile_coach_routes
+from backend.routes.hook_studio import register_hook_studio_routes
 
-register_mobile_coach_routes(
-    app,
-    rate_limit=rate_limit,
-    rate_identity=_rate_identity,
-    gateway_provider=lambda: getattr(aspasia_chief, "llm", None),
-)
+register_mobile_coach_routes(app, rate_limit=rate_limit, rate_identity=_rate_identity, gateway_provider=lambda: getattr(aspasia_chief, "llm", None))
+register_hook_studio_routes(app, rate_limit=rate_limit, rate_identity=_rate_identity, gateway_provider=lambda: getattr(aspasia_chief, "llm", None), get_executor=get_executor)
 
 app.include_router(
     build_speech_router(

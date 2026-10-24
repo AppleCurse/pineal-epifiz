@@ -1795,6 +1795,24 @@ class PinealExecutor:
                 ))
                 agent_cfg = self.config.get_agent_config(agent_name)
                 
+                if agent_name == "resonance_synthesizer" and not input_data.get("outreach_intent"):
+                    if input_data.get("aspasia_goals"):
+                        input_data["outreach_intent"] = "; ".join(str(g) for g in input_data["aspasia_goals"])
+                    else:
+                        prof = input_data.get("user_profile") or {}
+                        ctx = input_data.get("user_context") or {}
+                        has_user_evidence = any((
+                            prof.get("bio"), prof.get("posts"), prof.get("private_rituals"),
+                            prof.get("late_night_playlist"), prof.get("secret_envies"),
+                            ctx.get("rituals"), ctx.get("playlist"), ctx.get("envies")
+                        ))
+                        if not has_user_evidence:
+                            input_data["outreach_intent"] = (
+                                "Doğal & Etkileyici İlk Temas: Karşı tarafın bilişsel tarzına, "
+                                "tutkularına ve hassasiyetlerine saygılı, merak uyandıran ve "
+                                "karşı tarafı gerçekten anladığını hissettiren doğrudan ilk temas (Opening Hook)."
+                            )
+
                 agent_llm_calls: list[dict[str, Any]] = []
                 attempt_mark = len(egress_attempts())
                 resume_marker = copy.deepcopy(input_data)
