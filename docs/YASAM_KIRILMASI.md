@@ -54,8 +54,10 @@ Fonksiyon **asla hata fırlatmaz**; durumu raporlar:
    ise `zip` kaydırması yapılmaz; hiçbir gönderi tarihlenmez.
 4. **Platform dışı satırlar dışlanır.** `post_evidence_types[i]` platform
    gönderisi değilse (arama snippet'i vb.) metin sinyaline girmez.
-5. **Shortcode zamanı doğrulanır.** Instagram kısa kodu (Snowflake) ile
-   bildirilen tarih ±48 saatten fazla ayrışırsa kare reddedilir.
+5. **Shortcode zamanı doğrulanır.** Instagram kısa kodu (Snowflake) medya
+   kimliğidir; bildirilen tarih ±48 saatten fazla ayrışırsa kare/gönderi
+   reddedilir. Bu, paralel diziler kaydığında (metin 5. gönderiye yapışmışsa)
+   sessiz kaymayı yakalayan tek matematiksel kontroldür.
 6. **Gelecek tarih kabul edilmez.** Şimdiden sonrası gözlem sayılmaz.
 7. **`ritual.*` için 0.0 yokluktur**, "sıfır ölçtüm" değil: kanıt türü
    `absence` olur, notu da bunu söyler.

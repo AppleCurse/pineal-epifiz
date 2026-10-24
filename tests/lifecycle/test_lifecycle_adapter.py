@@ -14,6 +14,7 @@ from agent_core.lifecycle.observation_adapter import (
 )
 
 T0 = datetime(2022, 1, 10, 12, tzinfo=timezone.utc)
+NOW = datetime(2026, 10, 24, tzinfo=timezone.utc)
 
 
 def _iso(dt: datetime) -> str:
@@ -312,3 +313,43 @@ def test_observations_are_chronological() -> None:
 
     timestamps = [obs.timestamp for obs in observations]
     assert timestamps == sorted(timestamps)
+
+
+# --- Shortcode ile matematiksel zaman doğrulaması (gönderi düzeyi) ----------
+
+
+def test_post_shortcode_confirms_declared_time() -> None:
+    """``CYoNoBYMJrS`` → 2022-01-12; beyan edilen tarih tutuyorsa gönderi geçer."""
+    profile = {
+        "posts": [{"text": "bugün", "shortcode": "CYoNoBYMJrS"}],
+        "post_times": ["2022-01-12T12:00:00+00:00"],
+    }
+    diagnostics = AdapterDiagnostics()
+    posts = align_platform_posts(profile, diagnostics, now=NOW)
+
+    assert len(posts) == 1
+    assert diagnostics.shortcode_mismatch_refs == []
+
+
+def test_post_shortcode_mismatch_rejects_shifted_post() -> None:
+    """Tarih 2026 diyor, medya kimliği 2022 → paralel dizi kayması yakalanır."""
+    profile = {
+        "posts": [{"text": "bugün", "shortcode": "CYoNoBYMJrS"}],
+        "post_times": ["2026-01-12T12:00:00+00:00"],
+    }
+    diagnostics = AdapterDiagnostics()
+    posts = align_platform_posts(profile, diagnostics, now=NOW)
+
+    assert posts == []
+    assert diagnostics.shortcode_mismatch_refs == ["post_0000"]
+    assert any("post_shortcode_timestamp_mismatch" in w for w in diagnostics.warnings)
+
+
+def test_post_shortcode_can_be_read_from_permalink() -> None:
+    profile = {
+        "posts": [{"text": "bugün", "permalink": "https://www.instagram.com/p/CYoNoBYMJrS/"}],
+        "post_times": ["2026-01-12T12:00:00+00:00"],
+    }
+    diagnostics = AdapterDiagnostics()
+    assert align_platform_posts(profile, diagnostics, now=NOW) == []
+    assert diagnostics.shortcode_mismatch_refs == ["post_0000"]

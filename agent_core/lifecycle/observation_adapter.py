@@ -43,7 +43,7 @@ from typing import Any, Mapping, Optional, Protocol, Sequence, runtime_checkable
 
 from agent_core.engines.frequency_engine import parse_timestamp
 from agent_core.lifecycle.baseline_builder import SignalObservation, ensure_utc
-from agent_core.lifecycle.ig_time import shortcode_time_drift_hours
+from agent_core.lifecycle.ig_time import shortcode_from_url, shortcode_time_drift_hours
 from agent_core.lifecycle.media_provenance import CaptureClass
 from agent_core.lifecycle.visual_frames import GAZE_KEYS, VisualFrameRecord, frames_from_visual_evidence
 
@@ -171,6 +171,24 @@ def _post_timestamp(post: Any, times: Sequence[Any], meta: Sequence[Any], index:
     return None
 
 
+def _post_shortcode(post: Any, meta: Sequence[Any], index: int) -> Optional[str]:
+    """Gönderinin medya kimliği (varsa) — zamanın matematiksel çapraz kanıtı."""
+    candidates: list[Any] = []
+    if isinstance(post, Mapping):
+        candidates.extend([post.get("shortcode"), post.get("code")])
+        for key in ("url", "post_url", "permalink"):
+            value = post.get(key)
+            if isinstance(value, str):
+                candidates.append(shortcode_from_url(value))
+    if index < len(meta) and isinstance(meta[index], Mapping):
+        candidates.append(meta[index].get("shortcode"))
+        candidates.append(meta[index].get("code"))
+    for candidate in candidates:
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+    return None
+
+
 def align_platform_posts(
     target_profile: Optional[Mapping[str, Any]],
     diagnostics: AdapterDiagnostics,
@@ -225,6 +243,20 @@ def align_platform_posts(
             diagnostics.rejected_future_timestamp_count += 1
             diagnostics.warn(f"timestamp_in_future[{index}]:{timestamp.isoformat()}")
             continue
+
+        shortcode = _post_shortcode(post, meta, index)
+        if shortcode:
+            drift = shortcode_time_drift_hours(timestamp, shortcode)
+            if drift is None:
+                diagnostics.warn(f"post_shortcode_unverified[{index}]:{shortcode}")
+            elif drift > SHORTCODE_MAX_DRIFT_HOURS:
+                # Paralel dizi kayması burada yakalanır: metin 5. gönderiye
+                # kaymışsa shortcode tarih tutmaz. "Düzeltme" yok, ret var.
+                diagnostics.shortcode_mismatch_refs.append(f"post_{index:04d}")
+                diagnostics.warn(
+                    f"post_shortcode_timestamp_mismatch[{index}]:drift_hours={drift:.1f}"
+                )
+                continue
 
         media_ref = images[index] if index < len(images) and isinstance(images[index], str) else None
         aligned.append(
