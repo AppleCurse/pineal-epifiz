@@ -597,6 +597,43 @@ def _summary(
     return lines
 
 
+def _investigation_digest(investigation: Any) -> tuple[dict[str, Any], list[str]]:
+    """Soruşturma sonucunu rapora sığacak kadar küçük, dürüst bir özete çevirir.
+
+    Rapor tek başına okunabildiğinde "neyi soramadım" görünmelidir: kapanmayan
+    sorular ``unknowns`` listesine girer. Ölçülmemiş bir şey "kapandı" diye
+    raporlanmaz.
+    """
+    if not isinstance(investigation, Mapping):
+        to_dict = getattr(investigation, "to_dict", None)
+        if not callable(to_dict):
+            return {}, []
+        payload = to_dict()
+        if not isinstance(payload, Mapping):
+            return {}, []
+        investigation = payload
+    raw_still = investigation.get("still_unknown")
+    if not isinstance(raw_still, (list, tuple)):
+        # Bozuk yük "kapandı" sayılmaz ama uydurma satır da üretilmez.
+        raw_still = []
+    still = [str(item) for item in raw_still]
+    questions = investigation.get("questions") or []
+    resolved = investigation.get("resolved") or []
+    if not isinstance(questions, (list, tuple)):
+        questions = []
+    if not isinstance(resolved, (list, tuple)):
+        resolved = []
+    diagnostics = investigation.get("diagnostics")
+    summary = {
+        "question_count": len(questions),
+        "resolved_count": len(resolved),
+        "still_unknown_count": len(still),
+        "extra_frame_count": int(investigation.get("extra_frame_count") or 0),
+        "stop_reason": str(diagnostics.get("stop_reason")) if isinstance(diagnostics, Mapping) else "",
+    }
+    return summary, [f"soruşturma açık: {item}" for item in still[:20]]
+
+
 def analyze_life_rupture(
     target_profile: Optional[Mapping[str, Any]],
     *,
@@ -614,8 +651,65 @@ def analyze_life_rupture(
     min_persistence_days: int = DEFAULT_MIN_PERSISTENCE_DAYS,
     medium_threshold: float = DEFAULT_MEDIUM_THRESHOLD,
     include_timeline: bool = True,
+    investigation: Any = None,
 ) -> LifeRuptureReport:
-    """Tek çağrıda boylamsal analiz. Hata fırlatmaz; durumu raporlar."""
+    """Tek çağrıda boylamsal analiz. Hata fırlatmaz; durumu raporlar.
+
+    ``investigation``: soruşturma döngüsünün özeti (``InvestigationResult`` ya
+    da ``to_dict()``i). Verilirse kapanmayan sorular raporun ``unknowns``
+    listesine yazılır — rapor tek başına okunduğunda da görünür olur.
+    """
+    report = _analyze_life_rupture_core(
+        target_profile,
+        visual_evidence=visual_evidence,
+        frequency_map=frequency_map,
+        strata_map=strata_map,
+        subject_id=subject_id,
+        baseline_start=baseline_start,
+        baseline_end=baseline_end,
+        target_start=target_start,
+        target_end=target_end,
+        now=now,
+        window_days=window_days,
+        min_families=min_families,
+        min_persistence_days=min_persistence_days,
+        medium_threshold=medium_threshold,
+        include_timeline=include_timeline,
+    )
+    summary, unanswered = _investigation_digest(investigation)
+    if not summary:
+        return report
+    diagnostics = dict(report.diagnostics)
+    diagnostics["investigation"] = summary
+    return _finalize(
+        report.model_copy(
+            update={
+                "diagnostics": diagnostics,
+                "unknowns": list(dict.fromkeys(list(report.unknowns) + unanswered)),
+            }
+        )
+    )
+
+
+def _analyze_life_rupture_core(
+    target_profile: Optional[Mapping[str, Any]],
+    *,
+    visual_evidence: Any = None,
+    frequency_map: Any = None,
+    strata_map: Any = None,
+    subject_id: str = "subject",
+    baseline_start: Optional[datetime] = None,
+    baseline_end: Optional[datetime] = None,
+    target_start: Optional[datetime] = None,
+    target_end: Optional[datetime] = None,
+    now: Optional[datetime] = None,
+    window_days: int = DEFAULT_CLUSTER_WINDOW_DAYS,
+    min_families: int = DEFAULT_MIN_FAMILIES,
+    min_persistence_days: int = DEFAULT_MIN_PERSISTENCE_DAYS,
+    medium_threshold: float = DEFAULT_MEDIUM_THRESHOLD,
+    include_timeline: bool = True,
+) -> LifeRuptureReport:
+    """Boylamsal analizin çekirdeği (soruşturma özeti eklenmeden)."""
     diagnostics = AdapterDiagnostics()
     observations = ObservationAdapter().transform(
         target_profile,

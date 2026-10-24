@@ -297,3 +297,76 @@ def test_config_rejects_negative_budget() -> None:
         InvestigationConfig(max_rounds=-1)
     with pytest.raises(ValueError):
         InvestigationConfig(question_timeout_seconds=0)
+
+
+# --- Rapora yansıma ---------------------------------------------------------
+
+
+def _profile() -> dict:
+    """Küçük ama tarihli bir profil: rapor üretilebilsin."""
+    from datetime import datetime, timedelta, timezone
+
+    base = datetime(2022, 1, 1, tzinfo=timezone.utc)
+    count = 16
+    return {
+        "posts": ["kelime " * (5 + index % 4) for index in range(count)],
+        "post_times": [(base + timedelta(days=14 * index)).isoformat() for index in range(count)],
+    }
+
+
+def _report_with(investigation) -> "object":
+    from agent_core.lifecycle.pipeline import analyze_life_rupture
+
+    return analyze_life_rupture(_profile(), investigation=investigation)
+
+
+def test_open_questions_reach_the_report() -> None:
+    result = asyncio.run(run_investigation(_report(), probes={}))
+    report = _report_with(result)
+
+    assert report.unknowns
+    assert any(unknown.startswith("soruşturma açık: ") for unknown in report.unknowns)
+    assert report.diagnostics.get("investigation", {}).get("stop_reason") == "no_probe_registered"
+    assert report.diagnostics["investigation"]["still_unknown_count"] == len(result.still_unknown)
+
+
+def test_report_without_investigation_is_unchanged() -> None:
+    from agent_core.lifecycle.pipeline import analyze_life_rupture
+
+    baseline = analyze_life_rupture(_profile())
+    explicit_none = analyze_life_rupture(_profile(), investigation=None)
+
+    assert explicit_none.report_id == baseline.report_id
+    assert explicit_none.unknowns == baseline.unknowns
+    assert "investigation" not in explicit_none.diagnostics
+
+
+def test_digest_is_deterministic_and_subject_independent() -> None:
+    result = asyncio.run(run_investigation(_report(), probes={}))
+    first = _report_with(result)
+    second = _report_with(result)
+
+    assert first.report_id == second.report_id
+    assert first.unknowns == second.unknowns
+
+
+def test_extra_evidence_changes_the_report_identity() -> None:
+    empty = asyncio.run(run_investigation(_report(), probes={}))
+    richer = asyncio.run(
+        run_investigation(
+            _report(),
+            probes={"frame_window": _probe_returning(lambda q: ProbeOutcome(status="no_new_evidence"))},
+        )
+    )
+
+    assert _report_with(empty).report_id != _report_with(richer).report_id
+
+
+def test_digest_accepts_object_and_dict_forms() -> None:
+    result = asyncio.run(run_investigation(_report(), probes={}))
+    assert _report_with(result).report_id == _report_with(result.to_dict()).report_id
+
+
+def test_malformed_investigation_payload_is_ignored_not_trusted() -> None:
+    report = _report_with({"still_unknown": "bozuk"})
+    assert report.diagnostics.get("investigation", {}).get("still_unknown_count") == 0

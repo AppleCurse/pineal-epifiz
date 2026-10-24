@@ -673,3 +673,15 @@ async def test_executor_investigates_frame_gaps_and_records_once(executor):
     assert investigation["extra_frame_count"] > 0
     assert [r["agent"] for r in status.evidence_chain].count("life_rupture") == 1
     assert status.life_rupture["root_cause"] == "UNKNOWN"
+
+    # Kareler RAPORA ulaşmalı: yalnız durum nesnesinde kalan kanıt, raporda
+    # "görsel kare yok" diye okunur (gerçek hata buydu).
+    record = next(r for r in status.evidence_chain if r["agent"] == "life_rupture")
+    coverage = {row["signal_id"]: row for row in record["result"]["data_coverage"]}
+    assert "media.frame_brightness" in coverage
+    assert coverage["media.frame_brightness"]["comparison_observations"] > 0
+    # Soruşturma sonucu raporda görünür — kapanmayan soru sessizce yutulmaz.
+    assert record["result"]["diagnostics"]["investigation"]["question_count"] > 0
+    assert any(
+        str(unknown).startswith("soruşturma açık: ") for unknown in record["result"]["unknowns"]
+    ), "soruşturma boşlukları rapora yazılmalı"

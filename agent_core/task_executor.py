@@ -748,6 +748,9 @@ class PinealExecutor:
                 frequency_map=status.frequency_map,
                 strata_map=status.strata_map,
                 subject_id=str(status.task_id),
+                # Kapanmayan sorular RAPORA da yazılır: rapor tek başına
+                # okunduğunda "neyi ölçemedim" görünür kalır.
+                investigation=getattr(status, "investigation", None),
             )
             payload = report.model_dump(mode="json")
         except Exception as error:  # noqa: BLE001 — fail-closed, kayıt zorunlu
