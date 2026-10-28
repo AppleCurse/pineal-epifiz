@@ -6,7 +6,7 @@ import asyncio
 import os
 from typing import Callable
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -232,5 +232,33 @@ def build_speech_router(
             "status": "interrupted" if was_speaking else "stopped",
             "state": speech.status()["state"],
         }
+
+    @router.get("/api/speech/tts")
+    async def api_speech_tts(
+        text: str = Query(..., min_length=1, max_length=2000),
+        voice: str = Query(default="tr-TR-EmelNeural", max_length=64),
+    ):
+        """Free studio-grade neural TTS via edge-tts (defaults to Emel natural voice)."""
+        clean = text.strip()
+        if not clean:
+            raise HTTPException(status_code=400, detail="EMPTY_TEXT")
+        try:
+            import edge_tts
+
+            comm = edge_tts.Communicate(clean, voice)
+            chunks = []
+            async for chunk in comm.stream():
+                if chunk["type"] == "audio":
+                    chunks.append(chunk["data"])
+            audio_bytes = b"".join(chunks)
+            if audio_bytes:
+                return Response(
+                    content=audio_bytes,
+                    media_type="audio/mpeg",
+                    headers={"Cache-Control": "public, max-age=86400"},
+                )
+        except Exception:
+            pass
+        raise HTTPException(status_code=503, detail="TTS_UNAVAILABLE")
 
     return router

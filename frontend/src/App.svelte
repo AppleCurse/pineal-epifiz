@@ -339,6 +339,7 @@
   }
 
   onMount(() => {
+    telemetryVisible = false;
     connect();
     setupTauriListeners();
     const unsubVoice = voiceEnabled.subscribe((enabled) => {
@@ -435,42 +436,8 @@
 </script>
 
 <main class="fullscreen-cockpit-viewport">
-  {#if $activeViewMode === 'warroom'}
-    <TacticalWarRoom />
-  {:else if $activeViewMode === 'control'}
-    <LiveControlPanel />
-  {:else if $activeViewMode === 'spiderfoot'}
-    <!-- [2026-10-23 · KABLO] Bu bileşen import edilmiş ama HİÇ render
-         edilmiyordu: `store.ts` varsayılan görünümü 'spiderfoot' yaptığı için
-         uygulama açılışta yanlış bileşeni (AtlasPinealCockpit) gösteriyor,
-         SpiderFoot kokpiti ise hiçbir koşulda ekrana gelmiyordu.
-         "Import var = çalışıyor" yanılgısı; render dalı ŞART. -->
-    <SpiderFootCockpit />
-  {:else}
-    <AtlasPinealCockpit />
-  {/if}
-
-  <!-- [P6] Görünüm seçici: Muharebe Masası · Kontrol Paneli · SpiderFoot · Kokpit.
-       Panel kendi içinde de bu düğmeleri taşır; buradaki seçici her görünümden
-       erişilebilir olsun diye vardır. -->
-  <nav class="view-switcher" aria-label="Görünüm seçici">
-    <button
-      class:is-active={$activeViewMode === 'warroom'}
-      on:click={() => { activeViewMode.set('warroom'); localStorage.setItem('pineal_view_mode', 'warroom'); }}
-    >MUHAREBE MASASI</button>
-    <button
-      class:is-active={$activeViewMode === 'control'}
-      on:click={() => { activeViewMode.set('control'); localStorage.setItem('pineal_view_mode', 'control'); }}
-    >KONTROL PANELİ</button>
-    <button
-      class:is-active={$activeViewMode === 'spiderfoot'}
-      on:click={() => { activeViewMode.set('spiderfoot'); localStorage.setItem('pineal_view_mode', 'spiderfoot'); }}
-    >SPIDERFOOT</button>
-    <button
-      class:is-active={$activeViewMode === 'cockpit'}
-      on:click={() => { activeViewMode.set('cockpit'); localStorage.setItem('pineal_view_mode', 'cockpit'); }}
-    >KOKPİT</button>
-  </nav>
+  <!-- TEK BÜTÜNLEŞİK MASTER KOKPİT (Dağınık görünümler ve butonlar kaldırıldı) -->
+  <AtlasPinealCockpit />
 
   <!--
     Adli Telemetri & Sözleşme Köprüsü — ARTIK GERÇEKTEN GÖRÜNÜR.
@@ -539,21 +506,21 @@
      Sol üst köşede kompakt konumlandırıldı — alttaki Aspasia sohbet ekranını ASLA kapatmaz. */
   .telemetry-panel {
     position: fixed;
-    left: 14px;
-    top: 46px;
-    width: min(340px, 24vw);
+    right: 14px;
+    bottom: 46px;
+    width: min(380px, 30vw);
     z-index: 45;
   }
 
   /* Pano kompakt yükseklikte; sohbet ve ana kontrolleri örtmez. */
   .telemetry-panel :global(.telemetry-board) {
-    height: min(190px, 24vh);
+    height: min(220px, 28vh);
   }
 
   .telemetry-toggle {
     position: fixed;
-    left: 14px;
-    top: 12px;
+    right: 420px;
+    bottom: 14px;
     z-index: 46;
     padding: 5px 10px;
     font-family: 'JetBrains Mono', 'Courier New', monospace;

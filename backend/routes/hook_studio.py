@@ -294,3 +294,12 @@ Aşağıdaki JSON şemasında yanıt ver:
                 data_confidence=False,
                 fallback_reason="llm_unavailable_template_fallback",
             ).model_dump()
+
+    from backend.routes.commander import register_commander_routes
+    register_commander_routes(
+        app,
+        rate_limit=rate_limit,
+        rate_identity=rate_identity,
+        gateway_provider=gateway_provider,
+        get_executor=get_executor,
+    )

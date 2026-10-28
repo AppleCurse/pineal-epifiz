@@ -120,9 +120,11 @@ if (typeof localStorage !== 'undefined') {
 // kontrol paneli). 'warroom' | 'cockpit' | 'control'.
 export type ViewMode = 'warroom' | 'cockpit' | 'control' | 'spiderfoot';
 export const activeViewMode = writable<ViewMode>(
-  (typeof localStorage !== 'undefined' && (localStorage.getItem('pineal_view_mode') as ViewMode)) || 'spiderfoot'
+  (typeof localStorage !== 'undefined' && (localStorage.getItem('pineal_view_mode') as ViewMode)) || 'cockpit'
 );
 export const inspectedAgentId = writable<string | null>(null);
+export const activeTargetUrl = writable<string>('');
+export const missionElapsed = writable<string>('00:00');
 
 // Scraper vb. state'ler
 export const scrapedUsername = writable('');

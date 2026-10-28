@@ -27,7 +27,7 @@ from agent_core.capabilities.base import (
     make_evidence,
 )
 
-__all__ = ["HandleProbeCapability"]
+__all__ = ["HandleProbeCapability", "PhoneProbeCapability"]
 
 
 class HandleProbeCapability(BaseCapability):
@@ -111,3 +111,81 @@ class HandleProbeCapability(BaseCapability):
             payload=result,
             notes=notes,
         )
+
+
+class PhoneProbeCapability(BaseCapability):
+    """Telefon numarası format, şebeke ve açık OSINT varlık taraması (native)."""
+
+    id = "sensor.identity.phone_probe"
+    kind = CapabilityKind.SENSOR
+    license = "native"
+    gates = frozenset({"vault"})
+    timeout_seconds = 30.0
+    description = (
+        "Telefon numarasını E.164 standardına çevirir, operatör/şebeke ve hat türünü "
+        "çözümler, WhatsApp/Telegram doğrudan varlık protokollerini ve açık web dijital "
+        "ayak izini tarar."
+    )
+
+    def availability(self) -> Availability:
+        return Availability.ok()
+
+    async def run(self, ctx: CapabilityContext) -> CapabilityResult:
+        from agent_core.services.phone_probe import probe_phone
+
+        raw_phone = (ctx.subject or ctx.params.get("phone") or "").strip()
+        auto_bridge = bool(ctx.params.get("auto_bridge", True))
+
+        result = await probe_phone(raw_phone, auto_bridge_social=auto_bridge)
+        notes: dict[str, Any] = {
+            "e164": result.metadata.e164,
+            "carrier": result.metadata.carrier_name,
+            "country": result.metadata.country_name,
+            "line_type": result.metadata.line_type,
+            "is_valid": result.metadata.is_valid,
+            "messaging_count": len(result.messaging_probes),
+            "web_hits_count": len(result.web_footprint_hits),
+            "associated_handles": result.associated_handles,
+            "elapsed_ms": result.elapsed_ms,
+        }
+
+        evidence = []
+        if result.metadata.is_valid:
+            evidence.append(make_evidence(
+                content=(
+                    f"Telefon doğrulaması ({result.metadata.e164}): "
+                    f"Şebeke={result.metadata.carrier_name}, Bölge={result.metadata.country_name}, "
+                    f"Hat={result.metadata.line_type}"
+                ),
+                source_engine="phone_probe",
+                epistemic_type="observation",
+                scope={"e164": result.metadata.e164, "carrier": result.metadata.carrier_name},
+                source_metrics={"is_valid": result.metadata.is_valid},
+            ))
+
+        for hit in result.web_footprint_hits:
+            evidence.append(make_evidence(
+                content=f"Numarayla ilişkili açık web izi: {hit.get('url')} - {hit.get('snippet')[:120]}",
+                source_engine="phone_probe_web",
+                epistemic_type="observation",
+                scope={"url": hit.get("url")},
+                source_metrics={"engine": hit.get("engine")},
+            ))
+
+        for sp in result.social_probes:
+            evidence.append(make_evidence(
+                content=f"Numarayla bağlantılı '{sp.get('handle')}' adı {sp.get('platform')} profilinde bulundu: {sp.get('url')}",
+                source_engine="phone_social_bridge",
+                epistemic_type="observation",
+                scope={"platform": sp.get("platform"), "url": sp.get("url")},
+                source_metrics={"http_status": sp.get("http_status")},
+            ))
+
+        return CapabilityResult(
+            capability_id=self.id,
+            available=True,
+            items=tuple(evidence),
+            payload=result,
+            notes=notes,
+        )
+

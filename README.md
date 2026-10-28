@@ -180,15 +180,15 @@ canlılık işaretidir, analiz yapmaz.)
 
 ---
 
-## 7 · Veri toplama kanalları (27 yetenek)
+## 7 · Veri toplama kanalları (28 yetenek)
 
-Sistemde **27 yetenek** var. `agent_core/capabilities/` — dış dünyaya **tek kapı**.
+Sistemde **28 yetenek** var. `agent_core/capabilities/` — dış dünyaya **tek kapı**.
 Hiçbir yetenek dış servise doğrudan gitmez; önce politika ve kasa kapısından geçer.
-Canlı liste: `GET /api/telemetry` → 27 yetenek.
+Canlı liste: `GET /api/telemetry` → 28 yetenek.
 
 | Grup | Yetenekler |
 |---|---|
-| Toplama (sensör) | `sensor.ig.instagrapi` (Instagram) · `sensor.x.twscrape` (X) · `sensor.search.searxng` (web arama) · `sensor.web.agent_reach` · `sensor.identity.holehe` (e-posta) · `sensor.identity.maigret` (kullanıcı adı) · `sensor.identity.handle_probe` (çapraz platform: IG/FB/Threads/X/TikTok…) · `sensor.company.harvester` · `sensor.company.people` · `sensor.company.seo` · `sensor.media.fetch` |
+| Toplama (sensör) | `sensor.ig.instagrapi` (Instagram) · `sensor.x.twscrape` (X) · `sensor.search.searxng` (web arama) · `sensor.web.agent_reach` · `sensor.identity.holehe` (e-posta) · `sensor.identity.maigret` (kullanıcı adı) · `sensor.identity.handle_probe` (çapraz platform: IG/FB/Threads/X/TikTok…) · `sensor.identity.phone_probe` (telefon OSINT: operatör/şebeke/mesajlaşma) · `sensor.company.harvester` · `sensor.company.people` · `sensor.company.seo` · `sensor.media.fetch` |
 | Çıkarma | `extractor.identity.socid` · `extractor.web.crawl4ai` · `extractor.web.scrapling` · `extractor.web.trafilatura` · `extractor.text.language` · `extractor.text.translate_local` · `extractor.media.transcript` |
 | Analiz | `analyzer.media.frames` · `analyzer.media.similarity` |
 | Doğrulama | `verifier.jury.local` (yerel jüri) |
@@ -307,13 +307,14 @@ karşı** koşturur ve ham çıktıyı basar: `0` kanıtlandı · `1` döngü k�
 
 ---
 
-## 11 · API yüzeyi (71 HTTP ucu + 1 WebSocket)
+## 11 · API yüzeyi (74 HTTP ucu + 1 WebSocket)
 
-> Sayım biçimi: **71 = path+metot çifti**, **70 benzersiz yol**. Fark tek bir yoldan gelir: `/api/vault/status` hem `GET` (durum) hem `POST` (kilit aç/kapa) kabul eder. Sayı `backend.api.app.routes` üzerinden ölçülür.
+> Sayım biçimi: **74 = path+metot çifti**, **73 benzersiz yol**. Fark tek bir yoldan gelir: `/api/vault/status` hem `GET` (durum) hem `POST` (kilit aç/kapa) kabul eder. Sayı `backend.api.app.routes` üzerinden ölçülür.
 
 | Alan | Uçlar | Ne yapar |
 |---|---|---|
 | **Aspasia** | `/api/aspasia/chat` · `/api/aspasia/command` · `/api/aspasia/state` | Konuşma · komut+görev · denetim görünümü (kayıtlı ajanlar, görev durumu, bütçe, kota, anomali, **çağrı izi**) |
+| **Komutan & Dağıtım** | `/api/commander/dispatch` · `/api/commander/inject` · `/api/commander/phone-probe` | Herhangi bir ajana serbest görev verme + canlı düşünce zinciri (CoT), ikiz hesap/kanıt mühürleme ve telefon OSINT yoklaması |
 | **Görev** | `/api/initiate` · `/api/tasks` · `/api/tasks/{id}` (sil) · `/api/tasks/{id}/…` (cancel, halt, resume, graph, changes, memory, support) · `/api/executor/intervene` | Görevi başlat, durdur, sürdür, gözlemle, müdahale et |
 | **Kasa & güvenlik** | `/api/vault` · `/api/vault/status` · `/api/vault/lock` · `/api/vault/unlock` · `/api/minor/case` · `/api/minor/clear` · `/api/minor/state` | Anahtar yönetimi, canlı kapılar, çocuk kilidi |
 | **Tarayıcı** | `/api/browser/*` (open, click, type, press, shot, state, save, back, close) | Playwright oturumu üzerinden gerçek sayfa gezinme |
@@ -352,7 +353,7 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 
 | Ne | Ölçüm |
 |---|---|
-| API ayakta | `/health` → **200** · `/api/telemetry` → **200** (27 yetenek) |
+| API ayakta | `/health` → **200** · `/api/telemetry` → **200** (28 yetenek) |
 | Kayıtlı ajanlar | `/api/aspasia/state` → **13** ajan |
 | Kasa kilidi | Kilitliyken `POST /api/initiate` → **423 VAULT_LOCKED** |
 | WebSocket akışı | Yerel istemciyle **63 kare** alındı |
@@ -366,18 +367,18 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 | Bio/gönderi adres kablosu | Sahte `twscrape` → `bio` → `x_target_profile_update` → `detected_urls` → `merge_detected_profile_urls` zinciri uçtan uca koşuyor (çevrimdışı) |
 | IG gönderi tavanı | Ham HTML yolunda 20 sahte gönderi → **20 post**; `PINEAL_IG_MAX_POSTS=5` → **5 post** (sabit 12 yok) |
 | 13 ajan GERÇEKTEN koşuyor | Gerçek `CognitiveRouter` + gerçek `PinealExecutor` ile görev koşuldu, her ajanın `execute/analyze` çağrısı kaydedildi → **13/13** (rota 10, yürütücü 3 ayrı çağrı). Test: `tests/unit/test_claims_are_runtime_proven.py` |
-| 27 yetenek erişilebilir | `availability()` 27/27 **istisnasız** yanıt verdi (4 açık: socid, dil, handle_probe, rapor metni; 23'ü kapı/bağımlılık sebebiyle kapalı). Her kimliğin adaptör dışı çağrı yeri var; 3 web çıkarıcısı `WEB_EXTRACTION_ORDER` zinciriyle çağrılıyor (`web_research.py`) |
+| 28 yetenek erişilebilir | `availability()` 28/28 **istisnasız** yanıt verdi (5 açık: socid, dil, handle_probe, phone_probe, rapor metni; 23'ü kapı/bağımlılık sebebiyle kapalı). Her kimliğin adaptör dışı çağrı yeri var; 3 web çıkarıcısı `WEB_EXTRACTION_ORDER` zinciriyle çağrılıyor (`web_research.py`) |
 | Ölü uç yok | 68 benzersiz HTTP yolu: **30**'u UI/edge worker'dan, **38**'i testlerden çağrılıyor; **hiçbir çağrı yeri olmayan uç 0**. (`dead_code_audit` uçları KAPSAMAZ — bu ölçüm `test_no_http_endpoint_is_orphaned` ile kilitli) |
+| Panelin görsel doğrulaması | Headless Playwright Chromium (`chrome-win64`) ile 1920×1080 çözünürlükte tam ekran görüntüsü alındı (`cockpit_live_visual.png`), pikselleriyle kanıtlandı |
 
 **DOĞRULANMADI (sebebiyle):**
 
 | Ne | Sebep |
 |---|---|
 | Canlı 9Router ile tam komut döngüsü (niyet → görev → 9 ajan → **canlı kanıt zinciri**) | Sandbox'tan `127.0.0.1:20128` erişilemiyor (HTTP 000) → komut dürüstçe reddedildi |
-| Canlı Instagram / X kazıma | Egress kapalı + Playwright chromium kurulu değil |
+| Canlı Instagram / X kazıma | Egress kapalı + Canlı hesap oturumu doğrulanmadı |
 | Canlı bio linki → derin tarama | Egress kapalı; zincir yalnız **sahte sensörle** (çevrimdışı birim testi) doğrulandı — canlı hesapta görülmedi |
 | Canlı X akışı (`twscrape`) | Hesap havuzu boş → dürüst `no_session_pool`; operatör hesabı eklenmeden X kazıması çalışmaz |
-| Panelin **görsel** doğrulaması | Headless tarayıcı yok; statik kontrat + derleme ile doğrulandı, gözle görülmedi |
 | Canlı `socid`, canlı arama→derin tarama zinciri | Egress kapalı |
 | `ENABLE_*` bayraklarının tamamı açık hâli | Kapılar kapalı tutuldu (görev talimatı) |
 | Kasa anahtarının diskte şifrelenmesi | **Şifreleme YOK**: `.pineal_vault.json` düz JSON'dur (gitignore'da, uygulama yazmaz; operatör koyar). `repr=False` + log redaksiyonu anahtarı loglara sızdırmaz, `/api/vault/status` yalnız boolean döner. Kasa bir **yetki mandalı**dır, sır kasası değil |
@@ -401,7 +402,7 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 | `config/` | Yönlendirme, sağlayıcı kataloğu, karar yapılandırması, RTK politikası |
 
 **Tam ve aranabilir harita:** **[docs/envanter.html](docs/envanter.html)** —
-813 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
+815 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
 ile yenilenir, CI `--check` ile bayatlamayı yakalar.
 
 **Ayrıca:** [ARCHITECTURE.md](ARCHITECTURE.md) · [README_TECHNICAL.md](README_TECHNICAL.md) ·
