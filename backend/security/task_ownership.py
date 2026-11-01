@@ -161,6 +161,12 @@ def task_access(task_id: str, principal: Optional[str]) -> Optional[str]:
         return None
     existing = owner_of(task_id)
     if existing is None:
+        # Veritabanı yoksa veya kayıt yoksa: önce DB'nin erişilebilir
+        # olduğunu doğrula. DB yoksa fail-closed: erişim reddedilir.
+        connection = _connect()
+        if connection is None:
+            return FORBIDDEN
+        connection.close()
         record_owner(task_id, principal)
         return None
     if existing != principal:
