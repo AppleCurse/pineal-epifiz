@@ -1,3 +1,50 @@
+$ .venv/bin/python scripts/audit_regression.py
+═══ E0 · DENETİM REGRESYON BEKÇİSİ ═══
+kaynak : docs/reports/JULES_DENETIM_2026-10-06.md (24 bulgu)
+
+── GÖZ 1 — YAZILIMCI ──────────────────────────────
+  E-GÖZ1-1    YÜKSEK   KAPANDI        [static]
+  E-GÖZ1-2    ORTA     KAPANDI        [test_gated]
+  E-GÖZ1-3    YÜKSEK   KAPANDI        [static]
+  E-GÖZ1-4    ORTA     KAPANDI        [static]
+  E-GÖZ1-5    ORTA     KAPANDI        [static]
+  E-GÖZ1-6    YÜKSEK   KAPANDI        [static]
+  E-GÖZ1-7    DÜŞÜK    KAPANDI        [static]
+  E-GÖZ1-8    ORTA     KAPANDI        [static]
+
+── GÖZ 2 — OPERATÖR ──────────────────────────────
+  E-GÖZ2-1    YÜKSEK   KAPANDI        [static]
+  E-GÖZ2-2    ORTA     KAPANDI        [test_gated]
+  E-GÖZ2-3    YÜKSEK   KAPANDI        [static]
+  E-GÖZ2-4    DÜŞÜK    KAPANDI*       [test_gated]
+  E-GÖZ2-5    YÜKSEK   KAPANDI        [test_gated]
+  E-GÖZ2-6    ORTA     KAPANDI        [test_gated]
+  E-GÖZ2-7    YÜKSEK   KAPANDI        [test_gated]
+  E-GÖZ2-8    YÜKSEK   KAPANDI        [test_gated]
+
+── GÖZ 3 — ÜÇÜNCÜ GÖZ ──────────────────────────────
+  E-GÖZ3-1    YÜKSEK   DOĞRULANAMAZ   [unverifiable]
+  E-GÖZ3-2    YÜKSEK   KAPANDI        [static]
+  E-GÖZ3-3    DÜŞÜK    DOĞRULANAMAZ   [unverifiable]
+  E-GÖZ3-4    ORTA     KAPANDI        [static]
+  E-GÖZ3-5    YÜKSEK   KAPANDI        [static]
+  E-GÖZ3-6    ORTA     KAPANDI        [test_gated]
+  E-GÖZ3-7    DÜŞÜK    KAPANDI        [test_gated]
+  E-GÖZ3-8    YÜKSEK   DOĞRULANAMAZ   [unverifiable]
+
+── ÖZET ────────────────────────────────────────
+  kapandı            : 20
+  kapandı* (tasarım) : 1
+  açık               : 0
+  doğrulanamaz       : 3
+  toplam             : 24
+
+  * kapandı*: kusur giderildi ama denetimin istediği BİÇİMDE değil —
+    evin testle kilitli, bilinçli tasarım kararı. Gerekçe raporda yazılı.
+
+✓ BEKÇİ GEÇTİ — regresyon yok, taban çizgisi gerçekle birebir.
+rapor: reports/audit_regression.json
+EXIT=0
 $ .venv/bin/python scripts/dead_code_audit.py
 ================================================================================================
 ÖLÜ KOD DENETİMİ
@@ -34,4 +81,6 @@ PASS: local catalog contract verified
 EXIT=0
 $ .venv/bin/python -m pip check
 No broken requirements found.
+EXIT=0
+$ git diff --check
 EXIT=0

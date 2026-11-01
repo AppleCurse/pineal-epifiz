@@ -82,7 +82,10 @@ REQUIRED_OPENROUTTER = {
     # Canlı katalog $0.95526/$1.91052'ye DÖNDÜ — ÜÇ bağımsız koşuda birebir aynı
     # ölçüm (promo bitiş/başlangıç salınımı). Ölçülen değere hizalandı
     # (tahminle değil, ölçümle).
-    "deepseek/deepseek-v4-pro": (0.95526, 1.91052),
+    # [2026-11-01 · PR #161 CI 41274627528 + 41274648961] Canlı katalog
+    # $1.6/$3.2 okudu (iki koşuda aynı). Ölçülen değere hizalandı; eski durum
+    # OBSERVED_OPENROUTER_STATES içinde kanıtıyla korunur.
+    "deepseek/deepseek-v4-pro": (1.6, 3.2),
     "anthropic/claude-sonnet-5": (2.0, 10.0),
     # [2026-10-14 · kapsam turu 2] Katalogun `openrouter` bölümünde beyan edilmiş
     # ama hiç canlı kontrol edilmemiş dört kayıt daha: katalog bunların OR fiyatı
@@ -111,7 +114,9 @@ REQUIRED_OPENROUTTER = {
     # [2026-10-16 · PR CI 38870244950 (P1 konsolidasyon)] Çıktı **$9.00/1M**
     # okundu (girdi $0.037'de kaldı) → YENİ bir fiyat durumu. İki günde dört
     # ayrı değer okundu; ölçülen son değere hizalandı (tahminle değil, ölçümle).
-    "z-ai/glm-5.2": (0.037, 9.0),
+    # [2026-11-01 · PR #161 CI 41274627528 + 41274648961] Canlı katalog
+    # $0.006/$6.8 okudu (iki koşuda aynı). Ölçülen değere hizalandı.
+    "z-ai/glm-5.2": (0.006, 6.8),
     "x-ai/grok-4.6": (2.0, 6.0),
 }
 
@@ -183,12 +188,14 @@ OBSERVED_OPENROUTER_STATES: dict[str, tuple[tuple[float, float], ...]] = {
     # CI 38787820334 → $0.65/$10.00 · 38821301808/38866434547/38867016705 →
     # $0.037/$7.00 · 38833598719/38840573018/38843226709/38851706200 →
     # $0.62/$2.42 · 38870244950 → $0.037/$9.00 · 39881245895 (PR #152) → $0.0341/$7.00
+    # 41274627528 + 41274648961 (PR #161, 2026-11-01) → $0.006/$6.8
     "z-ai/glm-5.2": (
         (0.65, 10.0),
         (0.037, 7.0),
         (0.62, 2.42),
         (0.037, 9.0),
         (0.0341, 7.0),
+        (0.006, 6.8),
     ),
     # CI 38662205946 → $0.4679/$0.9358 · 38787820334 → $0.395328/$0.790656 ·
     # 38789947274 → $0.392022/$0.784044 · 38794722007/38833598719 →
@@ -201,6 +208,7 @@ OBSERVED_OPENROUTER_STATES: dict[str, tuple[tuple[float, float], ...]] = {
     # 40034566367 (PR #155 koşusu) → $0.692694/$1.38539 (bir önceki ölçümden
     # %22 uzak: bu bir KOTASYON TİTREMESİ DEĞİL, gerçek fiyat hareketi; ±%2
     # bandına girmediği için kapı KIRMIZI kaldı — tasarım gereği doğru davranış)
+    # 41274627528 + 41274648961 (PR #161, 2026-11-01) → $1.6/$3.2
     "deepseek/deepseek-v4-pro": (
         (0.4679, 0.9358),
         (0.395328, 0.790656),
@@ -213,6 +221,7 @@ OBSERVED_OPENROUTER_STATES: dict[str, tuple[tuple[float, float], ...]] = {
         (0.2088, 0.4176),
         (0.894012, 1.78802),
         (0.692694, 1.38539),
+        (1.6, 3.2),
     ),
 }
 

@@ -33,7 +33,7 @@ Servis probları yalnız yapılandırılmış yerel uçlara GET attı; hedef tar
 |---|---|---|
 | `.venv/bin/python scripts/audit_gates.py --run-tests --probe-services` | exit 0; `20261101T042151Z`; 17/17 `YAPILAMADI` | YAPILAMADI (kapılar) |
 | `.venv/bin/python -m pytest tests/unit/test_capability_preflight.py tests/unit/test_media_forensics.py tests/integration/test_media_api_faz_d.py tests/unit/test_p0_honest_status.py tests/unit/test_mcp_server.py -q --timeout=120 -p no:cacheprovider --disable-warnings` | `116 passed`; exit 0 | GEÇTİ |
-| `.venv/bin/python -m pytest -q -p no:cacheprovider --timeout=300 --cov=agent_core --cov=backend --cov-report=term-missing:skip-covered --cov-fail-under=80` | `3406 passed, 2 skipped, 2 xfailed`; 255.19 s; kapsam `86.59%`; exit 0 | GEÇTİ |
+| `.venv/bin/python -m pytest -q -p no:cacheprovider --timeout=300 --cov=agent_core --cov=backend --cov-report=term-missing:skip-covered --cov-fail-under=80` | `3406 passed, 2 skipped, 2 xfailed`; 264.53 s; kapsam `86.61%`; exit 0 | GEÇTİ |
 | `.venv/bin/ruff check .` | `All checks passed!`; exit 0 | GEÇTİ |
 | `.venv/bin/python scripts/local_smoke.py` | PDF/diyagram/video + kare analizi + `tr` dil tespiti; exit 0 | GEÇTİ (yerel sentetik) |
 | `npm run check --prefix frontend` | 0 hata, 9 kullanılmayan CSS uyarısı; exit 0 | GEÇTİ |
@@ -99,3 +99,20 @@ python scripts/setup_env.py --dev
 ```
 
 Dış kapıları açmak için gerçek credential/servis/model kurulumu gerekir; bu rapor onları uydurmaz veya açılmış saymaz.
+
+## 7. PR #161 birleştirme öncesi CI ölçümü
+
+İlk birleştirme denemesi dal politikası tarafından engellendi; bekleyen kontroller bittikten sonra backend CI, canlı OpenRouter katalog bekçisinde düştü. Sebep kapı onarımı değil, iki modelin canlı fiyatının kayıtlı ölçülmüş durumların dışında okunmasıydı:
+
+- `deepseek/deepseek-v4-pro`: `$1.6/$3.2` / 1M token.
+- `z-ai/glm-5.2`: `$0.006/$6.8` / 1M token.
+
+Kanıt: `reports/gate_audit/evidence/ci-catalog-drift-161.json` (CI koşuları `41274627528` + `41274648961`). Pinler, yerel katalog ve harcama sayacı bu ölçülen değerlere hizalandı; önceki durumlar ölçülmüş durum listesinde korundu. Jitter/rejim toleransı gevşetilmedi; ret testleri güncel rejimin dışında kalacak şekilde taşındı.
+
+| Komut | Ölçülen sonuç | Karar |
+|---|---|---|
+| `.venv/bin/python scripts/verify_openrouter_catalog.py` | `SKIP: live OpenRouter check (OPENROUTER_API_KEY not configured)` + `PASS: local catalog contract verified`; exit 0 | GEÇTİ (yerel sözleşme); canlı doğrulama YAPILAMADI |
+| `.venv/bin/python -m pytest -q -p no:cacheprovider --timeout=300 --cov=agent_core --cov=backend --cov-report=term-missing:skip-covered --cov-fail-under=80` | `3406 passed, 2 skipped, 2 xfailed`; 264.53 s; kapsam `86.61%`; exit 0 | GEÇTİ |
+| CI bekçileri: `audit_regression`, `dead_code_audit`, routing/inventory/skills, katalog, `pip check`, `git diff --check` | tümünde `EXIT=0` | GEÇTİ |
+
+Bu ek bölüm canlı kapı açıldığını veya canlı model çağrısı yapıldığını iddia etmez. Envanter bu ek kanıt dosyasıyla `838` dosyaya yenilendi.

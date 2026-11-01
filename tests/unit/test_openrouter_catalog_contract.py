@@ -554,11 +554,12 @@ def test_jitter_within_tolerance_of_a_measured_state_passes(monkeypatch):
 
 
 def test_drift_beyond_tolerance_still_fails(monkeypatch):
-    """Bandın dışındaki gerçek fiyat değişimi → kapı KIRMIZI kalır."""
+    """Bandın ve rejimin dışındaki gerçek fiyat değişimi → kapı KIRMIZI kalır."""
+    hi_in = oc.observed_price_regime(oc.OBSERVED_OPENROUTER_STATES["deepseek/deepseek-v4-pro"])[1]
     monkeypatch.setattr(
         oc.urllib.request, "urlopen",
         lambda *a, **k: _Response(
-            _payload({"deepseek/deepseek-v4-pro": (0.894012 * 1.2, 1.78802 * 1.2)})
+            _payload({"deepseek/deepseek-v4-pro": (hi_in * 1.2, hi_in * 2.4)})
         ),
     )
     failures, _warnings, unverified = oc.verify_live_openrouter("key")
@@ -627,7 +628,7 @@ def test_measured_state_must_match_input_and_output_together(monkeypatch):
 def test_price_inside_the_observed_regime_passes_with_a_warning(monkeypatch):
     """Rejim içi, ölçülmüş bir duruma eşit OLMAYAN fiyat → geçer + uyarı.
 
-    $0.50/$1.00 deepseek'in gözlenen aralığında (0.2088..0.95526) ve oranı
+    $0.50/$1.00 deepseek'in gözlenen aralığında (0.2088..1.6) ve oranı
     (0.5) gözlenmiş oranlarla (hepsi 0.5) uyumlu → kotasyon sayılır.
     """
     monkeypatch.setattr(
@@ -645,12 +646,13 @@ def test_price_inside_the_observed_regime_passes_with_a_warning(monkeypatch):
 def test_price_outside_the_observed_regime_still_fails(monkeypatch):
     """Rejim DIŞI fiyat → kırmızı (gerçek rejim değişimi).
 
-    $1.50/$3.00 ölçülen en yüksek girdinin ($0.95526) çok üstünde.
+    Ölçülen en yüksek girdinin %20 üstü, rejim sınırının da dışındadır.
     """
+    hi_in = oc.observed_price_regime(oc.OBSERVED_OPENROUTER_STATES["deepseek/deepseek-v4-pro"])[1]
     monkeypatch.setattr(
         oc.urllib.request, "urlopen",
         lambda *a, **k: _Response(
-            _payload({"deepseek/deepseek-v4-pro": (1.50, 3.00)})
+            _payload({"deepseek/deepseek-v4-pro": (hi_in * 1.2, hi_in * 2.4)})
         ),
     )
     failures, _warnings, unverified = oc.verify_live_openrouter("key")
