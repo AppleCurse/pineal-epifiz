@@ -1,0 +1,37 @@
+$ .venv/bin/python scripts/dead_code_audit.py
+================================================================================================
+ÖLÜ KOD DENETİMİ
+================================================================================================
+
+C1 ÖLÜ MODÜL (0)
+
+C1b YALNIZ TESTLERDEN İMPORT EDİLEN MODÜL (0)
+
+C2 ÖLÜ FONKSİYON (0)
+
+C3 KAYITLI AMA ÇAĞRILMAYAN AJAN (0)
+
+C4 KAYITLI AMA DÜŞÜRÜLEMEYEN YETENEK (0) — kaynak: kayıt defteri (bootstrap)
+
+C5 ÖLÜ FRONTEND BİLEŞENİ (0)
+
+C6 KOŞULMAYAN FRONTEND TESTİ (0) — vitest `include` dışı
+
+TOPLAM: modül=0 test-only=0 fonksiyon=0 ajan=0 yetenek=0 frontend=0 koşulmayan-test=0
+EXIT=0
+$ .venv/bin/python scripts/generate_routing_shadows.py --check
+generate_routing_shadows: taze ✅
+EXIT=0
+$ .venv/bin/python scripts/generate_inventory_page.py --check
+GÜNCEL: docs/envanter.html kaynakla uyumlu
+EXIT=0
+$ .venv/bin/python scripts/export_skills.py --check
+Skills paketi taze: 28 dosya
+EXIT=0
+$ .venv/bin/python scripts/verify_openrouter_catalog.py
+SKIP: live OpenRouter check (OPENROUTER_API_KEY not configured)
+PASS: local catalog contract verified
+EXIT=0
+$ .venv/bin/python -m pip check
+No broken requirements found.
+EXIT=0

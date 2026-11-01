@@ -56,10 +56,11 @@ def build_status_report(
     snapshot: dict[str, Any] | None = None,
     server: dict[str, Any] | None = None,
     rate_limit: dict[str, Any] | None = None,
+    rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """(text, structured) ikilisini üretir — ikisi aynı gerçeği taşır."""
     kernel = kernel or PolicyKernel()
-    rows = registry.status(state, kernel=kernel)
+    rows = rows if rows is not None else registry.status(state, kernel=kernel)
 
     lines: list[str] = []
     if server:
@@ -90,7 +91,7 @@ def build_status_report(
             else f"ret:{row.get('policy_reason') or 'bilinmiyor'}"
         )
         availability = (
-            "hazır" if row.get("available") else f"hazır değil:{row.get('reason')}"
+            "ön koşullar uygun (canlı test değil)" if row.get("available") else f"hazır değil:{row.get('reason')}"
         )
         lines.append(
             f"- {row['id']} [{_kind_label(row)}] · {availability} · {gate_state}"

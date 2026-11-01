@@ -178,7 +178,7 @@ async def _fake_gather(agen):
 
 
 @pytest.mark.asyncio
-async def test_x_sensor_bio_reaches_deep_scan(monkeypatch):
+async def test_x_sensor_bio_reaches_deep_scan(monkeypatch, tmp_path):
     """twscrape biyografisi → payload → profil → derin tarama (kablo kopuk değil)."""
     from agent_core.capabilities import adapters_sensors
     from agent_core.capabilities.adapters_sensors import XTwscrapeCapability
@@ -190,7 +190,9 @@ async def test_x_sensor_bio_reaches_deep_scan(monkeypatch):
         types.SimpleNamespace(API=_FakeTwscrapeAPI, gather=_fake_gather),
     )
     monkeypatch.setattr(adapters_sensors, "_module_available", lambda _name: True)
-    monkeypatch.setenv("PINEAL_X_ACCOUNTS_DB", "/tmp/fake-x-accounts.db")
+    db = tmp_path / "accounts.db"
+    db.write_bytes(b"fixture-local-db-presence")
+    monkeypatch.setenv("PINEAL_X_ACCOUNTS_DB", str(db))
 
     result = await XTwscrapeCapability().run(CapabilityContext(subject="hedef"))
     assert result.available is True, result.unavailable_reason

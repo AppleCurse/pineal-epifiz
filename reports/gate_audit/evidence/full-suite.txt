@@ -1,0 +1,275 @@
+/home/user/pineal-epifiz/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+........................................................................ [  2%]
+........................................................................ [  4%]
+........................................................................ [  6%]
+........................................................................ [  8%]
+........................................................................ [ 10%]
+........................................................................ [ 12%]
+........................................................................ [ 14%]
+........................................................................ [ 16%]
+........................................................................ [ 19%]
+........................................................................ [ 21%]
+........................................................................ [ 23%]
+........................................................................ [ 25%]
+........................................................................ [ 27%]
+........................................................................ [ 29%]
+........................................................................ [ 31%]
+................................xx...................................... [ 33%]
+........................................................................ [ 35%]
+........................................................................ [ 38%]
+........................................................................ [ 40%]
+........................................................................ [ 42%]
+........................................................................ [ 44%]
+........................................................................ [ 46%]
+........................................s............................... [ 48%]
+........................................................................ [ 50%]
+........................................................................ [ 52%]
+........................................................................ [ 54%]
+........................................................................ [ 57%]
+........................................................................ [ 59%]
+........................................................................ [ 61%]
+........................................................................ [ 63%]
+........................................................................ [ 65%]
+........................................................................ [ 67%]
+................s....................................................... [ 69%]
+........................................................................ [ 71%]
+........................................................................ [ 73%]
+........................................................................ [ 76%]
+........................................................................ [ 78%]
+........................................................................ [ 80%]
+........................................................................ [ 82%]
+........................................................................ [ 84%]
+........................................................................ [ 86%]
+........................................................................ [ 88%]
+........................................................................ [ 90%]
+........................................................................ [ 92%]
+........................................................................ [ 95%]
+........................................................................ [ 97%]
+........................................................................ [ 99%]
+..........................                                               [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.11/site-packages/starlette/testclient.py:53
+  /home/user/pineal-epifiz/.venv/lib/python3.11/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+tests/audit/test_auditor_round2_findings.py: 3 warnings
+tests/audit/test_production_audit_findings.py: 2 warnings
+tests/audit/test_round3_residue_findings.py: 3 warnings
+tests/e2e/test_cross_stack_runtime.py: 2 warnings
+tests/e2e/test_openai_compatibility.py: 11 warnings
+tests/e2e/test_smoke.py: 4 warnings
+tests/integration/test_badhost_auth_bypass.py: 4 warnings
+tests/integration/test_calibration_api_faz_b.py: 5 warnings
+tests/integration/test_company_api_faz_d.py: 8 warnings
+tests/integration/test_faz3_security.py: 7 warnings
+tests/integration/test_jury_api_faz_d.py: 9 warnings
+tests/integration/test_language_api_faz_d.py: 11 warnings
+tests/integration/test_language_transport_contract.py: 20 warnings
+tests/integration/test_mcp_api_status_faz_d.py: 6 warnings
+tests/integration/test_media_api_faz_d.py: 6 warnings
+tests/integration/test_memory_crystal_api_faz_b.py: 3 warnings
+tests/integration/test_report_capabilities.py: 5 warnings
+tests/integration/test_speech_api_faz_c.py: 30 warnings
+tests/integration/test_support_cockpit.py: 9 warnings
+tests/integration/test_task_retention.py: 2 warnings
+tests/integration/test_taste_filter_api_faz_c.py: 1 warning
+tests/integration/test_vault_unlock_and_routing.py: 1 warning
+tests/integration/test_ws_ordering.py: 2 warnings
+tests/unit/test_alternative_web_research.py: 1 warning
+tests/unit/test_capability_preflight.py: 2 warnings
+tests/unit/test_claims_are_runtime_proven.py: 1 warning
+tests/unit/test_consolidation_faz1_5.py: 1 warning
+tests/unit/test_crawl_enricher.py: 2 warnings
+tests/unit/test_dependency_health.py: 1 warning
+tests/unit/test_dialogue_session_scope.py: 1 warning
+tests/unit/test_experimental_engine_contract.py: 46 warnings
+tests/unit/test_graph_faz_b.py: 2 warnings
+tests/unit/test_health_degraded.py: 6 warnings
+tests/unit/test_holehe_scanner.py: 2 warnings
+tests/unit/test_live_control_panel.py: 4 warnings
+tests/unit/test_maigret_scanner.py: 1 warning
+tests/unit/test_memory_crystal_faz_b.py: 2 warnings
+tests/unit/test_minor_gate_api.py: 57 warnings
+tests/unit/test_no_secret_leak.py: 2 warnings
+tests/unit/test_rust_runtime_status.py: 1 warning
+tests/unit/test_security_hardening.py: 5 warnings
+tests/unit/test_stealth_provider.py: 1 warning
+tests/unit/test_vault_egress_lock.py: 30 warnings
+tests/unit/test_wiring_api.py: 2 warnings
+  /home/user/pineal-epifiz/agent_core/services/redis_bus.py:192: DeprecationWarning: Call to deprecated close. (Use aclose() instead) -- Deprecated since version 5.0.1.
+    await self._client.close()
+
+tests/unit/test_confidence_honesty.py::test_uncertainty_engine_fails_closed_on_truthy_non_boolean_data_confidence
+  /home/user/pineal-epifiz/.venv/lib/python3.11/site-packages/pydantic/main.py:475: UserWarning: Pydantic serializer warnings:
+    PydanticSerializationUnexpectedValue(Expected `bool` - serialized value may not be as expected [field_name='data_confidence', input_value='false', input_type=str])
+    return self.__pydantic_serializer__.to_python(
+
+tests/unit/test_gorev2_artiklar.py::test_saturation_with_real_pil_red_square
+  /home/user/pineal-epifiz/agent_core/services/psychodynamic_depth.py:288: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
+    pixels = list(small.convert("HSV").getdata())
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.11.2-final-0 ________________
+
+Name                                                 Stmts   Miss  Cover   Missing
+----------------------------------------------------------------------------------
+agent_core/agents/autonomous_verifier.py               432     21    95%   326, 394-395, 529-531, 549-550, 644-646, 749-756, 767-775, 828, 849, 922, 924, 926, 928, 938-939
+agent_core/agents/depth_analyst.py                      73      3    96%   62-63, 94
+agent_core/agents/human_behavior.py                    238     45    81%   118-161, 175-177, 283-286, 303, 317-318, 332
+agent_core/agents/interpreter_agent.py                  60     33    45%   41-56, 64, 82-105, 115-118
+agent_core/agents/lilith_growth.py                     282     29    90%   62, 275-293, 385-389, 454-464, 472, 474, 477, 484-485, 487, 492, 495, 545, 570
+agent_core/agents/mirror_truth.py                       76      3    96%   38-39, 168
+agent_core/agents/osint_investigator.py                207     23    89%   138-140, 208-210, 240-241, 269-271, 342-357, 390, 436, 469
+agent_core/agents/pattern_interrupt.py                 125     13    90%   71-72, 74, 226-236, 252-253, 263, 266
+agent_core/agents/resonance_calculator.py              216      6    97%   139, 212, 345, 352, 431, 486
+agent_core/agents/resonance_synthesizer.py              69      2    97%   57, 59
+agent_core/agents/target_psyche_profiler.py             78      4    95%   339-342
+agent_core/aspasia/aspasia_chief.py                    214     98    54%   93-94, 116, 124, 127, 164-218, 223-229, 231, 237-249, 254-277, 280, 342, 388-389
+agent_core/aspasia/interface.py                        453     39    91%   55-56, 79, 136-137, 391, 527-528, 630, 672, 674, 690-695, 700, 712, 716, 760, 769, 776-777, 785, 788-790, 792, 797, 808, 949-957, 986-987
+agent_core/aspasia/mobile_coach.py                      57      6    89%   55, 57, 59, 92-94
+agent_core/capabilities/adapters_company.py            119     11    91%   81, 103, 105, 181, 220-232, 283, 297
+agent_core/capabilities/adapters_identity.py            49     15    69%   76, 96, 134-184
+agent_core/capabilities/adapters_jury.py                34      3    91%   54-55, 87
+agent_core/capabilities/adapters_language.py            52      1    98%   125
+agent_core/capabilities/adapters_media.py              146     38    74%   60, 66-76, 103, 126, 167, 188, 210-224, 253, 256-291, 309, 313-356
+agent_core/capabilities/adapters_osint.py               91      8    91%   151, 245, 267-286
+agent_core/capabilities/adapters_report.py             119     10    92%   67, 86, 147-148, 150-151, 153-154, 164, 208
+agent_core/capabilities/adapters_report_factory.py      68      6    91%   112, 141-146
+agent_core/capabilities/adapters_sensors.py            395     79    80%   127-128, 153, 164, 179-181, 193, 200-201, 221, 226, 231, 255-260, 281, 303, 342, 347, 352, 369, 407-412, 441, 451, 464, 507, 538, 543, 548, 555-556, 565, 580, 604, 609, 612-618, 621, 625-628, 638, 648, 663-664, 672-673, 683-685, 693-694, 703, 710-711, 752, 757, 763-764, 788, 796-797, 802, 809, 826-827, 829, 843
+agent_core/capabilities/adapters_voice.py              487    169    65%   68, 72, 74, 93, 101, 118, 125, 131-138, 141-142, 184-185, 188, 194-195, 215-217, 221, 223-224, 229-230, 237-238, 247-248, 271, 276, 279-281, 288-289, 291, 320, 344, 349, 361, 398-403, 448-505, 510, 513-514, 518, 529, 535, 537-538, 578, 580, 602, 616-621, 630, 639-640, 677-738, 743, 746-747, 760, 767, 769-770, 773, 775, 779-780, 784
+agent_core/capabilities/adapters_web.py                207     41    80%   90, 96, 113, 116-132, 172-173, 193-195, 203-208, 216, 267-268, 272, 296, 346, 363-364, 368, 378-380, 387-392, 400
+agent_core/capabilities/base.py                         85      1    99%   86
+agent_core/capabilities/egress.py                       56      4    93%   94-96, 98, 101
+agent_core/capabilities/policy.py                       57      1    98%   165
+agent_core/capabilities/registry.py                    125     10    92%   64-65, 86-87, 177-182
+agent_core/capabilities/runner.py                       83      8    90%   53-54, 73-75, 91, 132-133
+agent_core/chat/dialogue_manager.py                    126     10    92%   58-59, 76-77, 137, 144, 164, 181, 192, 236
+agent_core/config_loader.py                             44      3    93%   56-58
+agent_core/domain/channel_status.py                     63      8    87%   94, 111, 117-118, 123-124, 148-149
+agent_core/domain/content_basis.py                     108     12    89%   98, 106-109, 123, 135, 138, 140, 157, 179-180, 200
+agent_core/domain/responsibility.py                     92      3    97%   85, 153, 160
+agent_core/engines/frequency_engine.py                 101      4    96%   24-25, 28, 106
+agent_core/engines/gravity_engine.py                    46      2    96%   52, 56
+agent_core/engines/pillar_orchestrator.py               41      3    93%   65-67
+agent_core/engines/spectrum.py                          73      6    92%   119-121, 137-139
+agent_core/lifecycle/baseline_builder.py               228     13    94%   82, 106, 110, 152, 155, 180, 182, 369-370, 404, 418, 449, 474
+agent_core/lifecycle/cluster_analyzer.py               211      7    97%   71, 126, 219, 292-293, 351-352
+agent_core/lifecycle/families.py                        13      2    85%   47, 51
+agent_core/lifecycle/ig_time.py                         40      6    85%   35, 52, 57, 60-61, 74
+agent_core/lifecycle/investigation.py                  192     11    94%   181-185, 212, 236, 248, 336, 373, 396
+agent_core/lifecycle/media_provenance.py                91     15    84%   117, 163, 195-209
+agent_core/lifecycle/observation_adapter.py            365     21    94%   155, 160, 259, 405, 408, 476-478, 482, 504-506, 531, 641, 663, 668-669, 719-722
+agent_core/lifecycle/persistence.py                     95      7    93%   96, 169, 239-241, 246-247
+agent_core/lifecycle/pipeline.py                       372     24    94%   238, 262, 270, 278, 287, 307, 318, 390, 428, 430, 543, 585, 587, 633, 637, 641, 711, 721, 723, 923, 971, 1094, 1138, 1140
+agent_core/lifecycle/rare_event.py                      77      1    99%   104
+agent_core/lifecycle/report.py                         117     10    91%   170-177, 185, 190
+agent_core/lifecycle/strata_bridge.py                   71     11    85%   34, 76-77, 82-84, 105-106, 115-117
+agent_core/mcp/__main__.py                               5      5     0%   3-10
+agent_core/mcp/server.py                               195     26    87%   154-155, 160, 248, 267, 351-387
+agent_core/mcp/state_bridge.py                         111      4    96%   131-132, 175-176
+agent_core/mcp/status.py                                36      2    94%   47-48
+agent_core/mcp/tools.py                                 60      2    97%   116, 178
+agent_core/nlp/dark_nlp.py                              49      4    92%   27, 43, 45, 48
+agent_core/safety/minor_gate.py                         97      6    94%   104, 110, 119, 122, 263-265
+agent_core/scraper/instagram_ghost.py                  663    112    83%   41-42, 56-57, 64-65, 72-73, 80-81, 199-201, 215-216, 219, 223-225, 240-246, 274-277, 284, 286, 302, 327, 369, 373, 375, 378-379, 418, 437-438, 467-470, 537, 547-548, 567-568, 579-581, 584-585, 589-591, 624-626, 656, 672-673, 685, 696-697, 701, 740-742, 764, 768, 773, 781-782, 795-796, 798, 801, 813, 817-818, 865, 896-898, 901-902, 917-918, 943, 959-960, 970-971, 985-986, 1074-1091, 1105-1109, 1111-1114, 1121-1122, 1155
+agent_core/scraper/run_scraper.py                       35      9    74%   27-28, 34-36, 54, 60-61, 64
+agent_core/scraper/vault_gate.py                        85     15    82%   75, 77, 80, 94, 96, 108-115, 117-121, 138-142, 197
+agent_core/services/agent_status_tracker.py             67      5    93%   70, 89-90, 96, 107
+agent_core/services/browser_session.py                 163     50    69%   60-61, 84, 116, 122, 126-139, 144-145, 156, 158-166, 178-183, 188-189, 195, 201, 209-210, 216, 219-220, 225, 228-229, 235-236, 243-256, 264-274
+agent_core/services/canonical_memory.py                191      9    95%   137-138, 217, 244-248, 292, 327, 354
+agent_core/services/change_tracker.py                  137     11    92%   151, 153, 246-247, 250, 255-256, 267-270
+agent_core/services/claim_decision_gate.py             116      5    96%   52-53, 75, 193, 196
+agent_core/services/cognitive_router.py                 78      4    95%   78, 80, 115-116
+agent_core/services/company_recon.py                   410     62    85%   136-137, 139, 147, 178, 183, 187-190, 196, 220, 224-238, 253, 265-266, 278-282, 289-297, 389, 435, 441-442, 451, 493, 510, 584, 599-600, 615, 617, 621-622, 626, 653-655, 659, 671
+agent_core/services/crawl_enricher.py                  122     31    75%   46-48, 51-52, 55-56, 59-60, 66-67, 97-110, 139, 161, 163, 165, 169, 178, 185-188, 212, 222
+agent_core/services/cross_profiler.py                  183     13    93%   142, 150, 164-165, 173-176, 213, 217, 273, 278, 280, 301, 308
+agent_core/services/decision_engine.py                  54      3    94%   43, 62, 76
+agent_core/services/deep_profile_resolver.py            98      7    93%   99, 115, 134, 142, 156, 182, 223
+agent_core/services/deep_url_cables.py                  37      2    95%   75-76
+agent_core/services/evidence_timeline.py                56      4    93%   46-47, 105-106
+agent_core/services/final_routing_policy.py            191     50    74%   52, 58, 169, 173, 175, 178, 185, 190, 217, 224-226, 250, 271-272, 294, 309-354
+agent_core/services/follower_audit.py                   82     13    84%   37-46, 98, 132-133
+agent_core/services/frame_consensus.py                 118      3    97%   153-154, 229
+agent_core/services/frame_evidence.py                  233     23    90%   85, 153, 171-172, 183-184, 190, 220, 222, 263, 270, 316, 340, 347, 350, 366, 374, 383-384, 427-428, 470-471
+agent_core/services/frame_semantics.py                 187     13    93%   102, 188, 206, 225, 227, 235-236, 243-244, 260-261, 375-378
+agent_core/services/graph_builder.py                   109      5    95%   66, 68, 71-72, 160
+agent_core/services/handle_probe.py                    131     21    84%   105, 113, 132-133, 139-140, 157, 185, 216, 233, 244-246, 248-250, 253-254, 274-277
+agent_core/services/hindsight_memory.py                167     28    83%   105-106, 112, 114, 118, 135-143, 148-149, 170, 172-174, 180-183, 215-216, 219, 233-234, 253, 280, 303-304
+agent_core/services/holehe_scanner.py                  146     23    84%   65-66, 84-91, 170, 174, 205, 233-247
+agent_core/services/language.py                        129      8    94%   154, 156, 158, 168, 172, 205, 220, 243
+agent_core/services/llm_gateway.py                    1582    242    85%   100-101, 170-172, 175-177, 180, 183, 190-191, 228, 426, 431, 433, 461, 463, 740-747, 770-771, 822, 881-882, 906-907, 921-922, 925, 929, 1071, 1081, 1095-1096, 1154-1155, 1163-1167, 1205, 1252-1255, 1268-1269, 1338, 1341-1344, 1348, 1364, 1378, 1390, 1392-1396, 1398, 1413, 1441, 1486-1487, 1534-1535, 1628, 1635, 1662, 1722-1725, 1738-1740, 1742, 1746, 1829, 1841-1843, 1898, 1927-1928, 1966-1967, 1969-1970, 1972-1973, 1978, 1996-1997, 2002-2004, 2006-2007, 2013-2015, 2067, 2163, 2182, 2225, 2305-2306, 2334-2335, 2409-2410, 2516-2518, 2553-2557, 2567-2597, 2697, 2699, 2703, 2710, 2795-2800, 2809-2810, 2813-2816, 2819-2820, 2822-2823, 2834-2836, 2850-2852, 2948-2949, 2968-2970, 2973-2976, 2996, 3023, 3027, 3034, 3095, 3106-3108, 3117-3119, 3130-3135, 3143-3145, 3154, 3162-3170, 3175-3178, 3195-3198, 3252, 3254-3255, 3273-3276, 3285, 3296-3301, 3329, 3335, 3339-3343, 3348, 3355-3363, 3482, 3553
+agent_core/services/local_jury.py                      191     12    94%   143, 161-162, 226, 244, 283-284, 287-288, 381, 391-392
+agent_core/services/maigret_db_refresh.py              237     24    90%   123, 133, 149-152, 173, 206, 213, 237, 248, 286-289, 294, 346, 406, 432-434, 438-444
+agent_core/services/maigret_scanner.py                 175     26    85%   70-71, 88-92, 149-154, 190, 195-198, 205-207, 269-281
+agent_core/services/media_forensics.py                 404     69    83%   72, 98-99, 102-103, 126-127, 171-177, 240-241, 262-263, 265, 270, 288, 304-305, 345-346, 353, 366, 386, 427, 472, 475, 479, 487, 493-494, 508-519, 526, 543-555, 567-568, 573, 583, 597-598, 616, 619, 634, 654, 657, 660-661, 673, 677
+agent_core/services/memory_crystal.py                  266     15    94%   74, 98, 117-118, 124-125, 220, 222, 241-242, 338-339, 348, 355-356
+agent_core/services/memory_injector.py                  68      8    88%   46, 56, 89-90, 99, 106, 114, 121
+agent_core/services/message_decision_context.py         64      4    94%   63, 65, 100-101
+agent_core/services/net_hygiene.py                      28      6    79%   39, 41, 44-45, 49-50
+agent_core/services/osint_normalizer.py                 38     14    63%   22-23, 25-28, 40, 44-45, 47-50, 53
+agent_core/services/phone_probe.py                     134    134     0%   19-275
+agent_core/services/pillar_evidence_adapter.py         166     14    92%   25-29, 66, 82, 84, 89, 132, 183-186, 198
+agent_core/services/platform_registry.py               268     67    75%   48-50, 55-56, 72, 152, 165, 168-169, 178, 180, 182, 190, 192, 194, 197-198, 236, 274, 285-286, 291, 384, 402-403, 408-456, 460-463, 540, 574-576, 583
+agent_core/services/profile_deep_scan.py               126     25    80%   84, 101, 107, 112-130, 154, 158-160, 189, 218, 223, 267, 335
+agent_core/services/profile_router.py                  145     16    89%   106, 108, 111-112, 119, 122-123, 142, 221-224, 227, 245, 266, 268, 294
+agent_core/services/provider_manager.py                507     83    84%   84, 86, 141, 159-161, 178, 181, 183, 200, 204, 227, 229, 231, 233, 235, 244, 253, 280, 282, 287, 300, 302, 304, 368-369, 383, 403, 406, 413-414, 416, 449, 459-465, 471-472, 514, 517, 530, 572, 574, 577, 579, 592, 634, 637, 644-645, 647, 649, 651, 665, 669-670, 673, 679-680, 729, 731, 739, 751-762, 767, 770-771, 774, 789, 796-799, 803, 806
+agent_core/services/psychodynamic_depth.py             137      5    96%   62, 109-110, 280, 292
+agent_core/services/quota_governor.py                  180     14    92%   167, 175-176, 182, 188-191, 209, 255, 302, 324, 329-330
+agent_core/services/quote_guard.py                     165     19    88%   49, 57, 63-68, 105-106, 220, 222, 224, 229, 231, 237, 277-279
+agent_core/services/redis_bus.py                       129     51    60%   18-25, 41, 94-96, 106-112, 122-133, 139-152, 159-165, 172-174, 193-195, 214
+agent_core/services/report_factory.py                  257     23    91%   137, 240-242, 253-255, 294, 296, 328-329, 331, 408-409, 446, 452-453, 458, 464-465, 480-482
+agent_core/services/response_cache.py                  192     12    94%   259, 277-279, 350, 353, 378-379, 382-383, 389-390
+agent_core/services/routed_chat.py                     549    162    70%   96-99, 147, 149, 152, 154, 156, 162, 167, 178, 217, 219, 221, 224, 231-236, 265, 302-303, 354-356, 358-360, 405-479, 516-552, 561-602, 627-628, 697-699, 708, 710, 724, 757, 779, 782, 805-806, 808, 882, 886, 890, 909-914, 918-929, 967-969, 977, 982-985, 1007, 1016, 1064, 1070, 1096, 1118-1124, 1131, 1135-1136
+agent_core/services/safe_web_fetch.py                   71     15    79%   48-49, 51, 53, 56-57, 74-75, 85-87, 97, 99, 104-105
+agent_core/services/search_engine.py                   334    108    68%   91-96, 135, 137, 140-141, 143-149, 159-160, 167, 236, 238, 258, 292, 296-297, 314-316, 365, 381, 383-388, 397, 403-411, 415-416, 418, 432, 435, 438-481, 484-531, 537, 544-552, 596, 599
+agent_core/services/socid_enricher.py                   70      4    94%   51, 69-70, 97
+agent_core/services/stealth_provider.py                 73      2    97%   129-130
+agent_core/services/task_lifecycle.py                  204     17    92%   80-81, 98, 121, 129, 192-194, 204, 212-213, 217-218, 237, 260, 269, 286
+agent_core/services/taste_filter.py                    156     10    94%   168-171, 175-176, 265-266, 277-278
+agent_core/services/theme_cluster.py                    61      3    95%   41, 48, 91
+agent_core/services/threshold_calibration.py           253     19    92%   55-56, 58, 85, 103-104, 111, 230-231, 246, 249-252, 254, 278-279, 316, 330
+agent_core/services/tier2_evidence_adapter.py           42      3    93%   109, 112, 141
+agent_core/services/timing_forensics.py                119      7    94%   26-27, 37-38, 86, 214, 216
+agent_core/services/token_compressor.py                 53      2    96%   95-96
+agent_core/services/token_optimizer.py                 311     23    93%   34, 36, 71, 103, 105, 107, 109, 111, 246, 268-269, 366, 370, 383, 391, 454-455, 476, 479, 491, 497, 511, 528
+agent_core/services/translation.py                     120     14    88%   166, 169-170, 178-179, 182, 185, 194-198, 220-223
+agent_core/services/uncertainty_engine.py              159     15    91%   80, 100, 104, 108-110, 142, 199, 216, 231, 235-238, 325, 331
+agent_core/services/unified_router.py                  707     70    90%   117, 130, 132, 134, 136, 138, 140, 162-163, 168, 170, 172, 178, 180, 182, 184, 186, 218, 373, 471, 490, 540, 592-595, 613, 697, 732-733, 795, 864, 901-909, 923, 934, 953, 987, 989-990, 993, 995, 1003, 1006-1017, 1020, 1034, 1036, 1043, 1045, 1053, 1057, 1059, 1085, 1113, 1117, 1119, 1134-1139, 1155
+agent_core/services/upstream_findings.py                42      7    83%   54, 59, 63, 65, 70, 73, 76
+agent_core/services/verdict_synthesizer.py              54      5    91%   28, 45, 69, 75, 78
+agent_core/services/vision_analyzer.py                 115      6    95%   38, 92-93, 150, 183, 194
+agent_core/shadow/shadow_executor.py                   157     16    90%   59, 106, 111, 120, 129, 141, 144, 148, 230, 244, 281-282, 311-313, 359
+agent_core/task_executor.py                           1358    172    87%   104-106, 245-246, 263, 284-285, 299, 386-387, 570, 587-592, 673, 676-677, 679-680, 705-707, 730-732, 761, 817-822, 843-844, 883, 928-933, 1024, 1059, 1097-1099, 1105-1108, 1115-1119, 1229-1230, 1241-1242, 1589-1619, 1632, 1703-1704, 1792-1799, 1831, 1841-1842, 1861-1862, 1882-1884, 1901-1902, 1918-1925, 1987, 2032-2046, 2194, 2243-2254, 2275, 2277, 2492, 2553, 2618-2622, 2624, 2655-2662, 2709, 2712-2714, 2747-2756, 2772-2783, 2853-2856, 2864-2903, 2930, 2936, 3114-3117, 3148-3157
+agent_core/utils/security.py                           265     28    89%   118-119, 150-152, 181, 232-233, 273, 278-279, 297-298, 304, 369, 371, 373, 425, 450, 461, 464-468, 479, 490, 500
+agent_core/version.py                                   11      2    82%   44-45
+agent_core/workers/agent_worker.py                     125     31    75%   143-157, 238-259, 315-316, 352-353, 363-369, 375
+backend/agent_rack.py                                   32      4    88%   27-28, 65-66
+backend/api.py                                        2503    402    84%   64, 153-157, 181-183, 186, 192-193, 196-200, 206-207, 231-239, 246-247, 261-262, 360, 364, 366, 368, 395-405, 462, 503-506, 519-524, 685, 688, 764, 769-770, 779-780, 802-807, 873, 901, 903-910, 925-926, 928-929, 950-951, 953, 980, 983, 1055, 1097-1103, 1152-1153, 1157-1158, 1194, 1266, 1280, 1287, 1304-1305, 1333, 1335, 1337, 1339-1340, 1344, 1417, 1445, 1449, 1456, 1461, 1482, 1490-1491, 1506-1512, 1530-1533, 1535, 1557-1565, 1573-1574, 1614, 1626-1627, 1637-1638, 1670, 1672, 1718, 1733, 1742, 1749-1752, 1759-1773, 1790-1793, 1839, 1904, 1916, 1921-1925, 1983, 2003-2004, 2019-2020, 2051, 2121-2122, 2127-2129, 2212, 2275, 2371-2374, 2382, 2392-2393, 2447-2448, 2452-2456, 2461-2470, 2559-2571, 2583-2585, 2615-2616, 2621, 2623-2627, 2640-2643, 2647-2649, 2654-2657, 2680, 2690-2693, 2700-2701, 2721, 2723, 2725, 2732-2770, 2787-2792, 2866, 2872-2873, 2891, 2952, 2956, 2971, 3009-3010, 3016-3017, 3066, 3148-3149, 3225-3226, 3230, 3249-3281, 3304, 3338-3340, 3343-3344, 3357-3362, 3402, 3406-3407, 3440-3442, 3449, 3468-3469, 3473-3474, 3509-3513, 3519-3523, 3529-3538, 3574, 3603, 3753-3760, 3860-3861, 3896-3904, 3944, 3964, 4035, 4080, 4082, 4084, 4092, 4106-4107, 4378, 4387, 4481, 4488, 4494, 4537, 4585, 4602-4607, 4625-4626, 4642, 4727-4728, 4735-4737, 4765-4766, 4840, 4856, 4879-4891, 4921, 4936, 4946, 4949, 4966-4973, 4996-5037, 5062, 5069-5071, 5191, 5242, 5249-5251, 5269, 5273, 5326, 5453, 5466, 5510, 5569, 5628, 5665-5667, 5736
+backend/checkpoint_store.py                            208     40    81%   87, 91-92, 103-104, 117, 134-147, 160, 175, 182, 194-195, 198-202, 220, 228, 297-298, 300-301, 355, 363-364, 368, 391, 401
+backend/middleware/body_size_limit.py                   70      8    89%   47-48, 53-54, 63-64, 82-83
+backend/routes/commander.py                            117     68    42%   67, 71, 73, 85, 100-227, 241-271
+backend/routes/company.py                               57      2    96%   79, 104
+backend/routes/hook_studio.py                          102     30    71%   126, 139-166, 181, 191, 193
+backend/routes/mobile_coach.py                          39      2    95%   66, 92
+backend/routes/speech.py                               135     29    79%   78, 111, 118-133, 148, 153, 184, 242-262
+backend/routes/speech_audio.py                          23      3    87%   33, 39-40
+backend/routes/speech_state.py                          35      3    91%   18-19, 33
+backend/routes/support.py                              216     65    70%   54, 63, 73, 78-85, 114-115, 121-122, 130, 133-134, 147, 180, 183-184, 186, 189-190, 196, 203, 205, 215, 227, 239, 252, 257, 276, 282, 285-286, 289, 295-296, 302, 313, 333-335, 344-345, 359, 361, 363, 385-386, 393-403, 422-435
+backend/routes/tasks.py                                 62      3    95%   70, 157-158
+backend/routes/telemetry.py                             55      6    89%   52-54, 66-68
+backend/routes/websocket.py                             79     25    68%   77-79, 88-90, 118, 151-154, 158, 187-198, 203-205, 211-212
+backend/security/principal.py                           45      1    98%   139
+backend/security/task_access.py                         34      2    94%   66, 76
+backend/security/task_ownership.py                      64      3    95%   68-69, 106
+backend/services/web_dossier.py                         33      1    97%   50
+backend/services/web_research.py                        80      3    96%   93, 199-200
+----------------------------------------------------------------------------------
+TOTAL                                                28426   3811    87%
+
+54 files skipped due to complete coverage.
+Required test coverage of 80% reached. Total coverage: 86.59%
+3406 passed, 2 skipped, 2 xfailed, 327 warnings in 255.19s (0:04:15)

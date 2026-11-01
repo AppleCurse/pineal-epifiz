@@ -45,3 +45,15 @@ instagrapi>=2.0.0
 # - SearXNG (`sensor.search.searxng`) AYRI BİR SERVİSTİR (AGPL-3.0): kod
 #   gömülmez, yalnız HTTP ile konuşulur. Docker ile ayağa kaldırılır ve
 #   SEARXNG_BASE_URL ile gösterilir. Kapı: ENABLE_SEARXNG.
+
+# Public-video extractor used by media.fetch and media_forensics.
+yt-dlp>=2025.1
+
+# lxml 6 split HTML Cleaner into this distribution (trafilatura runtime need).
+lxml_html_clean>=0.4
+
+# Telefon sensörü: yerel numara çözümlemesi; kapalı varsayılan.
+phonenumbers==9.0.31
+
+# ffmpeg binary fallback for isolated environments without apt access.
+imageio-ffmpeg==0.7.0

@@ -23,6 +23,9 @@ class DependencyRequirement:
     def enabled(self) -> bool:
         if self.feature_flag is None:
             return True
+        if self.feature_flag.startswith("ENABLE_"):
+            from agent_core.capabilities.state import flag_enabled
+            return flag_enabled(self.feature_flag)
         return os.getenv(self.feature_flag, "").strip().lower() == self.feature_value
 
 
@@ -68,6 +71,7 @@ CONFIGURED_DEPENDENCIES = (
     DependencyRequirement("maigret", "maigret", "ENABLE_MAIGRET"),
     DependencyRequirement("holehe", "holehe", "ENABLE_HOLEHE"),
     DependencyRequirement("crawl4ai", "crawl4ai", "ENABLE_CRAWL4AI"),
+    DependencyRequirement("yt-dlp", "yt_dlp", "ENABLE_MEDIA_FORENSICS"),
 )
 
 

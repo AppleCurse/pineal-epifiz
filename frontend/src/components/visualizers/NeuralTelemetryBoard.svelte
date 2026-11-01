@@ -246,7 +246,11 @@
           <div class="cap-line">
             <span class="cap-mark">⛔</span>
             <span class="cap-name">{channelLabel(cap.id)}</span>
-            <span class="cap-reason">{reasonLabel(cap.reason || cap.policy_reason)}</span>
+            <span class="cap-reason">{reasonLabel(cap.reason || cap.policy_reason)}
+            {#if cap.local_preflight_reason && cap.local_preflight_reason !== cap.reason}
+              · yerel ön koşul: {reasonLabel(cap.local_preflight_reason)}
+            {/if}
+            <span class="cap-reason">Kanıt: {cap.verification || "static"} · canlı yürütme doğrulanmadı</span></span>
           </div>
         {/each}
       </div>

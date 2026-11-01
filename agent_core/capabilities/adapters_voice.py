@@ -56,8 +56,6 @@ MAX_TTS_DURATION_MS = 10 * 60 * 1000
 MIN_TTS_RATE = 0.5
 MAX_TTS_RATE = 2.0
 
-def _flag(name: str) -> bool:
-    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on", "açık"}
 
 
 def speech_dir() -> str:

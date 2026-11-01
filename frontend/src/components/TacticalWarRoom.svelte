@@ -5,6 +5,8 @@
     agentStatuses, vaultLocked, activeViewMode, inspectedAgentId
   } from '../store';
   import { playClick, playHalt, playRunning } from '../lib/consoleAudio';
+  import AgentRack from './AgentRack.svelte';
+  import HolographicResonanceMesh from './HolographicResonanceMesh.svelte';
   // [P0 · DENETİM 2026-10-16] Kanal durumu: "koştu / ÇALIŞMADI (sebep)".
   // [P1 · DENETİM 2026-10-16] Derin tarama defteri: bulunan profilin gerçek
   // kazım durumu (ölçülmüş gönderi sayısı + koşmama sebebi).
@@ -674,6 +676,11 @@
       </div>
     </section>
   </main>
+
+  <section class="warroom-evidence-supplement" aria-label="Ajan ve kanıt görünümü">
+    <AgentRack compact={true} on:select={(event) => inspectedAgentId.set(event.detail?.agent_id || event.detail)} />
+    <HolographicResonanceMesh graph={$taskStatus?.evidence_graph || null} active={$isProcessing} size={320} />
+  </section>
 
   <!-- ALT: CANLI FLIGHT RECORDER / KARA KUTU TERMİNALİ -->
   <footer class="warroom-footer">

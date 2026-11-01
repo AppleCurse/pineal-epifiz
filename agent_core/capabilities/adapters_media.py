@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from agent_core.utils.optional_deps import module_available
 from agent_core.capabilities.adapters_osint import _flag
 from agent_core.capabilities.base import (
     Availability,
@@ -83,12 +84,26 @@ class MediaFetchCapability(BaseCapability):
     license = "yt-dlp (Unlicense) · httpx (BSD) — harici araç, kod gömülmez"
     gates = frozenset({"vault", "rate", media_forensics.GATE})
     timeout_seconds = 300.0
+    requires_preflight = True
     description = "Video/foto indirir (platform linkleri yt-dlp, doğrudan bağlantılar httpx) ve sha256 ile mühürler."
 
     def availability(self) -> Availability:
         blocked = _gate()
         if blocked:
             return blocked
+        # Direct HTTP/local-file fetching can work without yt-dlp, but this
+        # capability also advertises platform downloads. Do not hide that gap.
+        if not media_forensics.ytdlp_command():
+            return Availability.unavailable("dependency_missing:yt-dlp")
+        return Availability.ok()
+
+    async def preflight(self) -> Availability:
+        local = self.availability()
+        if not local.available:
+            return local
+        probe = await media_forensics.probe_ytdlp()
+        if not probe["available"]:
+            return Availability.unavailable(probe["reason"])
         return Availability.ok()
 
     async def run(self, ctx: CapabilityContext) -> CapabilityResult:
@@ -142,6 +157,8 @@ class MediaFramesCapability(BaseCapability):
         blocked = _gate()
         if blocked:
             return blocked
+        if not module_available("cv2"):
+            return Availability.unavailable("dependency_missing:opencv")
         return Availability.ok()
 
     async def run(self, ctx: CapabilityContext) -> CapabilityResult:
@@ -288,6 +305,8 @@ class MediaSimilarityCapability(BaseCapability):
         blocked = _gate()
         if blocked:
             return blocked
+        if not module_available("cv2"):
+            return Availability.unavailable("dependency_missing:opencv")
         return Availability.ok()
 
     async def run(self, ctx: CapabilityContext) -> CapabilityResult:

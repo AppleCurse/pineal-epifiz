@@ -19,7 +19,6 @@ from fastapi.testclient import TestClient
 
 from agent_core.capabilities import CapabilityContext, PolicyState, bootstrap
 from agent_core.capabilities.runner import CapabilityRunner
-from agent_core.services import report_factory as rf
 from backend import api
 
 PDF = "renderer.report.pdf"
@@ -81,7 +80,7 @@ class TestGates:
 
     def test_video_availability_is_honest(self, monkeypatch):
         monkeypatch.setenv("ENABLE_REPORT_FACTORY", "1")
-        monkeypatch.setattr(rf.shutil, "which", lambda name: None)
+        monkeypatch.setattr("agent_core.services.media_forensics.ffmpeg_command", lambda: "")
         availability = bootstrap().get(VIDEO).availability()
         assert availability.available is False
         assert availability.reason == "dependency_missing:ffmpeg"

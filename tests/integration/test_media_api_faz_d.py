@@ -121,8 +121,11 @@ class TestEndpoints:
         assert payload["gate"] == "ENABLE_MEDIA_FORENSICS"
         assert set(payload["tools"]) >= {"yt-dlp", "ffmpeg", "opencv"}
         modes = {row["mode"]: row for row in payload["modes"]}
-        assert modes["frames"]["reason"] == "gate_disabled:ENABLE_MEDIA_FORENSICS"
+        # Status is EFFECTIVE readiness: vault/policy denial precedes local reasons.
+        assert modes["frames"]["reason"] == "policy:vault_locked"
+        assert modes["frames"]["local_reason"] == "gate_disabled:ENABLE_MEDIA_FORENSICS"
         assert payload["any_available"] is False
+        assert payload["live_execution_verified"] is False
 
     def test_vault_locked_blocks_analyze(self, client, photo):
         api.get_room("medya")["vault"].pop("or_key", None)
@@ -175,3 +178,19 @@ class TestEndpoints:
 
     def test_rate_bucket_exists_for_media(self):
         assert "media" in api.RATE_LIMITS
+
+    def test_status_does_not_advertise_broken_ytdlp_as_ready(self, client, monkeypatch):
+        monkeypatch.setenv("ENABLE_MEDIA_FORENSICS", "1")
+        api.get_room("medya")["vault"]["or_key"] = True
+
+        async def broken_probe(**_):
+            return {"available": False, "reason": "ytdlp_version_unreadable", "command": ["fixture"], "exit_code": 0, "version": ""}
+
+        monkeypatch.setattr(mf, "probe_ytdlp", broken_probe)
+        payload = client.get("/api/media/status?client_id=medya").json()
+        modes = {row["mode"]: row for row in payload["modes"]}
+        assert modes["fetch"]["available"] is False
+        assert modes["fetch"]["reason"] == "ytdlp_version_unreadable"
+        assert payload["tools"]["yt-dlp"] is False
+        assert payload["live_execution_verified"] is False
+        api.get_room("medya")["vault"].pop("or_key", None)

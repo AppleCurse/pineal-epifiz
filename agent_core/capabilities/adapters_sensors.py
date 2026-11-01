@@ -77,51 +77,43 @@ _X_ACCOUNTS_DB_ENV = "PINEAL_X_ACCOUNTS_DB"
 _X_ACCOUNTS_DB_DEFAULT = os.path.join("cache", "x_accounts.db")
 
 
-def _x_accounts_db_path() -> str:
-    """twscrape hesap havuzu DB yolunu çözer (varsayılan: cache/ altında)."""
+def _x_accounts_db_path(*, create: bool = False) -> str:
+    """Resolve the pool path. A status check must not create an empty DB."""
     configured = (os.getenv(_X_ACCOUNTS_DB_ENV) or "").strip()
     path = configured or _X_ACCOUNTS_DB_DEFAULT
-    parent = os.path.dirname(os.path.abspath(path))
-    if parent:
-        os.makedirs(parent, exist_ok=True)
+    if create:
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     return path
 
 
 async def _x_pool_state(api: Any) -> dict[str, Any] | None:
-    """Hesap havuzunun gerçek durumunu ölçer (aktif oturum sayısı).
+    """Measure local session metadata; never log in or contact a target.
 
-    Havuz boşsa "hedef yok" değil, "oturum yok" denmelidir.
-
-    ``None`` döner → havuz ÖLÇÜLEMEDİ (ör. `pool` parametresini kabul etmeyen
-    bir sahte/eskiden kalan twscrape). Bu durumda `no_session_pool` kapısı
-    UYGULANMAZ: ölçülmeyen bir şey "yok" diye yazılmaz.
+    None means unmeasurable, NOT an empty pool. Read failures retain unknown
+    counts (None), rather than turning an unreadable DB into measured zero.
     """
     pool = getattr(api, "pool", None)
     getter = getattr(pool, "get_all", None)
     if getter is None:
         return None
-    total = 0
-    active = 0
-    readable = True
     try:
-        accounts = await getter()
-    except Exception as exc:  # pragma: no cover - bozuk/eksik DB
-        readable = False
+        accounts = await asyncio.wait_for(getter(), timeout=5.0)
+        total = active = 0
+        for account in accounts or ():
+            total += 1
+            if getattr(account, "active", False) is True:
+                active += 1
+    except Exception as exc:
         logger.debug("twscrape hesap havuzu okunamadı: %s", type(exc).__name__)
-        accounts = []
-    for account in accounts or ():
-        total += 1
-        if getattr(account, "active", False):
-            active += 1
-    return {
-        "accounts_total": total,
-        "accounts_active": active,
-        "pool_readable": readable,
-        "accounts_db": getattr(pool, "_db_file", "") or "",
-    }
+        return {
+            "accounts_total": None, "accounts_active": None,
+            "pool_readable": False, "accounts_db": "",
+        }
+    # Do not expose a filesystem path containing an operator's username.
+    return {"accounts_total": total, "accounts_active": active, "pool_readable": True}
 
 
-def _make_twscrape_api(API: Any, db_path: str) -> Any:
+def _make_twscrape_api(API: Any, db_path: str, *, fallback: bool = True) -> Any:
     """twscrape API nesnesini kurar — hesap DB'si yapılandırılabilir yoldadır.
 
     `pool` parametresini kabul etmeyen (sahte/eskiden kalan) uygulamalar için
@@ -130,6 +122,8 @@ def _make_twscrape_api(API: Any, db_path: str) -> Any:
     try:
         return API(pool=db_path)
     except TypeError:
+        if not fallback:
+            raise
         logger.debug("twscrape API 'pool' parametresini kabul etmiyor; varsayılan kurucu kullanılıyor")
         return API()
 
@@ -147,6 +141,7 @@ class XTwscrapeCapability(BaseCapability):
     license = "MIT"
     gates = frozenset({"vault", "rate", "ENABLE_X_SENSOR"})
     timeout_seconds = 60.0
+    requires_preflight = True
     description = "X/Twitter gönderi akışı (gerçek zaman serisi; Frequency motorunu besler)."
 
     def availability(self) -> Availability:
@@ -156,6 +151,40 @@ class XTwscrapeCapability(BaseCapability):
         # `gate_disabled` dönüyordu — yetenek "açık" görünürken kalıcı kapalı.
         if not _module_available("twscrape"):
             return Availability.unavailable("dependency_missing:twscrape")
+        return Availability.ok()
+
+    async def preflight(self) -> Availability:
+        """Local, read-only session check; called AFTER the policy decision.
+
+        This preserves per-task operator consent while preventing a misleading
+        effective-ready result for an empty, corrupt or unsupported pool.
+        """
+        local = self.availability()
+        if not local.available:
+            return local
+        from pathlib import Path
+        path = Path(_x_accounts_db_path())
+        try:
+            if not path.is_file() or path.stat().st_size == 0:
+                return Availability.unavailable("no_session_pool")
+        except OSError as exc:
+            logger.debug("X pool path unreadable: %s", type(exc).__name__)
+            return Availability.unavailable("session_pool_unreadable")
+        try:
+            from twscrape import API
+            state = await _x_pool_state(_make_twscrape_api(API, str(path), fallback=False))
+        except TypeError as exc:
+            logger.debug("X pool constructor unsupported: %s", type(exc).__name__)
+            return Availability.unavailable("session_pool_unmeasurable")
+        except Exception as exc:
+            logger.debug("X preflight failed: %s", type(exc).__name__)
+            return Availability.unavailable("session_pool_unreadable")
+        if state is None:
+            return Availability.unavailable("session_pool_unmeasurable")
+        if not state["pool_readable"]:
+            return Availability.unavailable("session_pool_unreadable")
+        if state["accounts_active"] == 0:
+            return Availability.unavailable("no_session_pool")
         return Availability.ok()
 
     async def run(self, ctx: CapabilityContext) -> CapabilityResult:
@@ -177,22 +206,34 @@ class XTwscrapeCapability(BaseCapability):
             )
 
         try:
-            api = _make_twscrape_api(API, _x_accounts_db_path())
-            # [P0 · DENETİM 2026-10-16 · Bulgu B-1] Boş hesap havuzunda
-            # twscrape "kullanıcı yok" (user_not_found) döner — bu YANLIŞTIR:
-            # hedef değil, oturum havuzu yok. Kaynak gerçeği ayrı kanal olarak
-            # ölçülür: havuz boşsa sebep `no_session_pool` olur.
-            pool_state = await _x_pool_state(api)
-            if pool_state is not None and pool_state["accounts_active"] == 0:
+            # Direct callers get the same local fail-closed check as runner
+            # callers. Unknown/unreadable is never reported as an empty pool.
+            ready = await self.preflight()
+            if not ready.available:
+                notes = {"accounts_total": 0, "accounts_active": 0} if ready.reason == "no_session_pool" else {}
                 return CapabilityResult(
-                    capability_id=self.id,
-                    available=False,
-                    unavailable_reason="no_session_pool",
-                    error=None,
+                    capability_id=self.id, available=False,
+                    unavailable_reason=ready.reason, notes=notes,
+                )
+            api = _make_twscrape_api(API, _x_accounts_db_path(create=True))
+            pool_state = await _x_pool_state(api)
+            if pool_state is None:
+                return CapabilityResult(
+                    capability_id=self.id, available=False,
+                    unavailable_reason="session_pool_unmeasurable",
+                )
+            if not pool_state["pool_readable"]:
+                return CapabilityResult(
+                    capability_id=self.id, available=False,
+                    unavailable_reason="session_pool_unreadable",
+                )
+            if pool_state["accounts_active"] == 0:
+                return CapabilityResult(
+                    capability_id=self.id, available=False,
+                    unavailable_reason="no_session_pool", error=None,
                     notes={
                         "accounts_total": pool_state["accounts_total"],
                         "accounts_active": 0,
-                        "accounts_db": pool_state["accounts_db"],
                     },
                 )
             user = await api.user_by_login(username)

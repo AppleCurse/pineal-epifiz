@@ -49,6 +49,7 @@ EGRESS_PREFIXES = (
     "/api/experimental/",
     "/api/scraper/",
     "/api/initiate",
+    "/api/commander/phone-probe",
 )
 
 
@@ -80,7 +81,7 @@ def test_every_egress_route_is_guarded_or_explicitly_exempt():
         exempt = path in api.VAULT_EGRESS_EXEMPT_ROUTES
         assert not (declared and exempt), f"{path} hem kapıda hem muaf listede"
         source = inspect.getsource(endpoint)
-        calls_gate = "_require_vault_open(" in source
+        calls_gate = "_require_vault_open(" in source or "require_vault_open(" in source
         if declared:
             assert calls_gate, (
                 f"{path} VAULT_EGRESS_ROUTES içinde ama uç gövdesi "

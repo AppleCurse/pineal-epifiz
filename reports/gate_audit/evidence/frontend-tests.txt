@@ -1,0 +1,19 @@
+
+> frontend@3.0.0-rc.2 test
+> vitest run --run
+
+
+ RUN  v3.2.7 /home/user/pineal-epifiz/frontend
+
+4:37:20 AM [vite-plugin-svelte] src/components/SpiderFootCockpit.svelte:2386:2 Unused CSS selector ".action-input-wrap input"
+https://svelte.dev/e/css_unused_selector
+4:37:20 AM [vite-plugin-svelte] src/components/SpiderFootCockpit.svelte:2405:2 Unused CSS selector ".limit-selector select"
+https://svelte.dev/e/css_unused_selector
+ ✓ src/__tests__/spiderfoot-cockpit.contract.test.ts (6 tests) 1294ms
+   ✓ görev durdurma sözleşmesi > GERÇEK görev kimliğiyle /api/tasks/{id}/halt çağırır, /api/override çağırmaz  558ms
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  04:37:17
+   Duration  3.89s (transform 1.54s, setup 21ms, collect 1.93s, tests 1.29s, environment 359ms, prepare 75ms)
+

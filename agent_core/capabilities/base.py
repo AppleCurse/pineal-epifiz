@@ -192,10 +192,24 @@ class BaseCapability(ABC):
     gates: frozenset[str] = frozenset()
     timeout_seconds: float = 30.0
     description: str = ""
+    requires_preflight: bool = False
 
     @abstractmethod
     def availability(self) -> Availability:
-        """Yetenek şu an kullanılabilir mi? (asla istisna fırlatmaz)"""
+        """Yerel ön koşullar; politika kararı DEĞİLDİR (asla istisna fırlatmaz).
+
+        Göreve özel onay bu metottan sonra değil, PolicyKernel'de değerlendirilir.
+        Bayrağı burada tekrar okumak onayla açılan bir kapıyı yeniden kapatır.
+        Operatöre gösterilecek efektif durum ``CapabilityRegistry.readiness``dir.
+        """
+
+    async def preflight(self) -> Availability:
+        """Politika ve availability SONRADA değil, ÖNCE geçtikten sonra koşur.
+
+        Varsayılan: ek ön koşul yok. Ağır/ücretli iş yapmaz; X gibi oturum
+        gerektiren adaptörler yerel oturum durumunu burada doğrular.
+        """
+        return self.availability()
 
     @abstractmethod
     async def run(self, ctx: CapabilityContext) -> CapabilityResult:

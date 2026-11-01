@@ -23,12 +23,16 @@ Dürüstlük sözleşmesi:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
+import sys
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -36,6 +40,7 @@ from typing import Any
 from agent_core.capabilities.egress import httpx, open_client  # noqa: F401  (test yamaları httpx adını modulede bekler)
 
 from agent_core.services import net_hygiene
+from agent_core.utils.optional_deps import module_available
 
 __all__ = [
     "GATE",
@@ -46,6 +51,7 @@ __all__ = [
     "FrameAnalysis",
     "Transcript",
     "SimilarityResult",
+    "probe_ytdlp",
     "media_dir",
     "index_path",
     "platform_of",
@@ -58,6 +64,68 @@ __all__ = [
 
 GATE = "ENABLE_MEDIA_FORENSICS"
 PRIVATE_ALLOW_ENV = "PINEAL_MEDIA_ALLOW_PRIVATE"
+
+def ytdlp_command() -> list[str]:
+    """PATH CLI or the installed module in THIS interpreter (no PYTHONPATH hack)."""
+    exe = shutil.which("yt-dlp")
+    if exe:
+        return [exe]
+    if module_available("yt_dlp"):
+        return [sys.executable, "-m", "yt_dlp"]
+    return []
+
+
+async def probe_ytdlp(*, timeout: float = 8.0) -> dict[str, Any]:
+    """Execute the resolved yt-dlp with --version; no URL/network is used.
+
+    A resolvable command or importable module is NOT proof that the executable
+    starts. The measured version/exit code is returned for preflight and audit.
+    """
+    command = ytdlp_command()
+    if not command:
+        return {"available": False, "reason": "dependency_missing:yt-dlp", "command": [], "exit_code": None, "version": ""}
+    proc = None
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *command, "--version",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except asyncio.TimeoutError:
+        if proc is not None:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+            await proc.wait()
+        return {"available": False, "reason": "ytdlp_probe_timeout", "command": command, "exit_code": None, "version": ""}
+    except OSError as exc:
+        return {"available": False, "reason": f"ytdlp_probe_failed:{type(exc).__name__}", "command": command, "exit_code": None, "version": ""}
+    version = stdout.decode("utf-8", errors="replace").strip().splitlines()
+    version = version[0].strip() if version else ""
+    ok = proc.returncode == 0 and bool(re.fullmatch(r"\d{4}\.\d{1,2}\.\d{1,2}(?:\.[A-Za-z0-9]+)*", version))
+    return {
+        "available": ok,
+        "reason": "" if ok else ("ytdlp_probe_failed:rc" if proc.returncode != 0 else "ytdlp_version_unreadable"),
+        "command": command,
+        "exit_code": proc.returncode,
+        "version": version if ok else "",
+        "stderr_type": "present" if stderr else "",
+    }
+
+
+def ffmpeg_command() -> str:
+    """PATH ffmpeg or the pinned wheel binary in this isolated interpreter."""
+    exe = shutil.which("ffmpeg")
+    if exe:
+        return exe
+    try:
+        import imageio_ffmpeg
+        candidate = imageio_ffmpeg.get_ffmpeg_exe()
+        return candidate if Path(candidate).is_file() else ""
+    except (ImportError, OSError, RuntimeError):
+        return ""
+
 
 #: yt-dlp olmadan indirilemeyen platformlar (doğrudan dosya URL'si DEĞİL).
 PLATFORM_HOSTS = {
@@ -175,14 +243,19 @@ async def fetch_media(source: str, *, timeout: float = 120.0) -> MediaFetch:
     platform = platform_of(value)
     if platform:
         # Platform linkleri yt-dlp ister: yoksa UYDURMA indirme yapılmaz.
-        exe = shutil.which("yt-dlp")
-        if not exe:
+        probe = await probe_ytdlp()
+        if not probe["available"]:
             return MediaFetch(
-                available=False, reason="dependency_missing:yt-dlp", source=value, tool=platform
+                available=False, reason=probe["reason"], source=value, tool=platform
             )
+        command = probe["command"]
+        # A fresh per-invocation directory prevents rc=0 from reusing an older
+        # download with the same platform id (stale-artifact false success).
+        run_dir = target_dir / f"ytdlp-{uuid.uuid4().hex[:12]}"
         try:
+            run_dir.mkdir(parents=True, exist_ok=False)
             proc = subprocess.run(
-                [exe, "-o", str(target_dir / "%(id)s.%(ext)s"), "--no-playlist", value],
+                [*command, "-o", str(run_dir / "%(id)s.%(ext)s"), "--no-playlist", value],
                 capture_output=True,
                 timeout=timeout,
             )
@@ -190,7 +263,8 @@ async def fetch_media(source: str, *, timeout: float = 120.0) -> MediaFetch:
             return MediaFetch(available=False, reason=f"ytdlp_failed:{type(exc).__name__}", source=value)
         if proc.returncode != 0:
             return MediaFetch(available=False, reason="ytdlp_failed:rc", source=value, tool=platform)
-        newest = max(target_dir.glob("*"), key=lambda p: p.stat().st_mtime, default=None)
+        candidates = [p for p in run_dir.glob("*") if p.is_file()]
+        newest = max(candidates, key=lambda p: p.stat().st_mtime, default=None)
         if newest is None:
             return MediaFetch(available=False, reason="download_missing", source=value, tool=platform)
         return MediaFetch(
@@ -428,7 +502,7 @@ def _extract_audio(path: Path) -> tuple[Path | None, str]:
     """Video → wav (ffmpeg). Ses dosyası zaten uygunsa dokunulmaz."""
     if _kind_of(path) == "audio":
         return path, ""
-    exe = shutil.which("ffmpeg")
+    exe = ffmpeg_command()
     if not exe:
         return None, "dependency_missing:ffmpeg"
     target = path.with_name(path.stem + ".pineal-audio.wav")

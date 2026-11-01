@@ -73,3 +73,7 @@ backups/
 .venv-audit/
 # [temizlik] Eski envanter arşivi (4 MB, bayat anlık görüntü): üretilirse izlenmez.
 docs/pineal_envanter.zip
+
+# Gate-audit raw run directories and synthetic smoke media are reproducible artifacts.
+reports/gate_audit/20*/
+reports/gate_audit/pineal-local-smoke-*/

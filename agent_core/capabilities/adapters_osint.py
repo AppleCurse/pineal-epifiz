@@ -16,7 +16,6 @@ Dürüstlük sözleşmesi (değişmedi):
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from agent_core.capabilities.base import (
@@ -32,8 +31,9 @@ __all__ = ["MaigretCapability", "HoleheCapability", "SocidCapability"]
 
 
 def _flag(name: str) -> bool:
-    """Env anahtarı açık mı? ('1', 'true', 'yes', 'on' kabul)."""
-    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+    """Compatibility wrapper; boolean semantics have one owner: state.py."""
+    from agent_core.capabilities.state import flag_enabled
+    return flag_enabled(name)
 
 
 # [2026-10-23 · CI/DEĞİL, GERÇEK HATA] Noktalı ad ("paket.alt modül") ve

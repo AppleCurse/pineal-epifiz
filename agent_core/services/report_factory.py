@@ -87,7 +87,8 @@ def availability() -> dict[str, tuple[bool, str]]:
     """Her format için dürüst durum: (var mı, sebep)."""
     pdf_ok = _module_available("reportlab")
     pillow_ok = _module_available("PIL")
-    ffmpeg = shutil.which("ffmpeg")
+    from agent_core.services.media_forensics import ffmpeg_command
+    ffmpeg = ffmpeg_command()
     return {
         "markdown": (True, ""),
         "pdf": (pdf_ok, "" if pdf_ok else "dependency_missing:reportlab"),
@@ -287,7 +288,8 @@ def _write_diagram(path: Path, title: str, entries: list[Any]) -> None:
 
 # ------------------------------------------------------------------- video
 def _write_video(path: Path, title: str, entries: list[Any], *, tmp: Path) -> tuple[bool, str]:
-    ffmpeg = shutil.which("ffmpeg")
+    from agent_core.services.media_forensics import ffmpeg_command
+    ffmpeg = ffmpeg_command()
     if not ffmpeg:
         return False, "dependency_missing:ffmpeg"
     if not _module_available("PIL"):

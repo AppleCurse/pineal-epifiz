@@ -12,7 +12,6 @@ Komutan & Ajan Konseyi Modülü — POST /api/commander/dispatch & POST /api/com
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import logging
@@ -25,11 +24,10 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from agent_core.agents.lilith_growth import LilithGrowthAgent
-from agent_core.services.llm_gateway import LLMGateway
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["CommanderDispatchPayload", "CommanderInjectPayload", "CommanderPhoneProbePayload", "register_commander_routes"]
+__all__ = ["CommanderDispatchPayload", "CommanderInjectPayload", "CommanderPhoneProbePayload", "register_commander_routes", "register_phone_probe_route"]
 
 
 class CommanderDispatchPayload(BaseModel):
@@ -53,6 +51,38 @@ class CommanderPhoneProbePayload(BaseModel):
     client_id: str = Field(default="default")
     phone: str = Field(..., description="Telefon numarası (örn: (552) 956-87-63, 0552..., +90...)")
     auto_bridge_social: bool = Field(default=True, description="Eğer kullanıcı adı bulunursa sosyal medya yoklamasını tetikle")
+
+
+def register_phone_probe_route(
+    app: Any, *, rate_limit: Callable[[str, str], bool],
+    rate_identity: Callable[[Request], str],
+    require_minor_clearance: Callable[..., Any],
+    require_vault_open: Callable[[str], Any],
+    minor_case_for: Callable[[str], Any],
+) -> None:
+    """Register the real phone sensor; never the legacy simulated dispatch path."""
+    @app.post("/api/commander/phone-probe")
+    async def phone_probe(payload: CommanderPhoneProbePayload, request: Request):
+        if (blocked := require_minor_clearance(payload.client_id, subject=payload.phone)) is not None:
+            return blocked
+        if (locked := require_vault_open(payload.client_id)) is not None:
+            return locked
+        if not payload.phone.strip():
+            return JSONResponse({"error": {"code": "INVALID_PHONE"}}, status_code=400)
+        if not rate_limit(f"phone:{rate_identity(request)}", "company"):
+            return JSONResponse({"error": {"code": "RATE_LIMITED"}}, status_code=429)
+        from agent_core.capabilities import CapabilityContext, run_capability
+        from agent_core.capabilities.state import policy_state
+        result = await run_capability(
+            "sensor.identity.phone_probe",
+            CapabilityContext(subject=payload.phone, params={"auto_bridge": False}),
+            state=policy_state(vault_locked=False, rate_ok=True,
+                               minor_case=minor_case_for(payload.client_id)),
+        )
+        if not result.ok or result.payload is None:
+            return JSONResponse({"error": {"code": result.unavailable_reason or "PHONE_PROBE_FAILED",
+                                           "denied_by": result.denied_by}}, status_code=503)
+        return result.payload.model_dump()
 
 
 def register_commander_routes(
@@ -246,42 +276,3 @@ def register_commander_routes(
             "message": f"Komutan kanıtı ({ev_type}) sisteme mühürlendi. Ajanlar bu gerçekliği baz alarak ilerleyecek.",
             "ts": datetime.now().isoformat(),
         }
-
-    @app.post("/api/commander/phone-probe")
-    async def probe_phone_endpoint(payload: CommanderPhoneProbePayload, request: Request):
-        """Telefon numarası üzerinde format, şebeke, mesajlaşma ve açık web ayak izi yoklaması yapar."""
-        raw_phone = payload.phone.strip()
-        if not raw_phone:
-            return JSONResponse({"error": {"message": "Telefon numarası boş olamaz."}}, status_code=400)
-
-        from agent_core.services.phone_probe import probe_phone
-
-        try:
-            res = await probe_phone(raw_phone, auto_bridge_social=payload.auto_bridge_social)
-            # İsteğe bağlı hafızaya ekle
-            try:
-                mem_path = os.path.join(".pineal_memory", "learnings.json")
-                os.makedirs(".pineal_memory", exist_ok=True)
-                existing = []
-                if os.path.exists(mem_path):
-                    with open(mem_path, "r", encoding="utf-8") as f:
-                        existing = json.load(f)
-                entry = {
-                    "fact": f"[TELEFON OSINT] {res.metadata.e164 or raw_phone} - {res.metadata.carrier_name} ({res.metadata.country_name})",
-                    "tag": "phone_osint",
-                    "target_agent": "osint_investigator",
-                    "note": f"Geçerli: {res.metadata.is_valid}, Hat: {res.metadata.line_type}",
-                    "ts": datetime.now().isoformat(),
-                    "hash": hashlib.sha256(raw_phone.encode()).hexdigest()[:12],
-                }
-                existing.append(entry)
-                with open(mem_path, "w", encoding="utf-8") as f:
-                    json.dump(existing, f, ensure_ascii=False, indent=2)
-            except Exception as e:
-                logger.debug(f"Phone probe learning seal skipped: {e}")
-
-            return res.model_dump()
-        except Exception as e:
-            logger.error("Phone probe error: %s", e)
-            return JSONResponse({"error": {"message": f"Telefon yoklaması başarısız: {e}"}}, status_code=500)
-

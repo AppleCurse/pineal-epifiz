@@ -105,7 +105,7 @@ class TestArtifacts:
         assert pdf.sha256 == hashlib.sha256(Path(pdf.path).read_bytes()).hexdigest()
 
     def test_video_is_honest_without_ffmpeg(self, out_dir, monkeypatch):
-        monkeypatch.setattr(rf.shutil, "which", lambda name: None)
+        monkeypatch.setattr("agent_core.services.media_forensics.ffmpeg_command", lambda: "")
         package = rf.build_report(
             EVIDENCE, title="Örnek", formats=("video",), out_dir=out_dir
         )
@@ -152,7 +152,7 @@ class TestManifestSeal:
 
 class TestAvailability:
     def test_availability_reports_reasons(self, monkeypatch):
-        monkeypatch.setattr(rf.shutil, "which", lambda name: None)
+        monkeypatch.setattr("agent_core.services.media_forensics.ffmpeg_command", lambda: "")
         caps = rf.availability()
         assert caps["markdown"] == (True, "")
         assert caps["video"][1] == "dependency_missing:ffmpeg"

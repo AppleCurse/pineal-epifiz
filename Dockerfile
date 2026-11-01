@@ -21,11 +21,11 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Playwright/Chromium için sistem bağımlılıkları
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    wget gnupg ca-certificates fonts-liberation \
+    wget gnupg ca-certificates fonts-liberation ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY requirements.lock requirements-osint.txt requirements-retina.txt ./
+COPY requirements.lock requirements-osint.txt requirements-retina.txt requirements-retina.lock ./
 RUN pip install --default-timeout=300 -r requirements.lock
 RUN pip install --default-timeout=120 "websockets==17.1"
 
@@ -42,7 +42,7 @@ RUN pip install --default-timeout=120 "websockets==17.1"
 ARG PINEAL_INSTALL_RETINA=1
 RUN if [ "$PINEAL_INSTALL_RETINA" = "1" ]; then \
         pip install --default-timeout=300 --upgrade-strategy only-if-needed \
-            -r requirements-retina.txt; \
+            -r requirements-retina.lock; \
     else \
         echo "PINEAL_INSTALL_RETINA=0 → Retina paketleri kurulmadı (yetenekler dependency_missing döner)"; \
     fi

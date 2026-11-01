@@ -385,6 +385,20 @@
     chatMessages = [...chatMessages, { ts: nowTime(), sender: 'SİZ', text }];
 
     try {
+      const commandResponse = await apiFetch('/api/aspasia/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id: $clientId, user_message: text })
+      });
+      if (commandResponse.ok) {
+        const data = await commandResponse.json();
+        if (data.accepted && data.task_id) {
+          chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: `Emir alındı. Görev: ${data.task_id}` }];
+          return;
+        }
+        // A rejected command is not a started task. Conversation fallback
+        // below cannot manufacture an acceptance or a task id.
+      }
       const res = await apiFetch('/api/aspasia/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -392,7 +406,7 @@
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      const reply = data.reply || data.response || 'Mesajınız alındı Mösyö.';
+      const reply = data.reply || data.response || 'Yanıt alınamadı; görev başlatıldığı iddia edilmiyor.';
       chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: reply }];
     } catch (e: any) {
       chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: `Bağlantı kesintisi: ${e?.message || e}` }];

@@ -3,7 +3,7 @@
 [2026-10-23 · MANTIK KAFESİ] Denetim şu soruları sordu ve haklıydı:
 
   * "13 ajan kayıtlı" — peki hepsi gerçekten KOŞUYOR mu, yoksa biri placeholder mı?
-  * "27 yetenek kayıtlı" — kaçı üretim yolundan erişilebilir?
+  * "28 yetenek kayıtlı" — kaçı üretim yolundan erişilebilir?
   * "69 uç" — kaçı çağrılıyor, kaçı ölü?
 
 Bu dosya cevapları STATİK TARAMA ile değil, kodu KOŞTURARAK verir:
@@ -144,7 +144,7 @@ def test_each_agent_has_its_own_real_module():
 
 # ───────────────────────────────────── 2. YETENEKLER OMURGADAN ERİŞİLEBİLİR
 def test_every_capability_reports_availability_without_raising():
-    """27 yeteneğin hepsi `availability()` çağrısına cevap verir (istisna yok).
+    """28 yeteneğin hepsi `availability()` çağrısına cevap verir (istisna yok).
 
     İstisna fırlatan bir yetenek "kapalı" değil "bozuk" görünür ve operatör
     hangi paketi kuracağını öğrenemez.
@@ -153,7 +153,7 @@ def test_every_capability_reports_availability_without_raising():
     from agent_core.capabilities.registry import bootstrap
 
     caps = bootstrap()._caps
-    assert len(caps) == 27, f"kayıtlı yetenek sayısı değişti: {len(caps)}"
+    assert len(caps) == 28, f"kayıtlı yetenek sayısı değişti: {len(caps)}"
     for cap_id, cap in caps.items():
         availability = cap.availability()
         assert isinstance(availability, Availability), cap_id

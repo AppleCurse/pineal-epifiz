@@ -137,6 +137,7 @@ class TestFetch:
     @pytest.mark.asyncio
     async def test_platform_url_needs_ytdlp(self, monkeypatch):
         monkeypatch.setattr(mf.shutil, "which", lambda name: None)
+        monkeypatch.setattr(mf, "module_available", lambda name: False)
         fetched = await mf.fetch_media("https://www.youtube.com/watch?v=abc")
         assert fetched.available is False
         assert fetched.reason == "dependency_missing:yt-dlp"
@@ -263,6 +264,7 @@ class TestTranscript:
         script.write_text("#!/bin/sh\nexit 0\n")
         script.chmod(script.stat().st_mode | stat.S_IEXEC)
         monkeypatch.setattr(mf.shutil, "which", lambda name: None)
+        monkeypatch.setattr(mf, "ffmpeg_command", lambda: "")
         monkeypatch.setenv("PINEAL_TRANSCRIBE_CMD", str(script))
         import asyncio
 
@@ -293,3 +295,45 @@ class TestSimilarity:
         result = mf.visual_similarity(str(tmp_path / "yok.png"))
         assert result.available is False
         assert result.reason == "not_found"
+
+
+def test_ffmpeg_command_uses_pinned_wheel_when_path_is_empty(monkeypatch, tmp_path):
+    import sys
+    import types
+    binary = tmp_path / "ffmpeg"
+    binary.write_bytes(b"fixture")
+    fake = types.ModuleType("imageio_ffmpeg")
+    fake.get_ffmpeg_exe = lambda: str(binary)
+    monkeypatch.setattr(mf.shutil, "which", lambda name: None)
+    monkeypatch.setitem(sys.modules, "imageio_ffmpeg", fake)
+    assert mf.ffmpeg_command() == str(binary)
+
+
+class TestYtdlpHonesty:
+    @pytest.mark.asyncio
+    async def test_rc_zero_without_new_file_is_not_success(self, monkeypatch, tmp_path):
+        import subprocess
+        import sys
+
+        old = tmp_path / "media" / "old.mp4"
+        old.parent.mkdir(parents=True, exist_ok=True)
+        old.write_bytes(b"old")
+        monkeypatch.setattr(mf, "probe_ytdlp", lambda **_: _async_return({"available": True, "command": [sys.executable], "reason": "", "version": "2026.10.26", "exit_code": 0}))
+        monkeypatch.setattr(mf.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a[0], 0, b"", b""))
+        fetched = await mf.fetch_media("https://www.youtube.com/watch?v=abc")
+        assert fetched.available is False
+        assert fetched.reason == "download_missing"
+        assert fetched.path == ""
+
+    @pytest.mark.asyncio
+    async def test_broken_executable_blocks_platform_fetch(self, monkeypatch):
+        import sys
+
+        monkeypatch.setattr(mf, "ytdlp_command", lambda: [sys.executable, "-c", "print('not-a-version')"])
+        fetched = await mf.fetch_media("https://www.youtube.com/watch?v=abc")
+        assert fetched.available is False
+        assert fetched.reason == "ytdlp_version_unreadable"
+
+
+async def _async_return(value):
+    return value

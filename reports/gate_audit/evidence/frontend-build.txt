@@ -1,0 +1,86 @@
+
+> frontend@3.0.0-rc.2 build
+> vite build
+
+vite v6.4.3 building for production...
+transforming...
+4:37:19 AM [vite-plugin-svelte] src/components/AtlasPinealCockpit.svelte:508:6 Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+506: 
+507:       <!-- ASPASIA PRIME -->
+508:       <div
+               ^
+509:         class="sovereign-station aspasia-station {selectedAgentId === 'aspasia' ? 'selected' : ''}"
+510:         on:click={() => selectAgent('aspasia')}
+4:37:19 AM [vite-plugin-svelte] src/components/AtlasPinealCockpit.svelte:508:6 `<div>` with a click handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+506: 
+507:       <!-- ASPASIA PRIME -->
+508:       <div
+               ^
+509:         class="sovereign-station aspasia-station {selectedAgentId === 'aspasia' ? 'selected' : ''}"
+510:         on:click={() => selectAgent('aspasia')}
+4:37:19 AM [vite-plugin-svelte] src/components/AtlasPinealCockpit.svelte:531:6 Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+529: 
+530:       <!-- LILITH GROWTH -->
+531:       <div
+               ^
+532:         class="sovereign-station lilith-station {selectedAgentId === 'lilith' ? 'selected' : ''}"
+533:         on:click={() => selectAgent('lilith')}
+4:37:19 AM [vite-plugin-svelte] src/components/AtlasPinealCockpit.svelte:531:6 `<div>` with a click handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+529: 
+530:       <!-- LILITH GROWTH -->
+531:       <div
+               ^
+532:         class="sovereign-station lilith-station {selectedAgentId === 'lilith' ? 'selected' : ''}"
+533:         on:click={() => selectAgent('lilith')}
+4:37:19 AM [vite-plugin-svelte] src/components/AtlasPinealCockpit.svelte:643:10 Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+641:         {#each FIELD_AGENTS as ag}
+642:           {@const rStatus = $agentStatuses?.[ag.id]?.status || $taskStatus?.runs?.[ag.id]?.status || 'Wait'}
+643:           <div
+                   ^
+644:             class="agent-matrix-chip {selectedAgentId === ag.id ? 'is-selected' : ''} {rStatus.toLowerCase()}"
+645:             on:click={() => selectAgent(ag.id)}
+4:37:19 AM [vite-plugin-svelte] src/components/AtlasPinealCockpit.svelte:643:10 `<div>` with a click handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+641:         {#each FIELD_AGENTS as ag}
+642:           {@const rStatus = $agentStatuses?.[ag.id]?.status || $taskStatus?.runs?.[ag.id]?.status || 'Wait'}
+643:           <div
+                   ^
+644:             class="agent-matrix-chip {selectedAgentId === ag.id ? 'is-selected' : ''} {rStatus.toLowerCase()}"
+645:             on:click={() => selectAgent(ag.id)}
+4:37:19 AM [vite-plugin-svelte] src/components/AtlasPinealCockpit.svelte:10:13 Component has unused export property 'telemetryData'. If it is for external reference only, please consider using `export const telemetryData`
+https://svelte.dev/e/export_let_unused
+ 8:   import { playClick, playHalt, playRunning } from '../lib/consoleAudio';
+ 9: 
+10:   export let telemetryData: any = null;
+                                   ^
+11: 
+12:   // --- 1. HÜKÜMDARLAR KONSEYİ (ASPASIA & LILITH) ---
+4:37:20 AM [vite-plugin-svelte] src/components/SpiderFootCockpit.svelte:2386:2 Unused CSS selector ".action-input-wrap input"
+https://svelte.dev/e/css_unused_selector
+2384:   }
+2385: 
+2386:   .action-input-wrap input {
+                                ^
+2387:     width: 100%;
+2388:     background: transparent;
+4:37:20 AM [vite-plugin-svelte] src/components/SpiderFootCockpit.svelte:2405:2 Unused CSS selector ".limit-selector select"
+https://svelte.dev/e/css_unused_selector
+2403:   }
+2404: 
+2405:   .limit-selector select {
+                              ^
+2406:     background: #0f172a;
+2407:     border: 1px solid #334155;
+✓ 139 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.47 kB │ gzip:  0.31 kB
+dist/assets/index-ZLKI26gn.css   76.09 kB │ gzip: 13.94 kB
+dist/assets/event-C_pQPlB4.js     1.52 kB │ gzip:  0.69 kB
+dist/assets/index-omkpQsMU.js   245.77 kB │ gzip: 82.32 kB
+✓ built in 3.98s

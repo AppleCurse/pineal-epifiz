@@ -75,8 +75,8 @@ def inject_vault_key_fallback() -> str | None:
 def resolve_credentials(model: str) -> tuple[str | None, str | None, str]:
     """Nous / OpenRouter / Vault / .env sırasıyla API anahtarını ve base_url'i çözer."""
     try:
-        from dotenv import load_dotenv
-        load_dotenv()
+        from agent_core.runtime_env import load_repo_env
+        load_repo_env()
     except ImportError as exc:
         logger.debug(
             "[resolve_credentials] ImportError — atlandı (beklenen/opsiyonel, iz bırakıldı): %s", exc

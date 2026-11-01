@@ -47,6 +47,7 @@ export interface SysTelemetry {
   // NEDEN kapalı olduğu da bilinir.
   xSensorReady: boolean;
   xSensorReason: string | null;
+  xSessionPreflightReason: string | null;
 }
 
 export const sysTelemetry = writable<SysTelemetry>({
@@ -62,6 +63,7 @@ export const sysTelemetry = writable<SysTelemetry>({
   taskRuns: 0,
   xSensorReady: false,
   xSensorReason: null,
+  xSessionPreflightReason: null,
 });
 
 // THROTTLE düğmesi: ping aralığı (saniye) detentleri.
@@ -123,6 +125,7 @@ async function pollOnce() {
         // [P0] X sensörü: hazır mı + NEDEN değil.
         xSensorReady: !!t.x_scraper,
         xSensorReason: t.x_scraper_reason ? String(t.x_scraper_reason) : null,
+        xSessionPreflightReason: t.x_session_preflight_reason ? String(t.x_session_preflight_reason) : null,
       });
       if (t.vault_locked !== undefined) {
         vaultLocked.set(!!t.vault_locked);

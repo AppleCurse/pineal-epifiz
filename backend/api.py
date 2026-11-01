@@ -29,9 +29,9 @@ Test: ``tests/unit/test_api_monolith_ratchet.py``, ``tests/unit/test_body_size_l
 ``tests/unit/`` (çocuk kilidi uç sözleşmeleri), ``tests/integration/test_ws_ordering.py``.
 """
 
-from dotenv import load_dotenv
+from agent_core.runtime_env import load_repo_env
 
-load_dotenv()
+load_repo_env()
 
 from fastapi import FastAPI, HTTPException, Path, Request, WebSocket
 from backend.routes.speech_audio import api_speech_audio as api_speech_audio, router as _speech_audio_router  # noqa: F401
@@ -51,8 +51,6 @@ import asyncio
 import io
 import json
 import logging
-import importlib
-import shutil
 import os
 import re
 import hashlib
@@ -660,6 +658,17 @@ def _rate_identity(request: Request) -> str:
     """
     identity = getattr(getattr(request, "state", None), "rate_identity", None)
     return identity or _UNIDENTIFIED_RATE_IDENTITY
+
+
+def rate_snapshot(key: str, bucket: str = "initiate") -> bool | None:
+    """Read admission capacity without consuming; unknown bucket is unknown."""
+    if bucket not in RATE_LIMITS:
+        return None
+    limit, window = RATE_LIMITS[bucket]
+    current = _rate_buckets.get(key)
+    now = time.monotonic()
+    used = sum(now - event <= window for event in current.events) if current else 0
+    return used < limit
 
 
 def rate_limit(key: str, bucket: str) -> bool:
@@ -2332,32 +2341,6 @@ from agent_core.services.platform_registry import (  # noqa: F401
 )
 
 
-def _x_sensor_ready() -> bool:
-    """X sensörü gerçekten kullanılabilir mi? (tek kaynak: capability spine).
-
-    Eskiden `/api/telemetry` alanı sabit `False` idi — sensör eklense bile
-    UI "yok" demeye devam ederdi. Şimdi kasa + env kapısı + kütüphane
-    durumunu registry'den okur; sebep makine-okunur olarak loglanır.
-    """
-    try:
-        from agent_core.capabilities import bootstrap
-        from agent_core.capabilities.state import policy_state
-
-        registry = bootstrap()
-        cap = registry.get("sensor.x.twscrape")
-        availability = cap.availability()
-        if not availability.available:
-            logger.debug("x sensörü kapalı: %s", availability.reason)
-            return False
-        from agent_core.capabilities.policy import PolicyKernel
-
-        state = policy_state(vault_locked=False, rate_ok=True)
-        return PolicyKernel().evaluate(cap.gates, state).allowed
-    except Exception as exc:  # telemetri asla API'yı düşürmez
-        logger.debug("x sensör durumu okunamadı: %s", type(exc).__name__)
-        return False
-
-
 def _new_task_id() -> str:
     """[029] fix: saniye-çözünürlüklü op_HHMMSS çakışıyordu; aynı saniyede iki
     görev (farklı client'lar dahil) aynı memory dosyasında birleşiyordu.
@@ -3671,10 +3654,11 @@ api_telemetry = build_telemetry_endpoint(
         scraper_capability=_scraper_capability,
         delivery_status=_delivery_status,
         lifecycle_metrics=lambda room: _lifecycle(room).metrics(),
-        x_sensor_ready=_x_sensor_ready,
         is_real_key=_is_real_key,
         agent_statuses_provider=_agent_statuses_snapshot,
         runtime_status_provider=rust_core_status,
+        rate_snapshot=rate_snapshot,
+        rate_identity=_rate_identity,
     )
 )
 app.get("/api/telemetry")(api_telemetry)
@@ -3721,6 +3705,7 @@ VAULT_EGRESS_ROUTES: frozenset = frozenset({
     # ENABLE_INTERPRETER kapalıyken zaten 403; kasa kilitliyken 423.
     "/api/experimental/interpreter/execute",
     "/api/scraper/authorize-alternative",
+    "/api/commander/phone-probe",
 })
 
 #: Bilinçli muafiyetler — denetimde GÖRÜNÜR olsun diye isim isim yazıldı.
@@ -4917,6 +4902,12 @@ async def interpreter_execute(req: InterpreterPayload):
 app.get("/api/tasks")(
     list_visible_tasks(get_room=get_room, principal_getter=_get_principal)
 )
+from backend.routes.commander import register_phone_probe_route
+register_phone_probe_route(
+    app, rate_limit=rate_limit, rate_identity=_rate_identity,
+    require_minor_clearance=_require_minor_clearance,
+    require_vault_open=_require_vault_open, minor_case_for=_minor_case_for,
+)
 register_support_routes(app, get_room=get_room, principal_getter=_get_principal, require_vault_open=_require_vault_open, require_minor_clearance=_require_minor_clearance, broadcast_log=broadcast_log, broadcast_result=broadcast_result, broadcast_result_error=broadcast_result_error, lifecycle_registry=_lifecycle, rate_limit=rate_limit, rate_identity=_rate_identity)
 
 
@@ -5406,40 +5397,42 @@ _MEDIA_MODES = {
 
 
 @app.get("/api/media/status")
-async def api_media_status():
-    """[FAZ D · D3] Medya hattının GERÇEK durumu: hangi araç var, hangi mod hazır.
-
-    ffmpeg/yt-dlp/whisper yoksa "hazır" denmez; sebep makine-okunur.
-    """
+async def api_media_status(client_id: str = "default", request: Request = None):
+    """Effective media readiness: policy + local preflight, not package presence."""
     from agent_core.capabilities import bootstrap
+    from agent_core.capabilities.state import policy_state
     from agent_core.services import media_forensics
+    from agent_core.utils.optional_deps import module_available
 
     registry = bootstrap()
+    identity = _rate_identity(request) if request is not None else client_id
+    state = policy_state(
+        vault_locked=not _check_vault_interlock(client_id),
+        rate_ok=rate_snapshot(f"media:{identity}", "media"),
+    )
+    ready = {row["id"]: row for row in await registry.readiness(state)}
     rows = []
     for mode, cap_id in _MEDIA_MODES.items():
-        cap = registry.get(cap_id)
-        availability = cap.availability()
-        rows.append(
-            {
-                "mode": mode,
-                "capability_id": cap_id,
-                "available": availability.available,
-                "reason": availability.reason,
-                "gates": sorted(cap.gates),
-            }
-        )
+        row = dict(ready[cap_id])
+        row["mode"] = mode
+        rows.append(row)
+    ytdlp = await media_forensics.probe_ytdlp()
+    engine, engine_reason = media_forensics.resolve_engine()
     return {
         "gate": media_forensics.GATE,
         "media_dir": str(media_forensics.media_dir()),
         "tools": {
-            "yt-dlp": bool(shutil.which("yt-dlp")),
-            "ffmpeg": bool(shutil.which("ffmpeg")),
-            "opencv": bool(importlib.util.find_spec("cv2")),
-            "transcribe_engine": media_forensics.resolve_engine()[0] or "",
+            "yt-dlp": bool(ytdlp["available"]),
+            "yt-dlp_reason": ytdlp["reason"] or None,
+            "yt-dlp_version": ytdlp["version"],
+            "ffmpeg": bool(media_forensics.ffmpeg_command()),
+            "opencv": module_available("cv2"),
+            "transcribe_engine": engine,
         },
-        "transcribe_engine_reason": media_forensics.resolve_engine()[1],
+        "transcribe_engine_reason": engine_reason,
         "modes": rows,
         "any_available": any(row["available"] for row in rows),
+        "live_execution_verified": False,
     }
 
 

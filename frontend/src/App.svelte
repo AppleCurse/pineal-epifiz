@@ -436,8 +436,23 @@
 </script>
 
 <main class="fullscreen-cockpit-viewport">
-  <!-- TEK BÜTÜNLEŞİK MASTER KOKPİT (Dağınık görünümler ve butonlar kaldırıldı) -->
-  <AtlasPinealCockpit />
+  {#if $activeViewMode === 'cockpit'}
+    <AtlasPinealCockpit />
+  {:else if $activeViewMode === 'warroom'}
+    <TacticalWarRoom />
+  {:else if $activeViewMode === 'control'}
+    <LiveControlPanel />
+  {:else if $activeViewMode === 'spiderfoot'}
+    <SpiderFootCockpit />
+  {/if}
+  <nav class="view-switcher" aria-label="Görünüm seçimi">
+    {#each [['cockpit', 'KOKPİT'], ['warroom', 'SAHA'], ['control', 'CANLI'], ['spiderfoot', 'ARAŞTIRMA']] as [mode, label]}
+      <button class:is-active={$activeViewMode === mode} aria-pressed={$activeViewMode === mode}
+        on:click={() => { activeViewMode.set(mode as any); try { localStorage.setItem('pineal_view_mode', mode); } catch {} }}>
+        {label}
+      </button>
+    {/each}
+  </nav>
 
   <!--
     Adli Telemetri & Sözleşme Köprüsü — ARTIK GERÇEKTEN GÖRÜNÜR.

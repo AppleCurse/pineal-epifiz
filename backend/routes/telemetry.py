@@ -31,10 +31,10 @@ from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["TelemetryDeps", "build_telemetry_endpoint", "capability_status_table"]
+__all__ = ["TelemetryDeps", "build_telemetry_endpoint", "capability_status_table", "capability_readiness_table"]
 
 
-def capability_status_table(*, vault_locked: bool) -> list[dict]:
+def capability_status_table(*, vault_locked: bool, rate_ok: bool | None = None) -> list[dict]:
     """Yetenek durum tablosu (sebepli) — telemetri/UI için.
 
     Kaynak: capability spine'ın TEK kayıt defteri (``registry.status``).
@@ -47,10 +47,24 @@ def capability_status_table(*, vault_locked: bool) -> list[dict]:
         from agent_core.capabilities.state import policy_state
 
         registry = bootstrap()
-        state = policy_state(vault_locked=bool(vault_locked), rate_ok=True)
+        state = policy_state(vault_locked=bool(vault_locked), rate_ok=rate_ok)
         return registry.status(state)
     except Exception as exc:  # telemetri asla API'yı düşürmez
         logger.debug("yetenek durum tablosu okunamadı: %s", type(exc).__name__)
+        return []
+
+
+async def capability_readiness_table(*, vault_locked: bool, rate_ok: bool | None = None) -> list[dict]:
+    """Effective status including local session preflight; no target requests."""
+    try:
+        from agent_core.capabilities import bootstrap
+        from agent_core.capabilities.state import policy_state
+
+        registry = bootstrap()
+        state = policy_state(vault_locked=bool(vault_locked), rate_ok=rate_ok)
+        return await registry.readiness(state)
+    except Exception as exc:
+        logger.debug("capability readiness unavailable: %s", type(exc).__name__)
         return []
 
 
@@ -63,16 +77,17 @@ class TelemetryDeps:
     scraper_capability: Callable[[], Any]
     delivery_status: Callable[[dict], dict]
     lifecycle_metrics: Callable[[dict], dict]
-    x_sensor_ready: Callable[[], bool]
     is_real_key: Callable[[Any], bool]
     agent_statuses_provider: Callable[[], dict]
     runtime_status_provider: Callable[[], dict]
+    rate_snapshot: Callable[[str], bool | None]
+    rate_identity: Callable[[Any], str]
 
 
 def build_telemetry_endpoint(deps: TelemetryDeps) -> Callable[..., Any]:
     """``/api/telemetry`` gövdesini kurar (FastAPI'ye kaydedilebilir)."""
 
-    async def api_telemetry(client_id: str = "default"):
+    async def api_telemetry(client_id: str = "default", request: Any = None):
         room = deps.get_room(client_id)
         executor = room["executor"]
         vault = room["vault"]
@@ -88,7 +103,10 @@ def build_telemetry_endpoint(deps: TelemetryDeps) -> Callable[..., Any]:
         # [P0 · DENETİM 2026-10-16 · Bulgu B-3] Telemetri artık "kapalı" demekle
         # yetinmez: HANGİ yeteneğin NEDEN kapalı olduğunu (makine-okunur sebep)
         # taşır. Kaynak: capability spine'ın TEK kayıt defteri.
-        capabilities = capability_status_table(vault_locked=not vault_open)
+        identity = deps.rate_identity(request) if request is not None else client_id
+        rate_ok = deps.rate_snapshot(f"initiate:{identity}")
+        capabilities = await capability_readiness_table(vault_locked=not vault_open, rate_ok=rate_ok)
+        x_row = next((row for row in capabilities if row.get("id") == "sensor.x.twscrape"), {})
         return {
             "core": True,
             "gateway": deps.is_real_key(getattr(executor.llm_gateway, "api_key", None)),
@@ -100,7 +118,7 @@ def build_telemetry_endpoint(deps: TelemetryDeps) -> Callable[..., Any]:
             ),
             # [FAZ A] Artık SABİT False değil: X sensörü gerçekten var mı, kapıları
             # açık mı? Cevap capability spine'ın TEK kaynağından gelir.
-            "x_scraper": deps.x_sensor_ready(),
+            "x_scraper": bool(x_row.get("available", False)),
             "instagram_scraper": capability["instagram"],
             "instagram_session": deps.is_real_key(vault.get("ig_sessionid")),
             "browser_installed": capability["browser"],
@@ -122,14 +140,8 @@ def build_telemetry_endpoint(deps: TelemetryDeps) -> Callable[..., Any]:
                 for row in capabilities
                 if not row.get("available")
             },
-            "x_scraper_reason": next(
-                (
-                    row.get("reason") or row.get("policy_reason")
-                    for row in capabilities
-                    if row.get("id") == "sensor.x.twscrape"
-                ),
-                "unknown",
-            ),
+            "x_scraper_reason": x_row.get("reason") or (None if x_row.get("available") else "unknown"),
+            "x_session_preflight_reason": x_row.get("local_preflight_reason"),
         }
 
     return api_telemetry

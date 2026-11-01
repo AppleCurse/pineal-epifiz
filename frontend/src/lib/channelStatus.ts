@@ -27,13 +27,18 @@ export interface CapabilityRow {
   gates: string[];
   policy_allowed: boolean | null;
   policy_reason: string | null;
+  local_available?: boolean;
+  local_reason?: string | null;
+  verification?: string;
+  live_execution_verified?: boolean;
   policy_gate: string | null;
+  local_preflight_available?: boolean | null;
+  local_preflight_reason?: string | null;
 }
 
 // Makine-okunur sebep → okunur Türkçe etiket.
 const REASON_LABELS: Record<string, string> = {
   vault_locked: 'kasa kilitli',
-  no_session_pool: 'oturum hesabı yok (hesap havuzu boş)',
   no_session_pool_detail: 'oturum hesabı yok',
   user_not_found: 'kullanıcı bulunamadı',
   dependency_missing: 'bağımlılık kurulu değil',
@@ -50,6 +55,14 @@ const REASON_LABELS: Record<string, string> = {
   scan_unavailable: 'tarama yapılamadı',
   invalid_username: 'geçersiz kullanıcı adı',
   unavailable: 'kullanılamıyor',
+  no_session_pool: 'aktif X oturum havuzu yok',
+  session_pool_unreadable: 'X oturum havuzu okunamadı',
+  session_pool_unmeasurable: 'X oturum havuzu ölçülemedi',
+  preflight_required: 'ön koşul doğrulaması gerekli',
+  preflight_timeout: 'ön koşul doğrulaması zaman aşımı',
+  ytdlp_probe_timeout: 'yt-dlp sürüm ölçümü zaman aşımına uğradı',
+  ytdlp_version_unreadable: 'yt-dlp geçerli sürüm çıktısı vermedi',
+  download_missing: 'indirme yeni dosya üretmedi',
 };
 
 const CHANNEL_LABELS: Record<string, string> = {
@@ -64,6 +77,10 @@ const CHANNEL_LABELS: Record<string, string> = {
   'profile.deep_scan': 'Derin profil taraması',
   'extractor.identity.socid': 'SOCID kimlik çıkarımı',
   'extractor.web.trafilatura': 'Sayfa metni çıkarımı',
+  'sensor.media.fetch': 'Medya indirme',
+  'analyzer.media.frames': 'Kare analizi',
+  'extractor.media.transcript': 'Medya transkripti',
+  'analyzer.media.similarity': 'Görsel benzerlik',
 };
 
 /** Makine-okunur sebebi okunur metne çevirir (bilinmeyen token aynen kalır). */
@@ -83,6 +100,8 @@ export function reasonLabel(reason?: string | null): string {
     if (head === 'dependency_missing') return `bağımlılık yok: ${tail}`;
     if (head === 'config_missing') return `yapılandırma eksik: ${tail}`;
     if (head === 'search_unavailable') return `arama motoru yok: ${tail}`;
+    if (head === 'policy') return `politika reddi: ${tail}`;
+    if (head === 'ytdlp_probe_failed') return `yt-dlp ön kontrol hatası: ${tail}`;
   }
   return raw;
 }

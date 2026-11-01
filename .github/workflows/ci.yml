@@ -29,7 +29,9 @@ jobs:
         # requirements.txt'i taze çözüyordu -> prod ile test edilen ağaç
         # farklıydı (ölçülen: 20 paket sürüm farkı, 2 test skip/geçer farkı).
         run: |
-          pip install -r requirements.lock ruff pytest pytest-asyncio pytest-cov pytest-timeout
+          pip install -r requirements.lock
+          pip install -r requirements-retina.lock
+          pip install -r requirements-dev.lock
       - name: Lint with ruff
         run: ruff check .
       - name: Run backend tests with coverage gate

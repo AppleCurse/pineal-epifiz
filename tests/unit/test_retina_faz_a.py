@@ -275,7 +275,7 @@ async def test_x_sensor_requires_rate_state_fail_closed():
 
 
 @pytest.mark.asyncio
-async def test_x_sensor_produces_time_series_for_frequency_engine(monkeypatch):
+async def test_x_sensor_produces_time_series_for_frequency_engine(monkeypatch, tmp_path):
     """X akışı yalnız kanıt değil, Frequency/timing için ZAMAN SERİSİ üretir."""
     import types
 
@@ -295,6 +295,8 @@ async def test_x_sensor_produces_time_series_for_frequency_engine(monkeypatch):
     d2 = datetime(2026, 10, 2, 3, 15, tzinfo=timezone.utc)
 
     tweets = [_Tweet(1, d1, "gece paylaşımı"), _Tweet(2, d2, "sabah paylaşımı")]
+    async def _active_accounts():
+        return [types.SimpleNamespace(active=True)]
 
     async def _user_by_login(_username):
         return types.SimpleNamespace(id=42)
@@ -306,8 +308,12 @@ async def test_x_sensor_produces_time_series_for_frequency_engine(monkeypatch):
     async def _gather(agen):
         return [tweet async for tweet in agen]
 
+    db = tmp_path / "accounts.db"
+    db.write_bytes(b"fixture-local-db-presence")
+    monkeypatch.setenv("PINEAL_X_ACCOUNTS_DB", str(db))
     fake_twscrape = types.SimpleNamespace(
-        API=lambda: types.SimpleNamespace(
+        API=lambda **kwargs: types.SimpleNamespace(
+            pool=types.SimpleNamespace(get_all=lambda: _active_accounts()),
             user_by_login=_user_by_login,
             user_tweets=_user_tweets,
         ),

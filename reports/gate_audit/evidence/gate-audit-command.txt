@@ -1,0 +1,200 @@
+$ /home/user/pineal-epifiz/.venv/bin/python -c 'import importlib,importlib.metadata,json; m=importlib.import_module('"'"'maigret'"'"'); print(json.dumps({'"'"'module'"'"':m.__name__,'"'"'file'"'"':getattr(m,'"'"'__file__'"'"',None),'"'"'distribution'"'"':'"'"'maigret'"'"','"'"'version'"'"':importlib.metadata.version('"'"'maigret'"'"')}))'
+{"module": "maigret", "file": "/home/user/pineal-epifiz/.venv/lib/python3.11/site-packages/maigret/__init__.py", "distribution": "maigret", "version": "0.6.5"}
+exit=0
+$ /home/user/pineal-epifiz/.venv/bin/python -m pytest tests/unit/test_capability_spine_faz0.py -q --timeout=60 -p no:cacheprovider
+.....................................                                    [100%]
+37 passed in 1.83s
+/home/user/pineal-epifiz/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+exit=0
+$ /home/user/pineal-epifiz/.venv/bin/python -m pytest tests/unit/test_consent_gate_wiring.py -q --timeout=60 -p no:cacheprovider
+.....                                                                    [100%]
+5 passed in 1.82s
+/home/user/pineal-epifiz/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+exit=0
+$ /home/user/pineal-epifiz/.venv/bin/python -c 'import importlib,importlib.metadata,json; m=importlib.import_module('"'"'holehe'"'"'); print(json.dumps({'"'"'module'"'"':m.__name__,'"'"'file'"'"':getattr(m,'"'"'__file__'"'"',None),'"'"'distribution'"'"':'"'"'holehe'"'"','"'"'version'"'"':importlib.metadata.version('"'"'holehe'"'"')}))'
+{"module": "holehe", "file": "/home/user/pineal-epifiz/.venv/lib/python3.11/site-packages/holehe/__init__.py", "distribution": "holehe", "version": "1.61"}
+exit=0
+$ /home/user/pineal-epifiz/.venv/bin/python -c 'import importlib,importlib.metadata,json; m=importlib.import_module('"'"'crawl4ai'"'"'); print(json.dumps({'"'"'module'"'"':m.__name__,'"'"'file'"'"':getattr(m,'"'"'__file__'"'"',None),'"'"'distribution'"'"':'"'"'crawl4ai'"'"','"'"'version'"'"':importlib.metadata.version('"'"'crawl4ai'"'"')}))'
+{"module": "crawl4ai", "file": "/home/user/pineal-epifiz/.venv/lib/python3.11/site-packages/crawl4ai/__init__.py", "distribution": "crawl4ai", "version": "0.9.3"}
+exit=0
+$ /home/user/pineal-epifiz/.venv/bin/python -m pytest tests/unit/test_retina_faz_a.py -q --timeout=60 -p no:cacheprovider
+.......................                                                  [100%]
+23 passed in 1.68s
+/home/user/pineal-epifiz/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+exit=0
+$ /home/user/pineal-epifiz/.venv/bin/python -c 'import importlib,importlib.metadata,json; m=importlib.import_module('"'"'scrapling'"'"'); print(json.dumps({'"'"'module'"'"':m.__name__,'"'"'file'"'"':getattr(m,'"'"'__file__'"'"',None),'"'"'distribution'"'"':'"'"'scrapling'"'"','"'"'version'"'"':importlib.metadata.version('"'"'scrapling'"'"')}))'
+{"module": "scrapling", "file": "/home/user/pineal-epifiz/.venv/lib/python3.11/site-packages/scrapling/__init__.py", "distribution": "scrapling", "version": "0.5"}
+exit=0
+$ /home/user/pineal-epifiz/.venv/bin/python -c 'import importlib,importlib.metadata,json; m=importlib.import_module('"'"'browserforge'"'"'); print(json.dumps({'"'"'module'"'"':m.__name__,'"'"'file'"'"':getattr(m,'"'"'__file__'"'"',None),'"'"'distribution'"'"':'"'"'browserforge'"'"','"'"'version'"'"':importlib.metadata.version('"'"'browserforge'"'"')}))'
+{"module": "browserforge", "file": null, "distribution": "browserforge", "version": "1.2.4"}
+exit=0
+$ /home/user/pineal-epifiz/.venv/bin/python -c 'import importlib,importlib.metadata,json; m=importlib.import_module('"'"'twscrape'"'"'); print(json.dumps({'"'"'module'"'"':m.__name__,'"'"'file'"'"':getattr(m,'"'"'__file__'"'"',None),'"'"'distribution'"'"':'"'"'twscrape'"'"','"'"'version'"'"':importlib.metadata.version('"'"'twscrape'"'"')}))'
+{"module": "twscrape", "file": "/home/user/pineal-epifiz/.venv/lib/python3.11/site-packages/twscrape/__init__.py", "distribution": "twscrape", "version": "0.20.1"}
+exit=0
+$ /home/user/pineal-epifiz/.venv/bin/python -m pytest tests/unit/test_p0_honest_status.py tests/unit/test_capability_preflight.py -q --timeout=60 -p no:cacheprovider
+...................................................                      [100%]
+=============================== warnings summary ===============================
+tests/unit/test_capability_preflight.py::test_phone_route_uses_real_capability_and_safety_gates
+  /home/user/pineal-epifiz/.venv/lib/python3.11/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+tests/unit/test_capability_preflight.py::test_phone_route_uses_real_capability_and_safety_gates
+tests/unit/test_capability_preflight.py::test_phone_route_uses_real_capability_and_safety_gates
+  /home/user/pineal-epifiz/agent_core/services/redis_bus.py:192: DeprecationWarning: Call to deprecated close. (Use aclose() instead) -- Deprecated since version 5.0.1.
+    await self._client.close()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+51 passed, 3 warnings in 12.66s
+/home/user/pineal-epifiz/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+exit=0
+$ /home/user/pineal-epifiz/.venv/bin/python -c 'import importlib,importlib.metadata,json; m=importlib.import_module('"'"'instagrapi'"'"'); print(json.dumps({'"'"'module'"'"':m.__name__,'"'"'file'"'"':getattr(m,'"'"'__file__'"'"',None),'"'"'distribution'"'"':'"'"'instagrapi'"'"','"'"'version'"'"':importlib.metadata.version('"'"'instagrapi'"'"')}))'
+{"module": "instagrapi", "file": "/home/user/pineal-epifiz/.venv/lib/python3.11/site-packages/instagrapi/__init__.py", "distribution": "instagrapi", "version": "3.2.2"}
+exit=0
+$ /home/user/pineal-epifiz/.venv/bin/python -m pytest tests/unit/test_language_capabilities.py -q --timeout=60 -p no:cacheprovider
+............                                                             [100%]
+12 passed in 1.68s
+/home/user/pineal-epifiz/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+exit=0
+$ /home/user/pineal-epifiz/.venv/bin/python -m pytest tests/unit/test_local_jury_capability.py -q --timeout=60 -p no:cacheprovider
+..........                                                               [100%]
+10 passed in 4.33s
+/home/user/pineal-epifiz/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+exit=0
+$ /home/user/pineal-epifiz/.venv/bin/python -m pytest tests/unit/test_company_capabilities.py -q --timeout=60 -p no:cacheprovider
+.............                                                            [100%]
+13 passed in 1.73s
+/home/user/pineal-epifiz/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+exit=0
+$ /home/user/pineal-epifiz/.venv/bin/python -c 'import importlib,importlib.metadata,json; m=importlib.import_module('"'"'reportlab'"'"'); print(json.dumps({'"'"'module'"'"':m.__name__,'"'"'file'"'"':getattr(m,'"'"'__file__'"'"',None),'"'"'distribution'"'"':'"'"'reportlab'"'"','"'"'version'"'"':importlib.metadata.version('"'"'reportlab'"'"')}))'
+{"module": "reportlab", "file": "/home/user/pineal-epifiz/.venv/lib/python3.11/site-packages/reportlab/__init__.py", "distribution": "reportlab", "version": "4.5.1"}
+exit=0
+$ /home/user/pineal-epifiz/.venv/bin/python -c 'import importlib,importlib.metadata,json; m=importlib.import_module('"'"'PIL'"'"'); print(json.dumps({'"'"'module'"'"':m.__name__,'"'"'file'"'"':getattr(m,'"'"'__file__'"'"',None),'"'"'distribution'"'"':'"'"'Pillow'"'"','"'"'version'"'"':importlib.metadata.version('"'"'Pillow'"'"')}))'
+{"module": "PIL", "file": "/home/user/pineal-epifiz/.venv/lib/python3.11/site-packages/PIL/__init__.py", "distribution": "Pillow", "version": "13.0.0"}
+exit=0
+$ /home/user/pineal-epifiz/.venv/lib/python3.11/site-packages/imageio_ffmpeg/binaries/ffmpeg-linux-x86_64-v7.0.2 -version
+ffmpeg version 7.0.2-static https://johnvansickle.com/ffmpeg/  Copyright (c) 2000-2024 the FFmpeg developers
+built with gcc 8 (Debian 8.3.0-6)
+configuration: --enable-gpl --enable-version3 --enable-static --disable-debug --disable-ffplay --disable-indev=sndio --disable-outdev=sndio --cc=gcc --enable-fontconfig --enable-frei0r --enable-gnutls --enable-gmp --enable-libgme --enable-gray --enable-libaom --enable-libfribidi --enable-libass --enable-libvmaf --enable-libfreetype --enable-libmp3lame --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenjpeg --enable-librubberband --enable-libsoxr --enable-libspeex --enable-libsrt --enable-libvorbis --enable-libopus --enable-libtheora --enable-libvidstab --enable-libvo-amrwbenc --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxml2 --enable-libdav1d --enable-libxvid --enable-libzvbi --enable-libzimg
+libavutil      59.  8.100 / 59.  8.100
+libavcodec     61.  3.100 / 61.  3.100
+libavformat    61.  1.100 / 61.  1.100
+libavdevice    61.  1.100 / 61.  1.100
+libavfilter    10.  1.100 / 10.  1.100
+libswscale      8.  1.100 /  8.  1.100
+libswresample   5.  1.100 /  5.  1.100
+libpostproc    58.  1.100 / 58.  1.100
+exit=0
+$ /home/user/pineal-epifiz/.venv/bin/python -m pytest tests/unit/test_report_factory.py -q --timeout=60 -p no:cacheprovider
+..........                                                               [100%]
+10 passed in 2.09s
+/home/user/pineal-epifiz/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+exit=0
+$ /home/user/pineal-epifiz/.venv/bin/python -c 'import importlib,importlib.metadata,json; m=importlib.import_module('"'"'interpreter'"'"'); print(json.dumps({'"'"'module'"'"':m.__name__,'"'"'file'"'"':getattr(m,'"'"'__file__'"'"',None),'"'"'distribution'"'"':'"'"'open-interpreter'"'"','"'"'version'"'"':importlib.metadata.version('"'"'open-interpreter'"'"')}))'
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/usr/lib/python3.11/importlib/__init__.py", line 126, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1206, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1178, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1142, in _find_and_load_unlocked
+ModuleNotFoundError: No module named 'interpreter'
+exit=1
+$ /home/user/pineal-epifiz/.venv/bin/python -m pytest tests/unit/test_p1_6_interpreter_registry.py -q --timeout=60 -p no:cacheprovider
+....                                                                     [100%]
+4 passed in 1.85s
+/home/user/pineal-epifiz/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+exit=0
+$ /home/user/pineal-epifiz/.venv/bin/python -c 'import importlib,importlib.metadata,json; m=importlib.import_module('"'"'cv2'"'"'); print(json.dumps({'"'"'module'"'"':m.__name__,'"'"'file'"'"':getattr(m,'"'"'__file__'"'"',None),'"'"'distribution'"'"':'"'"'opencv-python-headless'"'"','"'"'version'"'"':importlib.metadata.version('"'"'opencv-python-headless'"'"')}))'
+{"module": "cv2", "file": "/home/user/pineal-epifiz/.venv/lib/python3.11/site-packages/cv2/__init__.py", "distribution": "opencv-python-headless", "version": "4.14.0.94"}
+exit=0
+$ /home/user/pineal-epifiz/.venv/bin/python -c 'import importlib,importlib.metadata,json; m=importlib.import_module('"'"'yt_dlp'"'"'); print(json.dumps({'"'"'module'"'"':m.__name__,'"'"'file'"'"':getattr(m,'"'"'__file__'"'"',None),'"'"'distribution'"'"':'"'"'yt-dlp'"'"','"'"'version'"'"':importlib.metadata.version('"'"'yt-dlp'"'"')}))'
+{"module": "yt_dlp", "file": "/home/user/pineal-epifiz/.venv/lib/python3.11/site-packages/yt_dlp/__init__.py", "distribution": "yt-dlp", "version": "2026.10.26"}
+exit=0
+$ /home/user/pineal-epifiz/.venv/lib/python3.11/site-packages/imageio_ffmpeg/binaries/ffmpeg-linux-x86_64-v7.0.2 -version
+ffmpeg version 7.0.2-static https://johnvansickle.com/ffmpeg/  Copyright (c) 2000-2024 the FFmpeg developers
+built with gcc 8 (Debian 8.3.0-6)
+configuration: --enable-gpl --enable-version3 --enable-static --disable-debug --disable-ffplay --disable-indev=sndio --disable-outdev=sndio --cc=gcc --enable-fontconfig --enable-frei0r --enable-gnutls --enable-gmp --enable-libgme --enable-gray --enable-libaom --enable-libfribidi --enable-libass --enable-libvmaf --enable-libfreetype --enable-libmp3lame --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenjpeg --enable-librubberband --enable-libsoxr --enable-libspeex --enable-libsrt --enable-libvorbis --enable-libopus --enable-libtheora --enable-libvidstab --enable-libvo-amrwbenc --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxml2 --enable-libdav1d --enable-libxvid --enable-libzvbi --enable-libzimg
+libavutil      59.  8.100 / 59.  8.100
+libavcodec     61.  3.100 / 61.  3.100
+libavformat    61.  1.100 / 61.  1.100
+libavdevice    61.  1.100 / 61.  1.100
+libavfilter    10.  1.100 / 10.  1.100
+libswscale      8.  1.100 /  8.  1.100
+libswresample   5.  1.100 /  5.  1.100
+libpostproc    58.  1.100 / 58.  1.100
+exit=0
+$ /home/user/pineal-epifiz/.venv/bin/python -m pytest tests/unit/test_media_forensics.py -q --timeout=60 -p no:cacheprovider
+.....................                                                    [100%]
+21 passed in 3.00s
+/home/user/pineal-epifiz/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+exit=0
+$ /home/user/pineal-epifiz/.venv/bin/python -m pytest tests/unit/test_speech_report_faz_c.py -q --timeout=60 -p no:cacheprovider
+............                                                             [100%]
+12 passed in 1.57s
+/home/user/pineal-epifiz/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+exit=0
+
+# 17 kapı denetimi
+
+Python: `/home/user/pineal-epifiz/.venv/bin/python`
+
+Bayrak/paket/import/preflight/test/canlı yürütme ayrı kanıtlardır. Kasa ve oran sınırı aşılmadı.
+Bilinmeyen oran sınırı `null` olarak kalır; sıfır veya uygun kabul edilmez.
+
+| Kapı | Bayrak | Paket | CLI | Servis | Kimlik | Depo testi | Karar | Engel / doğrulama boşluğu |
+|---|---|---|---|---|---|---|---|---|
+| ENABLE_MAIGRET | False | GEÇTİ | NOT_REQUIRED | YAPILAMADI | — | GEÇTİ | YAPILAMADI | gate_disabled, vault_locked, policy:vault_locked, live_target_not_verified |
+| ENABLE_CROSS_PLATFORM | False | — | NOT_REQUIRED | YAPILAMADI | — | GEÇTİ | YAPILAMADI | gate_disabled, vault_locked, policy:vault_locked, live_target_not_verified |
+| ENABLE_HOLEHE | False | GEÇTİ | NOT_REQUIRED | YAPILAMADI | — | GEÇTİ | YAPILAMADI | gate_disabled, vault_locked, policy:vault_locked, live_target_not_verified |
+| ENABLE_CRAWL4AI | False | GEÇTİ | NOT_REQUIRED | YAPILAMADI | — | GEÇTİ | YAPILAMADI | gate_disabled, vault_locked, policy:vault_locked, live_target_not_verified |
+| ENABLE_SCRAPLING | False | GEÇTİ | NOT_REQUIRED | YAPILAMADI | — | GEÇTİ | YAPILAMADI | gate_disabled, vault_locked, policy:vault_locked, live_target_not_verified |
+| ENABLE_X_SENSOR | False | GEÇTİ | NOT_REQUIRED | YAPILAMADI | — | GEÇTİ | YAPILAMADI | no_session_pool, gate_disabled, vault_locked, policy:vault_locked, live_target_not_verified |
+| ENABLE_IG_SECONDARY | False | GEÇTİ | NOT_REQUIRED | YAPILAMADI | KALDI | GEÇTİ | YAPILAMADI | gate_disabled, vault_locked, policy:vault_locked, identity_or_model_config_missing, live_target_not_verified |
+| ENABLE_AGENT_REACH | False | — | KALDI | YAPILAMADI | — | GEÇTİ | YAPILAMADI | gate_disabled, vault_locked, policy:vault_locked, command_not_found:agent-reach, live_target_not_verified |
+| ENABLE_SEARXNG | False | — | NOT_REQUIRED | YAPILAMADI | — | GEÇTİ | YAPILAMADI | gate_disabled, vault_locked, policy:vault_locked, service_endpoint_not_verified |
+| ENABLE_LOCAL_TRANSLATE | False | — | KALDI | YAPILAMADI | — | GEÇTİ | YAPILAMADI | gate_disabled, vault_locked, policy:vault_locked, command_not_found:trans, service_endpoint_not_verified |
+| ENABLE_LOCAL_JURY | False | — | NOT_REQUIRED | YAPILAMADI | KALDI | GEÇTİ | YAPILAMADI | gate_disabled, vault_locked, policy:vault_locked, identity_or_model_config_missing, service_endpoint_not_verified |
+| ENABLE_COMPANY_TARGETING | False | — | KALDI | YAPILAMADI | — | GEÇTİ | YAPILAMADI | gate_disabled, vault_locked, policy:vault_locked, command_not_found:theHarvester, live_target_not_verified |
+| ENABLE_REPORT_FACTORY | False | GEÇTİ | GEÇTİ | YAPILAMADI | — | GEÇTİ | YAPILAMADI | gate_disabled, vault_locked, policy:vault_locked |
+| ENABLE_INTERPRETER | False | KALDI | NOT_REQUIRED | YAPILAMADI | — | GEÇTİ | YAPILAMADI | gate_disabled, vault_locked, no_registered_capability, package_probe_failed |
+| ENABLE_MEDIA_FORENSICS | False | GEÇTİ | GEÇTİ | YAPILAMADI | — | GEÇTİ | YAPILAMADI | gate_disabled, vault_locked, policy:vault_locked, service_endpoint_not_verified, live_platform_download_not_verified |
+| ENABLE_LOCAL_TTS | False | — | KALDI | YAPILAMADI | KALDI | GEÇTİ | YAPILAMADI | gate_disabled, vault_locked, policy:vault_locked, command_not_found:piper, identity_or_model_config_missing, service_endpoint_not_verified |
+| ENABLE_LOCAL_STT | False | — | KALDI | YAPILAMADI | — | GEÇTİ | YAPILAMADI | gate_disabled, vault_locked, policy:vault_locked, command_not_found:whisper, service_endpoint_not_verified |
+
+Ham komutlar, çıkış kodları ve tam çıktılar `audit.json` ve yanındaki log dosyalarındadır.
+Depo testleri fixture içerebilir; canlı servis/hedef başarısı kanıtlamaz.
+Report: /home/user/pineal-epifiz/reports/gate_audit/20261101T042151Z/audit.md

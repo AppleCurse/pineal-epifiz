@@ -120,7 +120,8 @@ def test_dependency_is_installable_in_the_image(module, dist, kind, dockerfile):
         None,
     )
     assert owner, f"{dist} hiçbir requirements dosyasında tanımlı değil"
-    assert f"-r {owner}" in dockerfile, (
+    install_name = "requirements-retina.lock" if owner == "requirements-retina.txt" else owner
+    assert f"-r {install_name}" in dockerfile, (
         f"{dist} {owner} içinde ama Dockerfile bu dosyayı kurmuyor "
         "(kapı açık, motor yok)"
     )

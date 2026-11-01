@@ -129,7 +129,7 @@ async def test_experimental_shadow_api_preserves_unmeasured_trait_nulls(monkeypa
     from backend import api
 
     monkeypatch.setattr(api, "shadow_executor", ShadowExecutor())
-    monkeypatch.setattr(api.app.state, "minor_cases", {}, raising=False)
+    monkeypatch.setitem(api.app.state._state, "minor_cases", {})
 
     result = await api.shadow_generate({"target_profile": {}})
 

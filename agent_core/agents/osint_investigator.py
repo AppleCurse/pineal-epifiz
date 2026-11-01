@@ -325,6 +325,37 @@ class OsintInvestigatorAgent:
             "error_count": 0,
         }
 
+    async def _apply_explicit_phone_scan(
+        self, profile: OsintProfile, payload: Dict[str, Any] | None,
+    ) -> OsintProfile:
+        """Only an operator-supplied phone enters this sensor; no inferred targets.
+
+        Social bridging stays off here: it has its own consent gate and must
+        not be enabled implicitly by a phone lookup.
+        """
+        data = payload if isinstance(payload, dict) else {}
+        target = data.get("target_profile") or {}
+        raw = target.get("phone") if isinstance(target, dict) else None
+        raw = raw or data.get("phone")
+        if not isinstance(raw, str) or not raw.strip():
+            return profile
+        result, timeline = await self._run_spine(
+            "sensor.identity.phone_probe", raw.strip(), data,
+            params={"auto_bridge": False},
+        )
+        update: dict[str, Any] = {"phone_scan": {
+            "ok": result.ok,
+            "reason": result.unavailable_reason,
+            "evidence_ids": [item.evidence_id for item in result.items],
+        }}
+        if timeline.items:
+            update["evidence_timeline"] = timeline
+        payload_obj = result.payload
+        metadata = getattr(payload_obj, "metadata", None)
+        if result.ok and metadata is not None and getattr(metadata, "is_valid", False):
+            update["connected_phones"] = list(dict.fromkeys([*profile.connected_phones, metadata.e164]))
+        return profile.model_copy(update=update)
+
     async def _continue_independent_sensors(
         self,
         profile: OsintProfile,
@@ -349,6 +380,7 @@ class OsintInvestigatorAgent:
         # [2026-10-23] Maigret'ten BAĞIMSIZ ikinci yol: kapı (ENABLE_CROSS_PLATFORM)
         # açıksa kullanıcı adı bilinen platformlarda gerçekten yoklanır.
         profile = await self._apply_cross_platform_probe(profile, clean_username, payload)
+        profile = await self._apply_explicit_phone_scan(profile, payload)
         if profile.connected_emails:
             return await self._apply_email_scan(profile, profile.connected_emails[0], payload)
         if candidate_emails:
@@ -432,6 +464,11 @@ class OsintInvestigatorAgent:
         username = raw_username.strip() if isinstance(raw_username, str) else ""
 
         if not username:
+            explicit_phone = target.get("phone") or payload.get("phone")
+            if isinstance(explicit_phone, str) and explicit_phone.strip():
+                return await self._apply_explicit_phone_scan(OsintProfile(
+                    fallback_reason="phone_only_input",
+                ), payload)
             return OsintProfile(
                 confidence=0.0,
                 data_confidence=False,

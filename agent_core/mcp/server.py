@@ -300,8 +300,10 @@ class MCPServer:
 
     async def _status_tool(self, version: str) -> dict[str, Any]:
         state, snapshot = await self._policy_state()
+        rows = await self.registry.readiness(state, kernel=self.kernel)
         report = build_status_report(
             self.registry,
+            rows=rows,
             state=state,
             kernel=self.kernel,
             snapshot=snapshot,
