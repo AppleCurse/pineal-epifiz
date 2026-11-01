@@ -26,6 +26,7 @@ __pycache__/
 
 # Local secrets / vault
 .pineal_vault.json
+.pineal_memory/
 
 # Coverage
 .coverage
@@ -36,6 +37,10 @@ htmlcov/
 check_runs.py
 memory/*.json
 memory/ledger/
+#: [2026-10-16 · P1] Görev çalışma anı kontrol noktaları: çalışma-zamanı
+#: çıktısıdır, depo kuralı gereği izlenmez (canlı koşu sırasında üretildi ve
+#: envanteri bozdu — envanter sayfa/evren eşitliği testi kırmızıya döndü).
+memory/checkpoints/
 # [FAZ B] Çalışma anı yerel depolar: değişim geçmişi + eşik kalibrasyon ledger'ı.
 # Bunlar ÖLÇÜM VERİSİDİR, depoya girmez (makinede kalır, kalibrasyon oradan okur).
 memory/changes/
@@ -66,3 +71,5 @@ backups/
 
 # [AUDIT 2026-10-07] Denetim doğrulama ortamı (yerel; üretime girmez)
 .venv-audit/
+# [temizlik] Eski envanter arşivi (4 MB, bayat anlık görüntü): üretilirse izlenmez.
+docs/pineal_envanter.zip

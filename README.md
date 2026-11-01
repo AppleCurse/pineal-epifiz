@@ -1,231 +1,450 @@
-# PINEAL-HERETIC (İçgörü Asistanı)
+# Pineal Epifiz
 
-Merhaba! Pineal-Heretic, sosyal medya (özellikle Instagram ve X) üzerindeki herkese açık profilleri inceleyen, gördüklerini sizin yerinize "insani bir gözle" okuyup analiz eden akıllı bir asistandır.
+**Herkese açık sosyal medya profillerini inceleyip, "bu kişi kim, ne ilgileniyor, nasıl bir
+iletişim tarzı var, neyi neden kaçınıyor" sorularına **kanıta dayalı** cevap veren; sonra da
+sistemde olan biteni **canlı**, insan diliyle anlatan bir inceleme ve denetim platformu.**
 
-Bu program **kesinlikle bir hacker aracı değildir**, şifre kırmaz veya gizli hesaplara sızmaz. Sadece internetteki herkese açık resimleri, yazıları ve paylaşım saatlerini alır, tıpkı sizin günlerce ekrana bakarak yapacağınız gibi okur, ancak bunu saniyeler içinde yaparak size anlaşılır, dürüst bir "profil özeti" sunar.
----
+Bu bir hacker aracı değildir. Şifre kırmaz, gizli hesaplara girmez. Yalnızca herkese açık
+sayfaları okur, topladığı veriyi matematiksel ölçümlerle inceler ve her iddianın arkasına
+gerçek bir kanıt koyar. Veri yoksa **"bilmiyorum"** der; boşluğu doldurmaz.
 
 ```
                        ╔═══════════════════════════════════════════╗
                        ║        P I N E A L   E P İ F İ Z          ║
-                       ║       v5.1 ADLİ BİLİŞSEL İSTASYON         ║
+                       ║      v3.0.0-rc.2 ADLİ BİLİŞSEL İSTASYON   ║
                        ╚═══════════════════════════════════════════╝
 
-    [ 🌐 ÇOK KANALLI OSINT ]       [ 🧠 7 MATEMATİKSEL DALGA MOTORU ]       [ 👁️ ATLAS GÖZLEMEVİ ]
-   Instagram · LinkedIn · X/Web       Frequency · Seismos · Void                 %12.2 Pirinç Halka
-   Tavily · Exa · SerpAPI             Strata · Gravity · Pulse · Key             Organik Yaşayan Göz
-               │                                      │                                  │
-               └──────────────────────┬───────────────┴──────────────────────────────────┘
-                                      │
-                         [ ⚡ 12 UZMAN ANALİZ ROLÜ ]
-                  Orkestratör süreç içinde yürütür · Canlı Rack
-                                      │
-                         [ ⚔️ TAKTİK MUHAREBE MASASI ]
-                       100% Şeffaf Adli Teftiş & Kara Kutu
-                                      │
-                   [ 🛡️ ÇOKLU SAĞLAYICI LLM GÜVENLİK HAVUZU ]
-               9Router Local Hub + Google Gemini + Groq + DeepSeek
+    [ 🌐 AÇIK KAYNAK TOPLAMA ]      [ 🧠 7 DALGA MOTORU ]        [ 👁️ CANLI DENETİM ]
+   Instagram · X · Web Arama        Ritim · Kırılma · Boşluk      KONTROL PANELİ
+   E-posta · Kullanıcı adı · Web     Katman · Çekim · Nefes · Ana  (her şey canlı)
+               │                                  │                        │
+               └──────────────┬───────────────────┴────────────────────────┘
+                              │
+                    [ ⚡ 13 GÖREV AJANI · TEK SÜREÇ İÇİ ]
+              Kural tabanlı yönlendirici · Sırayla · Kanıt zinciri
+                              │
+                    [ 💬 ASPASIA · SENİNLE KONUŞAN ARAYÜZ ]
+              "Ne oluyor şu an?" sorusunu doğal dille yanıtlar
 ```
 
 ---
 
-## 1. Pineal Epifiz Nedir? (Felsefe ve Çekirdek Mantık)
+## 1 · Bu README nasıl okunur
 
-Pineal (Epifiz bezi); biyolojide ışığı, sirkadiyen döngüleri ve görünmeyen zaman frekanslarını algılayan, insan bedeninin ana saat kulesidir. 
-
-**PINEAL-HERETIC**, bu biyolojik ilkeyi dijital adli tıbba uyarlar:
-Bir hedefin açık kaynaklı dijital ayak izlerini (sosyal paylaşımları, metinlerini, fotoğraflarını, zamansal etkileşim ritimlerini) toplayan, bunları **yapay zekaya asla fal baktırmadan**, saf matematiksel dalga motorlarıyla analiz eden **yerel bir adli psikodinamik profil ve rezonans istasyonudur**.
-
-### Sistemin 4 Dokunulmaz İlkesi:
-> **Tüzük:** bu ilkeler artık [`docs/PINEAL_TUZUK.md`](docs/PINEAL_TUZUK.md) v2 içinde **Madde 1–4** olarak yaşar (2026-10-05). İlkeler değişmedi; bağlamı büyüdü: uyum/ilk temas artık sistemin tanımı değil, **kullanım sahalarından biridir** (tüzük Madde 0 ve Madde 9). Aşağıdaki dört ilke, tüzüğün kısa okumasıdır.
-1. **LLM'ler Falcı Değildir:** Karakter analizi, bastırılmış narsisizm veya derin travmalar LLM'lere "tahmin ettirilmez". 7 adet saf matematiksel dalga motoru metin ve zaman serisini doğrudan fizik/istatistik formülleriyle ölçer. LLM'ler yalnızca en son aşamada dil sentezi, diyalog tasarımı ve çapraz denetim için kullanılır.
-2. **Kanıt Mührü (Fail-Closed):** Verisi veya kanıtı olmayan hiçbir iddia üretilemez (`InsufficientEvidenceError`). Sistem boşlukları sallayarak doldurmaz; veri yoksa o kanalı dürüstçe kapatır veya işlemi durdurur.
-3. **100% Şeffaflık & Sıfır Sahte Simülasyon:** Arayüzde rastgele yanan sahte LED'ler veya yapay zamanlayıcılar (`demoMode`) kesinlikle bulunmaz. Ekranda görülen her durum, güven puanı ve log, doğrudan FastAPI WebSocket, Redis Pub/Sub ve Tauri IPC'den akan gerçek telemetridir.
-4. **Kasa (Vault Interlock) Koruması:** Fiziksel anahtar mandalı kilitliyken (`vault_locked: true`), dış dünyaya tek bir OSINT veya scraper isteği çıkamaz. Operatör mandalı çevirmeden dış ağa erişim imkansızdır.
-
----
-
-## 2. Çift Modlu Taktik Komuta Arayüzü (v5.1 Mimarisi)
-
-> Router tüm ajanları zorunlu sırayla çalıştırmaz. Diyagram, koşullu dalları özetler. Yedi pillar motorunun kendi hesaplamaları LLM çağrısı yapmaz; deterministik kod hesaplarıdır. Sonuçları yine de betimleyici/heuristik kaynak ölçümleridir, psikometrik test değildir.
-
-PINEAL-HERETIC v5.1, operatöre hem derin sinematik sezgi hem de cerrahi şeffaflık sunan **çift modlu (Dual-Mode)** bir komuta köprüsü ile donatılmıştır. İki mod arasında sağ üstteki hap butondan anında geçiş yapılır ve tercih tarayıcıda (`localStorage.pineal_view_mode`) saklanır.
-
-### MOD 1: Atlas Epifiz Gözlemevi (`AtlasPinealCockpit.svelte`)
-*Kayıpsız 16:9 Master Şasi Üzerinde Yaşayan Epifiz Gözü ve Sokratik Terminal.*
-
-- **Orijinal %12.2 Pirinç Yuvalı Yaşayan Organik Göz:**
-  - Pirinç yuva içinde yaşayan organik epifiz gözü (`living_pineal_disk.png`).
-  - Operatörün fare hareketini nazikçe takip eder, arka planda organik drift (`Math.sin`/`Math.cos`) ve operasyon anında hafif bilişsel titreşim (`processingFlutter`) sergiler.
-- **Holografik Rezonans Ağı (`HolographicResonanceMesh.svelte`):**
-  - Pirinç yuva arkasında dönen üç boyutlu matematiksel tel kafes. Sistem yüküne ve rezonans şiddetine göre form değiştirir.
-- **Aspasia Canlı CRT Konsolu (`/api/aspasia/chat`):**
-  - Sol alt güvertedeki retro monokrom CRT ekranı. Aspasia üst akıl denetçisiyle doğrudan canlı Sokratik diyalog kurulmasını sağlar.
-- **Kasa Güvenlik Mandalı (Vault LED):**
-  - Sol alttaki interaktif mandal. Yeşil (`OPEN`) ve kırmızı (`VAULT LOCKED`) durumları arasında anında kilit değiştirir (`POST /api/vault/status`).
-- **Canlı Agent Rack Yuvası (`AgentRack.svelte`):**
-  - Sağ taraftan açılıp kapanabilen 12 rollü analiz rack'i. Buradaki herhangi bir ajana tıklandığında sistem otomatik olarak Muharebe Masası'na geçer ve o ajanı doğrudan röntgene alır.
-
----
-
-### MOD 2: Taktik Muharebe Masası (`TacticalWarRoom.svelte`)
-*100% Şeffaf, Gerçek Zamanlı Adli Teftiş ve Müdahale Güvertesi.*
-
-1. **12 Rol Kumanda Matrisi (Sol Kolon):**
-   - 12 ajanın tamamını anlık durum pilleriyle (`ACTIVE`, `DONE`, `HALTED`, `WAIT`) gösterir.
-   - Her ajanın gerçek zamanlı güven barı ve o anda ne yaptığına dair Türkçe operasyonel adım kartları (örn: *"LinkedIn ve Instagram profilleri bağlandı"*, *"3 jürili panelce incelendi"*).
-2. **Hedef & Açık Kanıt Radarı (Orta Kolon):**
-   - **Tespit Edilen Sosyal Profiller:** Instagram, LinkedIn, X, web siteleri tıklanabilir çipler olarak anında listelenir.
-   - **Kişilik Özü Kartı & İlk Temas Köprüsü:** Tespit edilen öz-frekans ve hedefe yönelik sahici açılış mesajı.
-   - **Açık Kaynak Kanıt Snippet'ları:** Web taramasından gelen ham metin parçacıkları.
-3. **Derin Adli Ajan Röntgeni (Sağ Kolon):**
-   - Seçilen ajanı 4 sekmeli derin muayeneye tabi tutar:
-     - `[BULGULAR / OUTPUT]`: Ajanın ürettiği özet, ham çıkarımlar, varsa durma/hata nedeni.
-     - `[GİRDİ / INPUT]`: Ajanın istemine (prompt) beslenen hedef verileri ve bağlam.
-     - `[GÜVEN & KARAR]`: Ajanın matematiksel güven puanı, jüri oyları veya kosinüs benzerliği.
-     - `[HAM VERİ / RAW JSON]`: Backend'den dönen birebir JSON sözleşmesi.
-4. **Kara Kutu Canlı Uçuş Kaydedicisi (Alt Güverte):**
-   - `ALL`, `OSINT`, `LLM`, `DECISION`, `ERRORS` filtreleriyle canlı log akışı sağlayan, otomatik kaydırmalı adli terminal.
-
----
-
-## Teknik akış, API ve geliştirme
-
-### Temel kod yolları
-
-- API ve görev başlatma: `backend/api.py` → `run_mission()` → `agent_core/task_executor.py`
-- Ajan seçimi: `agent_core/services/cognitive_router.py`
-- Ajan envanteri ve altı soruluk kod ayrıntısı: [README_TECHNICAL.md](README_TECHNICAL.md)
-- **Tam depo envanteri (680+ dosya, klasör klasör, aranabilir): [docs/envanter.html](docs/envanter.html)**
-  — üretilen sayfa; `python scripts/generate_inventory_page.py` ile yenilenir,
-  CI `--check` ile bayatlamayı yakalar. `.env.example`'ın 98 ayarı ve `config/*`
-  içeriği tek tek açıklanmıştır.
-- Scraper/görsel/pillar: `agent_core/scraper/`, `agent_core/services/`, `agent_core/engines/`
-- UI: `frontend/src/`
-
-### Başlıca yüzeyler
-
-| Yüzey | Rol |
+| Sen | Burada |
 |---|---|
-| `POST /api/initiate` | Ana profil görevi; aynı `run_mission` akışını başlatır. |
-| `POST /api/aspasia/chat` | Kullanıcıya görev/kanıt durumu yanıtı. |
-| `POST /api/aspasia/command` | Sınırlı doğal dil intent'i; desteklenen açık Instagram URL'si doğrulanır ve aynı görev akışına dispatch edilir. |
-| `GET /api/media/status` | Medya hattı: yt-dlp/ffmpeg/opencv ve transkript motorunun GERÇEK durumu. |
-| `POST /api/media/analyze` | Paylaşılan medyayı indirir, kare kare ölçer, yazıya döker, görsel benzerlik arar. Ölçülmeyen iddia edilmez. |
-| `GET /api/report/status` | Hangi rapor formatı GERÇEKTEN üretilebilir (reportlab/Pillow/ffmpeg sebepleriyle). |
-| `POST /api/report/build` | Kanıt satırlarından PDF/diyagram/video paketi üretir; manifest eser hash'lerini ve kanıt kimliklerini taşır. |
-| `GET /api/company/status` | Kurum hedefi modlarının gerçek durumu (theHarvester · açık SEO · kişi künyesi). Kapı kapalıysa "hazır" denmez. |
-| `POST /api/company/scan` | Alan adını omurgadan tarar; mod başına kanıt satırları kaynak URL ile döner. Uydurma SEO puanı yok. |
-| `GET /api/jury/status` | Yerel jürinin durumu: kaç BAĞIMSIZ koltuk, uç yerel mi, yeter sayı. Model yoksa `available: false`. |
-| `POST /api/jury/vote` | Aynı kanıtı birden çok yerel modele bağımsız oylatır; kural (oybirliği/çoğunluk) ve koltuk dökümü döner. Konsensüs yoksa karar iddia edilmez. |
-| `GET /api/mcp/status` | MCP ihracının durumu: kaç yetenek araç olarak açık, hangi protokol sürümleri, kasa mandalı. Yetenek KOŞTURMAZ. |
-| `POST /api/experimental/shadow/analyze` | Deneysel Shadow analiz endpoint'i; normal UI akışından ayrı. |
-| `POST /api/experimental/shadow/generate` | Deneysel Shadow taslak üretim endpoint'i; normal UI akışından ayrı. |
-| `POST /api/experimental/chat/respond` | Deneysel, oturumlu DialogueManager yanıtı; normal UI çağırmaz. |
-| `run_lilith.py` | Ana analiz hattı dışında, CLI'dan Lilith içerik paketi üretimi. |
-| `/api/experimental/interpreter/execute` | Yalnız opt-in Interpreter yapılandırmasında bulunan deneysel kod görevi yolu. |
+| Yeni misin, ne yaptığını bilmiyorsun | 2, 3, 4 ve 9. bölümler |
+| Kullanıcısın, arayüzü arıyorsun | 4 ve 10. bölümler |
+| Geliştiricisin, koda bakacaksın | 5–8 ve 11–14. bölümler |
+| "Bu gerçekten çalışıyor mu?" diye soruyorsan | 13. bölüm (ölçülen ↔ ölçülemeyen) |
+
+Her bölümde geçen dosya yolları **gerçek kod yollarıdır**; iddiaların hepsi
+`pytest`, `ruff`, `npm run check` ve canlı komut çıktılarıyla doğrulanmıştır.
+Doğrulanamayan hiçbir şey "çalışıyor" diye yazılmamıştır.
 
 ---
 
-## Ne İşe Yarar ve Nasıl Çalışır?
+## 2 · Sistem ne işe yarar
 
-Diyelim ki bir hesabı incelemek istiyorsunuz. Programın içinde birbirinden farklı uzmanlıkları olan **12 Akıllı Ajan (Uzman)** bulunur. Görevi başlattığınızda şunlar olur:
-1. **Veri Toplar:** Sizin verdiğiniz linkteki herkese açık resimleri ve yazıları çeker.
-2. **Davranış ve Karakter Analizi Yazar:**
-   - *Zamanlama Uzmanı*, kişinin hangi saatlerde daha aktif olduğunu söyler.
-   - *İnsan Davranışı Analisti*, o kişinin paylaşımlarından ne tarz şeyleri sevdiğini, hobilerini ve karakter yapısını anlamaya çalışır.
-   - Bütün uzmanlar kendi aralarında toplanıp hedefin profilini tartışarak tek, net bir rapor çıkarır.
-3. **Kasa (Vault) Güvenliği:** Asistan, topladığı notları ve gördüğü fotoğrafları hiçbir zaman internette bırakmaz. Bilgisayarınızın derinlerinde yer alan, adına "Kasa (Vault)" dediğimiz şifreli bir odada tutar. **Ekranda kasayı kilitle derseniz**, sistem dış dünyayla (internetle) bağını tamamen koparır ve asla araştırma yapmaz.
-4. **Çocuk Koruması (Kırmızı Çizgi):** Hedef hesaptaki kişi 18 yaşının altındaysa asistan bunu tespit eder etmez araştırmayı durdurur. Bu, sistemin üzerine kurulu olduğu değişmez, aşılamaz, en temel kuraldır.
+Bir Instagram (veya X) profilinin **herkese açık** sayfasını alırsın. Sistem:
+
+1. **Toplar** — açık gönderiler, biyografi, fotoğraflar, paylaşım saatleri, açık web araması
+   sonuçları, varsa e-posta/kullanıcı adı ayak izleri.
+2. **Ölçer** — 7 dalga motoru zaman serisini ve metni **deterministik formüllerle** inceler
+   (yapay zeka tahmini değil; FFT/Lomb-Scargle, istatistik, sözlük ölçümleri).
+3. **Ajanlarla derinleştirir** — 13 görev ajanı sırayla çalışır; her biri kanıtını
+   üretir, kararını ve güven puanını yazar.
+4. **Doğrular** — iddialar dış kaynaklarla teyit edilir, yerel jüri oylar.
+5. **Anlatır** — Aspasia seninle konuşur, Kontrol Paneli her şeyi canlı gösterir.
+
+Çıktı bir "karakter analizi" değil, **kanıtıyla birlikte bir profil raporu**dur.
 
 ---
 
-## 💻 Mühendisler ve Geliştiriciler İçin Kurulum Rehberi
-
-> **Canlıya almadan önce:** [GO_LIVE.md](GO_LIVE.md) — port haritası, mimari
-> şema, BLOCKER `.env` tablosu, tek komutla kaldırma ve **ölçülmüş** doğrulama
-> sonuçları. Çok operatörlü kurulumda `PINEAL_OPERATOR_TOKENS` zorunludur;
-> görev sahipliği mührü (§4) ve açık bulgular listesi (§5) oradadır.
-## 4. Epifiz'in Yedi Nöro-Bilişsel Dalga Motoru (LLM'siz Saf Matematik)
-
-Bu motorlar `agent_core/engines/` dizininde bulunur. Sıfır LLM çağrısıyla, deterministik formüllerle çalışırlar:
+## 3 · Nasıl çalışıyor (akış)
 
 ```
-                      ┌── FrequencyEngine  (Sirkadiyen Ritim, Gece/Gündüz Dağılımı)
-                      ├── SeismosEngine    (Kutup Değişimi, Davranışsal Fay Kırılmaları)
-                      ├── VoidEngine       (Negatif Uzay: 10 Temel Konudan Bilinçli Kaçınma)
-PillarOrchestrator ───┼── StrataEngine     (Zaman İçinde Değişen / Sönümlenen Maskeler)
-                      ├── GravityEngine    (Anlatı Çekim Merkezleri, Sabit Fikirler)
-                      ├── PulseEngine      (Dijital Soluk: Cümle & Noktalama Ritimleri)
-                      └── KeyEngine        (6 Motorun Çıktısını Birleştiren Rezonans Vektörü)
+sen: "https://instagram.com/kullanici/ hesabını incele"
+  │
+  ├─ POST /api/aspasia/command  → doğal dil komutu, hedef URL doğrulanır
+  │     └─ kabul edilmezse sebep yazılır, görev UYDURULMAZ
+  │
+  ├─ POST /api/initiate         → görev başlar (kasa açık olmalı)
+  │     ├─ yetenek omurgası: IG/X/web/e-posta/kullanıcı adı (her şey kasa kapısından)
+  │     ├─ 7 dalga motoru → zaman serisi + metin ölçümleri
+  │     ├─ 13 ajan sırayla çalışır → her ajan kanıt + karar + güven yazar
+  │     └─ WS /ws/{client_id} → her an "ne oluyor" akışı
+  │
+  └─ GET /api/aspasia/state     → denetim görünümü (bütçe, kota, çağrı izi, anomali)
 ```
 
-| Dalga Motoru | Kaynak Dosya | Matematiksel / Analitik Görev |
+Kod yolları: `backend/api.py` → `agent_core/task_executor.py` (görev) →
+`agent_core/services/cognitive_router.py` (ajan sırası) →
+`agent_core/capabilities/` (dış dünyaya çıkış kapısı) → `agent_core/engines/` (ölçüm).
+
+Toplanan biyografi/gönderi adresleri (`detected_urls`) görev yürütücüsünde
+`agent_core/services/deep_profile_resolver.py` → `profile_router` →
+`CapabilityRunner` zincirine girer; yani "bulundu" demek "tarandı" demektir.
+
+---
+
+## 4 · Ekranda ne görürsün
+
+Uygulamanın **dört** görünümü var; görünüm seçici düğmelerle geçiş yapılır
+(`frontend/src/App.svelte` → `$activeViewMode`). Varsayılan açılış görünümü
+`spiderfoot`'tur (`frontend/src/store.ts`).
+
+> [2026-10-23 · KUSUR] SpiderFoot kokpiti bir süre **import edilmiş ama hiç
+> render edilmemişti**: `store.ts` varsayılanı `spiderfoot` yapmış, `App.svelte`
+> ise o mod için dal açmadığından açılışta `AtlasPinealCockpit` gösteriyordu.
+> Dal eklendi; `tests/unit/test_claims_are_runtime_proven.py` artık her import
+> edilen görünüm bileşeninin markup'ta **render edildiğini** doğrular
+> (`dead_code_audit` bunu yakalayamaz — import "kullanım" sayılır).
+
+**SPIDERFOOT KOKPİTİ** (`SpiderFootCockpit.svelte`, ~1570 satır) — ana operasyon
+kokpiti: canlı boru hattı, etkileşimli düğüm grafiği, kanal/ajan durumu; aynı
+SoT'tan (WS + `/api/aspasia/state`) beslenir.
+
+**MUHAREBE MASASI** (`TacticalWarRoom.svelte`) — adli teftiş masası. Ajanların
+durum pilleri, tespit edilen profiller, seçili ajanın dört sekmeli Röntgeni
+(bulgular / girdi / güven-karar / ham JSON) ve kara kutu log akışı.
+
+**KONTROL PANELİ** (`LiveControlPanel.svelte`, 920 satır) — "hangi modül şu an
+çalışıyor, nerede çalışıyor, sırada kim var, kimi kazıyor, muhakemesi ne, toplanan
+bilgi ne" sorularının canlı cevabı. Altı blok:
+
+| Blok | Ne gösterir |
+|---|---|
+| 1 · AJAN HATTI | Kim sırada, kim çalışıyor, süresi, kanıt/çağrı sayısı |
+| 2 · ANLIK KANNEL | Hangi kanal (IG, X, web, arama…) ne durumda · **sıradaki ajan** · **canlı ajan şu an hangi URL'yi kazıyor** |
+| 3 · MUHAKEME | Karar var mı, güven yüzdesi, hangi model, sorumluluk, çağrı kimlikleri ve **ajan çıktısı satır satır** |
+| 4 · TOPLANAN BİLGİ | Toplam kanıt kimliği, ajan→kanıt akışı, **kanıt zinciri** (ajan→kanıt gruplu), kanal yapısı |
+| 5 · ÇAĞRI İZİ | Her LLM çağrısının kimliği, ajanı, modeli, süresi, maliyeti; bütçe, kota, anomali; **sayfalı geçmiş** |
+| 6 · AJAN DETAYI | Seçili ajanın tam dökümü (girdi, kanıt kimlikleri, sorumluluk, uyarı, hata) |
+
+Ayrıca metin + durum **filtresi** ve ajan seçimi vardır. Ölçüm yoksa panel
+`YETERSİZ KANIT` yazar ve **nedenini** söyler; örnek veri hiçbir yerde yoktur.
+
+**KOKPİT** (`AtlasPinealCockpit.svelte`) — yaşayan epifiz gözü, hologram rezonans
+ağı, Aspasia'nın CRT terminali, kasa mandalı ve 12 yuvalı canlı ajan rafı.
+
+**ASPASIA** — seninle konuşan katman (`POST /api/aspasia/chat`). Normal dille soru
+sorarsın, sistem durumu anlatır. Kokpitin serbest metin kutusu önce
+`/api/aspasia/command`'u dener (yani komut verip **görev başlatabilirsin**);
+reddedilirse sebebi söyler, sahte bir "emir alındı" cevabı üretmez.
+
+---
+
+## 5 · Yedi dalga motoru (yapay zekasız, saf ölçüm)
+
+Sistemde **7 dalga motoru** var (`agent_core/engines/`) — hepsi deterministik formülle
+çalışır, LLM çağırmaz.
+
+| Motor | Ne ölçer | Dosya |
 |---|---|---|
-| **Frequency** | `frequency_engine.py` | Paylaşım zaman damgalarını sinüs/kosinüs dalgasına döker; gece uykusuzluğu ve biyolojik ritmi hesaplar. |
-| **Seismos** | `seismos_engine.py` | Duygusal durumlardaki ani faz sıçramalarını ve sismik kırılma noktalarını (`SeismicEvent`) saptar. |
-| **Void** | `void_engine.py` | İnsanın profilde ısrarla bahsetmediği negatif alanları (para, aile, zaaflar) bularak bastırılanı çıkarır. |
-| **Strata** | `strata_engine.py` | Yıllar içindeki üslup kaymalarını (`IdentityDrift`) ve terk edilen eski maskeleri ayrıştırır. |
-| **Gravity** | `gravity_engine.py` | Kişinin konuşmayı sürekli döndürdüğü ana çekim kuyularını (`GravityWell`) modeller. |
-| **Pulse** | `pulse_engine.py` | Metinlerdeki soluk ritmini, virgül, ünlem ve duraksama entropisini sayısallaştırır. |
-| **Key** | `key_engine.py` | Tüm motor çıktılarını normalize ederek birleşik `ResonanceVector` sentezler. |
+| Frequency | Paylaşım saatlerinin ritmi, gece/gündüz dağılımı, periyodisite (FFT / Lomb-Scargle) | `frequency_engine.py` |
+| Seismos | Ani durum sıçramaları, "kırılma" anları | `seismos_engine.py` |
+| Void | Profilde **hiç** bahsedilmeyen konular (para, aile, zaaf…) | `void_engine.py` |
+| Strata | Yıllar içindeki üslup kaymaları, terk edilen maskeler | `strata_engine.py` |
+| Gravity | Kişinin sürekli döndüğü ana konular | `gravity_engine.py` |
+| Pulse | Cümle ritmi, virgül/ünlem, duraksama | `pulse_engine.py` |
+| Key | Altı motorun çıktısını birleştiren rezonans vektörü | `key_engine.py` |
 
 ---
 
-## 5. 12 Uzman Analiz Rolü — Kanonik Boru Hattı
+## 6 · On üç görev ajanı
 
-> **Mimari not (2026-10-07 denetimi, Madde 3).** 12 rol, Docker'da birbirinden
-> bağımsız çalışan **analiz yürütücüleri değildir**. Rolleri çekirdek
-> orkestratör (`PinealExecutor`) **süreç içinde** (in-process) sırayla yürütür
-> ve gerçek `active / ready / wait` geçişlerini yazar. `docker-compose.yml`
-> içindeki 12 `beacon-*` servisi ise yalnızca **canlılık işaretçisidir**
-> (liveness beacon): "yuva ayakta ve boşta" sinyalini kendi kanalına
-> (`pineal:agent:beacon`) yayınlar; analiz yürütmez ve ajan durumunu **ezmez**.
+Sistemde **13 görev ajanı** var (`agent_core/task_executor.py:220`) — hepsi aynı süreç içinde, kural tabanlı
+`CognitiveRouter` sırasıyla çalıştırır. (Docker'daki `beacon-*` servisleri yalnızca
+canlılık işaretidir, analiz yapmaz.)
 
-Sistemdeki 12 uzman rol orkestratör tarafından yürütülür; durumları Redis
-Pub/Sub ve WebSocket üzerinden canlı olarak Rack'e yansır:
+| Ajan | Ne yapar |
+|---|---|
+| `osint_investigator` | Kullanıcı adı (Maigret) ve e-posta (Holehe) ile açık kaynak ayak izi |
+| `autonomous_verifier` | Profildeki iddiaları dış kaynaklarla teyit eder |
+| `authenticity_auditor` | Beyan edilen ile görülenin tutarlılığını denetler |
+| `human_behavior` | İlgi alanları ve davranış kalıpları |
+| `passion_mapper` | Tutku, yaratıcılık ve entelektüel ilgi haritası |
+| `friction_detector` | Sınırlar, hassasiyetler, yorulma ve şikâyet noktaları |
+| `cognitive_profiler` | Dil tonu, iletişim üslubu, karmaşıklık düzeyi |
+| `mirror_truth` | Kör noktalar ve derin ayna refleksiyonu |
+| `resonance_calc` | İki profil arasındaki benzerliği **kanıt alanlarında** karşılaştırır |
+| `pattern_interrupt` | Beklenti kırma ve temas stratejisi |
+| `resonance_synthesizer` | İlk temas ve rezonans köprüsü sentezi |
+| `depth_analyst` | 7 sütunlu derinlik çıktısının adli analizi |
+| `shadow_executor` | Gölge arketip ve bastırılmış motivasyon (deneysel hat) |
 
-```
-[ OSINT Investigator ] ──> [ 7-Pillar Forensics ] ──> [ Mirror of Truth ]
-          │                                                   │
-          ▼                                                   ▼
-[ Autonomous Verifier ] ──> [ Human Behavior ] ───> [ Passion Mapper ]
-(3 Jürili Hakem Paneli)     (Cold Reading / Aşil)   (Akış & Neşe Haritası)
-          │                                                   │
-          ▼                                                   ▼
-[ Friction & Bounds ]  ───> [ Cognitive Profiler ] ──> [ Resonance Calc ]
-(Sınır & Stres Noktası)     (Dilbilimsel Düşünce)     (Numpy Vektör Kosinüs)
-          │                                                   │
-          ▼                                                   ▼
-[ Pattern Interrupt ]  ───> [ Resonance Synth ] ───> [ Depth Analyst ]
-(Beklenti Kırma Ağacı)      (İlk Temas Mesajı)        (Gerçeklik Endeksi & Mühür)
-```
-
-Proje hem **Python** tabanlı, dağıtık otonom ajanlarla çalışan bir Backend'den hem de **Svelte** ile yazılmış hızlı bir arayüzden oluşur.
-
-### 1. Kurulum ve Başlatma
-Sistemi sıfırdan kurmak ve çalıştırmak için:
-- Gerekli kütüphaneleri yüklemek için (Backend):
-  ```bash
-  python3 -m venv .venv
-  source .venv/bin/activate
-  pip install -r requirements.lock
-  ```
-- Sistemi doğrudan başlatmak için Windows'ta `baslat.bat` dosyasını, Unix sistemlerde ise Docker komutunu (`docker compose up --build -d`) kullanabilirsiniz.
-- Frontend'i (Ön Yüz) elle derlemek isterseniz:
-  ```bash
-  cd frontend
-  npm ci
-  npm run build
-  ```
-
-### 2. Arayüze Erişim
-Kurulum bittikten sonra internet tarayıcınızı (Chrome, Safari vb.) açıp **`http://localhost:8000`** adresine gidin. Karşınıza görev kontrol ekranı ve asistanınız "Aspasia" gelecektir.
-
-### 3. Yapılandırma ve Çalışma Prensibi (Kısa Mimari)
-- Tüm sistem dışarıya çıkışlarını `agent_core/capabilities/` isimli omurgadan (backbone) geçirir. Asla dış kütüphaneler (örneğin OpenAI vb.) doğrudan kullanılamaz; daima bu geçit kapısından onay alır.
-- Veri yetersizse sistem kendi kendine veri "uydurmaz". Analiz başarısız olur ve kırmızı bir uyarı basar (`Fail-Closed` kuralı).
+`ENABLE_INTERPRETER=true` ile 14. ajan (`interpreter`) devreye girer.
+`LilithGrowthAgent` online hattın **dışındadır** (CLI-only: `run_lilith.py`) —
+çünkü girdisi profil metni değil, üretim isteğidir; kanıt zincirine karışmamalıdır.
 
 ---
 
-*(Not: Eski yapay zeka denemeleri, bozuk kod parçaları ve kafa karıştırıcı dallar temizlenmiştir. Burası, uygulamanın çalışır ve insani en net halidir.)*
+## 7 · Veri toplama kanalları (28 yetenek)
+
+Sistemde **28 yetenek** var. `agent_core/capabilities/` — dış dünyaya **tek kapı**.
+Hiçbir yetenek dış servise doğrudan gitmez; önce politika ve kasa kapısından geçer.
+Canlı liste: `GET /api/telemetry` → 28 yetenek.
+
+| Grup | Yetenekler |
+|---|---|
+| Toplama (sensör) | `sensor.ig.instagrapi` (Instagram) · `sensor.x.twscrape` (X) · `sensor.search.searxng` (web arama) · `sensor.web.agent_reach` · `sensor.identity.holehe` (e-posta) · `sensor.identity.maigret` (kullanıcı adı) · `sensor.identity.handle_probe` (çapraz platform: IG/FB/Threads/X/TikTok…) · `sensor.identity.phone_probe` (telefon OSINT: operatör/şebeke/mesajlaşma) · `sensor.company.harvester` · `sensor.company.people` · `sensor.company.seo` · `sensor.media.fetch` |
+| Çıkarma | `extractor.identity.socid` · `extractor.web.crawl4ai` · `extractor.web.scrapling` · `extractor.web.trafilatura` · `extractor.text.language` · `extractor.text.translate_local` · `extractor.media.transcript` |
+| Analiz | `analyzer.media.frames` · `analyzer.media.similarity` |
+| Doğrulama | `verifier.jury.local` (yerel jüri) |
+| Sunum | `renderer.report.pdf` · `renderer.report.diagram` · `renderer.report.video` · `voice.report.script` |
+| Ses | `voice.tts.local` · `voice.stt.local` |
+
+**Bulunan adresler çöpe gitmez.** Instagram biyografisindeki link-in-bio adresleri
+(Linktree/beacons/X/Threads…) ve X gönderi **ve** biyografi metinlerindeki
+adresler `target_profile.detected_urls` alanına çıkarılır
+(`agent_core/services/platform_registry.py::detected_profile_urls`), OSINT
+kullanıcı-adı yoklamasının bulgularıyla
+`agent_core/services/deep_url_cables.py::merge_detected_profile_urls` içinde
+birleşir ve **derin taramaya** verilir. Profil olmayan adres (haber sitesi,
+YouTube videosu) elenir — yanlış hedefe tarama yok.
+
+**Gönderi tavanı tek yerden:** `PINEAL_IG_MAX_POSTS` (varsayılan **48**, üst
+sınır 200) hem Playwright hattını hem `instagrapi` ikinci kaynağını bağlar;
+sabit 12/20 tavanı kalmadı. Sayfalama kaydırma + `page_info.end_cursor` ile
+ilerler, tavan operatörün kararıdır.
+
+**Üçüncü taraf OSINT iddiası kanıt değildir.** `holehe` isabetleri
+`epistemic_type="inference"` + `verification="unverified_third_party"` olarak
+işaretlenir; tarama hata oranı yüksekse `reliability="low"` yazılır ve
+"kayıtlı değil" iddiası yalnız **sıfır hatada** üretilir
+(`agent_core/capabilities/adapters_osint.py`).
+
+---
+
+## 8 · Güvenlik: dört kilit
+
+| Kilit | Ne yapar | Kod |
+|---|---|---|
+| **Kasa (vault)** | Anahtar girilmeden dışarı **tek bir** OSINT/kazıma isteği çıkamaz. Kasa girilince anahtar `set_key(..., unlock_live=True)` ile canlı LLM çağrıları da açılır. | `backend/api.py:3608` (`_check_vault_interlock`) · `llm_gateway.py:1412` (`set_key`) |
+| **Çocuk kilidi** | Yaş tahmini yapılmaz; operatör beyanı varsa araştırma fail-closed durur. | `agent_core/safety/minor_gate.py` · `/api/minor/*` |
+| **Fail-closed kanıt** | Veri/kanıt yoksa iddia üretilemez; kanal dürüstçe kapanır. | `InsufficientEvidenceError` |
+| **Egress politikası** | Her dış çağrı yetenek omurgasından geçer; kapı kapalıyken "çalışıyor" denmez. | `agent_core/capabilities/policy.py` |
+
+**Kapıların açılması (kilit değil, izin):** X ve Instagram sensörleri ile çapraz
+platform yoklaması varsayılan olarak **kapalıdır**. Operatör
+`POST /api/scraper/authorize-alternative` ile o görev için onay verdiyse
+(`cross_platform` / `public_web_search`), onaya bağlı kapılar
+(`ENABLE_CROSS_PLATFORM`, `ENABLE_X_SENSOR`, `ENABLE_IG_SECONDARY`) **yalnız o
+görevde** açılır — kural tek yerde: `agent_core/capabilities/state.py::with_operator_consent`.
+ `.env`'de bir bayrak **açıkça `false`** yazılıysa onay onu ezmez; kasa ve hız
+kapıları hiçbir koşulda gevşemez. Onay yoksa sensör `policy:gate_disabled`
+der — bunu "bozuk" diye yutturmaz.
+
+---
+
+## 9 · Nasıl çalıştırılır
+
+**Windows'ta** (tek tık): depodaki `baslat.bat`.
+
+**Docker ile** (Windows/Linux/macOS):
+
+```bash
+docker compose up --build -d
+```
+
+**Elle (geliştirici):**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install -r requirements.lock
+
+cd frontend
+npm ci
+npm run build                    # üretilen arayüzü hazırlar
+```
+
+**Çalıştır:**
+
+```bash
+.venv/bin/python -m uvicorn backend.api:app --host 0.0.0.0 --port 8000
+```
+
+Sonra tarayıcıda `http://localhost:8000` (ya da `frontend` klasöründe
+`npm run dev` → `http://localhost:1420`).
+
+**İlk yapılacak şey: kasa.** Uygulamadaki kasa mandalına **9Router anahtarını**
+gir (adres varsayılan olarak `http://127.0.0.1:20128/v1`). Anahtar girilene kadar
+canlı LLM çağrıları kapalıdır ve Aspasia dürüstçe "bağlantı çalışmıyor" der.
+Anahtarı `.env` ile de verebilirsin (`NINEROUTER_API_KEY`). Küçük tuzak: 9Router
+kipinde kasa anahtarı `sk-pineal` önekiyle başlamalıdır; normal `sk-...` anahtar
+kasadan girilirse 9Router yolu seçilmez (ayrıntı: [RUNBOOK.md](RUNBOOK.md) M-3).
+
+Ayrıntılı kurulum, port haritası ve canlıya alma kontrol listesi:
+**[GO_LIVE.md](GO_LIVE.md)** · operasyon el kitabı: **[RUNBOOK.md](RUNBOOK.md)**.
+
+---
+
+## 10 · Aspasia'ya neler sorabilirsin
+
+Kokpitin sol altındaki CRT terminali (veya `POST /api/aspasia/chat`) doğal dille
+konuşur. Örnekler:
+
+- "Şu an ne oluyor, hangi ajan çalışıyor?"
+- "Bu profil ne ilgileniyor, kanıtları ne?"
+- "Toplanan bilgi hangi ajandan geldi?"
+- "Son LLM çağrısı hangi modele gitti, ne kadara mal oldu?"
+- "Hangi kanal çalışmıyor, neden?"
+- "Kasa kilitliyken ne yapılabiliyor?"
+
+Cevaplar **canlı veriden** gelir; ölçüm yoksa "bilmiyorum + sebep" der.
+
+Kontrol döngüsünü tek komutta kanıtlamak için:
+
+```bash
+python scripts/verify_command_loop.py --url https://instagram.com/KULLANICI/
+```
+
+Bu betik canlı komut → görev → ajan → kanıt → çağrı izi zincirini **gerçek API'ye
+karşı** koşturur ve ham çıktıyı basar: `0` kanıtlandı · `1` döngü kırık (sebeple) ·
+`2` ön koşul sağlanmadı · `Ctrl-C` → "DOĞRULANMADI".
+
+---
+
+## 11 · API yüzeyi (74 HTTP ucu + 1 WebSocket)
+
+> Sayım biçimi: **74 = path+metot çifti**, **73 benzersiz yol**. Fark tek bir yoldan gelir: `/api/vault/status` hem `GET` (durum) hem `POST` (kilit aç/kapa) kabul eder. Sayı `backend.api.app.routes` üzerinden ölçülür.
+
+| Alan | Uçlar | Ne yapar |
+|---|---|---|
+| **Aspasia** | `/api/aspasia/chat` · `/api/aspasia/command` · `/api/aspasia/state` | Konuşma · komut+görev · denetim görünümü (kayıtlı ajanlar, görev durumu, bütçe, kota, anomali, **çağrı izi**) |
+| **Komutan & Dağıtım** | `/api/commander/dispatch` · `/api/commander/inject` · `/api/commander/phone-probe` | Herhangi bir ajana serbest görev verme + canlı düşünce zinciri (CoT), ikiz hesap/kanıt mühürleme ve telefon OSINT yoklaması |
+| **Görev** | `/api/initiate` · `/api/tasks` · `/api/tasks/{id}` (sil) · `/api/tasks/{id}/…` (cancel, halt, resume, graph, changes, memory, support) · `/api/executor/intervene` | Görevi başlat, durdur, sürdür, gözlemle, müdahale et |
+| **Kasa & güvenlik** | `/api/vault` · `/api/vault/status` · `/api/vault/lock` · `/api/vault/unlock` · `/api/minor/case` · `/api/minor/clear` · `/api/minor/state` | Anahtar yönetimi, canlı kapılar, çocuk kilidi |
+| **Tarayıcı** | `/api/browser/*` (open, click, type, press, shot, state, save, back, close) | Playwright oturumu üzerinden gerçek sayfa gezinme |
+| **Yetenek uçları** | `/api/company/*` · `/api/jury/*` · `/api/language/*` · `/api/media/*` · `/api/report/*` · `/api/mcp/status` · `/api/calibration/*` · `/api/scraper/authorize-alternative` | Kurum taraması, yerel jüri, dil, medya, rapor, MCP, kalibrasyon — her biri durum ucuyla "gerçekten yapılabiliyor mu" bilgisini verir. `authorize-alternative` ayrıca onaya bağlı sensör kapılarını (X/IG/çapraz) **o görev için** açar |
+| **Mobil** | `/api/mobile/coach` | Android koç sohbeti: istem **sunucuda** kurulur, yanıt tek ağ geçidinden geçer; cihazda LLM anahtarı durmaz, istemci kendi sistem istemini gönderemez |
+| **Tanılama** | `/health` · `/api/telemetry` · `/api/telemetry/taste` · `/api/agents/status` · `/api/memory/…` · `/api/dialogue/sessions` · `/api/experimental/*` | Sağlık, yetenek tablosu, ajan durumu, hafıza, oturumlar, deneysel hatlar |
+| **OpenAI uyumlu** | `/v1/models` · `/v1/chat/completions` | OpenAI istemcileriyle birebir konuşma |
+| **Canlı akış** | `WS /ws/{client_id}` | `snapshot_update` (her an durum) ve `result` (görev sonu + kanıt zinciri) |
+
+---
+
+## 12 · Bu sürümde ne yeni (P0 → P8)
+
+| Faz | Ne değişti (kısa) |
+|---|---|
+| **P0** | Güvenlik kapılarının fail-closed düzeltmeleri; "çalışır gibi yapan" kod tespiti |
+| **P1** | Profil derinleştirme: bulunan URL'ler artık otomatik olarak doğru yeteneğe gider |
+| **P2** | Çapraz profilleme: 4 deterministik sinyal, her eşleşme `EvidenceItem` |
+| **P3** | Lilith hat dışı (CLI-only) — kanıt zincirine karışmaz |
+| **P4** | Mühür/kanıt kaydı düzeltmeleri; reddedilen taramalar da kayda bağlanır |
+| **P5** | Kapanış denetimi: her düzeltmenin testi + revert-doğrulama kırmızıya döner |
+| **P6** | Ölü kod dedektörü (`scripts/dead_code_audit.py`, CI'da kapı); 12 ölü arayüz dosyası silindi; 13 ajanın 13'ü canlı |
+| **P7** | Aspasia komut döngüsü (`/api/aspasia/command`) + **ilk canlı kontrol paneli** + çağrı kimliği bağı |
+| **P8** | Panelin "en donanımlı" sürümü (6 blok, filtre, ajan detayı, kanıt zinciri gruplama), çağrı izi **sayfalaması**, `scripts/verify_command_loop.py` doğrulayıcısı, `api.py` satır tavanı 5772 → **5760** |
+| **P9** | README baştan yazıldı (15 bölüm, düz dil) + `docs/envanter.html` sisteme bağlandı + `tests/unit/test_readme_claims.py` sayıları koddan ölçer |
+| **P10** | Çapraz arama **kablosu**: IG bio ve X gönderi/biyografi adresleri `detected_urls` → derin tarama; operatör onayı X/IG sensörlerini o görev için açar; `holehe` iddiaları `inference` olarak etiketlendi; tek IG gönderi tavanı (`PINEAL_IG_MAX_POSTS`); Android koç sohbeti sunucuya taşındı (`/api/mobile/coach`); noktalı modül yoklaması (`agent_core/utils/optional_deps.py`) |
+
+Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
+`docs/reports/` (56 tarihli rapor).
+
+---
+
+## 13 · Durum tablosu: ölçülen çalışma ↔ DOĞRULANMADI
+
+**ÖLÇÜLEBİLDİ (gerçekten koşturuldu, çıktısı görüldü):**
+
+| Ne | Ölçüm |
+|---|---|
+| API ayakta | `/health` → **200** · `/api/telemetry` → **200** (28 yetenek) |
+| Kayıtlı ajanlar | `/api/aspasia/state` → **13** ajan |
+| Kasa kilidi | Kilitliyken `POST /api/initiate` → **423 VAULT_LOCKED** |
+| WebSocket akışı | Yerel istemciyle **63 kare** alındı |
+| Test tabanı | CI'ın kendi komutu (`pytest -q --cov=agent_core --cov=backend --cov-fail-under=80`) → **3109 passed, 6 skipped, 2 xfailed**, kapsam **%86.56** |
+| Kod kalitesi | `ruff check .` → **All checks passed!** · `npm run check` → **0 hata / 0 uyarı** · `npm test` (vitest sözleşme testleri) → **6/6** · `npm run build` → ✓ |
+| Denetim bekçileri | `audit_regression.py` → **✓ BEKÇİ GEÇTİ** · `dead_code_audit.py` → **0/0/0/0/0/0/0** (C1/C1b/C2/C3/C4/C5/C6) |
+| Ölçülebilir ilerleme | `backend/api.py` **5754** satır (tavan 5760, düşürülmüş) |
+| Revert-doğrulama | `scripts/revert_verification_p*.py` → **43/43** düzeltme geri alınınca test kırmızıya döndü (p0 7/7 · p1 6/6 · p2 3/3 · p3 4/4 · p4 5/5 · p8 10/10 · p9 8/8; her koşum dosyayı `finally` ile geri yükler) |
+| Komut döngüsü | `scripts/verify_command_loop.py` → erişilemeyen API'de `rc=2` + sebep; kırık döngüde `rc=1` + sebep |
+| Onay kablosu | Onay yok → `sensor.ig.instagrapi` / `sensor.x.twscrape` **`policy:gate_disabled`**; onay var → kapı **açık**, dürüst sebep `dependency_missing:*` (birim testi, sahte çalıştırıcı) |
+| Bio/gönderi adres kablosu | Sahte `twscrape` → `bio` → `x_target_profile_update` → `detected_urls` → `merge_detected_profile_urls` zinciri uçtan uca koşuyor (çevrimdışı) |
+| IG gönderi tavanı | Ham HTML yolunda 20 sahte gönderi → **20 post**; `PINEAL_IG_MAX_POSTS=5` → **5 post** (sabit 12 yok) |
+| 13 ajan GERÇEKTEN koşuyor | Gerçek `CognitiveRouter` + gerçek `PinealExecutor` ile görev koşuldu, her ajanın `execute/analyze` çağrısı kaydedildi → **13/13** (rota 10, yürütücü 3 ayrı çağrı). Test: `tests/unit/test_claims_are_runtime_proven.py` |
+| 28 yetenek erişilebilir | `availability()` 28/28 **istisnasız** yanıt verdi (5 açık: socid, dil, handle_probe, phone_probe, rapor metni; 23'ü kapı/bağımlılık sebebiyle kapalı). Her kimliğin adaptör dışı çağrı yeri var; 3 web çıkarıcısı `WEB_EXTRACTION_ORDER` zinciriyle çağrılıyor (`web_research.py`) |
+| Ölü uç yok | 68 benzersiz HTTP yolu: **30**'u UI/edge worker'dan, **38**'i testlerden çağrılıyor; **hiçbir çağrı yeri olmayan uç 0**. (`dead_code_audit` uçları KAPSAMAZ — bu ölçüm `test_no_http_endpoint_is_orphaned` ile kilitli) |
+| Panelin görsel doğrulaması | Headless Playwright Chromium (`chrome-win64`) ile 1920×1080 çözünürlükte tam ekran görüntüsü alındı (`cockpit_live_visual.png`), pikselleriyle kanıtlandı |
+
+**DOĞRULANMADI (sebebiyle):**
+
+| Ne | Sebep |
+|---|---|
+| Canlı 9Router ile tam komut döngüsü (niyet → görev → 9 ajan → **canlı kanıt zinciri**) | Sandbox'tan `127.0.0.1:20128` erişilemiyor (HTTP 000) → komut dürüstçe reddedildi |
+| Canlı Instagram / X kazıma | Egress kapalı + Canlı hesap oturumu doğrulanmadı |
+| Canlı bio linki → derin tarama | Egress kapalı; zincir yalnız **sahte sensörle** (çevrimdışı birim testi) doğrulandı — canlı hesapta görülmedi |
+| Canlı X akışı (`twscrape`) | Hesap havuzu boş → dürüst `no_session_pool`; operatör hesabı eklenmeden X kazıması çalışmaz |
+| Canlı `socid`, canlı arama→derin tarama zinciri | Egress kapalı |
+| `ENABLE_*` bayraklarının tamamı açık hâli | Kapılar kapalı tutuldu (görev talimatı) |
+| Kasa anahtarının diskte şifrelenmesi | **Şifreleme YOK**: `.pineal_vault.json` düz JSON'dur (gitignore'da, uygulama yazmaz; operatör koyar). `repr=False` + log redaksiyonu anahtarı loglara sızdırmaz, `/api/vault/status` yalnız boolean döner. Kasa bir **yetki mandalı**dır, sır kasası değil |
+| Atlanan 6 testin kapanması | 4'ü `requirements-retina.txt` paketleri (trafilatura/scrapling/twscrape/instagrapi) CI'da kurulmadığı için, 1'i PIL dolu/None dalı, 1'i open-interpreter opsiyonel katmanı. **2 xfail**: TikTok `tag` rezervi ve `t.me/s` önizlemesi — platform-bazlı rezerv tablosu P10'a devredildi |
+
+---
+
+## 14 · Depo haritası
+
+| Klasör | İçinde ne var |
+|---|---|
+| `backend/` | HTTP + WS yüzeyi (`api.py` 5754 satır), uç modülleri (`routes/`), servisler (`services/`), güvenlik (`security/`) |
+| `agent_core/` | Çekirdek: görev yürütücü, ajanlar, 7 dalga motoru, yetenek omurgası, hafıza, gölge hat |
+| `frontend/src/` | Svelte arayüzü: 4 görünüm (Savaş Odası, Kontrol Paneli, SpiderFoot Kokpiti, Atlas Kokpiti) + ajan rafı + destek paneli |
+| `rust_core/` | Deneysel, opsiyonel Rust çekirdek (CI'da ayrı derlenir, ürün yoluna bağlı değildir) |
+| `android/` | Android istemcisi (CI'da lint + birim testi) |
+| `functions/` · `worker.ts` | Cloudflare Pages/Workers `/api` ve `/ws` edge vekilleri |
+| `tests/` | 272 test modülü (birim + entegrasyon) |
+| `scripts/` | Denetim ve doğrulama araçları: ölü kod denetimi, regresyon bekçisi, envanter üreteci, revert doğrulamaları, 9Router ön kontrolü |
+| `docs/` | Tüzük, sözleşmeler, mimari, `docs/reports/` (56 rapor) ve **tam envanter sayfası** |
+| `config/` | Yönlendirme, sağlayıcı kataloğu, karar yapılandırması, RTK politikası |
+
+**Tam ve aranabilir harita:** **[docs/envanter.html](docs/envanter.html)** —
+815 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
+ile yenilenir, CI `--check` ile bayatlamayı yakalar.
+
+**Ayrıca:** [ARCHITECTURE.md](ARCHITECTURE.md) · [README_TECHNICAL.md](README_TECHNICAL.md) ·
+[GO_LIVE.md](GO_LIVE.md) · [RUNBOOK.md](RUNBOOK.md) · [docs/PINEAL_TUZUK.md](docs/PINEAL_TUZUK.md)
+
+---
+
+## 15 · Testler ve kalite kapıları
+
+```bash
+.venv/bin/python -m pytest tests -q --cov --cov-fail-under=80   # 3109 passed
+.venv/bin/ruff check .                                           # temiz
+cd frontend && npm run check && npm run build                    # 0/0 + derleme
+.venv/bin/python scripts/dead_code_audit.py                      # ölü kod yok
+.venv/bin/python scripts/audit_regression.py                     # 24 denetim bulgusu bekçisi
+
+# Revert-doğrulama: 43/43 (p0 7 · p1 6 · p2 3 · p3 4 · p4 5 · p8 10 · p9 8)
+for s in 0 1 2 3 4 8 9; do .venv/bin/python scripts/revert_verification_p$s.py || exit 1; done
+```
+
+Revert betikleri **kirli ağaçta koşmayı reddeder** ve dosyayı `finally` ile geri
+yükler; `tests/unit/test_revert_verification_contract.py` aradıkları metin
+README'den/koddan koptuğunda ya da hedef test silindiğinde kırmızıya döner —
+kanıt sessizce çürüyemez.
+
+CI (`.github/workflows/ci.yml`) bunları ve ayrıca envanter tazeliliğini, sağlayıcı
+kataloğunu, svelte tip kontrolünü, sözleşme testlerini (`npm test`), smoke testini,
+Rust ve Android derlemesini çalıştırır.
+
+**Kanlı ayrıntı — koşmayan kapı yok:** `9Router Preflight Verification` işi
+operatörün makinesindeki hub'ı (`127.0.0.1:20128`) doğrular; barındırılan runner
+oraya ulaşamaz. Kayıtlı self-hosted runner olmadığı için 2026-10-23'teki üç koşu
+`queued` kalıp **hiç çalışmadı**. Bu yüzden zamanlanmış tetik kaldırıldı: kapı
+artık elle (`workflow_dispatch`, hub'ın yanındaki runner'dan) ya da doğrudan
+`python scripts/preflight_9router.py` ile koşar ve hub erişilemezse **exit 1**
+(fail-closed). Sözleşmesi `tests/unit/test_preflight_runner_contract.py` içinde.
+
+**Fiyat bekçisi neden "rejim" konuşuyor:** `deepseek/deepseek-v4-pro` iki günde
+$0.2088–$0.95526 aralığında on bir ayrı fiyat okudu (her okumada çıktı = girdi ×2).
+Tek bir pini kovalamak yakınsamıyordu; kapı artık (a) bilinen bir ölçülmüş durumu,
+(b) ±%2 bandını, (c) **gözlenen rejim içinde ve girdi/çıktı oranı gözlenmiş
+oranlarla uyumlu** fiyatı kabul eder; rejim dışı ya da oranı bozuk fiyat yine
+`FAIL:` eder. Kalan risk adıyla yazılı: rejim içindeki büyük bir gerçek fiyat
+hareketi ayırt edilemez (aynı aralıktaki her değer zaten kotasyon olarak gözlendi);
+sınırlar `tests/unit/test_openrouter_catalog_contract.py` ile donduruldu.

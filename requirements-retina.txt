@@ -18,7 +18,7 @@
 trafilatura>=1.12.0
 # 3. kademe: adaptif kazıma; site yapısı değişse de kırılmaz, anti-bot direnci
 # (BSD-3-Clause). Kapı: ENABLE_SCRAPLING.
-scrapling>=0.9.0
+scrapling>=0.4.0
 # [CANLI KANIT 2026-10-14] scrapling 0.4.x `browserforge`'u ZORUNLU kullanır
 # ama paket metadata'sında bildirmez: temiz kurulumda yetenek
 # `extract_error` (`ModuleNotFoundError: browserforge`) dönüyordu. Ölçüm:

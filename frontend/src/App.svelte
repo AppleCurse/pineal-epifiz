@@ -10,6 +10,10 @@
   import { uplinkState } from './lib/telemetry';
   import AtlasPinealCockpit from './components/AtlasPinealCockpit.svelte';
   import TacticalWarRoom from './components/TacticalWarRoom.svelte';
+  // [P6 · CANLI PANEL] Canlı kontrol paneli: ajan hattı, anlık kanal, muhakeme,
+  // kanıt akışı ve çağrı izi — hepsi MEVCUT SoT'tan (WS + /api/aspasia/state).
+  import LiveControlPanel from './components/LiveControlPanel.svelte';
+  import SpiderFootCockpit from './components/SpiderFootCockpit.svelte';
   import NeuralTelemetryBoard from './components/visualizers/NeuralTelemetryBoard.svelte';
   import SupportPanel from './components/SupportPanel.svelte';
 
@@ -335,6 +339,7 @@
   }
 
   onMount(() => {
+    telemetryVisible = false;
     connect();
     setupTauriListeners();
     const unsubVoice = voiceEnabled.subscribe((enabled) => {
@@ -431,11 +436,8 @@
 </script>
 
 <main class="fullscreen-cockpit-viewport">
-  {#if $activeViewMode === 'warroom'}
-    <TacticalWarRoom />
-  {:else}
-    <AtlasPinealCockpit />
-  {/if}
+  <!-- TEK BÜTÜNLEŞİK MASTER KOKPİT (Dağınık görünümler ve butonlar kaldırıldı) -->
+  <AtlasPinealCockpit />
 
   <!--
     Adli Telemetri & Sözleşme Köprüsü — ARTIK GERÇEKTEN GÖRÜNÜR.
@@ -467,6 +469,29 @@
 </main>
 
 <style>
+  .view-switcher {
+    position: fixed;
+    right: 14px;
+    bottom: 14px;
+    display: flex;
+    gap: 6px;
+    z-index: 40;
+  }
+  .view-switcher button {
+    background: rgba(2, 6, 3, 0.85);
+    border: 1px solid rgba(212, 175, 55, 0.5);
+    color: var(--gold, #d4af37);
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 10px;
+    letter-spacing: 1px;
+    padding: 4px 8px;
+    cursor: pointer;
+  }
+  .view-switcher button.is-active {
+    background: rgba(212, 175, 55, 0.18);
+    color: var(--text-phosphor, #38ef7d);
+  }
+
   .fullscreen-cockpit-viewport {
     width: 100vw;
     height: 100vh;
@@ -477,30 +502,31 @@
     overflow: hidden;
   }
 
-  /* [AUDIT 2026-10-07 · Madde 6] Telemetri panosu ve açma/kapama düğmesi. */
+  /* [AUDIT 2026-10-07 · Madde 6] Telemetri panosu ve açma/kapama düğmesi.
+     Sol üst köşede kompakt konumlandırıldı — alttaki Aspasia sohbet ekranını ASLA kapatmaz. */
   .telemetry-panel {
     position: fixed;
-    left: 18px;
-    bottom: 62px;
-    width: min(460px, 34vw);
-    z-index: 60;
+    right: 14px;
+    bottom: 46px;
+    width: min(380px, 30vw);
+    z-index: 45;
   }
 
-  /* Pano kendi içinde 450px yükseklikte; küçük ekranlarda taşmasın. */
+  /* Pano kompakt yükseklikte; sohbet ve ana kontrolleri örtmez. */
   .telemetry-panel :global(.telemetry-board) {
-    height: min(450px, calc(100vh - 130px));
+    height: min(220px, 28vh);
   }
 
   .telemetry-toggle {
     position: fixed;
-    left: 18px;
-    bottom: 18px;
-    z-index: 61;
-    padding: 6px 12px;
+    right: 420px;
+    bottom: 14px;
+    z-index: 46;
+    padding: 5px 10px;
     font-family: 'JetBrains Mono', 'Courier New', monospace;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.06em;
     color: #d4af37;
     background: rgba(3, 5, 10, 0.88);
     border: 1px solid rgba(212, 175, 55, 0.35);

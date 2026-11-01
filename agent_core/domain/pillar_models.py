@@ -145,11 +145,43 @@ class VoidReport(StrictModel):
 
 
 class PillarBundle(StrictModel):
+    """[1. DALGA] Üç sütunun mühürlü paketi — ARTIK DALGA-2'NİN TİPLİ GÖRÜNÜMÜ.
+
+    Durum (2026-10-23 ölçümü): üretimde `FullPillarBundle` (dalga 2) koşuyor;
+    bu sınıf hiçbir üretim yolundan çağrılmıyordu → her iki şema sessizce
+    ayrışabilirdi ("ölü ama kırılabilir" sınıfı). Silinmedi; yerine
+    `from_full()` ile dalga-2 paketinin DOĞRULANMIŞ dalga-1 görünümü oldu:
+    aynı alanları okur, uyuşmazlıkta `ValidationError` fırlatır (sessiz sapma
+    yasak). `tests/unit/test_pillar_bundle_bridge.py` iki şemayı birbirine
+    kilitler.
+    """
+
     frequency: FrequencyReport = Field(default_factory=FrequencyReport)
     seismos: SeismosReport = Field(default_factory=SeismosReport)
     void: VoidReport = Field(default_factory=VoidReport)
     version: Literal["pillar-wave1-v1"] = "pillar-wave1-v1"
     computed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @classmethod
+    def from_full(cls, bundle: Any) -> "PillarBundle":
+        """Dalga-2 `FullPillarBundle` → dalga-1 görünümü (saf dönüşüm).
+
+        Eksik/uyumsuz alan UYDURULMAZ: pydantic doğrulaması hatayı yükseltir.
+        `computed_at` kaynaktan taşınır (yeni zaman damgası üretilmez).
+        """
+        if isinstance(bundle, dict):
+            payload = bundle
+        else:
+            dump = getattr(bundle, "model_dump", None)
+            if not callable(dump):
+                raise TypeError("from_full: FullPillarBundle veya dict bekleniyor")
+            payload = dump(mode="json")
+        return cls(
+            frequency=payload.get("frequency") or {},
+            seismos=payload.get("seismos") or {},
+            void=payload.get("void") or {},
+            computed_at=payload.get("computed_at") or datetime.now(timezone.utc),
+        )
 
     def as_snapshot_fields(self) -> dict[str, Any]:
         return {

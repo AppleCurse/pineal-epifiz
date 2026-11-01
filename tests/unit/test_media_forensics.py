@@ -142,9 +142,9 @@ class TestFetch:
         assert fetched.reason == "dependency_missing:yt-dlp"
 
     @pytest.mark.asyncio
-    async def test_direct_download(self, monkeypatch):
+    async def test_direct_download(self, monkeypatch, tmp_path):
         monkeypatch.setenv("PINEAL_MEDIA_ALLOW_PRIVATE", "1")
-        image = _make_image("/tmp/pineal-media-test.png", color=(10, 200, 10))
+        image = _make_image(tmp_path / "pineal-media-test.png", color=(10, 200, 10))
         payload = open(image, "rb").read()
         server = _FileServer(payload)
         try:

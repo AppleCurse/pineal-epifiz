@@ -90,6 +90,20 @@ CORE = {
         "YENİ (API-BÖLME 3): TTS wav indirme ucu; yalnız içerik-hash'li dosya, "
         "private/no-store, TTL ve disk tavanı; geçici STT/Piper dosyaları sunulmaz."
     ),
+    "README.md": (
+        "Sistemin ANA KAPISI (P8'de sıfırdan yazıldı): 15 bölümde, "
+        "**herkesin anlayabileceği** bir dille anlatır — sistem ne işe yarar, nasıl "
+        "çalışır, ekranda ne görürsün, 7 dalga motoru ve 13 ajan ne yapar, 26 yetenek "
+        "nedir, güvenlik kilitleri, nasıl kurulur/çalıştırılır, Aspasia'ya neler "
+        "sorulur, 62 API ucu, P0→P8 yenilikleri ve **ölçülen ↔ DOĞRULANMADI** tablosu. "
+        "Her iddia kod yoluyla doğrulanmıştır; ölçülemeyen hiçbir şey 'çalışıyor' yazılmaz."
+    ),
+    "backend/services/aspasia_state.py": (
+        "YENİ (API-BÖLME 6): `/api/aspasia/state` denetim görünümünün gövdesi "
+        "(kayıtlı ajanlar, görev durumu, bütçe, kota, anomali, **sayfalı** çağrı izi "
+        "`offset`/`limit` + `call_window`). `backend/api.py` tavanından çıkarıldı; "
+        "bağımlılıklar enjekte edilir (dairesel bağımlılık yok)."
+    ),
 }
 
 CATEGORY_A = [
@@ -132,18 +146,18 @@ CATEGORY_B = [
     "backend/routes/support.py", "backend/routes/websocket.py", "backend/routes/tasks.py",
     "backend/security/principal.py", "backend/security/task_ownership.py",
     "backend/security/task_access.py",
+    "backend/services/aspasia_state.py",
+    "scripts/verify_command_loop.py",
+    "scripts/revert_verification_p8.py",
     "scripts/smoke_test_browser.py", "scripts/generate_routing_shadows.py",
     "scripts/audit_regression.py", "scripts/verify_openrouter_catalog.py",
     "scripts/preflight_9router.py", "scripts/export_skills.py", "scripts/run_task.py",
-    "scripts/archive/live_provider_probe.py", "scripts/archive/test_live_holistic.py",
-    "scripts/archive/benchmark_download.py", "scripts/archive/ws_leak_probe.py",
-    "scripts/archive/e2e_test.py", "scripts/archive/flow_roentgen.py",
-    "scripts/archive/analyze_target_instagram.py", "scripts/archive/test_e2e_fixture.py",
 ]
 
 API_SPLIT = {
     "backend/routes/language.py": "taşındı",
     "backend/routes/speech_audio.py": "taşındı (TTS gizli dosya TTL/boyut sınırı)",
+    "backend/routes/company.py": "taşındı (API-BÖLME 7)",
     "backend/routes/support.py": "taşındı (B0)",
     "backend/routes/tasks.py": "taşındı",
     "backend/routes/websocket.py": "taşındı",
@@ -817,6 +831,8 @@ def build_html(entries: list) -> str:
     endpoints = re.findall(r'@app\.(get|post|put|delete|patch|websocket)\("([^"]+)"', api_src)
     lang_src = read_text(ROOT / "backend/routes/language.py")
     endpoints += re.findall(r'^\s*@app\.(get|post|patch|delete)\("([^"]+)"', lang_src, re.M)
+    company_src = read_text(ROOT / "backend/routes/company.py")
+    endpoints += re.findall(r'^\s*@app\.(get|post|patch|delete)\("([^"]+)"', company_src, re.M)
     speech_audio_src = read_text(ROOT / "backend/routes/speech_audio.py")
     endpoints += re.findall(r'^\s*@router\.(get|post|patch|delete)\("([^"]+)"', speech_audio_src, re.M)
     ep_table = "".join(

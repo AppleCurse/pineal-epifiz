@@ -20,7 +20,10 @@ from agent_core.services.llm_gateway import LLMGateway
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "generate_routing_shadows.py"
-SVELTE = ROOT / "frontend/src/components/UnifiedCompactPanel.svelte"
+#: [P6 · 2026-10-18] Svelte gölge hedefi OPSİYONEL: canlı arayüzde statik
+#: ajan-model tablosu yok (model/via koşunun provenance'ından gelir). Ölü
+#: `UnifiedCompactPanel.svelte` silindi; gölge artık yalnız RUNBOOK'da üretilir.
+SVELTE_CANDIDATES = (ROOT / "frontend/src/components/UnifiedCompactPanel.svelte",)
 RUNBOOK = ROOT / "RUNBOOK.md"
 
 EXPECTED_SOURCES = {"env_override", "task_routing", "agent_matrix", "task_chain"}
@@ -131,7 +134,20 @@ def test_snapshot_layer_attribution_is_task_independent():
 
 
 def test_shadow_markers_present():
-    assert SVELTE.read_text(encoding="utf-8").count("// <ROUTING-GENERATED-START do-not-edit>") == 1
-    assert SVELTE.read_text(encoding="utf-8").count("// <ROUTING-GENERATED-END>") == 1
+    """RUNBOOK gölgesi canlıdır (marker 1'er). Svelte hedefi varsa o da 1'er."""
     assert RUNBOOK.read_text(encoding="utf-8").count("<!-- ROUTING-GENERATED-START do-not-edit -->") == 1
     assert RUNBOOK.read_text(encoding="utf-8").count("<!-- ROUTING-GENERATED-END -->") == 1
+    for cand in SVELTE_CANDIDATES:
+        if cand.exists():
+            assert cand.read_text(encoding="utf-8").count("// <ROUTING-GENERATED-START do-not-edit>") == 1
+            assert cand.read_text(encoding="utf-8").count("// <ROUTING-GENERATED-END>") == 1
+
+
+def test_generator_runs_without_svelte_target():
+    """[P6] Svelte hedefi yokken üretici ÇÖKMEZ; RUNBOOK gölgesini üretir.
+
+    Ölü frontend bileşeni silindiğinde CI adımı (routing shadows) kırılmasın.
+    """
+    mod = _load_script()
+    assert mod.SVELTE is None, "ölü UnifiedCompactPanel artık depoda olmamalı"
+    assert mod.generate(check_only=True) is False, "RUNBOOK gölgesi taze olmalı"

@@ -415,7 +415,10 @@ def resolve_engine() -> tuple[str, str]:
         return "", reason
     command = os.getenv("PINEAL_TRANSCRIBE_CMD", "whisper").strip() or "whisper"
     try:
-        parts = shlex.split(command)
+        parts = [
+            t[1:-1] if len(t) >= 2 and t[0] == t[-1] and t[0] in ('"', "'") else t
+            for t in shlex.split(command, posix=(os.name != "nt"))
+        ]
     except ValueError:
         return "", "no_engine"
     head = parts[0]
@@ -483,7 +486,11 @@ async def transcribe(path: str, *, timeout: float = 600.0) -> Transcript:
                 engine=engine, media_sha256=media_sha,
             )
     else:
-        command = shlex.split(os.getenv("PINEAL_TRANSCRIBE_CMD", "whisper").strip() or "whisper")
+        raw_cmd = os.getenv("PINEAL_TRANSCRIBE_CMD", "whisper").strip() or "whisper"
+        command = [
+            t[1:-1] if len(t) >= 2 and t[0] == t[-1] and t[0] in ('"', "'") else t
+            for t in shlex.split(raw_cmd, posix=(os.name != "nt"))
+        ]
         try:
             proc = subprocess.run(
                 [*command, "--output_format", "txt", "--output_dir", str(audio.parent), str(audio)],

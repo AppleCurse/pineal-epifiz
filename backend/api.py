@@ -54,6 +54,7 @@ import logging
 import importlib
 import shutil
 import os
+import re
 import hashlib
 import time
 
@@ -72,8 +73,10 @@ from agent_core.chat.dialogue_manager import (
     DialogueSessionCapacityError,
     MAX_DIALOGUE_MESSAGE_CHARS,
 )
-from agent_core.scraper.instagram_ghost import InstagramGhostScraper
-from agent_core.services import crawl_enricher, socid_enricher
+from agent_core.scraper.instagram_ghost import (
+    InstagramGhostScraper,
+    InsufficientEvidenceError as ScraperInsufficientEvidenceError,
+)
 from agent_core.services.browser_session import BrowserSession
 from agent_core.services.dependency_health import (
     StartupDependencyError,
@@ -90,6 +93,15 @@ from agent_core.services.task_lifecycle import TaskLifecycleRegistry
 from agent_core.services.token_optimizer import OptimizationPolicy, TokenOptimizer
 from agent_core.services.unified_router import RoutingStrategy
 from agent_core.shadow.shadow_executor import ShadowExecutor
+# [API-BÖLME 5 · 2026-10-18] Koşu kaydı serileştiricisi ayrı modüle taşındı
+# (tavan kuralı: satır eklemek yerine MODÜL ÇIKAR). Dış sözleşme bozulmaz —
+# aşağıdaki iki adres `backend.api` üzerinden yeniden ihraç edilir.
+from backend.services.aspasia_state import build_state_payload
+from backend.services.run_entries import (  # noqa: F401  # yeniden dışa aktarım
+    run_display_fields as _run_display_fields,
+    serialize_run_entry as _serialize_run_entry,
+)
+
 from agent_core.utils.security import (
     SecurityConfigurationError,
     principal_of_request,
@@ -117,17 +129,17 @@ from backend.services.web_dossier import (
     instagram_channel_rows,
     x_sensor_channel_rows,
 )
+# [API-BÖLME 4 · 2026-10-16] Public-web araştırma gövdesi ayrı modüle taşındı;
+# ad + dış sözleşme korunur (yeniden ihraç).
+from backend.services.web_research import (  # noqa: F401 (yeniden ihraç, dış sözleşme)
+    extract_handle_from_url as _extract_handle_from_url,
+    run_public_web_research as _run_public_web_research,
+)
 # [API-BÖLME 3] `/api/telemetry` ucu ayrı modüle taşındı; ad + yol korunur.
 from backend.routes.telemetry import (  # noqa: E402,F401 (yeniden ihraç, dış sözleşme)
     TelemetryDeps,
     build_telemetry_endpoint,
     capability_status_table as _capability_status_table,
-)
-# [FIX #8] Scraper'ın KENDİNE ÖZLÜ InsufficientEvidenceError'ı (başka bir
-# Exception hiyerarşisi) da yakalanmalı; ayrı sınıflar olduğundan
-# isinstance ile ayrım yapılır, str(type) kontrolü ile değil.
-from agent_core.scraper.instagram_ghost import (
-    InsufficientEvidenceError as ScraperInsufficientEvidenceError,
 )
 
 
@@ -145,6 +157,16 @@ except ImportError:
     get_tracker = None
     init_tracker = None
     AGENT_DEFINITIONS = []
+
+# [AUDIT 2026-10-08] İşaretçi (beacon) filosu canlılık hesabı + dinamik staleness
+# eşikleri `backend/agent_rack.py`'ye taşındı (api.py monolit tavanı, 6000 satır).
+# Buradan YENİDEN İHRAÇ edilir — mevcut kullanımlar değişmeden çalışır.
+from backend.agent_rack import (  # noqa: F401  # yeniden dışa aktarım
+    AGENT_HEARTBEAT_INTERVAL_S as _AGENT_HEARTBEAT_INTERVAL_S,
+    AGENT_STALE_MULTIPLIER as _AGENT_STALE_MULTIPLIER,
+    beacon_liveness as _beacon_liveness,
+    env_float as _env_float,
+)
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
@@ -238,8 +260,10 @@ async def lifespan(application: FastAPI):
     try:
         if hasattr(application.state, 'redis_bus') and application.state.redis_bus:
             await application.state.redis_bus.disconnect()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning(
+            "[lifespan] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+        )
 
 # [AUDIT 2026-10-07 · Madde 2] Başlık sürümü BURAYA YAZILMIŞTI ("v3.0.0-rc.1")
 # ve VERSION dosyası 3.0.0-rc.2'ye çıktığında bayat kaldı: API, müşterilerine
@@ -1223,7 +1247,10 @@ def get_room(client_id: str) -> dict:
         vault.pop("provider_keys", None)
 
         # Check if local 9router proxy is configured
-        is_9router = "20128" in os.getenv("OPENROUTER_BASE_URL", "")
+        is_9router = (
+            "20128" in os.getenv("OPENROUTER_BASE_URL", "")
+            or "20128" in os.getenv("NINEROUTER_BASE_URL", "")
+        )
         ninerouter_key = os.getenv("NINEROUTER_API_KEY") or os.getenv("PINEAL_LLM_API_KEY") or os.getenv("OPENROUTER_API_KEY")
 
         if is_9router and ninerouter_key and ninerouter_key.startswith("sk-pineal"):
@@ -1239,6 +1266,8 @@ def get_room(client_id: str) -> dict:
                 shadow_executor.llm_gateway.set_key(api_key)
             if dialogue_manager is not None:
                 dialogue_manager.llm.set_key(api_key)
+            vault["or_key"] = True
+        if os.getenv("PINEAL_ROUTER_LIVE") == "1":
             vault["or_key"] = True
 
         # Export direct keys to environment for underlying SDKs
@@ -1348,8 +1377,10 @@ def get_room(client_id: str) -> dict:
             app.state.rooms[client_id]["sender_task"] = loop.create_task(
                 _room_sender(app.state.rooms[client_id])
             )
-        except RuntimeError:
-            pass
+        except RuntimeError as exc:
+            # Beklenen yol: senkron bağlamda (event loop yok) oda kurulumu.
+            # Yutulmuyor — debug iziyle bırakılır.
+            logger.debug("[get_room] event loop yok (senkron bağlam), sender task kurulmadı: %s", exc)
     _prune_room_stale_state(app.state.rooms[client_id])  # [AUDIT R1]
     return app.state.rooms[client_id]
 
@@ -1530,8 +1561,10 @@ def _openai_streaming_response(
             if aclose is not None:
                 try:
                     await aclose()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning(
+                        "[event_source] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+                    )
         yield "data: [DONE]\n\n"
 
     plan = routed_stream.plan
@@ -1799,7 +1832,7 @@ async def _room_sender(room: dict):
             # [BOSS-11] Eskiden yalnız print ediliyordu: kaybolan çerçeve
             # telemetride görünmüyordu. Artık oda durumu DEGRADED işaretlenir.
             _record_frame_error(room, kind, e)
-            print(f"[room_sender] hata: {type(e).__name__}: {e}")
+            logger.warning("[room_sender] hata: %s: %s", type(e).__name__, e)
 
 def _lifecycle(room: dict) -> TaskLifecycleRegistry:
     return room.setdefault("lifecycle", TaskLifecycleRegistry())
@@ -1911,37 +1944,6 @@ def _finalize_finished_missions(room: dict) -> None:
             finished.discard(task_id)
 
 
-def _run_display_fields(run) -> dict:
-    """(Şeffaflık düzeltmesi, F2) AgentRun'dan CANLI model/provider gösterimi türetir.
-
-    Backend ``AgentRun`` şeması ``model``/``via`` ÜRETMEZ; bir ajanın gerçekten
-    çağırdığı model/provider, o ajanın ``output_summary._provenance`` kaydında
-    yaşar (kaynak: yakalanan çağrı kayıtlarının son başarılısı). UI "ACTIVE
-    MODEL/VIA" çubuğu bu alanlardan beslenir; provenance yoksa/fallback/
-    deterministik ise değerler açıkça söyler — statik fallback'e sessiz düşme
-    yerine (üretici yorumuyla birebir).
-    """
-    prov = (getattr(run, "output_summary", None) or {}).get("_provenance") or {}
-    source = prov.get("source")
-    model = prov.get("model")
-    provider = prov.get("provider")
-    if source in ("llm", "llm_cache"):
-        return {"model": model, "via": provider or "openrouter", "run_source": source}
-    if source == "llm_error":
-        return {
-            "model": model,
-            "via": (provider or "llm") + " (hata)",
-            "run_source": source,
-        }
-    if source == "deterministic":
-        return {"model": None, "via": "deterministik-motor", "run_source": source}
-    if source == "fallback":
-        reason = prov.get("fallback_reason")
-        suffix = f":{reason}" if reason else ""
-        return {"model": None, "via": "fallback" + suffix, "run_source": source}
-    return {"model": None, "via": None, "run_source": source or None}
-
-
 # [BOSS-5] Deterministik 7-sütun ve psikodinamik derinlik çıktıları hesaplanıyordu
 # ama hiçbir WS payload'ına girmiyordu (ne snapshot ne result): UI'de o veriyi
 # gösterecek bileşen (PillarFeed) hiçbir zaman veri alamıyordu. `pillar_bundle`
@@ -1973,31 +1975,6 @@ def _json_field(val: Any) -> Any:
     return val
 
 
-def _serialize_run_entry(run, *, with_timestamps: bool) -> dict:
-    """AgentRun serileştirmesi — tek SoT (iki broadcast noktası da bunu çağırır)."""
-    entry = {
-        "status": getattr(run, "status", None),
-        "confidence": getattr(run, "confidence", None),
-        "error_message": getattr(run, "error_message", None),
-        "call_ids": list(getattr(run, "call_ids", []) or []),
-        "output_summary": redact_structure(
-            getattr(run, "output_summary", None) or {}
-        ),
-        "provenance": redact_structure(
-            (getattr(run, "output_summary", None) or {}).get("_provenance")
-        ),
-    }
-    if with_timestamps:
-        entry["started_at"] = (
-            run.started_at.isoformat() if getattr(run, "started_at", None) else None
-        )
-        entry["completed_at"] = (
-            run.completed_at.isoformat() if getattr(run, "completed_at", None) else None
-        )
-    entry.update(_run_display_fields(run))
-    return entry
-
-
 def _prune_room_stale_state(room: dict) -> None:
     """Odanın task_id ile büyüyen yapılarını retention/tavanla geri kazanır.
 
@@ -2014,8 +1991,10 @@ def _prune_room_stale_state(room: dict) -> None:
     try:
         live = set((room.get("mission_tasks") or {}).keys())
         _lifecycle(room).sweep(now, live_task_ids=live)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning(
+            "[_prune_room_stale_state] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+        )
 
     # 2) active_tasks: terminal snapshot'lar retention dolunca düşer; sert
     # tavan aşımında EN ESKİ terminal (hepsi terminal değilse en eski kayıt)
@@ -2028,8 +2007,10 @@ def _prune_room_stale_state(room: dict) -> None:
         retention = 1800.0
         try:
             retention = _lifecycle(room).retention_seconds
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "[_prune_room_stale_state] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+            )
         for task_id in [
             t for t, snap in active.items()
             if _snapshot_status(snap) in _TERMINAL_PIPELINE_STATES
@@ -2128,8 +2109,10 @@ def _enqueue(client_id: str, item: tuple):
             try:
                 dropped_kind, _ = q.get_nowait()  # Explicit drop-oldest policy.
                 _record_queue_drop(room, dropped_kind)
-            except asyncio.QueueEmpty:
-                pass
+            except asyncio.QueueEmpty as exc:
+                logger.warning(
+                    "[_enqueue] beklenmeyen hata (QueueEmpty) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+                )
             try:
                 q.put_nowait(item)
             except asyncio.QueueFull:
@@ -2173,8 +2156,10 @@ async def _send_ws(room: dict, payload: str) -> None:
     for ws in list(ws_set):
         try:
             await asyncio.wait_for(ws.send_text(payload), timeout=_WS_SEND_TIMEOUT_S)
-        except Exception:
+        except Exception as exc:
             # Ölü/açık soket: odaya ait setten at; yayına diğerleriyle devam.
+            # Yutulmuyor — debug iziyle bırakılır (sessiz körleşme yok).
+            logger.debug("[_send_ws] soket gönderimi başarısız, setten atıldı: %s", exc)
             ws_set.discard(ws)
 
 async def _send_log(room: dict, payload: tuple):
@@ -2248,6 +2233,13 @@ async def _send_snapshot(room: dict, snapshot: Any):
         "completed_agents": snapshot.completed_agents,
         "halted_reason": getattr(snapshot, "halted_reason", None),
         "resonance_score": getattr(snapshot, "resonance_score", None),
+        # [P6 · CANLI PANEL] Kanal defteri ANLIK yayınlanır. Veri snapshot
+        # nesnesinde ZATEN var (task_executor: status.channel_status — kazıma
+        # kanalları + OSINT/deep_scan çözümlemeleri) ama WS payload'ına
+        # serileştirilmiyordu -> panel "hangi modül nerede çalışıyor"
+        # sorusunu görev bitene kadar CEVAPLAYAMIYORDU. Paralel kaynak YOK:
+        # aynı SoT (snapshot.channel_status) doğrudan yayınlanır.
+        "channel_status": list(getattr(snapshot, "channel_status", None) or []),
         "holistic_profile": _dump_field(getattr(snapshot, "holistic_profile", None)),
         "follower_audit": _dump_field(getattr(snapshot, "follower_audit", None)),
         "timing_forensics": _dump_field(getattr(snapshot, "timing_forensics", None)),
@@ -2317,6 +2309,7 @@ class InitiatePayload(BaseModel):
     # verisiyle birlikte tasinir — ama AJAN SECIMI degil; sozlesme tek
     # kaynagi CognitiveRouter.GOAL_FOCUS. Bos = eski davranis (compat).
     aspasia_goals: List[str] = Field(default_factory=list, max_length=64)
+    outreach_intent: str = Field(default="", max_length=32_000)
     # [037] fix: aggressiveness/evidence_th kabul ediliyordu ama HİÇBİR davranışa
     # bağlanmamıştı (ölü API sözleşmesi). Kaldırıldı; eşik ayarı gerekiyorsa
     # DecisionConfig üzerinden gerçek davranışla bağlanmalı. Eski istemcilerin
@@ -2461,6 +2454,7 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
             # Amaç kaybi fix: Aspasia goal'leri payload'da yasar; router yoksa
             # eski plani aynen kurar. Gecerlilik/uydurma filtresi router'da.
             "aspasia_goals": list(req.aspasia_goals or []),
+            "outreach_intent": (getattr(req, "outreach_intent", "") or "").strip(),
         }
         
         # Otonom Cookie Rotasyonu — canlı LCD oturumu önceliklidir.
@@ -2480,18 +2474,27 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                 
         enable_cross = os.getenv("ENABLE_CROSS_PLATFORM", "false").lower() == "true"
         effective_type = _effective_scraper_type(req.url, req.scraper_type)
+        if req.url and effective_type == "cross" and not enable_cross:
+            broadcast_log(
+                client_id, "WARNING",
+                f"ÇAPRAZ OSINT KAPALI: {req.url} — Çapraz platform OSINT taraması sistem ayarlarında (ENABLE_CROSS_PLATFORM) devre dışı bırakılmış.",
+            )
+            broadcast_result_error(
+                client_id, "cross_platform_disabled",
+                "Çapraz platform OSINT taraması sistem ayarlarında (ENABLE_CROSS_PLATFORM=false) kapalı. Taramayı başlatmak için .env dosyasında ENABLE_CROSS_PLATFORM=true olarak ayarlanmalıdır.",
+                task_id,
+            )
+            return
         if req.url and effective_type == "unsupported_web":
             if not enable_cross:
-                # [023] fix: tanınmayan platformda URL segmentini Instagram adı gibi
-                # kullanıp yanlış hedefi kazımak YASAK. Tahmin üretme, açıkça dur.
                 broadcast_log(
                     client_id, "WARNING",
-                    f"PLATFORM DESTEKLENMİYOR: {req.url} — yalnızca Instagram kazıması var; "
-                    "tanınmayan URL tahmine dayalı kazınmaz, analiz başlatılmadı.",
+                    f"PLATFORM DESTEKLENMİYOR: {req.url} — tanınmayan URL; çapraz arama (ENABLE_CROSS_PLATFORM) kapalı olduğu için analiz başlatılmadı.",
                 )
                 broadcast_result_error(
                     client_id, "unsupported_platform",
-                    "Bu URL'nin platformu desteklenmiyor (destekli: Instagram). Analiz başlatılmadı.",
+                    "Bu URL doğrudan kazınamaz. Çapraz platform OSINT taraması için sistem ayarlarından ENABLE_CROSS_PLATFORM etkinleştirilmelidir.",
+                    task_id,
                 )
                 return
             effective_type = "cross"
@@ -2548,30 +2551,128 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                     "profil uydurulmadı, açık kaynak dosyası ile devam ediliyor.",
                 )
 
+        if req.url and effective_type == "instagram":
+            broadcast_log(client_id, "INFO", f"UPLINK: Hedefe sızılıyor -> {req.url} [INSTAGRAM]")
+            scrape_max = _bounded_env_int("PINEAL_SCRAPE_MAX_ATTEMPTS", 3, 1, 5)
+            last_err = None
+            for scrape_attempt in range(1, scrape_max + 1):
+                try:
+                    payload["target_profile"].update(await scrape_instagram(
+                        req.url, cookie,
+                        log=lambda lvl, msg: broadcast_log(client_id, lvl, msg),
+                    ))
+                    channel_runs.extend(
+                        instagram_channel_rows(
+                            post_count=len(payload["target_profile"].get("posts") or [])
+                        )
+                    )
+                    broadcast_log(client_id, "INFO", "TELEMETRİ: Veri ele geçirildi.")
+                    last_err = None
+                    break
+                except (InsufficientEvidenceError, ScraperInsufficientEvidenceError) as exc:
+                    if not enable_cross:
+                        raise
+                    # [GİZLİ HESAP KANIT KURTARMA] Gizli hesaptan kurtarılan bio/isim/bağlı hesaplar:
+                    priv_profile = getattr(exc, "profile_update", None) or {}
+                    if priv_profile:
+                        payload["target_profile"].update(priv_profile)
+                        broadcast_log(
+                            client_id, "INFO",
+                            f"GİZLİ PROFİL KANITI KURTARILDI: bio='{priv_profile.get('bio', '')[:60]}', "
+                            f"takipçi={priv_profile.get('followers')}, takip={priv_profile.get('following')}"
+                        )
+                    x_sensor_reason = str(exc)[:200]
+                    broadcast_log(client_id, "WARNING", f"IG DOĞRUDAN KAZIMA KANIT ÜRETEMEDİ ({x_sensor_reason}); açık kaynak OSINT ile devam ediliyor.")
+                    effective_type = "cross"
+                    last_err = None
+                    break
+                except Exception as e:
+                    last_err = e
+                    broadcast_log(
+                        client_id, "ERROR",
+                        f"UPLINK KOPTU (Deneme {scrape_attempt}/{scrape_max}): "
+                        f"{type(e).__name__}: {str(e)[:100]}",
+                    )
+                    if scrape_attempt < scrape_max:
+                        await asyncio.sleep(min(2 * scrape_attempt, 5))
+            if last_err is not None:
+                if enable_cross:
+                    x_sensor_reason = f"{type(last_err).__name__}: {str(last_err)[:120]}"
+                    broadcast_log(client_id, "WARNING", f"IG ALTYAPI HATASI ({x_sensor_reason}); açık kaynak OSINT ile devam ediliyor.")
+                    effective_type = "cross"
+                else:
+                    logger.error("HEDEF VERİSİ ALINAMADI: %s", str(last_err)[:200])
+                    broadcast_result_error(
+                        client_id, "failed",
+                        "HEDEF VERİSİ ALINAMADI: kazıma altyapısı denemeleri tüketti; analiz başlatılmadı.",
+                        task_id,
+                    )
+                    return
+
         if req.url and (effective_type == "cross" or (effective_type == "x" and not x_profile)):
-            from agent_core.services.platform_registry import extract_x_username
-            clean_u = extract_x_username(req.url) or (req.url.split('/')[-1] if '/' in req.url else req.url).lstrip('@').strip()
+            from agent_core.services.profile_router import classify_url
+            clean_u = classify_url(req.url).handle or (req.url.rstrip('/').split('/')[-1] if '/' in req.url else req.url).lstrip('@').strip()
             if effective_type == "x":
                 broadcast_log(client_id, "INFO", f"UPLINK: Hedefe sızılıyor -> {req.url} [X · açık kaynak dosyası]")
             else:
                 broadcast_log(client_id, "INFO", f"UPLINK: Hedefe sızılıyor -> {req.url} [{effective_type.upper()}]")
             broadcast_log(client_id, "INFO", f"AÇIK KAYNAK VE OSINT: {clean_u} için veriler taranıyor...")
             try:
-                # Çok kanallı paralel OSINT araması (Instagram, LinkedIn, Web)
-                if " " in clean_u:
-                    queries = [
-                        f'"{clean_u}" instagram',
-                        f'"{clean_u}" linkedin',
-                        f'"{clean_u}"',
-                        f'site:instagram.com "{clean_u}"',
-                        f'site:linkedin.com/in "{clean_u}"',
-                    ]
-                else:
-                    queries = [
-                        f"{clean_u} instagram",
-                        f"{clean_u} linkedin twitter",
-                        f"{clean_u}",
-                    ]
+                # [ZİNCİRLEME OSINT] Hedefin biyografisinden ve profilinden çıkan gerçek isim ve bağlı hesaplar (@handle):
+                recovered_bio = payload["target_profile"].get("bio") or ""
+                recovered_name = (payload["target_profile"].get("name") or "").strip()
+                bio_handles = [h.lstrip("@").strip() for h in re.findall(r"@[A-Za-z0-9_.-]+", recovered_bio) if len(h) > 2]
+                # Biyografiden linktree / beacons / harici link aggregators tespiti:
+                bio_links = re.findall(
+                    r"(?:https?://)?(?:www\.)?(?:linktr\.ee|beacons\.ai|taplink\.cc|bio\.link|carrd\.co)/[A-Za-z0-9_.-]+",
+                    recovered_bio,
+                    re.IGNORECASE,
+                )
+                if bio_links:
+                    clean_links = [l if l.startswith("http") else f"https://{l}" for l in bio_links]
+                    broadcast_log(client_id, "INFO", f"ZİNCİRLEME BAĞLANTI TESPİT EDİLDİ (Linktree/Beacons): {', '.join(clean_links)}")
+
+                # Biyografiden gerçek isim adaylarını bul (örn. "Kübra Cebi"):
+                name_candidates = []
+                if recovered_name and recovered_name.lower() != clean_u.lower():
+                    name_candidates.append(recovered_name)
+                for line in recovered_bio.splitlines():
+                    clean_line = re.sub(r"[^\w\s]", "", line).strip()
+                    parts = clean_line.split()
+                    if 1 < len(parts) <= 3 and not any(kw in clean_line.lower() for kw in ["takip", "specialist", "artist", "inci"]):
+                        if clean_line not in name_candidates:
+                            name_candidates.append(clean_line)
+
+                # Temel kullanıcı adı sorguları:
+                queries = [
+                    f"{clean_u} instagram",
+                    f"{clean_u} linkedin twitter",
+                    f"{clean_u} facebook reddit",
+                    f"{clean_u} threads",
+                    f"{clean_u}",
+                ]
+
+                # Tespit edilen gerçek isim varsa LinkedIn, Facebook, Reddit ve genel web aramaları ekle:
+                for cand_name in name_candidates[:2]:
+                    queries.append(f"{cand_name} linkedin")
+                    queries.append(f"{cand_name} facebook")
+                    queries.append(f"{cand_name} reddit")
+                    broadcast_log(client_id, "INFO", f"HEDEF GERÇEK İSİM TESPİT EDİLDİ: '{cand_name}' (LinkedIn, Facebook, Reddit taramasına alındı)")
+
+                # Biyografiden çıkan iş/ikinci hesapları ve Threads aramalarını ekle:
+                for bh in bio_handles[:3]:
+                    if bh.lower() != clean_u.lower():
+                        queries.append(f"{bh} instagram")
+                        broadcast_log(client_id, "INFO", f"ZİNCİRLEME HEDEF TESPİT EDİLDİ: @{bh} (Açık kaynak araştırmasına dahil edildi)")
+
+                # Biyografide meslek/lokasyon varsa ek sorgu:
+                specialty_matches = re.findall(r'(?:esthetician|makeup|kuaför|güzellik|estetisyen|artist)', recovered_bio, re.IGNORECASE)
+                if specialty_matches:
+                    spec_term = specialty_matches[0]
+                    queries.append(f"{clean_u} {spec_term}")
+                    if name_candidates:
+                        queries.append(f"{name_candidates[0]} {spec_term}")
+
                 search_tasks = [executor.search_engine.search(q, num_results=6) for q in queries]
                 search_results = await asyncio.gather(*search_tasks, return_exceptions=True)
 
@@ -2591,53 +2692,100 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                         f"{', '.join(unique_search_errors[:5]) or 'yok'}.",
                     )
 
-                # Katmanlı alaka sıralaması: Tam ad eşleşmesi > parça eşleşmesi > genel
                 target_parts = [p.lower() for p in clean_u.split() if len(p) > 1]
+                for c_name in name_candidates:
+                    target_parts.extend([p.lower() for p in c_name.split() if len(p) > 1])
                 name_full = clean_u.lower()
+                cand_lowers = [c.lower() for c in name_candidates]
                 tier1 = []
                 tier2 = []
                 tier3 = []
                 for r in all_raw_results:
                     text_blob = f"{r.content or ''} {r.source_url or ''}".lower()
-                    if name_full in text_blob:
+                    if name_full in text_blob or any(cn in text_blob for cn in cand_lowers):
                         tier1.append(r)
-                    elif all(p in text_blob for p in target_parts):
+                    elif all(p in text_blob for p in target_parts[:2]):
                         tier2.append(r)
                     elif any(p in text_blob for p in target_parts):
                         tier3.append(r)
 
                 ordered_results = (tier1 + tier2 + tier3) or all_raw_results
-
-                # Anlamlı içerikleri filtrele.
-                # [P0 · DENETİM 2026-10-16 · Bulgu 2] Snippet'lar ARAMA SONUCUDUR;
-                # "gönderi" değildir. Yapılandırılmış olarak tutulur ve `posts`
-                # alanına YAZILMAZ — kanıt tipi `search_snippet` olarak korunur.
                 snippets = build_snippets(ordered_results)
 
-                # Tespit edilen doğrudan sosyal medya profilleri
-                found_profiles = []
-                for r in ordered_results:
+                found_profiles = [req.url] if classify_url(req.url).runnable else []
+                for cl in (clean_links if 'clean_links' in locals() else []):
+                    if cl not in found_profiles:
+                        found_profiles.append(cl)
+                for r in (ordered_results + all_raw_results):
                     u = r.source_url or ""
-                    if any(dom in u.lower() for dom in ("instagram.com/", "twitter.com/", "x.com/", "linkedin.com/in/", "linkedin.com/pub/", "facebook.com/")):
-                        if u not in found_profiles:
-                            found_profiles.append(u)
+                    if classify_url(u).runnable and u not in found_profiles:
+                        found_profiles.append(u)
 
                 if found_profiles:
                     broadcast_log(client_id, "INFO", f"HEDEF PROFİLLERİ TESPİT EDİLDİ: {', '.join(found_profiles[:3])}")
 
                 display_user = f"@{clean_u.replace(' ', '_').lower()}" if " " in clean_u else f"@{clean_u}"
-                # [P0 · DENETİM 2026-10-16] Dosya kuralları ve kanal durumu
-                # `backend/services/web_dossier.py` modülünde (API-BÖLME 3).
-                payload["target_profile"].update(
-                    build_dossier_profile(
-                        display_user=display_user,
-                        clean_u=clean_u,
-                        snippets=snippets,
-                        found_profiles=found_profiles,
-                        web_search=web_search_status_record,
-                        x_sensor_reason=x_sensor_reason,
-                    )
+                dossier_data = build_dossier_profile(
+                    display_user=display_user,
+                    clean_u=clean_u,
+                    snippets=snippets,
+                    found_profiles=found_profiles,
+                    web_search=web_search_status_record,
+                    x_sensor_reason=x_sensor_reason,
                 )
+                # Eğer hedefin profilinden (örn. gizli hesap başlığından) bio/takipçi kurtarıldıysa ezme:
+                if recovered_bio:
+                    dossier_data["bio"] = recovered_bio
+                if payload["target_profile"].get("followers") is not None:
+                    dossier_data["followers"] = payload["target_profile"].get("followers")
+                if payload["target_profile"].get("following") is not None:
+                    dossier_data["following"] = payload["target_profile"].get("following")
+                payload["target_profile"].update(dossier_data)
+
+                # [FAZ 1 · ZİNCİRLEME İŞLETMELERİ KAZIMA]
+                # Biyografiden çıkan iş/ikinci hesaplar (@bangskuafor, @kubra_beauty_ vb.) açıksa hafifçe kazı:
+                business_entities = payload["target_profile"].setdefault("business_entities", [])
+                for bh in bio_handles[:2]:
+                    if bh.lower() != clean_u.lower():
+                        bh_url = f"https://www.instagram.com/{bh}/"
+                        broadcast_log(client_id, "INFO", f"ZİNCİRLEME PROFİL İNCELENİYOR: @{bh} -> {bh_url}")
+                        try:
+                            bh_data = await asyncio.wait_for(
+                                scrape_instagram(bh_url, cookie, log=lambda lvl, msg: None),
+                                timeout=25.0,
+                            )
+                            business_entities.append({
+                                "handle": f"@{bh}",
+                                "url": bh_url,
+                                "bio": bh_data.get("bio", ""),
+                                "followers": bh_data.get("followers"),
+                                "following": bh_data.get("following"),
+                                "post_count": len(bh_data.get("posts") or []),
+                                "posts": (bh_data.get("posts") or [])[:5],
+                                "is_private": bh_data.get("is_private", False),
+                            })
+                            broadcast_log(
+                                client_id, "INFO",
+                                f"ZİNCİRLEME İŞLETME KAZINDI: @{bh} ({len(bh_data.get('posts') or [])} gönderi, "
+                                f"takipçi={bh_data.get('followers')})"
+                            )
+                        except (InsufficientEvidenceError, ScraperInsufficientEvidenceError) as b_exc:
+                            # Gizli işletme hesabıysa bile başlığı/biyografisi varsa kurtar:
+                            b_priv = getattr(b_exc, "profile_update", None) or {}
+                            if b_priv:
+                                business_entities.append({
+                                    "handle": f"@{bh}",
+                                    "url": bh_url,
+                                    "bio": b_priv.get("bio", ""),
+                                    "followers": b_priv.get("followers"),
+                                    "following": b_priv.get("following"),
+                                    "post_count": 0,
+                                    "is_private": True,
+                                })
+                            broadcast_log(client_id, "INFO", f"ZİNCİRLEME PROFİL GİZLİ/SINIRLI: @{bh}")
+                        except Exception as b_err:
+                            broadcast_log(client_id, "WARNING", f"ZİNCİRLEME PROFİL ATLANDI: @{bh} ({type(b_err).__name__})")
+
                 channel_runs.extend(
                     dossier_channel_rows(
                         web_search_status=web_search_status,
@@ -2651,7 +2799,7 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                     client_id, "INFO",
                     f"TELEMETRİ: {len(snippets)} arama sonucu (snippet) bulundu, "
                     f"{len(found_profiles)} profil URL'si tespit edildi — "
-                    "hiçbiri kazınmadı, gönderi sayılmaz.",
+                    "derin tarama görev sırasında koşacak (kanal defteri orada yazılır).",
                 )
             except Exception as se:
                 broadcast_log(client_id, "WARNING", f"OSINT ARAMA UYARISI: {se}")
@@ -2665,57 +2813,6 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                 )
         if x_profile:
             payload["target_profile"].update(x_profile)
-        if req.url and effective_type == "instagram":
-            broadcast_log(client_id, "INFO", f"UPLINK: Hedefe sızılıyor -> {req.url} [INSTAGRAM]")
-            # [FIX #8] Eski kod: (1) tek deneme + hata yutuluyordu ve
-            # operasyon BOŞ profille sessizce devam ediyordu; (2) ISE
-            # kontrolü str(type(e).__name__) ile yapılıyordu — iki farklı
-            # ISE sınıfı (task_executor + scraper) ad eşleşmesiyle
-            # yakalanmaya çalışılıyordu, TargetPrivateError ise hiç
-            # tanımlanmayan bir sınıftı.
-            scrape_max = _bounded_env_int("PINEAL_SCRAPE_MAX_ATTEMPTS", 3, 1, 5)
-            last_err = None
-            for scrape_attempt in range(1, scrape_max + 1):
-                try:
-                    # [W4.2] Kazıma tek sahiplikli platform_registry'de; Rust
-                    # TaskManager (run_task.py) da aynı fonksiyonu kullanır.
-                    payload["target_profile"].update(await scrape_instagram(
-                        req.url, cookie,
-                        log=lambda lvl, msg: broadcast_log(client_id, lvl, msg),
-                    ))
-                    channel_runs.extend(
-                        instagram_channel_rows(
-                            post_count=len(payload["target_profile"].get("posts") or [])
-                        )
-                    )
-                    broadcast_log(client_id, "INFO", "TELEMETRİ: Veri ele geçirildi.")
-                    last_err = None
-                    break
-                except (InsufficientEvidenceError, ScraperInsufficientEvidenceError):
-                    # Kanıt yok (ör. özel profil) = altyapı hatası değil;
-                    # denemek anlamsız. Dış handler "halted_evidence"
-                    # terminal durumuna çevirir.
-                    raise
-                except Exception as e:
-                    last_err = e
-                    broadcast_log(
-                        client_id, "ERROR",
-                        f"UPLINK KOPTU (Deneme {scrape_attempt}/{scrape_max}): "
-                        f"{type(e).__name__}: {str(e)[:100]}",
-                    )
-                    if scrape_attempt < scrape_max:
-                        await asyncio.sleep(min(2 * scrape_attempt, 5))
-            if last_err is not None:
-                # [FIX #8] Altyapı tükenmesi → dürüst terminal durum.
-                # Boş profille operasyon ÇALIŞTIRILMAZ (eski kod sessizce
-                # devam edip kanıtsız "analiz" üretiyordu).
-                logger.error("HEDEF VERİSİ ALINAMADI: %s", str(last_err)[:200])
-                broadcast_result_error(
-                    client_id, "failed",
-                    "HEDEF VERİSİ ALINAMADI: kazıma altyapısı denemeleri tüketti; analiz başlatılmadı.",
-                    task_id,
-                )
-                return
         # [FAZ A · Retina] Kasa gerçeği görev payload'ına yazılır: ajanlar
         # capability omurgasını çağırırken durumu TAHMİN ETMEZ, operatörün
         # mandalının tek sahibi olan interlock'tan okur (kasa kapalıysa hiçbir
@@ -2724,9 +2821,26 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
         # kilidi İKİNCİ kez uygular. Kapı zaten zorunlu tuttu; bu satır kuşak
         # kuşak savunmadır — beyan kaybolsa bile kilit gevşemez, çünkü
         # `coerce_minor_case` yarım/bozuk beyanı REDDEDER (fail-closed).
+        # [2026-10-23 · ONAY KABLOSU] Operatör çapraz arama için açık onay
+        # verdiyse (POST /api/scraper/authorize-alternative) bu görevde
+        # `sensor.identity.handle_probe` kapısı açılır. Onay yoksa hiçbir şey
+        # değişmez; env varsayılanı (KAPALI) korunur.
+        _authorized = {
+            str(item.get("alternative"))
+            for item in (get_room(client_id).get("authorized_alternatives") or [])
+            if isinstance(item, dict)
+        }
         payload["policy"] = {
             "vault_locked": not _check_vault_interlock(client_id),
             "minor_case": _minor_case_for(client_id),
+            "cross_platform_authorized": bool(
+                _authorized & {"public_web_search", "cross_platform"}
+            ),
+            # [P1 · 2026-10-16] Hız kapısı bilinmiyorsa RET eder (fail-closed).
+            # Bu görev yolunda hız durumu ölçülmüyor; repo konvansiyonu (aynı
+            # dosyanın X kazıma yolu) `rate_ok=True` verir. Kasa kapısı ve
+            # ENABLE_* bayrakları ETKİLENMEZ.
+            "rate_ok": True,
         }
         # [P0 · DENETİM 2026-10-16] Kanal durumu defteri görev payload'ına taşınır;
         # görev yürütücüsü bunu görev durumuna (WS telemetrisi) kopyalar.
@@ -2839,6 +2953,8 @@ def broadcast_result_error(client_id, status, msg, task_id: Optional[str] = None
     room = app.state.rooms.get(client_id)
     if room is not None:
         _close_active_task(room, task_id, status)
+        if task_id:
+            room["latest_result"] = {"task_id": task_id, "status": status, "halted_reason": msg}
     payload = {"type": "result", "status": status}
     if task_id:
         payload["task_id"] = task_id
@@ -3046,8 +3162,10 @@ async def api_initiate(req: InitiatePayload, request: Request):
         try:
             tracker = get_tracker()
             await tracker.set_all_wait()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "[api_initiate] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+            )
     mission = asyncio.create_task(run_mission(req, task_id))
     room["mission_tasks"][task_id] = mission
 
@@ -3253,10 +3371,12 @@ def _quarantine_learnings(lp: str, problem: str) -> Optional[str]:
         for name in backups[:-keep]:
             try:
                 os.remove(os.path.join(base, name))
-            except OSError:
-                pass
-    except OSError:
-        pass
+            except OSError as exc:
+                # Eski yedek temizliği: dosya zaten gone/erişilemez — debug izi.
+                logger.debug("[_quarantine_learnings] eski yedek silinemedi: %s -> %s", name, exc)
+    except OSError as exc:
+        # Listeleme/erişim hatası: karantina yine de üst katmana bildirilir.
+        logger.warning("[_quarantine_learnings] yedekler listelenemedi — iz bırakıldı: %s", exc, exc_info=True)
     return backup
 
 
@@ -3328,7 +3448,12 @@ async def api_agents_status():
         agents = tracker.get_status_list()
         state_fn = getattr(getattr(tracker, "redis_bus", None), "connection_state", None)
         source = state_fn() if callable(state_fn) else "in_memory"
-        return {"agents": agents, "source": source, "count": len(agents)}
+        return {
+            "agents": agents, "source": source, "count": len(agents),
+            # Çok-süreçli işaretçi filosu: sinyal kaybı (deaf/unreachable)
+            # AÇIKça yüzeye çıkar — son sinyalin yaşı ve dinamik eşik.
+            "beacon": await _beacon_liveness(getattr(app.state, "redis_bus", None)),
+        }
     except Exception as e:
         logger.warning(f"Agent status okuma hatasi: {e}")
         return {"agents": [], "source": "error", "error": str(e)[:100], "count": 0}
@@ -3357,8 +3482,10 @@ async def api_update_agent_status(agent_id: str, status: str, metadata: Optional
                 # Kuyruga ekle - dogrudan WS gonderimi
                 try:
                     await _send_ws(room, payload)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning(
+                        "[api_update_agent_status] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+                    )
         return {"status": "updated", "agent": result}
     except Exception as e:
         return JSONResponse({"error": {"code": "AGENT_UPDATE_FAILED", "message": str(e)[:200]}}, status_code=500)
@@ -3489,12 +3616,16 @@ def _check_vault_interlock(client_id: str) -> bool:
     kasa ancak GERÇEK anahtar/oturum malzemesi taşıyorsa açıktır.
     """
     try:
+        if os.getenv("PINEAL_ROUTER_LIVE") == "1":
+            return True
         room = get_room(client_id)
         vault = room["vault"]
-        if vault.get("or_key") or vault.get("ig_sessionid") or vault.get("x_cookie"):
-            return True
-        # Dosya kasası: VARLIK değil, GERÇEK anahtar malzemesi aranır.
-        return _vault_bears_key_material(_load_vault())
+        unlocked = bool(
+            vault.get("or_key") or vault.get("ig_sessionid") or vault.get("x_cookie")
+        )
+        if not unlocked:
+            # Dosya kasası: VARLIK değil, GERÇEK anahtar malzemesi aranır.
+            unlocked = _vault_bears_key_material(_load_vault())
     except Exception:
         # Fail-closed (dar taraf: KİLİTLİ) — ama arıza YUTULMAZ: mandalın
         # neden okunamadığı logda görünür, yoksa "kasa kilitli" ile "kasa
@@ -3503,8 +3634,22 @@ def _check_vault_interlock(client_id: str) -> bool:
             "KASA MANDALI DEĞERLENDİRİLEMEDİ — dar taraf: KİLİTLİ (client_id=%s)",
             client_id, exc_info=True,
         )
-        return False
+        unlocked = False
+    # [E-GÖZ2-3 · YAPRAK HAT] Karar, `_require_vault_open` içinde yaprak kasa
+    # kapısına (agent_core.scraper.vault_gate) bildirilir — sınır kapısı
+    # atlanırsa yaprak katmanı ikinci savunmadır. Kararın tek sahibi
+    # `_check_vault_interlock`'tür; yaprak uydurmaz.
+    return unlocked
 
+
+# [API-BÖLME 7 · 2026-10-23] Mobil danışman köprüsü `/api/mobile/coach`
+# ayrı modüle taşındı (`backend/routes/mobile_coach.py`): Android doğrudan
+# Gemini'yi çağırmak yerine bu uçtan geçer. Satır yerine MODÜL çıkarıldı.
+from backend.routes.mobile_coach import register_mobile_coach_routes
+from backend.routes.hook_studio import register_hook_studio_routes
+
+register_mobile_coach_routes(app, rate_limit=rate_limit, rate_identity=_rate_identity, gateway_provider=lambda: getattr(aspasia_chief, "llm", None))
+register_hook_studio_routes(app, rate_limit=rate_limit, rate_identity=_rate_identity, gateway_provider=lambda: getattr(aspasia_chief, "llm", None), get_executor=get_executor)
 
 app.include_router(
     build_speech_router(
@@ -4118,7 +4263,7 @@ async def holehe_scan(payload: HoleheScanPayload):
         return locked
     from agent_core.services.holehe_scanner import scan_email
     result = await scan_email(
-        payload.email, limit=payload.limit, site_timeout=payload.timeout
+        payload.email, limit=payload.limit, site_timeout=payload.timeout,
     )
     if (unavailable := _engine_unavailable_response(result)) is not None:
         return unavailable
@@ -4367,30 +4512,30 @@ async def aspasia_command(payload: AspasiaCommandPayload, request: Request):
 
 
 @app.get("/api/aspasia/state")
-async def aspasia_state(client_id: str = "default"):
+async def aspasia_state(
+    client_id: str = "default",
+    offset: int = 0,
+    limit: int = 40,
+):
     """Read-only denetim görünümü: registry + görev durumu + bütçe + kota + anomaliler.
 
     Yeni bir telemetri sistemi DOĞMAZ; hepsi mevcut SoT okuyucularıdır
     (gateway call_log/budget, QuotaGovernor, executor.agents, lifecycle).
-    """
-    from agent_core.aspasia.interface import (
-        AgentInspector,
-        CostReader,
-        QuotaReader,
-        TelemetryReader,
-    )
 
+    [API-BÖLME 6] Gövde `backend/services/aspasia_state.py` modülüne taşındı
+    (api.py tavanı; kural: satır eklemek yerine MODÜL ÇIKAR). Uç sözleşmesi
+    aynen korunur; `offset`/`limit` ile çağrı izi penceresi sayfalanır
+    (varsayılanlar eski davranışın aynısı).
+    """
     room = get_room(client_id)
     executor = room.get("executor")
-    gateway = executor.llm_gateway if executor is not None else aspasia_chief.llm
-    inspector = AgentInspector(executor)
-    return {
-        "registry": inspector.registry(),
-        "run": inspector.run_status(room),
-        "budget": CostReader(gateway).snapshot(),
-        "quota": {p: QuotaReader(gateway=gateway).snapshot(p) for p in ("groq", "cerebras")},
-        "anomalies": TelemetryReader(gateway).anomalies(),
-    }
+    return build_state_payload(
+        room=room,
+        executor=executor,
+        chief_gateway=aspasia_chief.llm,
+        offset=offset,
+        limit=limit,
+    )
 
 
 @app.post("/api/aspasia/chat")
@@ -4415,176 +4560,6 @@ class AlternativeAuthorizationPayload(BaseModel):
     approved: bool
 
 
-def _extract_handle_from_url(url: str) -> str:
-    """X/Instagram URL'sinden kullanıcı adı (subject) çıkarır."""
-    import re
-    if not url:
-        return ""
-    needle = re.search(r"(?:instagram\.com|x\.com|twitter\.com)/([^/?#]+)", url)
-    if needle:
-        return needle.group(1).strip().lstrip("@").lower()
-    return url.split("?")[0].rstrip("/").split("/")[-1].replace("@", "").lower()
-
-
-async def _run_public_web_research(
-    url: str, search_engine: Any, client_id: str = "default"
-) -> Dict[str, Any]:
-    """Yetki verilmiş alternatif: kanıt kaynaklı public-web araması.
-
-    Sözleşme (sahte veri YASAK):
-    - Biyografi/gönderi/kişilik ÜRETİLMEZ; yalnızca gerçek arama kayıtları
-      döner (source_url + provider + content).
-    - Subject matching: hedef kullanıcı adı kaynak URL'sinde veya içeriğinde
-      geçmeyen sonuçlar düşürülür (yanlış kişi eşleşmesi engeli).
-    - Sağlayıcı yok/çöktü -> available=False; sonuç yok -> no_results.
-    """
-    handle = _extract_handle_from_url(url)
-    if not handle:
-        return {
-            "status": "invalid_target", "available": False,
-            "query": "", "results": [], "matched_username": "",
-            "total_results_searched": 0,
-            "search_outcome": {
-                "status": "NOT_REQUESTED", "available": False, "error": None,
-            },
-            "searched_at": datetime.now().isoformat(),
-            "note": "URL'den hedef kullanıcı adı çıkarılamadı.",
-        }
-
-    query = f'"{handle}"'
-    try:
-        outcome = await search_engine.search(query, num_results=8)
-    except asyncio.CancelledError:
-        raise
-    except Exception as exc:
-        return {
-            "status": "unavailable", "available": False, "query": query,
-            "results": [], "matched_username": handle,
-            "total_results_searched": 0,
-            "search_outcome": {
-                "status": "UNAVAILABLE", "available": False,
-                "error": type(exc).__name__,
-            },
-            "searched_at": datetime.now().isoformat(),
-            "note": f"Arama çağrısı başarısız: {type(exc).__name__}.",
-        }
-
-    search_outcome = {
-        "status": getattr(outcome, "status", "UNKNOWN"),
-        "available": bool(getattr(outcome, "available", False)),
-        "error": getattr(outcome, "error", None),
-    }
-    if not search_outcome["available"]:
-        return {
-            "status": "unavailable", "available": False, "query": query,
-            "results": [], "matched_username": handle,
-            "total_results_searched": 0,
-            "search_outcome": search_outcome,
-            "searched_at": datetime.now().isoformat(),
-            "note": getattr(outcome, "error", None) or "Arama sağlayıcısı kullanılamadı.",
-        }
-
-    raw = getattr(outcome, "results", []) or []
-    matched = [
-        {
-            "source_url": r.source_url,
-            "provider": r.provider,
-            "content": r.content,
-            "subject_match": True,
-        }
-        for r in raw
-        if handle in (r.source_url or "").lower()
-        or handle in (r.content or "").lower()
-    ]
-    # socid-extractor zenginleştirmesi: eşleşen kaynak URL'lerden kararlı kimlik
-    # kaydı çıkmaya çalışılır. Kütüphane yok/ağ yok/kayıt yoksa alan EKLENMEZ —
-    # sonuç sözleşmesi bozulmaz (dürüst boş).
-    try:
-        socid_records = await socid_enricher.enrich_urls(
-            [m["source_url"] for m in matched], limit=3
-        )
-        by_url = {r.source_url: r for r in socid_records}
-        for m in matched:
-            rec = by_url.get(m["source_url"])
-            if rec is not None:
-                m["socid"] = rec.model_dump()
-        if socid_records:
-            socid_note = f" {len(socid_records)} sonuçtan yapılandırılmış kimlik kaydı çıkarıldı."
-        else:
-            socid_note = ""
-    except Exception as exc:  # zenginleştirme asıl sonucu asla bozmasın
-        logger.warning("socid enrichment skipped: %s: %s", type(exc).__name__, str(exc)[:80])
-        socid_note = ""
-    # [FAZ A · Retina] TEMİZ METİN OMURGASI. Eskiden tek bir crawl4ai çağrısı
-    # vardı ve yalnız ENABLE_CRAWL4AI açıkken çalışıyordu. Artık üç kademeli
-    # omurga devrede: trafilatura → crawl4ai → scrapling. İlk KANIT ÜRETEN
-    # kademe sonucu verir; hiçbiri üretemezse alan uydurma metinle DOLDURULMAZ
-    # (sebep + deneme izi yazılır). Tek arayüz: capabilities.extract_web_text.
-    crawl_note = ""
-    try:
-        from agent_core.capabilities import bootstrap as _caps_bootstrap
-        from agent_core.capabilities.adapters_web import extract_web_text
-        from agent_core.capabilities.state import policy_state
-
-        _caps_bootstrap()
-        web_state = policy_state(vault_locked=not _check_vault_interlock(client_id))
-        if matched:
-            crawled = 0
-            for m in matched[:crawl_enricher.research_limit()]:
-                result = await extract_web_text(m["source_url"], state=web_state)
-                if result.ok:
-                    # payload kademeye göre değişir (pydantic kayıt veya dict);
-                    # ikisi de desteklenir, erişim güvenli.
-                    payload_raw = result.payload
-                    title = (
-                        payload_raw.get("title", "") if isinstance(payload_raw, dict)
-                        else getattr(payload_raw, "title", "") or ""
-                    )
-                    m["crawl"] = {
-                        "available": True,
-                        # HANGİ kademenin ürettiği kayıtta yazar (görünürlük).
-                        "provider": result.capability_id,
-                        "requested_url": m["source_url"],
-                        "title": title,
-                        "text": result.items[0].content if result.items else "",
-                        "evidence_ids": [i.evidence_id for i in result.items],
-                        "attempts": result.notes.get("attempts", []),
-                    }
-                    crawled += 1
-                else:
-                    # Dürüst boş (sözleşme korunur): çekilemeyen sonuca `crawl`
-                    # alanı EKLENMEZ; sebep yalnız logda (uydurma metin yok).
-                    logger.info(
-                        "web extraction failed for %s: %s (attempts=%s)",
-                        m["source_url"], result.unavailable_reason,
-                        result.notes.get("attempts", []),
-                    )
-            if crawled:
-                crawl_note = f" {crawled} sonuca temiz metin çekildi (omurga: trafilatura → crawl4ai → scrapling)."
-    except Exception as exc:  # zenginleştirme asıl sonucu asla bozmasın
-        logger.warning("web extraction skipped: %s: %s", type(exc).__name__, str(exc)[:80])
-
-    if matched:
-        status = "ok"
-        note = f"{len(matched)}/{len(raw)} sonuç hedef kullanıcı adıyla eşleşti." + socid_note + crawl_note
-    elif raw:
-        status = "no_subject_match"
-        note = f"Arama yapıldı ({len(raw)} sonuç) ama hiçbiri hedef kullanıcı adıyla eşleşmedi; sonuç gösterilmiyor (yanlış kişi eşleşmesi engeli)."
-    else:
-        status = "no_results"
-        note = "Arama yapıldı, hiç sonuç döndü."
-
-    return {
-        "status": status,
-        "available": True,
-        "query": query,
-        "search_outcome": search_outcome,
-        "results": matched,
-        "matched_username": handle,
-        "total_results_searched": len(raw),
-        "searched_at": datetime.now().isoformat(),
-        "note": note,
-    }
 
 
 class BrowserClientPayload(BaseModel):
@@ -4815,7 +4790,11 @@ async def authorize_scraper_alternative(req: AlternativeAuthorizationPayload):
     if req.alternative == "public_web_search":
         executor = get_executor(req.client_id)
         research = await _run_public_web_research(
-            pending["url"], executor.search_engine, client_id=req.client_id
+            pending["url"],
+            executor.search_engine,
+            client_id=req.client_id,
+            # [API-BÖLME 4] Kasa mandalı DI ile verilir (modül api.py'ye bağımlı olmaz).
+            vault_locked_fn=lambda cid: not _check_vault_interlock(cid),
         )
         room["web_research"] = research
         room.pop("pending_alternative_authorization", None)
@@ -4895,7 +4874,8 @@ async def interpreter_execute(req: InterpreterPayload):
     # bkz. PolicyKernel._GATE_ORDER — kasa, ENABLE_* bayraklarından öncedir).
     if (locked := _require_vault_open(req.client_id)) is not None:
         return locked
-    if os.getenv("ENABLE_INTERPRETER", "false").lower() != "true":
+    from agent_core.capabilities.state import flag_enabled as _flag_enabled
+    if not _flag_enabled("ENABLE_INTERPRETER"):
         raise HTTPException(status_code=403, detail="Interpreter endpoint is disabled by default for security.")
         
     room = get_room(req.client_id)
@@ -5664,153 +5644,11 @@ async def api_report_build(req: ReportBuildPayload):
     }
 
 
-class CompanyScanPayload(BaseModel):
-    """[FAZ D · D6] Kurum hedefi taraması: alan adı + mod seçimi."""
-
-    domain: str = Field(min_length=1, max_length=253)
-    client_id: str = Field(default="default", max_length=128)
-    modes: list[str] = Field(default_factory=lambda: ["harvester", "seo", "people"])
-    limit: int = Field(default=200, ge=1, le=1000)
-
-
-_COMPANY_MODES = {
-    "harvester": "sensor.company.harvester",
-    "seo": "sensor.company.seo",
-    "people": "sensor.company.people",
-}
-
-
-@app.get("/api/company/status")
-async def api_company_status():
-    """[FAZ D · D6] Kurum hedefi yeteneklerinin GERÇEK durumu (defterden).
-
-    Kapı kapalıysa ya da theHarvester yoksa "hazır" denmez; sebep makine-okunur.
-    """
-    from agent_core.capabilities import bootstrap
-
-    registry = bootstrap()
-    rows = []
-    for mode, cap_id in _COMPANY_MODES.items():
-        cap = registry.get(cap_id)
-        availability = cap.availability()
-        rows.append(
-            {
-                "mode": mode,
-                "capability_id": cap_id,
-                "available": availability.available,
-                "reason": availability.reason,
-                "gates": sorted(cap.gates),
-            }
-        )
-    return {
-        "gate": "ENABLE_COMPANY_TARGETING",
-        "domain_hint": "yalnız alan adı (örn. ornek.com); özel/yerel adresler reddedilir",
-        "modes": rows,
-        "any_available": any(row["available"] for row in rows),
-    }
-
-
-@app.post("/api/company/scan")
-async def api_company_scan(req: CompanyScanPayload):
-    """[FAZ D · D6] Kurum hedefini omurgadan tarar (theHarvester · SEO · kişi).
-
-    Her mod aynı mandaldan geçer: kasa + `ENABLE_COMPANY_TARGETING` + hız.
-    Mod reddedilirse sebep gizlenmez; kanıt üretilmediyse `evidence` boş kalır.
-    """
-    from agent_core.capabilities.base import CapabilityContext
-    from agent_core.capabilities.policy import PolicyState
-    from agent_core.capabilities.registry import bootstrap
-    from agent_core.capabilities.runner import CapabilityRunner
-    from agent_core.services import company_recon
-
-    if not rate_limit(f"company:{req.client_id}", "company"):
-        return JSONResponse(
-            {"error": {"code": "RATE_LIMITED", "message": "Çok fazla kurum taraması"}},
-            status_code=429,
-        )
-
-    domain = company_recon.normalize_domain(req.domain)
-    if not domain:
-        return JSONResponse(
-            {
-                "error": {
-                    "code": "INVALID_DOMAIN",
-                    "message": "Geçerli bir alan adı verin (örn. ornek.com).",
-                }
-            },
-            status_code=400,
-        )
-
-    wanted = [str(m).strip().lower() for m in (req.modes or [])]
-    unknown = [m for m in wanted if m not in _COMPANY_MODES]
-    if unknown:
-        return JSONResponse(
-            {"error": {"code": "UNKNOWN_MODE", "message": f"Bilinmeyen mod: {', '.join(unknown)}"}},
-            status_code=400,
-        )
-    if not wanted:
-        wanted = list(_COMPANY_MODES)
-
-    runner = CapabilityRunner(registry=bootstrap())
-    state = PolicyState(
-        enabled_flags={company_recon.GATE: _flag_env(company_recon.GATE)},
-        vault_locked=not _check_vault_interlock(req.client_id),
-        rate_ok=True,
-    )
-
-    results: dict[str, Any] = {}
-    for mode in wanted:
-        cap_id = _COMPANY_MODES[mode]
-        params: dict[str, Any] = {"domain": domain}
-        if mode == "harvester":
-            params["limit"] = req.limit
-        result = await runner.run(
-            cap_id,
-            CapabilityContext(subject=domain, params=params),
-            state=state,
-        )
-        results[mode] = {
-            "capability_id": cap_id,
-            "available": bool(result.available),
-            "denied_by": result.denied_by,
-            "reason": result.unavailable_reason,
-            "counts": {
-                "evidence": len(result.items),
-            },
-            "evidence": [
-                {
-                    "evidence_id": item.evidence_id,
-                    "epistemic_type": item.epistemic_type,
-                    "source_engine": item.source_engine,
-                    "content": item.content[:400],
-                    "provenance_refs": list(item.provenance_refs)[:5],
-                }
-                for item in result.items[:25]
-            ],
-            "notes": dict(result.notes or {}),
-        }
-        if result.denied_by:
-            broadcast_log(
-                req.client_id, "WARNING",
-                f"KURUM: {mode} engellendi — kapı:{result.denied_by}",
-            )
-        elif not result.available:
-            broadcast_log(
-                req.client_id, "WARNING",
-                f"KURUM: {mode} hazır değil — {result.unavailable_reason}",
-            )
-        else:
-            broadcast_log(
-                req.client_id, "INFO",
-                f"KURUM: {mode} tamam — {len(result.items)} kanıt ({domain})",
-            )
-
-    return {
-        "domain": domain,
-        "gate": company_recon.GATE,
-        "modes": results,
-        "evidence_total": sum(r["counts"]["evidence"] for r in results.values()),
-    }
+from backend.routes.company import (  # noqa: E402,F401 (API-BÖLME 7: yeniden ihraç, dış sözleşme)
+    CompanyScanPayload,
+    _COMPANY_MODES,
+    register_company_routes,
+)
 
 
 @app.get("/api/mcp/status")
@@ -5878,6 +5716,14 @@ def _flag_env(name: str) -> bool:
 # docs/reports/API_MONOLITH_SPLIT_PLAN.md §4). Sözleşme değişmedi: aynı yol,
 # aynı gövde; bağımlılıklar enjekte edilir.
 register_language_routes(
+    app,
+    rate_limit=rate_limit,
+    check_vault_interlock=_check_vault_interlock,
+    broadcast_log=broadcast_log,
+    flag_env=_flag_env,
+)
+
+register_company_routes(
     app,
     rate_limit=rate_limit,
     check_vault_interlock=_check_vault_interlock,

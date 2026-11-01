@@ -15,6 +15,10 @@ gizlenmez). Tespit ayrı, çeviri ayrı dürüstlük taşır.
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import asyncio
 import os
 import shutil
@@ -90,6 +94,8 @@ def resolve_engine() -> tuple:
         # Uç TANIMLI ama kabul edilemez: ret kararı gizlenmez, CLI'ye düşülmez.
         return "", reason
     cmd = os.getenv("PINEAL_TRANSLATE_CMD", "trans").strip() or "trans"
+    if (os.path.isabs(cmd) or "/" in cmd or "\\" in cmd) and os.path.isfile(cmd):
+        return "cli", ""
     if shutil.which(cmd):
         return "cli", ""
     return "", "no_engine"
@@ -187,8 +193,10 @@ async def _run_local_endpoint(text: str, finding: LanguageFinding, target: str, 
         if isinstance(data, dict):
             candidate = data.get("text") or data.get("translation") or ""
             return str(candidate).strip(), ""
-    except ValueError:
-        pass
+    except ValueError as exc:
+        logger.warning(
+            "[_run_local_endpoint] beklenmeyen hata (ValueError) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+        )
     return body, ""
 
 

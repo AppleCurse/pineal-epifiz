@@ -181,7 +181,7 @@ def test_live_match_yields_no_failures_and_no_unverified(monkeypatch):
         oc.urllib.request, "urlopen",
         lambda *a, **k: _Response(_payload()),
     )
-    failures, unverified = oc.verify_live_openrouter("key")
+    failures, _warnings, unverified = oc.verify_live_openrouter("key")
     assert failures == [] and unverified is None
 
 
@@ -190,7 +190,7 @@ def test_live_price_drift_is_a_failure_not_an_unverified_start(monkeypatch):
         oc.urllib.request, "urlopen",
         lambda *a, **k: _Response(_payload({"google/gemini-3.7-flash": (0.99, 3.75)})),
     )
-    failures, unverified = oc.verify_live_openrouter("key")
+    failures, _warnings, unverified = oc.verify_live_openrouter("key")
     assert unverified is None, "katalog okunduysa 'doğrulanamadı' DENEMEZ"
     assert any("live input price" in f for f in failures), failures
 
@@ -249,7 +249,7 @@ def test_transient_failure_is_retried_then_succeeds(monkeypatch):
         return _Response(_payload())
 
     monkeypatch.setattr(oc.urllib.request, "urlopen", _flaky)
-    failures, unverified = oc.verify_live_openrouter("key")
+    failures, _warnings, unverified = oc.verify_live_openrouter("key")
     assert (failures, unverified) == ([], None)
     assert calls["n"] == 2, "tek sarsıntıda pes edilmez"
 
@@ -262,7 +262,7 @@ def test_retries_are_bounded_and_report_the_last_error(monkeypatch):
         raise urllib.error.URLError("kapalı")
 
     monkeypatch.setattr(oc.urllib.request, "urlopen", _always_down)
-    failures, unverified = oc.verify_live_openrouter("key")
+    failures, _warnings, unverified = oc.verify_live_openrouter("key")
     assert failures == []
     assert unverified is not None and "unreachable" in unverified
     assert calls["n"] == oc._LIVE_MAX_ATTEMPTS, "deneme sayısı sabit ve sınırlı"
@@ -426,7 +426,7 @@ def test_live_price_failure_uses_the_same_unit_on_both_sides(monkeypatch):
         oc.urllib.request, "urlopen",
         lambda *a, **k: _Response(_payload({"google/gemini-3.7-flash": (0.99, 4.4)})),
     )
-    failures, unverified = oc.verify_live_openrouter("key")
+    failures, _warnings, unverified = oc.verify_live_openrouter("key")
     assert unverified is None
     assert failures == [
         "google/gemini-3.7-flash: live input price $0.99/1M != $0.75/1M",
@@ -487,3 +487,213 @@ def test_nightly_workflow_shell_requires_live_verification(
         assert annotation in result.stdout
     else:
         assert "::error" not in result.stdout
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SALINAN MODELLER: "ölçülmüş durum kümesi" sözleşmesi (2026-10-16)
+#
+# Neden: `z-ai/glm-5.2` ve `deepseek/deepseek-v4-pro` canlı katalogda iki
+# günde DÖRT ayrı fiyat okundu (CI 38833598719/38840573018/38843226709/
+# 38851706200 → 38866434547/38867016705 → 38870244950). Tek pinde çalışan
+# bekçi bu modelde art arda yanlış alarm üretti. Bekçi artık "canlı fiyat
+# BİLİNEN bir ÖLÇÜLMÜŞ durum mu?" diye sorar; YENİ bir fiyat yine FAIL eder.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_observed_states_contain_the_primary_pin():
+    """Her salınan modelin durum kümesi, sayacın pinini İÇERMELİ.
+
+    Aksi hâlde "ölçülmüş durum" listesi tutarsız olur ve bekçi, kendi
+    pinimize ölçülmüş değer diye itiraz ederdi.
+    """
+    for model_id, states in oc.OBSERVED_OPENROUTER_STATES.items():
+        pin = oc.REQUIRED_OPENROUTTER.get(model_id)
+        assert pin is not None, f"{model_id}: durum kümesi var ama pin yok"
+        assert tuple(pin) in states, f"{model_id}: pin {pin} durum kümesinde yok"
+
+
+def test_observed_states_are_positive_pairs():
+    """Durum kümesi boş/negatif olamaz (fiyat $0 veya eksi olamaz)."""
+    for model_id, states in oc.OBSERVED_OPENROUTER_STATES.items():
+        assert states, f"{model_id}: boş durum kümesi"
+        for state_in, state_out in states:
+            assert state_in > 0 and state_out > 0, f"{model_id}: {state_in}/{state_out}"
+
+
+def test_known_measured_state_passes_even_when_it_is_not_the_pin(monkeypatch):
+    """BİLİNEN ölçülmüş durum → kapı KIRMIZI değil (yalnız uyarı yazılır)."""
+    monkeypatch.setattr(
+        oc.urllib.request, "urlopen",
+        lambda *a, **k: _Response(_payload({"z-ai/glm-5.2": (0.62, 2.42)})),
+    )
+    failures, warnings, unverified = oc.verify_live_openrouter("key")
+    assert unverified is None
+    assert failures == [], failures
+    assert any("z-ai/glm-5.2" in w for w in warnings), warnings
+
+
+def test_jitter_within_tolerance_of_a_measured_state_passes(monkeypatch):
+    """Kotasyon salınımı: bilinen durumun ±%2 bandındaki fiyat → KIRMIZI değil.
+
+    Ölçüm (2026-10-23): iki ardışık CI koşusu aynı model için $0.894012 ve
+    $0.892272 okudu (%0.19 fark). Tam eşitlik listesi yakınsamadığı için bant
+    eklendi; bu test bandın ÇALIŞTIĞINI kanıtlar.
+    """
+    jittered_in = 0.894012 * 1.0019
+    jittered_out = 1.78802 * 1.0019
+    monkeypatch.setattr(
+        oc.urllib.request, "urlopen",
+        lambda *a, **k: _Response(
+            _payload({"deepseek/deepseek-v4-pro": (jittered_in, jittered_out)})
+        ),
+    )
+    failures, warnings, unverified = oc.verify_live_openrouter("key")
+    assert unverified is None
+    assert failures == [], failures
+    assert any("jitter" in w for w in warnings), warnings
+
+
+def test_drift_beyond_tolerance_still_fails(monkeypatch):
+    """Bandın dışındaki gerçek fiyat değişimi → kapı KIRMIZI kalır."""
+    monkeypatch.setattr(
+        oc.urllib.request, "urlopen",
+        lambda *a, **k: _Response(
+            _payload({"deepseek/deepseek-v4-pro": (0.894012 * 1.2, 1.78802 * 1.2)})
+        ),
+    )
+    failures, _warnings, unverified = oc.verify_live_openrouter("key")
+    assert unverified is None
+    assert any("NOT a measured state" in f for f in failures), failures
+
+
+def test_jitter_tolerance_is_small():
+    """Bant küçük kalmalı: %5'i aşarsa kapı fiilen kapanmış olur."""
+    assert 0 < oc.STATE_JITTER_TOLERANCE <= 0.05, oc.STATE_JITTER_TOLERANCE
+
+
+def test_jitter_band_does_not_apply_to_non_oscillating_models(monkeypatch):
+    """Bant YALNIZ salınan modellere uygulanır; diğerleri tam fiyat ister."""
+    # x-ai/grok-4.6 pinli ($2.00/$6.00) ve OBSERVED listesinde DEĞİL.
+    monkeypatch.setattr(
+        oc.urllib.request, "urlopen",
+        lambda *a, **k: _Response(
+            _payload({"x-ai/grok-4.6": (2.0 * 1.001, 6.0 * 1.001)})
+        ),
+    )
+    failures, _warnings, unverified = oc.verify_live_openrouter("key")
+    assert unverified is None
+    assert failures, "pinli modelde %0.1 sapma kabul edilmemeli"
+
+
+def test_unknown_price_state_still_fails(monkeypatch):
+    """YENİ (hiç ölçülmemiş) bir fiyat → kapı yine KIRMIZI (güçlendirme yok)."""
+    monkeypatch.setattr(
+        oc.urllib.request, "urlopen",
+        lambda *a, **k: _Response(_payload({"z-ai/glm-5.2": (0.05, 8.0)})),
+    )
+    failures, _warnings, unverified = oc.verify_live_openrouter("key")
+    assert unverified is None
+    assert any("NOT a measured state" in f for f in failures), failures
+
+
+def test_measured_state_must_match_input_and_output_together(monkeypatch):
+    """Girdi ve çıktı AYRI ayrı ölçülmüş durumlardan geliyorsa GEÇERMEZ.
+
+    Karışık eşleşme kabul edilirse bekçi, hiç ölçülmemiş bir fiyat
+    çiftini "ölçülmüş" diye kabul ederdi.
+    """
+    monkeypatch.setattr(
+        oc.urllib.request, "urlopen",
+        lambda *a, **k: _Response(_payload({"z-ai/glm-5.2": (0.62, 9.0)})),
+    )
+    failures, _warnings, unverified = oc.verify_live_openrouter("key")
+    assert unverified is None
+    assert any("NOT a measured state" in f for f in failures), failures
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GÖZLENEN FİYAT REJİMİ (2026-10-24)
+#
+# Neden: `deepseek/deepseek-v4-pro` iki günde $0.2088..$0.95526 aralığında on
+# bir ayrı değer verdi (her okumada çıktı = girdi × 2). İki ardışık ölçüm
+# arasındaki %22'lik atlama ±%2 bandının dışında kaldı ve kapı yine kırmızı
+# oldu. "Her yeni değeri listeye ekle" yaklaşımı yakınsamıyor; kural artık
+# REJİM + ORAN kontrolü. Aşağıdaki testler rejimin hem kabul hem ret
+# tarafını donduruyor: kural gevşetilirse (her şeyi kabul) veya sıkılaşırsa
+# (rejim içi kotasyonu reddet) test kırmızı olur.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_price_inside_the_observed_regime_passes_with_a_warning(monkeypatch):
+    """Rejim içi, ölçülmüş bir duruma eşit OLMAYAN fiyat → geçer + uyarı.
+
+    $0.50/$1.00 deepseek'in gözlenen aralığında (0.2088..0.95526) ve oranı
+    (0.5) gözlenmiş oranlarla (hepsi 0.5) uyumlu → kotasyon sayılır.
+    """
+    monkeypatch.setattr(
+        oc.urllib.request, "urlopen",
+        lambda *a, **k: _Response(
+            _payload({"deepseek/deepseek-v4-pro": (0.5, 1.0)})
+        ),
+    )
+    failures, warnings, unverified = oc.verify_live_openrouter("key")
+    assert unverified is None
+    assert failures == [], failures
+    assert any("observed price regime" in w for w in warnings), warnings
+
+
+def test_price_outside_the_observed_regime_still_fails(monkeypatch):
+    """Rejim DIŞI fiyat → kırmızı (gerçek rejim değişimi).
+
+    $1.50/$3.00 ölçülen en yüksek girdinin ($0.95526) çok üstünde.
+    """
+    monkeypatch.setattr(
+        oc.urllib.request, "urlopen",
+        lambda *a, **k: _Response(
+            _payload({"deepseek/deepseek-v4-pro": (1.50, 3.00)})
+        ),
+    )
+    failures, _warnings, unverified = oc.verify_live_openrouter("key")
+    assert unverified is None
+    assert any("NOT a measured state" in f for f in failures), failures
+    assert any("outside the observed price regime" in f for f in failures), failures
+
+
+def test_broken_price_structure_fails_even_inside_the_regime(monkeypatch):
+    """Rejim içinde ama GİRDİ/ÇIKTI ORANI hiç gözlenmemiş → kırmızı.
+
+    $0.50/$0.55 rejim aralığında; ama oran 0.909 — deepseek'te her okuma
+    girdi:çıktı = 1:2 verdi. Oran bozulduysa sağlayıcı BAŞKA bir şey
+    fiyatlıyordur; bu bir kotasyon değil yapı değişikliğidir.
+    """
+    monkeypatch.setattr(
+        oc.urllib.request, "urlopen",
+        lambda *a, **k: _Response(
+            _payload({"deepseek/deepseek-v4-pro": (0.5, 0.55)})
+        ),
+    )
+    failures, _warnings, unverified = oc.verify_live_openrouter("key")
+    assert unverified is None
+    assert any("STRUCTURE changed" in f for f in failures), failures
+
+
+def test_zero_output_price_fails_instead_of_dividing_by_zero(monkeypatch):
+    """Çıktı fiyatı 0 gelirse oran hesaplanamaz — sessizce geçmemeli."""
+    monkeypatch.setattr(
+        oc.urllib.request, "urlopen",
+        lambda *a, **k: _Response(
+            _payload({"deepseek/deepseek-v4-pro": (0.5, 0.0)})
+        ),
+    )
+    failures, _warnings, unverified = oc.verify_live_openrouter("key")
+    assert unverified is None
+    assert failures, "sıfır çıktı fiyatı kabul edildi"
+
+
+def test_observed_price_regime_covers_every_recorded_state():
+    """Rejim hesabı kayıtlı durumların tamamını kapsar (uçlar dâhil)."""
+    for model_id, states in oc.OBSERVED_OPENROUTER_STATES.items():
+        lo_in, hi_in, lo_out, hi_out = oc.observed_price_regime(states)
+        for state_in, state_out in states:
+            assert lo_in <= state_in <= hi_in, f"{model_id}: {state_in} rejim dışı"
+            assert lo_out <= state_out <= hi_out, f"{model_id}: {state_out} rejim dışı"

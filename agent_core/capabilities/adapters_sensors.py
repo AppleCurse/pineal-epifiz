@@ -24,8 +24,10 @@ import os
 import shlex
 import shutil
 import signal
+import sqlite3
 import subprocess
 from urllib.parse import urlsplit
+import re
 from typing import Any
 
 from agent_core.capabilities.egress import httpx, open_client  # noqa: F401  (test yamaları httpx adını modulede bekler)
@@ -133,6 +135,24 @@ def _make_twscrape_api(API: Any, db_path: str) -> Any:
         return API()
 
 
+def _x_has_active_session_pool() -> bool:
+    """Hesap havuzu DB'sinde en az 1 aktif oturum (`active = 1`) var mı?
+
+    Dosya yoksa yeni DB YARATMAZ (salt-okuma kontrolü).
+    """
+    configured = (os.getenv(_X_ACCOUNTS_DB_ENV) or "").strip()
+    path = configured or _X_ACCOUNTS_DB_DEFAULT
+    if not os.path.isfile(path):
+        return False
+    try:
+        with sqlite3.connect(path) as conn:
+            cursor = conn.execute("SELECT COUNT(*) FROM accounts WHERE active = 1")
+            row = cursor.fetchone()
+            return bool(row and int(row[0]) > 0)
+    except Exception:
+        return False
+
+
 # --------------------------------------------------------------------- X
 class XTwscrapeCapability(BaseCapability):
     """X/Twitter sensörü — twscrape (MIT).
@@ -153,6 +173,8 @@ class XTwscrapeCapability(BaseCapability):
             return Availability.unavailable("gate_disabled:ENABLE_X_SENSOR")
         if not _module_available("twscrape"):
             return Availability.unavailable("dependency_missing:twscrape")
+        if not _x_has_active_session_pool():
+            return Availability.unavailable("no_session_pool")
         return Availability.ok()
 
     async def run(self, ctx: CapabilityContext) -> CapabilityResult:
@@ -197,6 +219,13 @@ class XTwscrapeCapability(BaseCapability):
                 return CapabilityResult(
                     capability_id=self.id, available=False, unavailable_reason="user_not_found"
                 )
+            # [2026-10-23 · KABLO] Profil biyografisi taşınır: içindeki adresler
+            # (`detected_urls`) derin taramaya gider. twscrape sürümleri alanı
+            # `description` ya da `rawDescription` diye adlandırıyor; ikisi de
+            # yoksa "" (uydurma biyografi YOK).
+            bio = str(
+                getattr(user, "description", "") or getattr(user, "rawDescription", "") or ""
+            )
             # [E7-muaf] twscrape'in KENDİ gather'ı (asyncio değil) ve zaten
             # tek çağrı; hatası aşağıdaki try/except ile dürüst
             # CapabilityResult(available=False) hâline gelir.
@@ -260,7 +289,12 @@ class XTwscrapeCapability(BaseCapability):
             capability_id=self.id,
             available=True,
             items=tuple(items),
-            payload={"platform": "x", "username": username, "series": series},
+            payload={
+                "platform": "x",
+                "username": username,
+                "series": series,
+                "bio": bio,
+            },
             notes={"post_count": len(items)},
         )
 
@@ -281,11 +315,12 @@ class InstagrapiCapability(BaseCapability):
     description = "Instagram ikinci kaynak: Playwright engellenirse sensör düşmez."
 
     def availability(self) -> Availability:
-        if not _flag("ENABLE_IG_SECONDARY"):
-            return Availability.unavailable("gate_disabled:ENABLE_IG_SECONDARY")
+        # [2026-10-23] Kapı kararı `PolicyKernel`'de (bkz. X sensörü notu).
         if not _module_available("instagrapi"):
             return Availability.unavailable("dependency_missing:instagrapi")
-        if not (os.getenv("IG_USERNAME", "").strip() and os.getenv("IG_PASSWORD", "")):
+        has_session = bool(os.getenv("IG_SESSIONID", "").strip())
+        has_creds = bool(os.getenv("IG_USERNAME", "").strip() and os.getenv("IG_PASSWORD", ""))
+        if not (has_session or has_creds):
             return Availability.unavailable("credentials_missing:IG_USERNAME/IG_PASSWORD")
         return Availability.ok()
 
@@ -295,21 +330,36 @@ class InstagrapiCapability(BaseCapability):
             return CapabilityResult(
                 capability_id=self.id, available=False, unavailable_reason="invalid_username"
             )
-        limit = int(ctx.params.get("limit") or 20)
+        # [2026-10-23 · TEK AYAR] Ghost kazıyıcı ve bu ikinci kaynak AYNI
+        # operatör tavanını kullanır (`PINEAL_IG_MAX_POSTS`, varsayılan 48).
+        # Önceden ghost 12, bu yol 20 ile sabitti: iki yol farklı sınırla aynı
+        # işi yapıyordu. Çağıran `limit` verirse o kazanır.
+        from agent_core.scraper.instagram_ghost import _ig_max_posts
+
+        limit = int(ctx.params.get("limit") or _ig_max_posts())
 
         def _work() -> dict[str, Any]:
             from instagrapi import Client  # lazy import
 
             client = Client()
-            client.login(os.environ["IG_USERNAME"], os.environ["IG_PASSWORD"])
+            session_id = os.getenv("IG_SESSIONID", "").strip()
+            if session_id:
+                client.login_by_sessionid(session_id)
+            else:
+                client.login(os.environ["IG_USERNAME"], os.environ["IG_PASSWORD"])
             user_id = client.user_id_from_username(username)
             info = client.user_info(user_id)
             medias = client.user_medias(user_id, limit)
+            bio_text = getattr(info, "biography", "") or ""
+            handles = re.findall(r"@([A-Za-z0-9._]{1,30})", bio_text)
+            ext_url = getattr(info, "external_url", None)
             return {
                 "username": username,
                 "user_id": user_id,
                 "full_name": getattr(info, "full_name", "") or "",
-                "biography": getattr(info, "biography", "") or "",
+                "biography": bio_text,
+                "bio_handles": handles,
+                "external_url": ext_url,
                 "followers": getattr(info, "follower_count", None),
                 "following": getattr(info, "following_count", None),
                 "is_private": bool(getattr(info, "is_private", False)),
@@ -365,6 +415,27 @@ class InstagrapiCapability(BaseCapability):
                 },
             )
         ]
+        for handle in data.get("bio_handles") or []:
+            items.append(
+                make_evidence(
+                    content=f"Instagram @{username} bio mentions account @{handle}",
+                    source_engine="instagrapi",
+                    epistemic_type="observation",
+                    provenance_refs=[profile_url, f"https://www.instagram.com/{handle}/"],
+                    scope={"kind": "bio_handle", "platform": "instagram", "target": handle},
+                )
+            )
+        if data.get("external_url"):
+            items.append(
+                make_evidence(
+                    content=f"Instagram @{username} bio link: {data['external_url']}",
+                    source_engine="instagrapi",
+                    epistemic_type="observation",
+                    provenance_refs=[profile_url, str(data["external_url"])],
+                    scope={"kind": "external_link", "platform": "instagram"},
+                )
+            )
+
         for post in data.get("posts") or []:
             caption = (post.get("caption") or "").strip()
             if not caption:
@@ -407,7 +478,10 @@ def agent_reach_command() -> list[str] | None:
     raw = os.getenv("PINEAL_AGENT_REACH_CMD", "").strip()
     if raw:
         try:
-            parts = shlex.split(raw)
+            parts = [
+                t[1:-1] if len(t) >= 2 and t[0] == t[-1] and t[0] in ('"', "'") else t
+                for t in shlex.split(raw, posix=(os.name != "nt"))
+            ]
         except ValueError:
             return None  # bozuk tırnak: PATH'e düşmeyiz
         if not parts:

@@ -289,9 +289,11 @@ async def scan_username(
     scanned = 0
     for site_name, result in (results or {}).items():
         scanned += 1
-        status = getattr(result, "status", None)
+        from agent_core.services.osint_normalizer import safe_osint_get
+        status = safe_osint_get(result, "status")
+        url = safe_osint_get(result, "url_user") or ""
+
         if status == MaigretCheckStatus.CLAIMED:
-            url = getattr(result, "url_user", "") or ""
             found.append(MaigretSiteHit(site=str(site_name), url=url, status="claimed"))
         elif status in (MaigretCheckStatus.UNKNOWN, None):
             # None = denetleyici future'ı istisna ile öldü (ağ/DNS) → HATA.

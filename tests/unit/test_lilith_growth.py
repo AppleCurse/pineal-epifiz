@@ -366,10 +366,23 @@ async def test_free_text_gateway_strips_code_fences():
 
 
 def test_from_cli_credentials_selects_correct_gateway():
+    """[P3 · 2026-10-16] Varsayılan gateway **ana hattın** LLMGateway'idir.
+
+    M-2 düzeltmesi: Lilith CLI artık kendi `httpx` adaptörünü kullanmaz;
+    böylece NINEROUTER_*/canlı kapı/bütçe sayacı Lilith için de geçerlidir.
+    Eski adaptör yalnızca AÇIKÇA seçildiğinde kullanılır.
+    """
+    from agent_core.services.llm_gateway import LLMGateway
+
     agent_with_key = LilithGrowthAgent.from_cli_credentials(
         api_key="sk-test", base_url=None, model="gpt-4o"
     )
-    assert isinstance(agent_with_key.llm_gateway, OpenAICompatibleGateway)
+    assert isinstance(agent_with_key.llm_gateway, LLMGateway)
+
+    legacy_agent = LilithGrowthAgent.from_cli_credentials(
+        api_key="sk-test", base_url=None, model="gpt-4o", use_main_line_gateway=False
+    )
+    assert isinstance(legacy_agent.llm_gateway, OpenAICompatibleGateway)
 
     agent_without_key = LilithGrowthAgent.from_cli_credentials(
         api_key=None, base_url=None, model="gpt-4o"

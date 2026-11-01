@@ -56,3 +56,4 @@ reportlab>=4.0
 redis>=5.0.0
 hiredis>=2.0.0
 python-multipart>=0.0.9
+yt-dlp>=2026.0.0

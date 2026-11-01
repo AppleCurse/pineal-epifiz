@@ -13,8 +13,9 @@ from .void_engine import CATEGORY_LEXICON, _presence
 
 
 class StrataEngine:
-    def __init__(self, min_posts=12, extinction_threshold=0.05):
+    def __init__(self, min_posts=6, full_sample_posts=12, extinction_threshold=0.05):
         self.min_posts = min_posts
+        self.full_sample_posts = full_sample_posts
         self.extinction_threshold = extinction_threshold
 
     async def analyze(self, d):
@@ -24,7 +25,7 @@ class StrataEngine:
         s = extract_post_series(d)
         if len(s) < self.min_posts:
             return StrataReport(machine_note=f"STRATA: {len(s)} gönderi < min {self.min_posts}.")
-        n = len(s) // 3
+        n = max(2, len(s) // 3)
         e = s[:n]
         late = s[-n:]
         dr = []
@@ -79,13 +80,20 @@ class StrataEngine:
                 )
         depth = (s[-1][0] - s[0][0]).total_seconds() / 86400
         sig = sum(x.is_significant for x in dr)
+        low_sample = len(s) < self.full_sample_posts
+        status = (
+            EvidenceStatus.WEAK
+            if low_sample
+            else (EvidenceStatus.OBSERVED if f or sig else EvidenceStatus.WEAK)
+        )
+        sample_note = f" · düşük örneklem ({len(s)}<{self.full_sample_posts})" if low_sample else ""
         return StrataReport(
-            status=EvidenceStatus.OBSERVED if f or sig else EvidenceStatus.WEAK,
+            status=status,
             fossils=f,
             drifts=dr,
             archaeological_depth_days=depth,
             early_range=f"{e[0][0].date()}→{e[-1][0].date()}",
             late_range=f"{late[0][0].date()}→{late[-1][0].date()}",
-            machine_note=f"STRATA: derinlik={depth:.0f}d · {len(f)} fosil · {sig}/{len(dr)} kritik drift",
+            machine_note=f"STRATA: derinlik={depth:.0f}d · {len(f)} fosil · {sig}/{len(dr)} kritik drift{sample_note}",
             evidence_refs=[f"strata:depth_days={depth:.0f}"],
         )

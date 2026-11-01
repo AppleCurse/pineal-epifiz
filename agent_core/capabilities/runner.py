@@ -121,7 +121,15 @@ class CapabilityRunner:
 
         # 4) kullanılabilirlik
         try:
-            availability = cap.availability()
+            from agent_core.capabilities.adapters_osint import _ACTIVE_POLICY_FLAGS
+
+            token = _ACTIVE_POLICY_FLAGS.set(
+                dict(state.enabled_flags) if state is not None and state.enabled_flags else None
+            )
+            try:
+                availability = cap.availability()
+            finally:
+                _ACTIVE_POLICY_FLAGS.reset(token)
         except Exception as exc:
             logger.warning("availability patladı: %s: %s", cap_id, type(exc).__name__)
             return _finish(

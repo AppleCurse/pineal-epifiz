@@ -1,5 +1,408 @@
 # Changelog
 
+## Unreleased — 2026-10-24 — P10: GÖLGE DENETİMİ (hiçbir şey gölgede kalmasın)
+
+- **Yeni betik: `scripts/golge_denetimi.py`** — ürünün TAMAMINI tek koşuda
+  ölçer ve iki kanıt dosyası üretir: `reports/golge_denetimi.json` (makine
+  okunur) + `docs/reports/GOLGE_DENETIMI.md` (insan okunur). Rapordaki hiçbir
+  sayı elle yazılmaz.
+- **Ölçülen 8 boyut:** (1) yetenek defteri + iki senaryo (şalterler kapalı /
+  hepsi açık), (2) yetenek → HTTP ucu → MCP aracı → SKILL.md → arayüz zinciri,
+  (3) ajan modülü → yürütücü anahtarı → Agent Rack slotu → rota → arayüz,
+  (4) backend'deki her uç + kapısı + arayüz referansı, (5) env kapıları ↔
+  kodda okunan ↔ `.env.example` üç yönlü fark, (6) giriş noktalarından AST ile
+  **erişilemeyen modüller**, (7) sebebe göre **uyanma planı**, (8) depoda durup
+  ürüne bağlanmayan gömülü varlıklar.
+- **Kritik ayrım ölçüldü:** "şalter kapalı" ile "şalter açık ama bağımlılık/
+  motor/uç yok" artık AYRI raporlanır (`gate_disabled` / `dependency_missing` /
+  `no_engine` / `no_local_endpoint` / `no_local_models` / `config_missing`).
+  Böylece "hepsini açalım" cümlesi, açıldığında gerçekten çalışacak yeteneklerle
+  kurulum isteyenleri karıştırmaz.
+- **Kilitleyen test:** `tests/unit/test_golge_denetimi.py` — her yetenek bir
+  uyanma sınıfı taşımak zorunda; şalterler açıkken hazır olan bir yetenek
+  "kurulum gerekli" diye sınıflanamaz; CLI aracı `run_lilith.py` beyanlı giriş
+  noktası olduğu için `lilith_growth` yanlışlıkla "ölü kod" damgası yemez.
+- **Beyan edilmiş zayıflık:** giriş noktası listesi betiğin içinde açıkça
+  yazılıdır (8 adet). Yeni bir CLI eklenip listeye yazılmazsa betik onu ölü kod
+  sanar — bu, raporun tek kör noktasıdır ve raporda da böyle yazılıdır.
+- **CLI aracı tespiti (§9):** `scripts/golge_denetimi.py` artık `shutil.which`
+  + `importlib.util.find_spec` ile ffmpeg, theHarvester, piper, node, npm,
+  cargo gibi CLI araçlarının PATH'teki varlığını raporlar. Denetim makinesine
+  özeldir; Windows'ta farklı sonuç çıkarabilir.
+- **Uyandır betiği (`scripts/uyandir.py`):** kur-önce plan (hazır /
+  sadece_kapi / kurulum_gerekli), `--uygula guvenli|hepsi|ENABLE_X,ENABLE_Y`,
+  `.env` yedekli yazma, bilinmeyen kapıda gürültülü hata, mevcut satırları ve
+  hizalı yorumları korur. `--uygula hepsi` tüm 17 yönetilen kapıyı açar.
+- **Windows çalıştırıcılar:** `scripts/calistir_windows.ps1` +
+  `scripts/calistir_windows.bat` — `.venv\Scripts\python.exe` ile denetimi
+  çalıştırır, eksik paket/CLI kurulum rehberi içerir.
+- **REMEDIYASYON kılavuzu (`docs/reports/REMEDIYASYON.md`):** 10 engeli (9 yetenek + LLM motoru) için tek tek gerçek neden, gereken kurulum ve doğrulama komutu. ffmpeg, theHarvester, Instagram şifresi, SearXNG, agent-reach, ses uçları ve LLM API anahtarı / `LIVE_LLM_E2E` gibi sistem-seviye bağımlılıklar ayrıntılı olarak açıklanmıştır.
+- **LLM motoru tespiti (§10):** `scripts/golge_denetimi.py` artık `OPENROUTER_API_KEY`, `GROQ_API_KEY`, `GEMINI_API_KEY`, `DEEPSEEK_API_KEY`, `NINEROUTER_API_KEY` gibi LLM API anahtarlarını, `LIVE_LLM_E2E` / `PINEAL_ROUTER_LIVE` canlı çağrı bayrağını ve `NINEROUTER_BASE_URL` yerel 9Router uç noktasını kontrol eder. `TargetPsycheProfiler` (`PassionMapper`, `FrictionDetector`, `CognitiveProfiler`) ve diğer LLM-güvenli ajanların (`authenticity_auditor`, `depth_analyst`, `human_behavior`, `mirror_truth`, `resonance_synthesizer`) `llm_unavailable` durumu raporlanır. Yerel 9Router (`http://127.0.0.1:20128`) ile `NINEROUTER_API_KEY` + `LIVE_LLM_E2E=1` yeterlidir.
+- **requirements-blocked.txt:** 9 kapalı yeteneğin pip-kurulabilir Python bağımlılıkları (openai-whisper, translate-cli, ffmpeg-python). Sistem binary'leri (ffmpeg, piper, theHarvester, agent-reach, SearXNG) burada yok, REMEDIYASYON.md'ye yönlendirme var.
+
+## Unreleased — 2026-10-18 — P9: README yenilemesi + sistemin yeni haritası
+
+- **README baştan yazıldı — "herkesin anlayabileceği" bir dilde** (15 bölüm,
+  360 satır): eski ve yeni **her** özellik tek yerde toplandı. Eski sürümün
+  ağır metaforları ve teknik tabloları yerine: *sistem ne işe yarar* (2) ·
+  *nasıl çalışıyor* (3) · *ekranda ne görürsün* (4) · *7 dalga motoru* (5) ·
+  *13 görev ajanı* (6) · *26 yetenek* (7) · *dört güvenlik kilidi* (8) ·
+  *nasıl kurulur/çalıştırılır* (9) · *Aspasia'ya neler sorulur* (10) ·
+  *68 API ucu* (11) · *P0→P8 yenilikleri* (12) · *ölçülen ↔ DOĞRULANMADI* (13) ·
+  *depo haritası* (14) · *test ve kalite kapıları* (15).
+  Her iddia **kod yoluyla** doğrulanır; ölçülemeyen hiçbir şey "çalışıyor" yazılmaz.
+- **README artık kendi kendini doğrular:** yeni
+  `tests/unit/test_readme_claims.py` (10 test) README'deki SAYILARI canlı
+  koddan ölçer ve eşleştirir — ajan sayısı (`task_executor.py`), yetenek sayısı
+  (`capabilities.registry.bootstrap()`), dalga motoru sayısı (`engines/`),
+  API ucu sayısı (`backend.api.app.routes`) ve envanter dosya sayısı
+  (`scripts/generate_inventory_page.build_entries()` — haritanın **kendi**
+  ölçümü). Kod değişirse README sessizce geride kalamaz; her ajan ve her
+  yetenek **adıyla** anılmalıdır.
+- **Sistemin yeni haritasına kondu:** `docs/envanter.html` (745 dosya)
+  yeniden üretildi; kök `README.md` artık haritada **elle kürasyon** açıklamasıyla
+  görünür ("Sistemin ANA KAPISI…"), `backend/services/aspasia_state.py`,
+  `scripts/verify_command_loop.py` ve `scripts/revert_verification_p8.py` de
+  haritada etiketli olarak yer alır.
+- **Revert-doğrulama kalıcılaştırıldı:** P8'in 10 vakası artık depoda
+  `scripts/revert_verification_p8.py` (10/10 PASS) ve P9'un 8 vakası
+  `scripts/revert_verification_p9.py` (8/8 PASS) — kanıt artık `/tmp`de değil,
+  depoda ve tekrarlanabilir.
+- **P4 doküman sözleşmesi korundu:** README'nin "ölçülen ↔ DOĞRULANMADI"
+  tablosu yeni başlıkla (`## 13 · Durum tablosu: …`) aynı yerde duruyor;
+  `scripts/revert_verification_p4.py` işaretçileri yeni belgeye uyarlandı.
+- **Ölçüm:** `pytest tests/unit/test_readme_claims.py -q` → **10 passed** ·
+  `pytest tests/unit/test_p4_documentation.py` → **9 passed** ·
+  `ruff check .` → **All checks passed!** · `npm run check` → **0/0** ·
+  revert P8 **10/10** · revert P9 **8/8**.
+
+## Unreleased — 2026-10-18 — P8: "en donanımlı" canlı kontrol paneli
+
+- **Panel yeniden yazıldı (6 blok, 920 satır):**
+  `frontend/src/components/LiveControlPanel.svelte` →
+  1) AJAN HATTI (kuyruk + anlık ajan) · 2) ANLIK KANAL (**SIRADAKİ AJAN** +
+  **NE KAZILIYOR**) · 3) MUHAKEME (karar/güven/model/sorumluluk/çağrı kimlikleri +
+  **ÇIKTI `output_summary` satır satır**) · 4) TOPLANAN BİLGİ (**kanıt zinciri
+  ajan→kanıt GRUPLU** + kanal yapısı) · 5) ÇAĞRI İZİ (sayfalı) · 6) AJAN DETAYI
+  (seçili ajanın tam dökümü). Ölçüm yoksa `YETERSİZ KANIT` + **sebep**;
+  örnek/mock veri yok.
+- **Filtre + ajan seçimi (P8-C):** metin (`filterText`: ajan/model/via/kaynak/hata
+  kodu/URL/uyarı) ve durum (`statusFilter`) filtresi; `selectedAgent` ile ajan
+  detayı açma (seçili ajan → canlı ajan → kuyruğun ilk ajanı fallback zinciri).
+  Filtre boş sonucu **sebeple** yazılır (sessiz boş kalmaz).
+- **Çağrı izi geçmişi sayfalaması (P8-D):** `TelemetryReader.window(offset, limit)`
+  + `CallBinder.bind(run_view, offset, limit)` → `GET /api/aspasia/state?
+  client_id=…&offset=…&limit=…` → `call_window` (`offset`/`limit`/`total`) ve
+  `call_binding` ( **`bound_call_count` (günlükte var mı) / `page_call_count` (bu
+  sayfada) / `page_missing_call_ids` (başka sayfada) / `missing_call_ids` (günlükte
+  HİÇ yok → gerçek kopukluk + sebep)** ayrımı). Panelde `← DAHA ESKİ` ·
+  `DAHA YENİ →` · `CANLIYA DÖN`. Kayıt uydurulmaz — pencere kayar.
+- **Yeni doğrulama komutu (P8-B):** `scripts/verify_command_loop.py` — canlı
+  `komut → görev → ajan → kanıt → çağrı izi` döngüsünü **gerçek API'ye karşı**
+  koşturur, **ham çıktıyı** basar ve dürüstçe hüküm verir: `0` kanıtlandı ·
+  `1` döngü kırık (sebeple) · `2` ön koşul sağlanmadı (API'ye ulaşılamadı) ·
+  `Ctrl-C` → `DOĞRULANMADI`. WS kanıt zinciri yakalama **isteğe bağlı**
+  (`websockets`; prod imajında kurulu, CI'da değil → betik bunu **açıkça** yazar).
+- **[API-BÖLME 6] api.py tavanı yükseltilmedi, DÜŞÜRÜLDÜ:** `/api/aspasia/state`
+  gövdesi `backend/services/aspasia_state.py` modülüne taşındı
+  (`build_state_payload`; bağımlılıklar enjekte edilir, dairesel bağımlılık yok) →
+  **5772 → 5760** satır, ratchet tavanı **5760'a düşürüldü**
+  (`tests/unit/test_api_monolith_ratchet.py`).
+- **Yeni testler:** `tests/unit/test_live_control_panel.py` 17 → **29**
+  (+12 P8; backend'de **gerçekten çalıştırılan** sayfalama/bağ testleri, frontend
+  kontrat testleri, betiğin **subprocess** ile koştuğu hata-yolu testi) ·
+  `tests/unit/test_api_monolith_ratchet.py` 16 → **18**.
+  **Revert-doğrulama 10/10 kırmızıya döndü.**
+- **Canlı ölçüm (bu sandbox'ta gerçekten koşturuldu):** betik erişilemeyen API'de
+  `rc=2` + "ulaşılamadı" sebebi; canlı API'de (uvicorn :8000) komut ucu
+  `accepted:false / reason:"intent_unavailable"` döndü (9Router erişilemiyor →
+  `fallbacks: RUNTIMEERROR`) ve betik **"DÖNGÜ KIRILDI"** diyerek görev/`task_id`
+  **uydurmadı**; WS yakalama gerçek kare biçimiyle doğrulandı (1 snapshot + 1
+  result + 2 kanıt zinciri satırı).
+- **DOĞRULANMADI:** panelin **görsel** doğrulaması (headless tarayıcı yok) ·
+  canlı 9Router niyet çıkarımı ve canlı görevden gelen kanıt zinciri (egress) ·
+  `websockets` paketinin CI'da kurulu olması (`requirements.lock`'ta yok).
+- **Ölçüm:** `pytest tests -q` → **2840 passed, 8 skipped** (kapsam %92.58) · `ruff check .` → **All checks
+  passed!** · `npm run check` → **0/0** · `npm run build` → ✓ (index 180.53 kB) ·
+  `audit_regression.py` → **✓ BEKÇİ GEÇTİ** · `backend/api.py` **5760** satır
+  (ratchet tavanı 5760 ✓) · envanter **742 dosya**.
+- **Rapor:** `docs/reports/P8_CANLI_PANEL_2026-10-18.md`.
+
+## Unreleased — 2026-10-18 — P7: canlı kontrol paneli + Aspasia komut döngüsü
+
+- **Aspasia komuta-kontrol döngüsü omurgası:** canlı arayüz artık
+  `POST /api/aspasia/command` ucunu **çağırıyor** (`AtlasPinealCockpit.svelte:729`
+  → `:791 tryAspasiaCommand`). `accepted && task_id` → görev başlar (WS akışı
+  devralır); red/hata/`task_id` yok → **sahte "emir alındı" üretilmez**, sebep
+  loglanır ve sohbet ucuna düşülür. (Böylece `RUNBOOK.md:286`'daki **yalan
+  iddia** artık doğru: belge bu davranışı vaat ediyordu, kod yapmıyordu.)
+- **Sahte onay yedeği kaldırıldı:** sohbet yanıt gövdesi boşsa UI artık
+  `"Emir alındı Mösyö."` yazmıyor; **sebep yazan dürüst** metni gösteriyor.
+- **Yeni canlı kontrol paneli** (`frontend/src/components/LiveControlPanel.svelte`,
+  yeni — 551 satır): 1) AJAN HATTI (kuyruk + anlık ajan) · 2) ANLIK KANAL
+  (hangi modül nerede + canlı ajan **hangi URL'yi kazıyor**) · 3) MUHAKEME
+  (karar var mı, güven, gerçek model, sorumluluk, çağrı kimlikleri) ·
+  4) TOPLANAN BİLGİ (kanıt akışı) · 5) ÇAĞRI İZİ (`call_id → ajan → model →
+  sağlayıcı → süre → maliyet` + bütçe/kota/anomali). `App.svelte:15/:440`
+  ile bağlı → **ölü bileşen değil** (`dead_code_audit.py` C5=0). Ölçüm yoksa
+  `YETERSİZ KANIT` + **sebep**; örnek/elle veri yok.
+- **Çağrı izi ucu:** `GET /api/aspasia/state` artık `calls` (gateway `call_log`)
+  ve `call_binding` yayınlıyor. Kaynak TEK (paralel telemetri deposu yok).
+- **Çağrı kimliği bağlayıcısı `run.call_ids` şemasına hizalandı:**
+  `agent_core/aspasia/interface.py:207 CallBinder` — `run.call_ids` ile
+  `call_log` AYNI kimlik uzayını (gateway `call_id`) paylaşır; her çağrı
+  satırına `bound_agents` yazılır; pencere dışındaki koşu çağrıları **sayılır**
+  ve sebebi yazılır (kopukluk sessizce yutulmaz).
+- **Veri düşüren iki yer düzeltildi:** `AgentRun` alanları (`input_summary`,
+  `evidence_ids`, `responsibility`, `decision_grade`, `warnings`, `error_code`)
+  artık WS'e serileştiriliyor (War Room'un okuduğu `input_summary` **düşüyordu**);
+  WS `snapshot_update` artık `channel_status` taşıyor (veri snapshot'ta **zaten
+  vardı**, sadece serileştirilmiyordu) → "hangi modül nerede çalışıyor" anlık
+  görünür. `_summarize_input` artık `urls`/`url_count` veriyor (profil içeriği
+  YOK).
+- **Canlı ölçüm (bu sandbox'ta gerçekten koşturuldu):** komut ucu LLM kapalıyken
+  `reason:"intent_unavailable"` döndü (görev uydurmadı); niyet çıkarımı
+  sahtelenince `accepted:true` + gerçek `task_id` (`op_…`) üretildi ve yaşam
+  döngüsü `runs:1` kaydı; 9 ajan gerçekten koştu → `input_summary.urls`,
+  `call_ids`, `responsibility.blockers/next_action` dolu; çağrı bağı **6/6**
+  (`bound_call_count:6`, `missing_call_ids:[]`); WS `snapshot_update` karesi
+  `channel_status` (4 kanal, `not_run` + sebep) ve `runs` alanlarıyla geldi.
+- **Yeni test:** `tests/unit/test_live_control_panel.py` (**17 test**).
+  **Revert-doğrulama 9/9 kırmızıya döndü** (her düzeltme geri alınınca ilgili
+  test kırmızı).
+- **[API-BÖLME 5] api.py tavanı yükseltilmedi, DÜŞÜRÜLDÜ:** `main`'e PR #145
+  birleşince `api.py` 5840 satıra çıktı (tavan 5805). Kural işletildi: koşu
+  kaydı (AgentRun) serileştiricisi `backend/services/run_entries.py` modülüne
+  taşındı (`_run_display_fields` + `_serialize_run_entry`; dış sözleşme
+  `backend.api` üzerinden yeniden ihraç) → **5772** satır, ratchet tavanı
+  **5772'ye düşürüldü** (gerekçe: `docs/reports/API_MONOLITH_SPLIT_PLAN.md` §2.5).
+- **Ölçüm:** `pytest tests -q` → **2826 passed, 8 skipped** · `ruff check .` →
+  **All checks passed!** · `npm run check` → **0/0** · `npm run build` → ✓ ·
+  `dead_code_audit.py` → **0/0/0/0/0/0** · `audit_regression.py` → **✓ BEKÇİ
+  GEÇTİ** · `backend/api.py` **5772** satır (ratchet tavanı 5772 ✓).
+- **Rapor:** `docs/reports/CANLI_KONTROL_PANELI_2026-10-18.md`.
+
+## Unreleased — 2026-10-18 — P6: ölü kod / "çalışır gibi yapan" tespiti + düzeltmesi
+
+- **Yeni dedektör (gece bekçisi):** `scripts/dead_code_audit.py` — beş AST tabanlı
+  denetim: **C1** hiç import edilmemiş modül · **C1b** yalnız testlerden import
+  edilen modül · **C2** kendi gövdesi dışında referanssız ≥12 satırlık fonksiyon ·
+  **C3** kayıtlı ama çağrılmayan ajan · **C4** kayıtlı ama **düşürülemeyen**
+  yetenek · **C5** giriş noktalarından **ulaşılamayan** frontend dosyası.
+  CI'ya adım olarak eklendi (`ci.yml` → "Dead code guard"): bulgu varsa **exit 1**.
+- **Ölü P0 kopyası silindi:** `DeepScanResult.summary_row`
+  (`agent_core/services/profile_deep_scan.py:266`, 26 satır) hiç çağrılmıyordu;
+  canlı karşılığı `deep_profile_resolver._summary_row()` (P1'de değiştirilmiş).
+- **12 ölü frontend bileşeni silindi (4779 satır):** `UnifiedCompactPanel` (1990),
+  `CockpitEntry` (685), `PinealEye` (440), `LcdLogin` (501), `OrganikIrisCanvas` (228),
+  `irisRenderer.ts` (251) ve `diesel/*` + `PillarFeed` — PR #143'te yenilen
+  arayüzde **hiç import edilmiyordu** (ekranda asla görünmüyordu).
+  `svelte-check` 0/0 + `vite build` ✓ + paket hash'i **değişmedi** (kod zaten
+  pakette değildi).
+- **En kritik bulgu — testler de "çalışır gibi"ydi:** **6 test dosyası** ölü paneli
+  koruyordu (yeşil test, üretimde hiçbir şey garantisi yok). Hepsi **canlı yüzeye**
+  bağlandı: `test_ui_honesty_contract.py`, `test_frontend_agent_model_contract.py`,
+  `test_wiring_frontend.py`, `test_routing_shadows.py`, `test_aspasia_chief_layer.py`,
+  `test_p1_profile_routing.py`, `tests/e2e/test_cross_stack_runtime.py`.
+- **`generate_routing_shadows.py`:** Svelte hedefi (ölü panel) **opsiyonel** hâle
+  geldi — dosya yoksa üretici çökmez, RUNBOOK gölgesi (canlı) üretilmeye devam eder.
+- **AJAN KATMANI ÖLÇÜMÜ (kullanıcının sorusu):** `agent_core/agents/` içinde
+  **ölü ajan dosyası YOK** — 13 ajanın 13'ü de kayıtlı ve çağrılabilir
+  (10'u router üzerinden dinamik, 3'ü doğrudan). Kayıt defterindeki **26
+  yeteneğin 26'sı** da düşürülebilir. Kanıt: `scripts/dead_code_audit.py` → C3=0, C4=0.
+- **Yeni test:** `tests/unit/test_dead_code_audit.py` (**11 test**) — durumu kilitler
+  ve **revert-doğrulaması** içerir (geçici ölü modül/bileşen geri konunca
+  dedektör kırmızıya döner; silinen 12 bileşen geri gelirse test kırmızı).
+- **Ölçüm:** `pytest tests -q` → **2798 passed, 6 skipped** · `ruff check .` →
+  **All checks passed!** · `audit_regression.py` → **✓ BEKÇİ GEÇTİ** ·
+  `dead_code_audit.py` → **modül=0 test-only=0 fonksiyon=0 ajan=0 yetenek=0
+  frontend=0** · `npm run check` → 0/0 · `npm run build` → ✓ · envanter **742 → 732**
+  dosya.
+- ~~**Kullanıcı kararına bırakılan iki ürün boşluğu**~~ → **P7'de KAPANDI**:
+  canlı arayüz artık `/api/aspasia/command` ucunu çağırıyor ve çağrı kimliği
+  bağlayıcısı `run.call_ids` üzerinden kuruluyor
+  (`docs/reports/CANLI_KONTROL_PANELI_2026-10-18.md`).
+- **Rapor:** `docs/reports/OLU_KOD_DENETIMI_2026-10-18.md`.
+
+## Unreleased — 2026-10-18 — P5: Faz 2 kapanış denetimi (18 bulgunun kilidi)
+
+- **Yeni düzeltme yok:** Denetimin (2026-10-16) **18** bulgusunun tamamı P0→P4'te
+  kapatılmıştı ve **bugün de** kapalı — her biri güncel kodda dosya:satır kanıtıyla
+  yeniden doğrulandı (`docs/reports/DUZELTME_FAZ2_KAPANIS_2026-10-18.md`).
+- **Yeni teslim — bulgu kilidi:** `tests/unit/test_p5_closing_audit.py` (**17 test**).
+  Her test bir **kod değişmezi** korur: 1 kopuk kablo · 2 snippet≠gönderi ·
+  3/3b socid omurgada · 4/4b maigret+holehe omurgada (reddedilen tarama mühürlü) ·
+  5b X sensörü boş havuzda `no_session_pool` · 6 Lilith CLI-only + ana hat gateway'i ·
+  7 çapraz profil deterministik (ağırlık toplamı 1.0, "kapsam") · 8/9/10 kapılar dürüst ·
+  11 UI'da "profil bağlandı" yok · 12/12b model matrisi + M-1 · 14/B-3 telemetri sebebi ·
+  B-4 `accounts.db` depo kökünü kirletmiyor.
+- **Ölçüm (PR #143 sonrası, `main` @ `7212657`):** `pytest tests -q` → **2765 passed,
+  6 skipped** · `ruff check .` → **All checks passed!** · `audit_regression.py` →
+  **✓ BEKÇİ GEÇTİ** · revert-doğrulama **P0 7/7 · P1 6/6 · P2 3/3 · P3 4/4 · P4 5/5 = 25/25**.
+- **Kapı tablosu ölçümü (mock'suz):** kasa kilitliyken 26/26 yetenek
+  `policy_allowed=False · vault_locked`; kasa açıkken 22 `gate_disabled` + 4 izinli →
+  **"kapalı"nın sebebi kaybolmuyor**.
+- **CI'da ölçülen fiyat salınımı:** PR #144'ün ilk `backend` koşusu **fiyat drift
+  bekçisi** yüzünden kırıldı (`deepseek-v4-pro` canlı $0.2088/$0.4176 — ölçülmüş
+  durum değil). Bekçi doğru davrandı; yeni okuma **ölçüldüğü** için
+  `OBSERVED_OPENROUTER_STATES` kümesine koşu kimliğiyle eklendi
+  (`39081581447`). Bilinmeyen fiyat hâlâ `FAIL` eder.
+- **Ortam notu:** platform çalışma ağacını sıfırladı (`.venv`/`node_modules` silindi) →
+  venv yeniden kuruldu (`ruff 0.17.1` doğrulandı).
+
+## Unreleased — 2026-10-16 — P4: dokümantasyon = kod (ölçülen ↔ DOĞRULANMADI)
+
+- **Denetim tespiti güncellendi:** "holehe ana hattan erişilemez" tespiti **P1
+  kablo düzeltmesiyle geçersizleşti**. Ölçüm (mock'suz prob): biyografideki
+  e-posta → `connected_emails` dolu → `sensor.identity.holehe` çağrılıyor →
+  kasa kilitliyken `policy:vault_locked` ile **dürüstçe** duruyor. Canlı tarama
+  **DOĞRULANMADI** (egress kapalı).
+- **Kod düzeltmesi (1 satır):** reddedilen holehe taraması artık **mühürlü
+  kayda** bağlanıyor (maigret ile simetri). Öncesinde profil yalnız
+  `email_scan.reason` taşıyordu; reddedilen tarama zincirde iz bırakmıyordu.
+  Reddedilen tarama kanıt **uydurmuyor** (giriş sayısı 0).
+- **README (md.13):** "ölçülen çalışma ↔ DOĞRULANMADI" durum tablosu eklendi —
+  11 ölçülebilir satır, 9 **sebebiyle** DOĞRULANMADI satırı.
+- **README_TECHNICAL (md.14):** OSINT bölümüne holehe'nin ölçülmüş durumu +
+  kapı listesi; Lilith başlığı **CLI-ONLY** olarak işaretlendi.
+- **RUNBOOK (md.15):** M-3 (9Router kasa anahtarında **`sk-pineal` önek şartı**)
+  ve M-1 (9Router kipinde **`dialogue_manager` kanonik zinciri yok** → bulut
+  model-id'lerine düşer) notları eklendi.
+- **Doğrulanan (düzeltme yok) README iddiaları:** 12 `beacon-*` servisi ✓ ·
+  13 görev ajanı ✓ · `localhost:8000` ✓ · tüm dosya yolu referansları ✓.
+- **Test:** 13 yeni test (12 doküman-kod kilidi + 1 kanıt) · **5/5
+  revert-doğrulama PASS** (`scripts/revert_verification_p4.py`).
+- **Ölçüm:** `pytest tests -q` → **2753 passed, 6 skipped** · `ruff check .` →
+  **All checks passed!** · `audit_regression.py` → **✓ BEKÇİ GEÇTİ**.
+
+## Unreleased — 2026-10-16 — P3: Lilith kararı (CLI-only) + ana hat kapıları (M-2)
+
+- **Bulgu (M-2):** Lilith CLI kendi `httpx` adaptörünü kullanıyordu
+  (`lilith_growth.py:254`), ana hattın `LLMGateway`'ini **bypass** ediyordu:
+  `NINEROUTER_*` taşıması yok, canlı çağrı kapısı yok, ölçülen maliyet
+  ana hattın spend sayacına **yazılmıyordu**.
+- **Bulgu (doküman):** `README_TECHNICAL.md:161` "ham profil metni prompt
+  bağlamına doğrudan eklenmez" diyordu; kod (`lilith_growth.py:586-593`) hedef
+  biyografiyi ve ilk 10 gönderiyi **düz metin olarak ekliyordu** → iddia yanlıştı.
+  `README.md:183` de dosyayı `scripts/run_lilith.py` diye gösteriyordu; dosya
+  **depo kökünde**.
+- **Karar:** Lilith **CLI-only** kalır (çıktısı *kanıt* değil *üretim*; kanıt
+  zincirine karışmamalı) — ancak çağrı yolu **ana hattın `LLMGateway`'ine**
+  bağlandı: taşıma sırası `NINEROUTER_* > PINEAL_LLM_* > OPENROUTER_*`, canlı
+  kapı (`LIVE_LLM_E2E=1` / `PINEAL_ROUTER_LIVE=1`), bütçe/spend sayacı ve
+  çağrı kaydı Lilith için de geçerli. Anahtar yoksa anahtar gerektirmeyen
+  `FreeTextGateway` kullanılır.
+- **Dürüstlük:** ana hattın kapısı reddederse CLI "başarılı" diye sunmaz —
+  `stderr`'e `[LILITH] ÇALIŞMADI: <hüküm>` yazar, **çıkış kodu 2** ile çıkar.
+- **Doküman:** README + README_TECHNICAL kararı, gerekçeyi ve kapı kurallarını
+  yazıyor; çelişen iddia ve yanlış yol düzeltildi.
+- **Test:** 10 yeni sözleşme testi (`tests/unit/test_p3_lilith_cli.py`); Lilith
+  gateway testi yeni sözleşmeye güncellendi; **4/4 revert-doğrulama PASS**
+  (`scripts/revert_verification_p3.py`).
+- **Ölçüm:** `pytest tests -q` → **2740 passed, 6 skipped** · `ruff check .` →
+  **All checks passed!** · `audit_regression.py` → **✓ BEKÇİ GEÇTİ**.
+
+## Unreleased — 2026-10-16 — Canlı fiyat: üçüncü ölçüm + salınım dayanıklı bekçi
+
+- **Üçüncü ölçüm:** canlı katalog `z-ai/glm-5.2` için çıktı $7.00 → **$9.00/1M**
+  okundu (girdi $0.037). İki günde dört ayrı fiyat ölçüldü → teşhis: ölçümün
+  kendisi değil, **tek pinli bekçinin tasarımı** sorunluydu (katalog adımı
+  art arda kırmızı; her seferinde yeni pin yazmak gerekti).
+- **Düzeltme (kapı zayıflatılmadan):** `scripts/verify_openrouter_catalog.py`
+  → `OBSERVED_OPENROUTER_STATES` (her model için **ölçülmüş** fiyat durumları,
+  her biri CI koşu kimliğiyle kayıtlı). Canlı fiyat bilinen bir durum ise
+  `PASS` + hangi durumun okunduğu `WARNING` olarak yazılır; **bilinmeyen yeni
+  fiyat yine `FAIL:`** eder. Girdi ve çıktı AYRI ayrı eşleşemez.
+- **Hizalama (ölçümle):** pin `(0.037, 9.0)` · `config/provider_catalog.json`
+  `0.037/9.0` · `llm_gateway.MODEL_PRICING` `{"in": 0.037, "out": 9.0}`.
+- **Test:** 5 yeni sözleşme testi (durum kümesi pini içerir · durumlar pozitif ·
+  bilinen durum geçer · bilinmeyen durum FAIL · karışık eşleşme geçmez).
+- **Kapsam sınırı:** harcama sayacı TEK değer taşır (son ölçülen durum);
+  canlı fiyatın periyodik tabloya alınması ayrı bir iş kalemi olarak açık.
+
+## Unreleased — 2026-10-16 — P2: çapraz profilleme deterministik ve dürüst
+
+- **Bulgu:** denetimde çapraz profilleme kodu **yoktu**; PR #138 ile `main`'e gelen
+  uygulama üç gerçek kusur taşıyordu: (a) biyografideki **alt dize** eşleşmesi
+  yanlış pozitif üretiyordu (en güçlü sinyalle!), (b) socid'in `user_id` alanı
+  **kullanıcı adı gibi** eşleştiriliyordu (rastgele sayı çakışması), (c) skor
+  "olasılık" gibi sunuluyordu ve `EvidenceItem.confidence` alanına yazılıyordu
+  (alan sözleşmesi ihlali: "source scores must remain in source_metrics").
+- **Düzeltme:** `agent_core/services/cross_profiler.py` yeniden yazıldı.
+  Sinyaller: `self_declared_link` (birebir bağlantı) · `exact_handle` ·
+  `normalized_handle` · `shared_platform_id` (socid ortak kimlik). Aynı platform
+  eşleşmesi, jenerik kullanıcı adları ve kısa adlar eşleşme üretmez.
+- **Skor artık "kapsam":** `coverage = Σ(yanan sinyallerin belgelenmiş
+  ağırlıkları)`; kanıtta `confidence=None`, `source_metrics.coverage_label="kapsam"`,
+  `scope.confidence_label="kapsam"`, metinde yüzde dili yok.
+- **UI:** profil kartında "ÇAPRAZ PROFİL (çıkarım · kapsam)" listesi.
+- **Test:** 13 yeni P2 sözleşme testi · revert-doğrulama **3/3** · tam koşu
+  `2730 passed, 6 skipped` · ruff temiz · svelte-check 0 hata.
+  Rapor: `docs/reports/DUZELTME_FAZ2_P2_2026-10-16.md`.
+
+## Unreleased — 2026-10-16 — P1: bulunan profiller artık gerçekten taranıyor (konsolide)
+
+- **Kopuk kablo kapatıldı (Bulgu 1):** `detected_urls` → `agent_core/services/profile_router.py`
+  (saf URL→yetenek sınıflandırması) → `agent_core/services/profile_deep_scan.py`
+  (tek geçit: `CapabilityRunner`) → kanal durumu + kanıt + kazanılan alan.
+  Instagram → `sensor.ig.instagrapi`, X/Twitter → `sensor.x.twscrape`,
+  LinkedIn/Facebook → `extractor.identity.socid`; diğer profil adresleri genel
+  kimlik çıkarıcıya (`socid`) gider. Profil OLMAYAN adres (gönderi/etiket/giriş/
+  rezerv yol) yola bağlanmaz; sebebiyle bildirilir.
+- **Konsolidasyon (main'de paralel bir P1 vardı):** PR #138 `main`'e merge
+  edilmişti (tek squash commit `d83c67b` → "unrelated histories"). İki ayrı
+  uygulama bırakılmadı: sınıflandırma `profile_router`'da TEK,
+  koşum `profile_deep_scan`'de TEK, giriş noktası
+  `deep_profile_resolver.resolve_deep_profiles` (üçlü sözleşmesi korundu),
+  **koşum yeri görev yürütücüsü** (API + CLI). PR #138'in P2 çapraz profillemesi
+  değiştirilmedi; kanıt zincirine `extra_items` ile bağlandı.
+- **Gerçek kusur düzeltildi:** API katmanı `payload["policy"]` içine
+  `rate_ok` yazmıyordu → hız kapısı "bilinmiyor" diye RET ediyor, sensörler
+  hiç koşamıyordu. Artık `rate_ok=True` taşınıyor (kasa/çocuk kilidi/`ENABLE_*`
+  bayrakları **dokunulmadan** aynı yerde).
+- **`socid` ölü kod değil (Bulgu 3):** yetenek artık gerçekten çağrılıyor; ölçüldü —
+  kasa kilitliyken `policy:vault_locked`, kapı kapalıyken `policy:gate_disabled`,
+  ağ yoksa `extract_unavailable:network_error`; hiçbir durumda kanıt uydurmuyor.
+  Ürettiği kanıt `forensic_evidence` / `evidence_timeline` zincirine giriyor.
+- **Dürüstlük korundu:** kapalı kapı `not_run` + makine-okunur sebep; snippet'a
+  sessiz düşüş yok; **bulunan profilin gönderileri hedefin `posts` alanına
+  yazılmaz** (kimlik karıştırması) — `scanned_urls`/`scanned_profiles` altında
+  ayrı durur.
+- **API-BÖLME 4:** public-web araştırma gövdesi `backend/services/web_research.py`
+  modülüne taşındı; `backend/api.py` 5908 → **5758 satır**; tavan **düşürüldü**.
+  Dış sözleşme (adlar, yollar, yanıt anahtarları) değişmedi.
+- **Ölçüm:** `2707 passed, 6 skipped` (0 failed) · P1 sözleşmeleri 37 + PR #138
+  sözleşmeleri 15 = **52 passed** · ruff `All checks passed!` · svelte-check
+  0 hata · revert-doğrulama **6/6** · envanter/audit/routing/skills taze.
+  Rapor: `docs/reports/DUZELTME_FAZ2_P1_2026-10-16.md`.
+- **DOĞRULANMADI:** canlı X/IG kazıma, canlı socid çıkarımı ve canlı
+  arama→derin tarama zinciri (bu ortamda dış ağ erişimi yok; sebepleri raporda).
+
+
+## Unreleased — 2026-10-16 — Canlı fiyat hizalaması: CI'ın üç kez birebir ölçtüğü değer
+
+- **Ölçüm (üç bağımsız CI koşusu, birebir aynı):**
+  [38833598719](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38833598719)
+  (Faz 1 denetim commit'i — katalog kodu YOK),
+  [38840573018](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38840573018)
+  (Faz 2 · P0) ve
+  [38843226709](https://github.com/AppleCurse/pineal-epifiz/actions/runs/38843226709)
+  (`main`, PR #135 birleşimi) → `GET https://openrouter.ai/api/v1/models` yanıtında
+  `deepseek/deepseek-v4-pro` için **$0.95526/$1.91052**, `z-ai/glm-5.2` için
+  **$0.62/$2.42** per 1M okundu. Üç koşuda da dört `FAIL:` satırı birebir aynıydı.
+- **Hizalandı (tahminle değil, ölçümle):** `scripts/verify_openrouter_catalog.py`
+  pinleri, `config/provider_catalog.json` (`openrouter` bölümü) ve
+  `agent_core/services/llm_gateway.py` `MODEL_PRICING` (harcama sayacı) üçü birden
+  ölçülen değere alındı. `deepseek-v4-pro` girdi 2,76× YÜKSELDİ ($0.346434 → $0.95526);
+  `glm-5.2` girdi 16,8× yükseldi ($0.037 → $0.62), çıktı 2,9× düştü ($7.00 → $2.42) —
+  eski sayaç her iki yönde de yanlış sayıyordu.
+- **Kapsam notu:** bu düzeltme P0 "dürüst durum" değişikliğinin **devamı değil**,
+  ayrı bir canlı-veri hizalamasıdır (PR #135 birleşikti; katalog adımı o PR'da da
+  kırmızıydı ve PR'ın diff'i fiyat dosyalarına hiç dokunmuyordu).
+- **Kanıt sınırı:** ölçüm CI'ın canlı `/models` çağrısından gelir; bu ortamdan
+  `openrouter.ai` erişilemediği için canlı katalog **yerelde yeniden okunamadı**.
+  Fiyat snapshot'ı oynaktır; bir sonraki koşu yeni bir salınım ölçebilir.
+
 ## Unreleased — 2026-10-15 — Geniş kaynak/test sözleşmesi denetimi
 
 - Güven skorları: ortak `normalize_confidence` sözleşmesi yalnız sonlu `[0,1]`

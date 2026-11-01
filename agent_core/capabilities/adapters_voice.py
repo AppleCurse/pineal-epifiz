@@ -147,7 +147,10 @@ async def _stop_child_process(proc: Any) -> None:
 def _stt_command_parts() -> list[str]:
     raw = os.getenv("PINEAL_STT_CMD", "whisper").strip() or "whisper"
     try:
-        return shlex.split(raw)
+        return [
+            t[1:-1] if len(t) >= 2 and t[0] == t[-1] and t[0] in ('"', "'") else t
+            for t in shlex.split(raw, posix=(os.name != "nt"))
+        ]
     except ValueError:
         return []
 
@@ -572,9 +575,12 @@ class LocalSTTCapability(BaseCapability):
     description = "Yerel konuşma tanıma (whisper CLI veya localhost STT ucu)."
 
     def backend(self) -> tuple[str, str]:
+        url_configured = bool(os.getenv("PINEAL_STT_URL", "").strip())
         url, reason = _local_stt_endpoint()
         if url:
             return "local_endpoint", ""
+        if url_configured:
+            return "", reason
         command = _stt_command_parts()
         if command and shutil.which(command[0]):
             return "cli", ""

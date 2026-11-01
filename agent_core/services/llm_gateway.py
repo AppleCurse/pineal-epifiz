@@ -34,6 +34,7 @@ import contextvars
 import hashlib
 import inspect
 import json
+import logging
 import os
 import threading
 import time
@@ -54,6 +55,8 @@ from pathlib import Path
 from agent_core.services.response_cache import build_cache_from_env
 from agent_core.services.task_routing_resolver import resolve_task_chain
 from agent_core.services.token_compressor import compress_prompt, CompressionLevel
+
+logger = logging.getLogger(__name__)
 
 _RTK_POLICY_PATH = Path(__file__).resolve().parent.parent.parent / "config" / "rtk_policy.json"
 _RTK_SAFE_DEFAULT: dict[str, Any] = {
@@ -532,9 +535,10 @@ class LLMGateway:
         # Not: solar-pro4/ling-3.0-flash promo 2026-09-10'a kadar; sonrası 0.12/0.24 ve
         # daha yükseğe döner — `OPENROUTER_MAX_SPEND_USD` bu tabloyu baz alır.
         # [2026-10-14 · canlı teyit] solar-pro4 promosyonu bitti: $0.03/$0.12 ->
-        # $0.09/$0.36 (OR liste). Nous indirimli kanal ROUTES'ta $0.03/$0.12 kalır;
-        # bu tablo BULUT (OR) maliyetini taşır — eski değer %67 eksik sayıyordu.
-        "upstage/solar-pro4": {"in": 0.09, "out": 0.36},
+        # $0.09/$0.36 (OR liste). [2026-10-23 · CI 39881245895] Canlı OR fiyatı
+        # $0.15/$0.60 okundu. Nous indirimli kanal ROUTES'ta $0.03/$0.12 kalır;
+        # bu tablo BULUT (OR) maliyetini taşır.
+        "upstage/solar-pro4": {"in": 0.15, "out": 0.6},
         "inclusionai/ling-3.0-flash": {"in": 0.021, "out": 0.063},
         # 2026-09-08 araştırma düzeltmesi: OR kataloğu deepseek-v4-flash'i
         # $0.09/$0.18 gösteriyordu (eski $0.0679/$0.168 iki tarafla da uyuşmuyordu).
@@ -548,12 +552,21 @@ class LLMGateway:
         # [2026-10-15 · CI 38665669314 + 38665674379] Çıktı yeniden $7/1M.
         # [2026-10-15 · PR CI 38787820334] Canlı /models yeniden değişti:
         # $0.65/$10.00 per 1M; önceki snapshot artık güncel değil.
-        "z-ai/glm-5.2": {"in": 0.037, "out": 7.0},
+        # [2026-10-16 · CI 38833598719 + 38840573018 + 38843226709 + 38851706200]
+        # Canlı katalog $0.62/$2.42 okudu; dört koşu birebir aynı ölçüm.
+        # [2026-10-16 · PR CI 38866434547 + 38867016705] Canlı katalog GERİ
+        # $0.037/$7.00 okundu (ard arda iki koşu birebir aynı).
+        # [2026-10-16 · PR CI 38870244950] Çıktı $9.00/1M okundu → sayacı son
+        # ölçüme hizalandı. Modelde fiyat SALINIYOR; ölçülmüş durum kümesi
+        # scripts/verify_openrouter_catalog.py içinde kayıtlı.
+        "z-ai/glm-5.2": {"in": 0.037, "out": 9.0},
         # [2026-10-14..15] Ölçülen geçmiş: $0.4679/$0.9358 ->
         # $0.386976/$0.773952 -> $0.95526/$1.91052.
         # [2026-10-15 · PR CI 38787820334] $0.395328/$0.790656; sonraki
         # [38789947274] $0.392022/$0.784044; [38794722007] $0.386976/$0.773952.
-        "deepseek/deepseek-v4-pro": {"in": 0.346434, "out": 0.692868},
+        # [2026-10-16 · CI 38833598719 + 38840573018 + 38843226709] Canlı katalog
+        # yeniden $0.95526/$1.91052'ye döndü (üç koşuda birebir aynı ölçüm).
+        "deepseek/deepseek-v4-pro": {"in": 0.95526, "out": 1.91052},
         "google/gemini-3.7-flash": {"in": 0.75, "out": 3.75},
         # 2026-09-02 karar matrisi: Sonnet 5 $2/$10 (promo), Grok 4.6 $2/$6.
         # 2026-09-08 notu: Sonnet 5 promo'su 31.08.2026'da sona erdi; Anthropic
@@ -1326,6 +1339,8 @@ class LLMGateway:
             if isinstance(exc, (APITimeoutError, APIConnectionError)):
                 return True
         except Exception:
+            # Bilinçli: openai yoksa ya da iç yardımcı hata verirse sınıflandırma
+            # sonraki kademelere düşer. Her hata yolunda çalıştığı için loglanmaz.
             pass
 
         err = str(exc).lower()
@@ -1376,6 +1391,8 @@ class LLMGateway:
             if isinstance(exc, (APITimeoutError, APIConnectionError)):
                 return True
         except Exception:
+            # Bilinçli: openai yoksa ya da iç yardımcı hata verirse sınıflandırma
+            # sonraki kademelere düşer. Her hata yolunda çalıştığı için loglanmaz.
             pass
         if isinstance(exc, (TimeoutError, ConnectionError, OSError)):
             return True
@@ -1497,7 +1514,11 @@ class LLMGateway:
             else:
                 governor.record_failure(route.provider_id, "*")
         except Exception:
-            pass
+            # Muhasebe hatası çağrıyı bozmamalı ama kota sayacı sapar: görünür kıl.
+            logger.warning(
+                "Kota muhasebesi yazılamadı (provider=%s, success=%s)",
+                route.provider_id, success, exc_info=True,
+            )
 
     def _route_cooldown_remaining(self, provider_id: str) -> float:
         return max(0.0, self._provider_block_until.get(provider_id, 0.0) - time.monotonic())
@@ -1715,6 +1736,7 @@ class LLMGateway:
             try:
                 provider = catalog.get_provider(provider_id)
             except Exception:
+                logger.debug("Sağlayıcı katalogda bulunamadı: %s", provider_id, exc_info=True)
                 continue
             if provider.protocol is not ProviderProtocol.OPENAI_CHAT or not provider.base_url:
                 continue
@@ -1817,7 +1839,11 @@ class LLMGateway:
                 if getattr(st, "status", st) is QuotaStatus.EXHAUSTED:
                     continue
             except Exception:
-                pass
+                # Fail-open (bilinçli): kota durumu okunamazsa rota sunulmaya devam eder.
+                logger.warning(
+                    "Kota durumu okunamadı (provider=%s); fail-open: rota sunuluyor",
+                    provider_id, exc_info=True,
+                )
             variants.append((
                 _price_sum(pricing),
                 0,
@@ -1985,7 +2011,11 @@ class LLMGateway:
                     skipped[provider_id] = {"reason": "exhausted", **info}
                     continue
             except Exception:
-                pass
+                # Fail-open (bilinçli): kota durumu okunamazsa rota sunulmaya devam eder.
+                logger.warning(
+                    "Kota durumu okunamadı (provider=%s); fail-open: rota sunuluyor",
+                    provider_id, exc_info=True,
+                )
             offered.append({
                 "route_key": f"{matched_id}@{provider_id}", "provider": provider_id,
                 "model": matched_id, "priced": priced, "source": matched_source,
@@ -3133,7 +3163,9 @@ class LLMGateway:
             try:
                 await close_upstream()
             except Exception:
-                pass
+                # Temizlik hatası asıl hatayı/iptali gölgelememeli; adı 'exc' DEĞİL
+                # (dış `except ... as exc` kapsamını bozmaz).
+                logger.debug("Upstream temiz kapatılamadı", exc_info=True)
             log_call(error="CANCELLED", cost_usd=cost)
             raise
         except Exception as exc:
@@ -3141,7 +3173,9 @@ class LLMGateway:
             try:
                 await close_upstream()
             except Exception:
-                pass
+                # Temizlik hatası asıl hatayı/iptali gölgelememeli; adı 'exc' DEĞİL
+                # (dış `except ... as exc` kapsamını bozmaz).
+                logger.debug("Upstream temiz kapatılamadı", exc_info=True)
             log_call(error=type(exc).__name__, cost_usd=cost)
             raise
 
@@ -3159,7 +3193,9 @@ class LLMGateway:
             try:
                 await close_upstream()
             except Exception:
-                pass
+                # Temizlik hatası asıl hatayı/iptali gölgelememeli; adı 'exc' DEĞİL
+                # (dış `except ... as exc` kapsamını bozmaz).
+                logger.debug("Upstream temiz kapatılamadı", exc_info=True)
             log_call(
                 error=f"MODEL_SUBSTITUTION_DENIED::{str(error)[:200]}",
                 cost_usd=cost,
@@ -3254,20 +3290,20 @@ class LLMGateway:
             for b in reversed(blocks):
                 try:
                     return json.loads(b)
-                except Exception:
+                except (ValueError, RecursionError):
                     pass
         elif "```" in text:
             blocks = [b.split("```")[0].strip() for b in text.split("```")[1:]]
             for b in reversed(blocks):
                 try:
                     return json.loads(b)
-                except Exception:
+                except (ValueError, RecursionError):
                     pass
 
         # 2. Doğrudan parse dene
         try:
             return json.loads(text)
-        except Exception:
+        except (ValueError, RecursionError):
             pass
 
         # 3. Metin içindeki tüm JSON nesnelerini tara

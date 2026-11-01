@@ -1,49 +1,47 @@
 """
-F3 kontrat testi: UI agent kartlarindaki model etiketleri gateway SoT'sine kilitlenir.
+UI model-etiketi sözleşmesi — [P6 · 2026-10-18] SONRAKİ HALİ.
 
-UnifiedCompactPanel.svelte'teki 13 ajan kartinin her biri primaryModel/backupModel
-gosterir. SoT = LLMGateway.AGENT_CHAINS uzerine config/task_routing.json delta'sidir
-(gateway.get_agent_chain onceliginin env-override'siz hali: task_routing > AGENT_CHAINS;
-env override operator-run-time aracidir, kontrat degildir). UI etiketi, zincirin ilk
-iki modelinin KISA adidir (registry tam model-id'sinin '/' sonrasi).
+Geçmiş: kontrat, `UnifiedCompactPanel.svelte` içindeki 13 ajan kartının
+statik `primaryModel/backupModel` etiketlerini gateway SoT'sine kilitliyordu.
+ÖLÇÜLDÜ: o bileşen PR #143'te yenilen arayüzde kullanılmaz hâle geldi
+(ölü kod denetimi: giriş noktalarından ulaşılamayan frontend bileşeni) ve
+2026-10-18'de silindi. Yani kontrat, ÜRETİME HİÇ GİRMEYEN bir dosyayı
+kılıfını da göstererek "yeşil" tutuyordu — testin kendisi "çalışır gibi
+yapan" bir yere dönüşmüştü.
 
-Gecmis (2026-09-08 denetimi): passion/cognitive/friction 2026-09-02 karar matrisinde
-tasindi (llm_gateway.AGENT_CHAINS) ama UI 6 satirda eski modelleri gosteriyordu
-(UI: passion primary claude-sonnet-5; kod: gemini-3.7-flash). Bu test o sapmayi
-kilitler: etiket zincirden saparsa KIRMIZI.
+Yeni sözleşme (canlı yüzeylerde):
+  1. Canlı arayüzde statik ajan-model tablosu YOKTUR; model/via bilgisi
+     koşunun provenance'ından (canlı `run.model`) gelir. Statik tablo
+     geri gelirse sözleşme kırılır.
+  2. Etiket SoT'si hâlâ belgede yaşar: RUNBOOK'un ÜRETİLEN gölge bloğu
+     gateway zinciriyle birebir aynı olmalıdır (gölge bayatlarsa CI kırılır).
 
-Simetrik disiplin: purity_scan.rs gibi kaynak-metin taramasi yapar; frontend'de ayri
-test altyapisi yoktur, bu yuzden kontrat Python tarafinda statik okumayla kurulur.
+Not: `primaryModel`/`backupModel` gibi statik alanlar yeniden gelirse
+UI, canlı koşunun gerçek modelini değil sabit bir etiketi gösterecek ve
+"çalışır gibi" davranacaktır — bu yüzden 1. madde bir KİLİTTİR.
 """
-import re
+
 from pathlib import Path
 
 from agent_core.services.llm_gateway import LLMGateway
 from agent_core.services.task_routing_resolver import resolve_task_chain
 
-FRONTEND_AGENT_FILE = Path("frontend/src/components/UnifiedCompactPanel.svelte")
+ROOT = Path(__file__).resolve().parents[2]
+FRONTEND_SRC = ROOT / "frontend/src"
+RUNBOOK = ROOT / "RUNBOOK.md"
+WAR_ROOM = FRONTEND_SRC / "components/TacticalWarRoom.svelte"
 
-# Svelte satirindan id + iki model etiketini cikarir. Her ajan karti tek satirdadir.
-ROW_RE = re.compile(
-    r'id: "([a-z_]+)"[^\n]*?primaryModel: "([^"]*)"[^\n]*?backupModel: "([^"]*)"'
+#: Canlı arayüzde model etiketi taşıyan bileşenler (canlı olmalı).
+LIVE_COMPONENTS = (
+    FRONTEND_SRC / "App.svelte",
+    FRONTEND_SRC / "components/AtlasPinealCockpit.svelte",
+    FRONTEND_SRC / "components/TacticalWarRoom.svelte",
+    FRONTEND_SRC / "components/AgentRack.svelte",
 )
-
-# LLM'siz deterministik ajanlar: model zinciri yoktur; UI rozeti yereldir ve
-# gateway'de karsiligi aranmaz.
-DETERMINISTIC_ROWS = {
-    "resonance_calc": ("local-numpy", "\u2014"),
-}
-
-EXPECTED_PANEL_IDS = frozenset({
-    "mirror_truth", "autonomous_verifier", "human_behavior", "passion_mapper",
-    "friction_detector", "cognitive_profiler", "resonance_calc", "pattern_interrupt",
-    "resonance_synthesizer", "vision_analyzer", "osint_investigator",
-    "authenticity_auditor", "depth_analyst",
-})
 
 
 def _short(model_id: str) -> str:
-    """Registry tam model-id'sinden UI kisa adini uretir (display SoT kurali)."""
+    """Registry tam model-id'sinden UI kısa adını üretir (display SoT kuralı)."""
     return model_id.rsplit("/", 1)[-1]
 
 
@@ -58,62 +56,71 @@ def _effective_chain(agent_id: str) -> list[str]:
     return []
 
 
-def _parse_rows() -> dict[str, tuple[str, str]]:
-    source = FRONTEND_AGENT_FILE.read_text(encoding="utf-8")
-    rows: dict[str, tuple[str, str]] = {}
-    for line in source.splitlines():
-        m = ROW_RE.search(line)
-        if m:
-            rows[m.group(1)] = (m.group(2), m.group(3))
-    return rows
+def test_no_static_model_label_table_in_live_frontend():
+    """Canlı arayüzde statik ajan→model tablosu olmamalı (ölü panelin mirası).
+
+    Statik tablo, koşunun gerçek modelini değil sabit bir etiketi gösterir;
+    bu, "çalışır gibi yapan" arayüzdür.
+    """
+    offenders = []
+    for path in sorted(FRONTEND_SRC.rglob("*.svelte")):
+        text = path.read_text(encoding="utf-8")
+        if "primaryModel:" in text or "backupModel:" in text:
+            offenders.append(str(path.relative_to(ROOT)))
+    assert offenders == [], f"statik model etiketi tablosu geri geldi: {offenders}"
 
 
-def test_panel_lists_all_thirteen_agents_once():
-    rows = _parse_rows()
-    assert set(rows) == EXPECTED_PANEL_IDS, (
-        f"UI ajan karti kumesi SoT'den sapti: "
-        f"fazla={sorted(set(rows) - EXPECTED_PANEL_IDS)} "
-        f"eksik={sorted(EXPECTED_PANEL_IDS - set(rows))}"
-    )
+def test_live_ui_shows_model_from_live_run_payload():
+    """War-room model bilgisini koşunun canlı verisinden okumalı."""
+    source = WAR_ROOM.read_text(encoding="utf-8")
+    assert "run.model" in source, "canlı model alanı okunmuyor"
+    assert "ÇALIŞMA MODELİ" in source
 
 
-def _canonical_map() -> dict[str, tuple[str, str]]:
-    """9Router kanonik etiketler — ÜRETİCİDEN okunur, elle kopyalanmaz.
+def test_live_components_exist():
+    """Sözleşmenin bağlandığı canlı dosyalar depoda olmalı."""
+    missing = [str(p.relative_to(ROOT)) for p in LIVE_COMPONENTS if not p.exists()]
+    assert missing == [], f"canlı bileşen eksik: {missing}"
 
-    [BOSS-4] Önceden bu tablo elle yazılmıştı ve `autonomous_verifier` için
-    "(3 jüri)" kurgusunu kilitliyordu: README/UI jüri paneli vaat ediyordu ama
-    kodda tek zincir vardı. Artık beklenen etiket `generate_routing_shadows.py`
-    içindeki türetilmiş tablodan (ki o da `LLMGateway.JURY_PANEL_AGENTS`'ten
-    türetir) okunur; kurgu koda uymazsa test kırmızı olur.
+
+def test_runbook_shadow_matches_gateway_source_of_truth():
+    """RUNBOOK'un üretilen gölge bloğu gateway SoT'siyle birebir aynı olmalı.
+
+    Bu, eski paneldeki statik tablonun canlı karşılığıdır: etiket SoT'si
+    belgede yaşar ve ÜRETİCİ tarafından yazılır (elle kopyalanmaz).
     """
     import importlib.util
 
-    script = Path(__file__).resolve().parents[2] / "scripts" / "generate_routing_shadows.py"
+    script = ROOT / "scripts" / "generate_routing_shadows.py"
     spec = importlib.util.spec_from_file_location("gen_shadows_contract", script)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return {agent: (primary, backup) for agent, (primary, backup, _via) in module.ROUTER_9_CANONICAL_MAP.items()}
+
+    runbook = RUNBOOK.read_text(encoding="utf-8")
+    block = runbook.split(module.RUNBOOK_START)[1].split(module.RUNBOOK_END)[0]
+
+    snapshot = LLMGateway().effective_routing_snapshot()
+    for agent, entry in sorted(snapshot["agents"].items()):
+        row = [ln for ln in block.splitlines() if ln.startswith(f"| {agent} |")]
+        assert row, f"RUNBOOK gölgesinde ajan satırı yok: {agent}"
+        rendered_chain = row[0].split("|")[3].strip()
+        expected = " → ".join(_short(m) for m in entry["chain"])
+        assert rendered_chain == expected, (
+            f"{agent}: RUNBOOK zinciri {rendered_chain!r} != SoT {expected!r}"
+        )
 
 
-ROUTER_9_CANONICAL_MAP = _canonical_map()
+def test_router_canonical_map_is_derived_not_handwritten():
+    """9Router kanonik etiket tablosu KODDAN türetilir (elle kurgu değil)."""
+    import importlib.util
 
+    script = ROOT / "scripts" / "generate_routing_shadows.py"
+    spec = importlib.util.spec_from_file_location("gen_shadows_canon", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
 
-def test_ui_model_labels_match_gateway_chain_source_of_truth():
-    rows = _parse_rows()
-    failures = []
-    for agent_id, (ui_primary, ui_backup) in sorted(rows.items()):
-        if agent_id in ROUTER_9_CANONICAL_MAP:
-            expected = ROUTER_9_CANONICAL_MAP[agent_id]
-        elif agent_id in DETERMINISTIC_ROWS:
-            expected = DETERMINISTIC_ROWS[agent_id]
-        else:
-            chain = _effective_chain(agent_id)
-            if len(chain) < 2:
-                failures.append(f"{agent_id}: zincir 2'den kisa ({chain}) - UI 2 slot gosterir")
-                continue
-            expected = (_short(chain[0]), _short(chain[1]))
-        if (ui_primary, ui_backup) != expected:
-            failures.append(
-                f"{agent_id}: UI ({ui_primary!r}, {ui_backup!r}) != SoT {expected!r}"
-            )
-    assert not failures, "UI model etiketleri gateway SoT'sinden sapti:\n" + "\n".join(failures)
+    seats = [seat.replace("pineal_juror_", "") for seat in LLMGateway.JURY_PANEL_AGENTS]
+    primary, backup, via = module.ROUTER_9_CANONICAL_MAP["autonomous_verifier"]
+    assert primary == "pineal-verifier-panel"
+    assert f"({len(seats)} jüri: {'+'.join(seats)})" == backup
+    assert via == "9router"

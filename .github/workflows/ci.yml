@@ -65,6 +65,24 @@ jobs:
             tail -40 /tmp/audit-guard.log
           fi
           exit $guard_rc
+      - name: Dead code guard (ölü modül/ajan/yetenek/frontend bileşeni)
+        # [P6 · 2026-10-18] "Çalışır gibi yapan" ve kullanılmayan dosya denetimi.
+        # AST tabanlı dedektör: (C1) hiç import edilmemiş modül, (C1b) yalnız
+        # testlerden import edilen modül, (C2) hiç çağrılmamış fonksiyon,
+        # (C3) kayıtlı ama çağrılmayan ajan, (C4) kayıtlı ama düşürülemeyen
+        # yetenek, (C5) giriş noktalarından ulaşılamayan frontend bileşeni,
+        # (C6) hiçbir vitest `include` kalıbıyla eşleşmeyen (yani hiç
+        # koşulmayan) frontend test dosyası.
+        # Bulgu varsa exit 1 → ölü kod depoya giremez.
+        run: |
+          set +e
+          python scripts/dead_code_audit.py | tee /tmp/dead-code-guard.log
+          guard_rc=${PIPESTATUS[0]}
+          if [ "$guard_rc" -ne 0 ]; then
+            tail -40 /tmp/dead-code-guard.log
+            echo "::error title=dead-code::Ölü kod bulundu (bkz. /tmp/dead-code-guard.log)"
+          fi
+          exit $guard_rc
       - name: Verify routing shadows committed fresh
         run: |
           python scripts/generate_routing_shadows.py
@@ -125,6 +143,12 @@ jobs:
         run: npm ci
       - name: Check Svelte types
         run: npm run check
+      - name: Contract tests (component -> API contract)
+        # [2026-10-24] Kokpit bileşeni bir zamanlar görevi YANLIŞ uca
+        # (`/api/override`, 422) durdurmaya çalışıp hatayı yutuyordu ve kasa
+        # göstergesini 423 yanıtından sonra "AÇIK" yapıyordu. Bu adım gerçek
+        # bileşeni monte edip fetch çağrılarının yolunu/gövdesini ölçer.
+        run: npm test
       - name: Build frontend
         run: npm run build
       - name: Verify real Svelte build

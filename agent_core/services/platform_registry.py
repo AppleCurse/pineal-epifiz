@@ -30,32 +30,86 @@ SUPPORTED_PLATFORMS = ("instagram", "x", "cross")
 def effective_scraper_type(url: str, requested: Optional[str] = None) -> str:
     """URL platformuna göre tarayıcı seç ([023] fix: platform registry).
 
-    Instagram adresi X tarayıcısına gitmesin diye URL platform tespiti
-    önceliklidir; ancak tanınmayan platformda kullanıcı seçimi GEÇERLİ
-    DEĞİLDİR: URL'nin son path segmentini Instagram adı gibi kullanıp
-    yanlış hedefi kazımak misattribution'dır. Tanınmayan platform ->
-    unsupported_web (çağıran analizi başlatmadan durur).
+    Instagram ve X host'ları her zaman kendi omurga sensörlerine gider
+    (profil dışı path'ler orada `InsufficientEvidenceError` ile reddedilir;
+    yanlışlıkla çapraz aramaya sızmaz). Diğer sosyal profil URL'leri yalnızca
+    `ENABLE_CROSS_PLATFORM=true` açıkken `'cross'` hattına bağlanır; aksi
+    hâlde `'unsupported_web'` döner ([023] sözleşmesi).
     """
     req = (requested or "").strip().lower()
-    u = (url or "").strip().lower()
+    raw = (url or "").strip()
+    u = raw.lower()
 
     if not u:
         return "unsupported_web"
-
-    if "instagram.com" in u:
-        return "instagram"
-    if "x.com" in u or "twitter.com" in u:
-        return "x"
 
     # Bare username or @handle without a web domain
     if u.startswith("@") or ("://" not in u and "." not in u and "/" not in u):
         if req in ("x", "twitter"):
             return "x"
-        if req in ("instagram", "ig"):
-            return "instagram"
         return "cross"
 
+    candidate = raw if "://" in u else f"https://{raw}"
+    try:
+        host = (urlsplit(candidate).hostname or "").lower().rstrip(".")
+    except ValueError:
+        return "unsupported_web"
+
+    if _is_instagram_host(host) or host == "instagr.am":
+        return "instagram"
+    if host in ("x.com", "twitter.com") or host.endswith((".x.com", ".twitter.com")):
+        return "x"
+
+    if os.getenv("ENABLE_CROSS_PLATFORM", "false").lower() == "true":
+        from agent_core.services.profile_router import (
+            PLATFORM_LINKEDIN,
+            PLATFORM_SOCIAL,
+            classify_url,
+        )
+
+        route = classify_url(candidate)
+        if route.platform in (PLATFORM_LINKEDIN, PLATFORM_SOCIAL) or route.runnable:
+            return "cross"
+
     return "unsupported_web"
+
+
+def classify_profile_url(url: str) -> dict[str, Any]:
+    """Profil URL'ini platform ve ilgili yetenek kimliğine eşler.
+
+    Sözleşme (P1):
+    - URL platformunu sınıflandırır (x, instagram, web).
+    - İlgili sensör kimliğini seçer:
+        * X -> sensor.x.twscrape
+        * Instagram -> sensor.ig.instagrapi
+        * Diğer/Web -> None (yalnız identity extractor)
+    - Kimlik çıkarıcı her zaman extractor.identity.socid'dir.
+
+    [P1 · 2026-10-16 KONSOLİDASYON] Sınıflandırma artık TEK kaynaktan gelir:
+    ``agent_core.services.profile_router.classify_url`` (saf, host tabanlı).
+    Buradaki fonksiyon yalnız **dış sözleşme biçimini** korur (platform /
+    handle / sensor_id / extractor_id). Döngüsel import'u önlemek için
+    ``profile_router`` fonksiyon içinde import edilir (``profile_router``
+    bu modülün ``extract_*`` yardımcılarını kullanır).
+    """
+    from agent_core.services.profile_router import (
+        CAPABILITY_INSTAGRAM,
+        CAPABILITY_SOCID,
+        CAPABILITY_X,
+        classify_url,
+    )
+
+    route = classify_url(url)
+    sensor_id = None
+    if route.capability_id in (CAPABILITY_INSTAGRAM, CAPABILITY_X):
+        sensor_id = route.capability_id
+    platform = route.platform if route.platform in ("instagram", "x") else "web"
+    return {
+        "platform": platform,
+        "handle": route.handle,
+        "sensor_id": sensor_id,
+        "extractor_id": CAPABILITY_SOCID,
+    }
 
 
 # [AUDIT P1-6] Yalnız GERÇEK profil URL'lerinden kullanıcı adı çıkarılır.
@@ -174,11 +228,68 @@ def check_scrape_confidence(ig_scraper, ig_data, emit) -> float:
     confidence = ig_scraper.evaluate_confidence(ig_data)
     emit("INFO", f"SCRAPER CONFIDENCE: {confidence:.2f} (min esik {min_confidence:.2f})")
     if confidence < min_confidence:
-        raise InsufficientEvidenceError(
+        err = InsufficientEvidenceError(
             f"Yetersiz kanit guveni: {confidence:.2f} < {min_confidence:.2f} "
             "(anti-halüsinasyon kapısı; sahte profil üretmiyorum)"
         )
+        if hasattr(ig_data, "username") and hasattr(ig_data, "posts"):
+            err.profile_update = ig_target_profile_update(ig_data)
+        raise err
     return confidence
+
+
+#: Profil metninden (bio / gönderi) çıkarılacak adres üst sınırı.
+_MAX_DETECTED_PROFILE_URLS = 12
+
+_URL_RE = re.compile(r"https?://[^\s<>\"'\]\)]+", re.IGNORECASE)
+
+
+def _normalize_url_token(raw: str) -> str:
+    """Sondaki noktalama/parantezleri atar (cümle içi adres kirlenmesin)."""
+    token = (raw or "").strip().strip(".,;:!?)]}>'\"")
+    return token
+
+
+def detected_profile_urls(*texts: Any, extra: Optional[list] = None) -> List[str]:
+    """Metinlerden (bio, gönderi, hazır liste) KOŞULABİLİR profil URL'leri.
+
+    Sözleşme (yoksa uydurma YOK):
+      * Yalnız ``profile_router.classify_url(...).runnable`` olan adresler
+        döner. Linktree/beacons gibi link-in-bio sayfaları da profildir;
+        haber sitesi, YouTube video linki gibi profilden çıkmayan adresler
+        ELENİR — derin tarama yanlış hedefe koşmaz.
+      * Sıra korunur, tekrarlar atılır; üst sınır
+        ``_MAX_DETECTED_PROFILE_URLS``.
+      * Girdi yoksa boş liste döner (boş = "bulunamadı", uydurma değil).
+    """
+    from agent_core.services.profile_router import classify_url
+
+    candidates: List[str] = []
+    # Sıra: önce metinler (bio/gönderi), sonra hazır liste (kazıyıcı alanları).
+    for item in list(texts) + list(extra or []):
+        if isinstance(item, (list, tuple, set)):
+            candidates.extend(str(v) for v in item)
+            continue
+        if not isinstance(item, str):
+            continue
+        for match in _URL_RE.finditer(item):
+            candidates.append(match.group(0))
+
+    out: List[str] = []
+    for raw in candidates:
+        url = _normalize_url_token(raw)
+        if not url or url in out:
+            continue
+        try:
+            route = classify_url(url)
+        except Exception:
+            continue
+        if not route.runnable:
+            continue
+        out.append(url)
+        if len(out) >= _MAX_DETECTED_PROFILE_URLS:
+            break
+    return out
 
 
 def ig_target_profile_update(ig_data: Any) -> dict:
@@ -217,6 +328,16 @@ def ig_target_profile_update(ig_data: Any) -> dict:
         "followers": ig_data.follower_count,  # None = ölçülmedi; 0 ölçümdür.
         "following": ig_data.following_count,  # None = ölçülmedi ([024])
         "is_private": ig_data.is_private,
+        # [2026-10-23 · KABLO] Bio'daki harici bağlantılar (Linktree, X,
+        # Threads...) artık ÇÖPE GİTMİYOR: ham liste `external_urls` olarak
+        # taşınır, koşulabilir profiller `detected_urls` olarak derin taramaya
+        # verilir (task_executor). Profil olmayan adres (haber/video) elenir.
+        "external_urls": list(getattr(ig_data, "external_urls", []) or []),
+        "detected_urls": detected_profile_urls(
+            ig_data.biography or "",
+            extra=list(getattr(ig_data, "external_urls", []) or []),
+        ),
+        "platform": "instagram",
     }
 
 
@@ -306,7 +427,14 @@ async def scrape_instagram(
                 if not applied:
                     emit("WARNING", f"STEALTH apply başarısız: {note}")
             ig_scraper = InstagramGhostScraper(vault_cookies={"sessionid": cookie} if cookie else None)
-            ig_data = await ig_scraper.scrape_async(username, playwright_page=page)
+            from agent_core.scraper.instagram_ghost import PrivateProfileEvidenceError
+            try:
+                ig_data = await ig_scraper.scrape_async(username, playwright_page=page)
+            except PrivateProfileEvidenceError as priv_err:
+                # [GİZLİ HESAP VERİ KURTARMA] Gönderiler kapalı olsa dahi bio, isim ve bağlı hesaplar
+                # kurtarıldı. Bu kanıtı hataya ekleyerek dışarı taşıyoruz:
+                priv_err.profile_update = ig_target_profile_update(priv_err.profile) if priv_err.profile else {}
+                raise priv_err
 
             # [AUDIT P1-7] Anti-halüsinasyon kapısı ÜRETİMDE devrede (bkz.
             # check_scrape_confidence): kanıt zayıfsa düşük güvenli profil
@@ -319,8 +447,10 @@ async def scrape_instagram(
                 _dated = sum(1 for p in _posts if p.taken_at is not None)
                 _coverage = ig_scraper.temporal_coverage(ig_data)
                 emit("INFO", f"SCRAPER TEMPORAL: {_dated}/{len(_posts)} post tarihli (kapsama {_coverage:.2f})")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "[scrape_instagram] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+                )
 
             # [024]/[025]/[026]: hizalı gerçek alanlar; sentetik post ÜRETİLMEZ.
             return ig_target_profile_update(ig_data)
@@ -365,10 +495,16 @@ async def scrape_x(
         )
 
     from agent_core.capabilities import CapabilityContext, bootstrap, run_capability
-    from agent_core.capabilities.state import policy_state
+    from agent_core.capabilities.state import policy_state, with_operator_consent
 
     bootstrap()
-    state = policy_state(vault_locked=vault_locked, rate_ok=rate_ok)
+    # [2026-10-23 · ÖLÜ KAPI] Operatör TAM BU profilin URL'sini verdi → o
+    # profil için açık niyet var; `ENABLE_X_SENSOR` varsayılanı kapalı olduğu
+    # için istek yoksa `gate_disabled` ile ölüyordu. Kasa + hız kapıları
+    # AYNEN uygulanır; hesap havuzu yoksa dürüst `no_session_pool` döner.
+    state = with_operator_consent(
+        policy_state(vault_locked=vault_locked, rate_ok=rate_ok), True
+    )
     result = await run_capability(
         "sensor.x.twscrape",
         CapabilityContext(
@@ -406,7 +542,11 @@ async def scrape_x(
         )
 
     emit("INFO", f"SCRAPER X: {len(series)} gönderi (twscrape, gerçek zaman damgalı)")
-    return x_target_profile_update(username, series)
+    # [2026-10-23 · KABLO] Sensörün okuduğu GERÇEK biyografi aşağı taşınır;
+    # biyografideki adresler `detected_urls` olarak derin taramaya girer.
+    return x_target_profile_update(
+        username, series, bio=str((result.payload or {}).get("bio") or "")
+    )
 
 
 async def _x_via_agent_reach(
@@ -456,7 +596,11 @@ async def _x_via_agent_reach(
     return profile
 
 
-def x_target_profile_update(username: str, series: List[Dict[str, Any]]) -> Dict[str, Any]:
+def x_target_profile_update(
+    username: str,
+    series: List[Dict[str, Any]],
+    bio: str = "",
+) -> Dict[str, Any]:
     """X gönderi serisini `target_profile` alanlarına çevirir.
 
     Sözleşme (sahte veri YASAK):
@@ -464,8 +608,12 @@ def x_target_profile_update(username: str, series: List[Dict[str, Any]]) -> Dict
       hizada; frequency engine artık X için de gerçek veri görür.
     - `followers`/`following` ÖLÇÜLMEDİYSE `None` durur (0 = ölçüm, None =
       ölçülmedi; eski yolun uydurma 150'ü burada yoktur).
-    - `bio` BOŞ kalır: X akışından biyografi çıkarılmadıysa "" yazılır,
-      arama snippet'i biyografi diye sunulmaz.
+    - `bio` çağıran gerçek bir biyografi verdiyse o yazılır; verilmediyse ""
+      kalır (arama snippet'i biyografi diye sunulmaz).
+    - [2026-10-23 · KABLO] Gönderi metinlerindeki (ve varsa bio'daki) gerçek
+      adresler `external_urls` + `detected_urls` alanlarına çıkar. Yalnız
+      `classify_url(...).runnable` olan profiller taranır; böylece X'ten
+      Instagram/Threads/LinkedIn'a çapraz besleme SIFIR kalmaz.
     """
     posts: List[str] = []
     post_times: List[str] = []
@@ -485,10 +633,13 @@ def x_target_profile_update(username: str, series: List[Dict[str, Any]]) -> Dict
             }
         )
 
+    bio_text = (bio or "").strip()
+    discovered = detected_profile_urls(bio_text, *posts)
+
     return {
         "username": "@" + username.lstrip("@"),
         "name": username.lstrip("@"),
-        "bio": "",
+        "bio": bio_text,
         "posts": posts,
         "post_times": post_times,
         "posts_meta": posts_meta,
@@ -502,6 +653,8 @@ def x_target_profile_update(username: str, series: List[Dict[str, Any]]) -> Dict
         "following": None,   # ölçülmedi
         "is_private": None,  # akış okunduysa False, aksi halde bilinmiyor
         "platform": "x",
+        "external_urls": discovered,
+        "detected_urls": list(discovered),
     }
 
 

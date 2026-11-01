@@ -149,6 +149,11 @@ def _patch_mission(monkeypatch, fake_scrape, fake_executor, calls):
     monkeypatch.setattr(api, "get_vault", lambda cid: {})
     monkeypatch.setattr(api, "_effective_scraper_type", lambda url, st: "instagram")
     monkeypatch.setattr(api, "broadcast_log", lambda cid, lvl, msg: None)
+    # Kasa AÇIK kurulur: bu testler kazıma MANTIĞINI sınar. Üretimde rota kapısı
+    # (/api/initiate → _require_vault_open) kasayı açar; burada oda kasası
+    # doğrudan gerçek anahtar malzemesiyle kurulur (Tüzük Md.4 — dosya varlığı
+    # değil, malzeme var).
+    api.get_room("t_scrape")["vault"]["or_key"] = True
 
     def fake_broadcast_error(cid, status, msg, task_id=None):
         calls["result_errors"].append((status, msg))
@@ -160,7 +165,7 @@ def test_scrape_infra_exhaustion_honest_failed(monkeypatch):
     """Ağ/altyapı hatası 3 denemede bitince: dürüst 'failed', operasyon YOK."""
     calls = {"scrape": 0, "execute": 0, "result_errors": []}
 
-    async def fake_scrape(url, cookie, log=None):
+    async def fake_scrape(url, cookie, log=None, **kwargs):  # kwargs: vault_unlocked vb.
         calls["scrape"] += 1
         raise ConnectionError("network unreachable")
 
@@ -186,7 +191,7 @@ def test_scrape_insufficient_evidence_halted(monkeypatch):
     """Scraper'ın KENDİNE ÖZLÜ ISE'si 'halted_evidence'a döner (tek deneme)."""
     calls = {"scrape": 0, "execute": 0, "result_errors": []}
 
-    async def fake_scrape(url, cookie, log=None):
+    async def fake_scrape(url, cookie, log=None, **kwargs):  # kwargs: vault_unlocked vb.
         calls["scrape"] += 1
         raise api.ScraperInsufficientEvidenceError("private target")
 
@@ -207,7 +212,7 @@ def test_scrape_success_path_still_runs(monkeypatch):
     """Geriye uyum: kazıma başarılıysa operasyon çalışır (eski yol)."""
     calls = {"scrape": 0, "execute": 0, "result_errors": [], "results": []}
 
-    async def fake_scrape(url, cookie, log=None):
+    async def fake_scrape(url, cookie, log=None, **kwargs):  # kwargs: vault_unlocked vb.
         calls["scrape"] += 1
         return {"bio": "gercek biyo", "posts": ["post1"]}
 

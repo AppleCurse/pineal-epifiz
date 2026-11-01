@@ -302,3 +302,37 @@ async def test_query_json_provider_value_error_is_wrapped_without_repair():
     assert gateway.spend_usd > 0
     assert gateway.budget_status()["active_reservations"] == 0
     assert gateway.call_log[-1]["error"] == "ProviderResponseError"
+
+
+# --- [temizlik] sessiz `except Exception: pass` noktalarının davranış kilidi --- #
+
+
+def test_extract_json_survives_recursion_error_in_garbage_prefix():
+    """Çok derin iç içe çöp, sonraki geçerli JSON nesnesinin bulunmasını engellemez.
+
+    `except Exception` -> `except (ValueError, RecursionError)` daraltmasının
+    RecursionError'ı kaçırmadığını kilitler.
+    """
+    from agent_core.services.llm_gateway import LLMGateway
+
+    text = "[" * 200_000 + ' {"ok": 1}'
+    assert LLMGateway().extract_json(text) == {"ok": 1}
+
+
+def test_record_route_attempt_logs_instead_of_swallowing(caplog):
+    """Kota muhasebesi hata verirse çağrı bozulmaz AMA uyarı loglanır."""
+    import logging
+    from types import SimpleNamespace
+
+    from agent_core.services.llm_gateway import LLMGateway
+
+    class _BrokenGovernor:
+        def record_success(self, *args, **kwargs):
+            raise RuntimeError("governor down")
+
+    gateway = LLMGateway()
+    gateway._agent_governor = _BrokenGovernor()
+    route = SimpleNamespace(provider_id="prov-x")
+    with caplog.at_level(logging.WARNING, logger="agent_core.services.llm_gateway"):
+        gateway._record_route_attempt(route, None, success=True)  # fırlatmamalı
+    assert any("Kota muhasebesi yazılamadı" in r.getMessage() for r in caplog.records)

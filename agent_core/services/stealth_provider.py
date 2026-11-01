@@ -18,7 +18,6 @@ Sözleşme (projenin dürüstlük ilkeleriyle hizalı):
 """
 from __future__ import annotations
 
-import importlib.util
 import os
 from pathlib import Path
 from typing import Any, Optional, Tuple
@@ -42,10 +41,10 @@ class StealthSelection(BaseModel):
 
 
 def _lib_present(name: str) -> bool:
-    try:
-        return importlib.util.find_spec(name) is not None
-    except ModuleNotFoundError:
-        return False
+    # Tek kaynak: `optional_deps.module_available` (noktalı ad + ValueError dahil).
+    from agent_core.utils.optional_deps import module_available
+
+    return module_available(name)
 
 
 def _env_binary_path(env: Any, name: str) -> Optional[Path]:

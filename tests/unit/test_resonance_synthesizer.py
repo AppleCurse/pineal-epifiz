@@ -130,3 +130,30 @@ async def test_llm_failure_surfaces_as_llm_unavailable():
     assert result.data_confidence is False
     assert result.fallback_reason == "llm_unavailable"
     assert result.suggested_opening_message == ""
+
+
+async def test_outreach_intent_without_user_rituals_produces_opening_message():
+    """Kullanıcı kişisel ritüel vermese bile iletişim hedefiyle açılış kancası üretilmelidir."""
+    gateway = _gateway(return_value=AuthenticBridge(
+        shared_passions=["Sokak Fotoğrafçılığı"],
+        complementary_perspectives=["Görsel Dil"],
+        resonance_score=0.88,
+        authentic_opening_topic="Sokak Estetiği",
+        conversation_starter_rationale="Hedefin tutkularına odaklanıldı.",
+        suggested_opening_message="Fotoğraflarınızdaki ışık dengesi çok etkileyici.",
+        confidence=0.9,
+    ))
+    agent = ResonanceSynthesizerAgent(llm_gateway=gateway)
+
+    result = await agent.execute({
+        "user_profile": {"private_rituals": [], "late_night_playlist": [], "secret_envies": []},
+        "user_context": {"rituals": "", "playlist": "", "envies": ""},
+        "outreach_intent": "Doğal ve samimi ilk temas; fotoğraflarından yola çıkarak merak uyandırmak",
+        **_target_context(),
+    })
+
+    assert gateway.query_json_chain.await_count == 1
+    assert result.suggested_opening_message == "Fotoğraflarınızdaki ışık dengesi çok etkileyici."
+    assert result.data_confidence is True
+    prompt = gateway.query_json_chain.await_args.kwargs["prompt"]
+    assert "İletişim Hedefi & Niyeti" in prompt

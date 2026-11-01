@@ -233,17 +233,22 @@ def _clear_provider_catalog_cache():
     load_builtin_catalog.cache_clear()
 
 
+
 @pytest.fixture(autouse=True)
 def _clear_agent_tiers_cache():
     """Clear lru_cache on _load_agent_tiers between tests to prevent test pollution."""
+    import logging
+
+    _log = logging.getLogger(__name__)
     try:
         from agent_core.services.llm_gateway import LLMGateway
         LLMGateway._load_agent_tiers.cache_clear()
-    except Exception:
-        pass
+    except Exception as exc:
+        # Best-effort temizlik: yutulmuyor, debug iziyle bırakılıyor.
+        _log.debug("agent tiers cache temizlenemedi (öncesi): %s", exc)
     yield
     try:
         from agent_core.services.llm_gateway import LLMGateway
         LLMGateway._load_agent_tiers.cache_clear()
-    except Exception:
-        pass
+    except Exception as exc:
+        _log.debug("agent tiers cache temizlenemedi (sonrası): %s", exc)

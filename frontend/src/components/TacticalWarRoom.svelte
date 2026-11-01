@@ -6,7 +6,12 @@
   } from '../store';
   import { playClick, playHalt, playRunning } from '../lib/consoleAudio';
   // [P0 · DENETİM 2026-10-16] Kanal durumu: "koştu / ÇALIŞMADI (sebep)".
-  import { blockedChannels, channelStatusText, type ChannelRun } from '../lib/channelStatus';
+  // [P1 · DENETİM 2026-10-16] Derin tarama defteri: bulunan profilin gerçek
+  // kazım durumu (ölçülmüş gönderi sayısı + koşmama sebebi).
+  import {
+    blockedChannels, channelStatusText, crossProfileText, scannedSummary, scannedUrlText,
+    type ChannelRun, type CrossProfileMatch, type ScannedUrl
+  } from '../lib/channelStatus';
 
   // 12 Ajan Kanonik Tanımları
   const AGENT_LIST = [
@@ -57,6 +62,17 @@
   $: currentRunningAgent = $taskStatus?.current_agent || null;
   $: pipelineStatus = $taskStatus?.status || ($isProcessing ? 'RUNNING' : 'IDLE');
   $: detectedUrls = $taskStatus?.target_profile?.detected_urls || [];
+  // [P1] Bulunan profillerin GERÇEK kazım defteri (yoksa boş).
+  $: scannedUrls = ($taskStatus?.target_profile?.scanned_urls || []) as ScannedUrl[];
+  // [P2 · DENETİM 2026-10-16] Çapraz profil eşleşmeleri: deterministik
+  // sinyallerden doğan ÇIKARIMLAR. Skor "kapsam" etiketlidir, olasılık değil.
+  $: crossMatches = ($taskStatus?.target_profile?.cross_profile_matches || []) as CrossProfileMatch[];
+  $: scannedStats = scannedSummary(scannedUrls);
+  $: scannedByUrl = (() => {
+    const map = new Map<string, ScannedUrl>();
+    for (const row of scannedUrls) if (row?.url) map.set(row.url, row);
+    return map;
+  })();
   // [P0 · DENETİM 2026-10-16] Kanıt tipi ayrımı: "gönderi" (platformdan
   // kazınmış) ile "arama sonucu" (snippet) AYRI sayılır. UI, keşfedilen
   // profil URL'sini "bağlandı" diye sunmaz.
@@ -67,10 +83,16 @@
   $: blocked = blockedChannels(channelRuns);
   // [P0] Radar rozeti gerçeği özetler: kazınan gönderi / bulunan (kazınmayan)
   // profil / arama sonucu ayrı ayrı sayılır.
+  // [P1] Profil sayacı artık "KAZINMADI" değil, GERÇEK kazım durumunu söyler.
   $: radarBadge = (() => {
     const bits: string[] = [];
     if (targetPosts.length > 0) bits.push(`${targetPosts.length} GÖNDERİ`);
-    if (detectedUrls.length > 0) bits.push(`${detectedUrls.length} PROFİL (KAZINMADI)`);
+    if (scannedStats.ok > 0) bits.push(`${scannedStats.ok} PROFİL KAZINDI`);
+    if (scannedStats.total > 0 && scannedStats.ok < scannedStats.total) {
+      bits.push(`${scannedStats.total - scannedStats.ok} PROFİL KAZINMADI`);
+    } else if (detectedUrls.length > 0 && scannedStats.total === 0) {
+      bits.push(`${detectedUrls.length} PROFİL (TARANMADI)`);
+    }
     if (searchSnippets.length > 0) bits.push(`${searchSnippets.length} ARAMA SONUCU`);
     if (bits.length === 0) return 'KANAL ÇALIŞMADI';
     return bits.join(' · ');
@@ -150,7 +172,13 @@
         const parts: string[] = [];
         if (posts > 0) parts.push(`${posts} gönderi kazındı`);
         if (snippets > 0) parts.push(`${snippets} arama sonucu (snippet — gönderi değil)`);
-        if (found > 0) parts.push(`${found} profil URL'si bulundu (kazınmadı)`);
+        // [P1] Bulunan profiller artık taranıyor → gerçek kazım durumu yazılır.
+        if (scannedStats.ok > 0) parts.push(`${scannedStats.ok} profil kazandı (${scannedStats.posts} gönderi)`);
+        if (scannedStats.total > 0 && scannedStats.ok < scannedStats.total) {
+          parts.push(`${scannedStats.total - scannedStats.ok} profil kazınamadı (sebep: kanal durumu)`);
+        } else if (found > 0 && scannedStats.total === 0) {
+          parts.push(`${found} profil URL'si bulundu (taranmadı)`);
+        }
         if (parts.length === 0) return 'Kanal çalıştı — kanıt üretmedi (gönderi/snippet yok)';
         return parts.join(' · ');
       }
@@ -443,6 +471,7 @@
             {#if detectedUrls.length > 0}
               <div class="links-flow">
                 {#each detectedUrls as url}
+                  {@const scan = scannedByUrl.get(url)}
                   <a href={url} target="_blank" rel="noopener noreferrer" class="profile-chip">
                     {#if url.includes('instagram')}
                       <span class="brand-icon">📸</span>
@@ -455,9 +484,29 @@
                     {/if}
                     <span class="link-label">{url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}</span>
                     <span class="link-path">/{url.split('/').filter(Boolean).slice(-1)[0]}</span>
+                    <!-- [P1] Gerçek kazım durumu: kazandı mı, koşmadı mı (sebebiyle). -->
+                    {#if scan}
+                      <span class="scan-status" class:scan-ok={scan.status === 'ok'} class:scan-bad={scan.status !== 'ok'}>
+                        {scannedUrlText(scan)}
+                      </span>
+                    {/if}
                   </a>
                 {/each}
               </div>
+              {#if scannedStats.total > 0}
+                <div class="scan-summary">
+                  DERİN TARAMA: {scannedStats.total} profil tarandı · {scannedStats.ok} kazandı · {scannedStats.not_run + scannedStats.failed} koşmadı
+                </div>
+              {/if}
+              <!-- [P2] Çapraz profil: eşleşme bir ÇIKARIMDIR; skor "kapsam"dır. -->
+              {#if crossMatches.length > 0}
+                <div class="scan-summary cross-profile-deck">
+                  ÇAPRAZ PROFİL (çıkarım · kapsam): {crossMatches.length} eşleşme
+                  {#each crossMatches as m}
+                    <div class="cross-profile-row">{crossProfileText(m)}</div>
+                  {/each}
+                </div>
+              {/if}
             {:else}
               <div class="empty-radar">
                 <span class="empty-icon">⏳</span>
@@ -1206,6 +1255,33 @@
   }
 
   .link-path {
+    color: #94a3b8;
+  }
+
+  /* [P1] Derin tarama durumu rozeti: kazandı / koşmadı (sebebiyle). */
+  .scan-status {
+    font-size: 10px;
+    letter-spacing: 0.02em;
+    padding: 1px 5px;
+    border-radius: 3px;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    color: #94a3b8;
+  }
+
+  .scan-status.scan-ok {
+    border-color: rgba(16, 185, 129, 0.5);
+    color: #10b981;
+  }
+
+  .scan-status.scan-bad {
+    border-color: rgba(239, 68, 68, 0.45);
+    color: #f87171;
+  }
+
+  .scan-summary {
+    margin-top: 6px;
+    font-size: 10px;
+    letter-spacing: 0.04em;
     color: #94a3b8;
   }
 

@@ -38,6 +38,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 API = REPO_ROOT / "backend/api.py"
 BODY_LIMIT_MODULE = REPO_ROOT / "backend/middleware/body_size_limit.py"
 LANGUAGE_MODULE = REPO_ROOT / "backend/routes/language.py"
+WEB_RESEARCH_MODULE = REPO_ROOT / "backend/services/web_research.py"
 
 #: Denetim öncesi ÖLÇÜLEN değer: 6.034 satır.
 #: İlk bölme (gövde tavanı middleware'i taşındı) sonrası: 5.937 satır.
@@ -50,12 +51,35 @@ MEASURED_AT_AUDIT = 6034
 MEASURED_AFTER_FIRST_SPLIT = 5937
 MEASURED_AFTER_SECOND_SPLIT = 5916
 MEASURED_AFTER_THIRD_SPLIT = 5908
+#: Dördüncü bölme (2026-10-16, API-BÖLME 4): public-web araştırma gövdesi
+#: `backend/services/web_research.py` modülüne taşındı → 5.805 satır.
+MEASURED_AFTER_FOURTH_SPLIT = 5805
+
+#: [API-BÖLME 5 · 2026-10-18] Koşu kaydı (AgentRun) serileştiricisi
+#: `backend/services/run_entries.py` modülüne taşındı (iki saf dönüştürücü:
+#: `_run_display_fields` + `_serialize_run_entry`) → 5.772 satır. Gerekçe:
+#: PR #145 (main'e birleşti) api.py'ye ~40 satır ekledi; canlı kontrol paneli
+#: de WS'e alan eklemeyi gerektirdi. Kural işletildi: **tavan yükseltilmedi**,
+#: satır yerine MODÜL çıkarıldı ve tavan DÜŞÜRÜLDÜ.
+MEASURED_AFTER_FIFTH_SPLIT = 5772
+
+#: [API-BÖLME 6 · 2026-10-18 · P8] Altıncı bölme: `/api/aspasia/state`
+#: denetim görünümünün gövdesi `backend/services/aspasia_state.py` modülüne
+#: taşındı (`build_state_payload`; çağrı izi sayfalaması `offset`/`limit`
+#: ile aynı modülde). Gerekçe: PR #146 (main'e birleşti) panel için
+#: çağrı izi sayfalama parametreleri + `call_window` alanı gerektirdi.
+#: Kural işletildi: **tavan yükseltilmedi**, satır yerine MODÜL çıkarıldı
+#: ve tavan DÜŞÜRÜLDÜ (5.772 → 5.760).
+MEASURED_AFTER_SIXTH_SPLIT = 5760
 
 #: Tavan. Yeni uç nokta eklemek yerine MODÜL ÇIKAR. Tavana dayanınca
 #: `docs/reports/API_MONOLITH_SPLIT_PLAN.md` sırasındaki bir sonraki
 #: düşük-bağımlılıklı alanı taşı ve bu sayıyı DÜŞÜR.
 #: Üçüncü bölmeden sonra ölçülen değere indirildi (ratchet: geri çıkış yok).
-MAX_LINES = 5908
+#: [API-BÖLME 4] Dördüncü bölmeden sonra 5.805'e indirildi.
+#: [API-BÖLME 5] Beşinci bölmeden sonra 5.772'ye indirildi.
+#: [API-BÖLME 6] Altıncı bölmeden sonra 5.760'a indirildi.
+MAX_LINES = 5760
 
 
 def _line_count() -> int:
@@ -186,6 +210,119 @@ def test_api_does_not_redefine_language_models():
         "dil hattı payload modelleri hem taşınmış hem api.py içinde yeniden "
         "tanımlanmış: iki kopya birbirinden sapar"
     )
+
+
+def test_web_research_split_module_exists_and_is_importable():
+    """[API-BÖLME 4] Public-web araştırma gövdesi ayrı modülde yaşar."""
+    assert WEB_RESEARCH_MODULE.is_file(), (
+        "ayrıştırılan public-web araştırma modülü bulunamadı: "
+        "backend/services/web_research.py"
+    )
+    from backend.services.web_research import (
+        extract_handle_from_url,
+        run_public_web_research,
+    )
+
+    assert callable(extract_handle_from_url)
+    assert callable(run_public_web_research)
+
+
+def test_api_reexports_web_research_split_symbols():
+    """[API-BÖLME 4] Geriye dönük uyumluluk: `from backend.api import ...` çalışır."""
+    import backend.api as api
+    from backend.services.web_research import (
+        extract_handle_from_url as CanonicalExtract,
+        run_public_web_research as CanonicalRun,
+    )
+
+    assert api._extract_handle_from_url is CanonicalExtract
+    assert api._run_public_web_research is CanonicalRun
+
+
+def test_api_does_not_redefine_web_research_body():
+    """[API-BÖLME 4] Kopya bırakılmamalı: gövde api.py içinde yeniden yazılamaz."""
+    import ast
+
+    tree = ast.parse(API.read_text(encoding="utf-8"))
+    definitions = [
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name in {"_run_public_web_research", "_extract_handle_from_url"}
+    ]
+    assert not definitions, (
+        "public-web araştırma gövdesi hem taşınmış hem api.py içinde yeniden "
+        "tanımlanmış: iki kopya birbirinden sapar"
+    )
+
+
+def test_api_shrank_after_fourth_split():
+    """[API-BÖLME 4] Ölçülebilir ilerleme: tavan 5.805'e indi."""
+    current = _line_count()
+    assert current <= MEASURED_AFTER_FOURTH_SPLIT, (
+        f"backend/api.py {current} satır — dördüncü bölme tavanı "
+        f"{MEASURED_AFTER_FOURTH_SPLIT}"
+    )
+
+
+def test_api_shrank_after_fifth_split():
+    """[API-BÖLME 5] Ölçülebilir ilerleme: tavan 5.772'ye indi.
+
+    Beşinci bölme: koşu kaydı (AgentRun) serileştiricisi
+    `backend/services/run_entries.py` modülüne taşındı; tavan YÜKSELTİLMEDİ.
+    """
+    current = _line_count()
+    assert current <= MEASURED_AFTER_FIFTH_SPLIT, (
+        f"backend/api.py {current} satır — beşinci bölme tavanı "
+        f"{MEASURED_AFTER_FIFTH_SPLIT}"
+    )
+
+
+def test_run_entry_serializer_lives_in_its_own_module():
+    """[API-BÖLME 5] Gövde hem taşındı hem api.py içinde kalmadı (iki kopya yok)."""
+    module = REPO_ROOT / "backend" / "services" / "run_entries.py"
+    assert module.is_file(), "backend/services/run_entries.py yok"
+    api_text = API.read_text(encoding="utf-8")
+    assert "def _serialize_run_entry(" not in api_text, (
+        "serileştirici api.py içinde yeniden tanımlanmış — iki kopya birbirinden sapar"
+    )
+    assert "def _run_display_fields(" not in api_text, (
+        "görüntü alanları türeticisi api.py içinde yeniden tanımlanmış"
+    )
+    # Dış sözleşme: eski adresler yeniden ihraç edilir.
+    assert "serialize_run_entry as _serialize_run_entry" in api_text
+
+
+def test_api_shrank_after_sixth_split():
+    """[API-BÖLME 6] Ölçülebilir ilerleme: tavan 5.760'a indi.
+
+    Altıncı bölme: `/api/aspasia/state` gövdesi
+    `backend/services/aspasia_state.py` modülüne taşındı; tavan
+    YÜKSELTİLMEDİ.
+    """
+    current = _line_count()
+    assert current <= MEASURED_AFTER_SIXTH_SPLIT, (
+        f"backend/api.py {current} satır — altıncı bölme tavanı "
+        f"{MEASURED_AFTER_SIXTH_SPLIT}"
+    )
+
+
+def test_aspasia_state_body_lives_in_its_own_module():
+    """[API-BÖLME 6] Gövde hem taşındı hem api.py içinde kalmadı (iki kopya yok)."""
+    module = REPO_ROOT / "backend" / "services" / "aspasia_state.py"
+    assert module.is_file(), "backend/services/aspasia_state.py yok"
+    api_text = API.read_text(encoding="utf-8")
+    assert "def build_state_payload(" not in api_text, (
+        "state gövdesi api.py içinde yeniden tanımlanmış — iki kopya birbirinden sapar"
+    )
+    # Dış sözleşme: modül api.py üzerinden de erişilebilir (satır BİREBİR).
+    import re
+
+    assert re.search(
+        r"^from backend\.services\.aspasia_state import build_state_payload$",
+        api_text,
+        re.M,
+    ), "api.py state modülünü içe aktarmıyor"
 
 
 def test_size_ceiling_is_documented():

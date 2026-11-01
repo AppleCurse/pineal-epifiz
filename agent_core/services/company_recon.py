@@ -28,6 +28,10 @@ Dürüstlük sözleşmesi (ev kuralları, değişmedi):
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import asyncio
 import json
 import os
@@ -128,7 +132,10 @@ def harvester_command() -> list[str]:
     raw = os.getenv("PINEAL_HARVESTER_CMD", "").strip()
     if raw:
         try:
-            parts = shlex.split(raw)
+            parts = [
+                t[1:-1] if len(t) >= 2 and t[0] == t[-1] and t[0] in ('"', "'") else t
+                for t in shlex.split(raw, posix=(os.name != "nt"))
+            ]
         except ValueError:
             return []  # bozuk tırnak: sessizce PATH'e düşmeyiz, araç yok sayılır
         if not parts:
@@ -286,8 +293,10 @@ async def scan_company(
             try:
                 proc.kill()
                 await proc.wait()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "[scan_company] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+                )
             return HarvesterScan(
                 available=False, reason="timeout", domain=clean, sources=src,
                 duration_ms=int((time.monotonic() - started) * 1000),

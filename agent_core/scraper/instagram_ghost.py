@@ -21,6 +21,7 @@ import logging
 import os
 import random
 import re
+import time
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 
@@ -34,16 +35,62 @@ def _post_detail_enabled() -> bool:
 
 
 def _post_detail_limit() -> int:
-    """Zenginleştirilecek en fazla post sayısı (1..12, varsayılan 12)."""
+    """Zenginleştirilecek en fazla post sayısı (0..max_posts, varsayılan 12)."""
     try:
-        return max(0, min(12, int(os.getenv("PINEAL_POST_DETAIL_LIMIT", "12"))))
+        return max(0, min(_ig_max_posts(), int(os.getenv("PINEAL_POST_DETAIL_LIMIT", "12"))))
     except (TypeError, ValueError):
         return 12
+
+
+# --- Sayfalama (pagination) anahtarları — 2026-10-23 ---
+# ESKİ DAVRANIŞ (hata): profil ızgarası TEK sayfadan okunuyordu ve sonuç
+# hem `[:12]` dilimiyle hem de `InstagramProfile.posts` doğrulayıcısındaki
+# `v[:12]` ile 12 posta kırpılıyordu. Instagram ilk yüklemede ~12 gönderi
+# verdiği için "daha fazla post var" bilgisi HİÇ görünmüyordu.
+# YENİ: kaydırma ile ek sayfalar tetiklenir, DOM'da görünen her post
+# shortcode'u gerçek post sayfasından doğrulanır; tavan operatör ayarıdır.
+def _ig_max_posts() -> int:
+    """Profil başına toplanacak en fazla post (1..200, varsayılan 48)."""
+    try:
+        return max(1, min(200, int(os.getenv("PINEAL_IG_MAX_POSTS", "48"))))
+    except (TypeError, ValueError):
+        return 48
+
+
+def _ig_scroll_pages() -> int:
+    """Kaç kez kaydırılacağı (0 = sayfalama kapalı, eski tek-sayfa davranışı)."""
+    try:
+        return max(0, min(20, int(os.getenv("PINEAL_IG_SCROLL_PAGES", "6"))))
+    except (TypeError, ValueError):
+        return 6
+
+
+def _ig_pagination_budget() -> float:
+    """Sayfalama için toplam süre bütçesi (saniye, varsayılan 90)."""
+    try:
+        return max(0.0, min(600.0, float(os.getenv("PINEAL_IG_PAGINATION_BUDGET_SEC", "90"))))
+    except (TypeError, ValueError):
+        return 90.0
+
+
+def _ig_scroll_pause() -> float:
+    """Kaydırmalar arası bekleme (saniye) — rate-limit'e saygı için."""
+    try:
+        return max(0.0, min(5.0, float(os.getenv("PINEAL_IG_SCROLL_PAUSE", "1.2"))))
+    except (TypeError, ValueError):
+        return 1.2
 
 
 # --- Anti-Halüsinasyon Çekirdeği ---
 class InsufficientEvidenceError(Exception):
     """Kanıt yoksa uydurma, DUR. Faz 4 kuralı."""
+
+
+class PrivateProfileEvidenceError(InsufficientEvidenceError):
+    """Gizli profil: gönderiler kapalı ama meta veri (bio, isim, bağlı hesaplar) kurtarıldı."""
+    def __init__(self, message: str, profile: Any = None):
+        super().__init__(message)
+        self.profile = profile
 
 
 # --- Pydantic V2 Şemalar (ConfigDict, extra="forbid" - halüsinasyon filtresi) ---
@@ -88,14 +135,17 @@ class InstagramProfile(BaseModel):
     post_count: Optional[int] = None
     profile_pic_url: Optional[str] = None
     posts: List[InstagramPost] = Field(default_factory=list)
+    external_urls: List[str] = Field(default_factory=list, description="Biyografide veya profilde tespit edilen linktree, beacons ve harici bağlantılar")
     scraped_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     evidence_source: str = Field(default="self_hosted_ghost_browser", description="Kanıtın nereden geldiği, şeffaflık için")
 
     @field_validator("posts")
     @classmethod
     def posts_must_be_real(cls, v: List[InstagramPost]) -> List[InstagramPost]:
-        # 12 posttan fazla istemiyoruz, OSINT için yeterli
-        return v[:12]
+        # [2026-10-23] Sabit 12 tavanı KALDIRILDI: tavan artık operatör
+        # ayarıdır (PINEAL_IG_MAX_POSTS, varsayılan 48). Sessiz kırpma yok;
+        # kırpıldığında kaç postun alındığı `post_count` ile karşılaştırılabilir.
+        return v[:_ig_max_posts()]
 
 
 class InstagramGhostScraper:
@@ -134,10 +184,20 @@ class InstagramGhostScraper:
     async def _post_detail_delay(self):
         """[FAZ 1] Post-detay istekleri arası kısa, kibar bekleme (1.0-2.5 sn).
 
-        Profil sayfası nav'inden kısadır çünkü aynı oturumda 12'ye kadar
-        istek atılır; toplam süre görev zaman aşımını (varsayılan 300 sn)
-        zorlamaz. Event loop kilitlenmez (asyncio.sleep).
+        Profil sayfası nav'inden kısadır; aynı oturumda en fazla
+        ``PINEAL_IG_MAX_POSTS`` istek atılır ve sayfalamada toplam süre
+        ``PINEAL_IG_PAGINATION_BUDGET_SEC`` ile sınırlanır.
+        ``PINEAL_POST_DETAIL_PAUSE`` verilirse sabit süre kullanılır
+        (0 = beklemesiz; testler ve yoğun olmayan ortamlar için).
+        Event loop kilitlenmez (asyncio.sleep).
         """
+        raw = os.getenv("PINEAL_POST_DETAIL_PAUSE", "").strip()
+        if raw:
+            try:
+                await asyncio.sleep(max(0.0, min(10.0, float(raw))))
+                return
+            except (TypeError, ValueError):
+                pass
         await asyncio.sleep(random.uniform(1.0, 2.5))
 
     @staticmethod
@@ -348,8 +408,12 @@ class InstagramGhostScraper:
                 if name_m:
                     full_name = name_m.group(1).strip()
 
-            # 3. Bio parse (Multilingual)
-            bio_match = re.search(r'<meta\s+content="[^"]*(?:Instagram\'da|on Instagram):\s*&quot;([^&]*)&quot;"', html)
+            # 3. Bio parse (Multilingual & meta description fallback)
+            bio_match = (
+                re.search(r'<meta\s+[^>]*content="[^"]*(?:Instagram\'da|on Instagram):\s*&quot;([^&]*)&quot;"', html, re.DOTALL | re.IGNORECASE)
+                or re.search(r'<meta\s+content="[^"]*(?:Instagram\'da|on Instagram):\s*&quot;([^&]*)&quot;"', html, re.DOTALL | re.IGNORECASE)
+                or re.search(r'(?:Instagram\'da|on Instagram):\s*&quot;([^&]*)&quot;', html, re.DOTALL | re.IGNORECASE)
+            )
             if bio_match:
                 biography = html_lib.unescape(bio_match.group(1).strip())
             elif og_desc_match and " - " in og_desc_match.group(1):
@@ -367,7 +431,7 @@ class InstagramGhostScraper:
             # yapısal düğüm bulunamadığında URL kurtarmak için çalışır; o durumda
             # temporal/engagement alanları dürüstçe None kalır (uydurulmaz).
             posts = []
-            for node in self._collect_structured_posts(raw_json)[:12]:
+            for node in self._collect_structured_posts(raw_json)[:_ig_max_posts()]:
                 try:
                     posts.append(InstagramPost(**node))
                 except Exception:
@@ -485,7 +549,9 @@ class InstagramGhostScraper:
                         if isinstance(caption, str) and caption.strip():
                             caption_by_shortcode[shortcode] = caption[:2200].strip()
 
-                for i in range(min(len(display_urls), 12)):
+                # [2026-10-23] Kalan sabit tavan (12) KALDIRILDI: bu yol
+                # (Playwright'siz ham HTML) da operatör ayarına uyar.
+                for i in range(min(len(display_urls), _ig_max_posts())):
                     try:
                         sc = shortcodes[i] if i < len(shortcodes) else f"post_{i+1}"
                         url = display_urls[i].replace("\\u0026", "&")
@@ -501,9 +567,28 @@ class InstagramGhostScraper:
                     except Exception:
                         continue
 
-            # Eğer private ve post yoksa, sonraki ajanlar boş veriyle halüsinasyon göreceği için durdur
-            if is_private and len(posts) == 0:
-                raise InsufficientEvidenceError(f"Hedef profil gizli (Private) ve gönderi okunamıyor: {username}")
+            # Link-in-bio (linktree, beacons, taplink, carrd, bio.link vb.) ve web bağlantıları kurtarma:
+            external_urls: List[str] = []
+            if biography:
+                agg_matches = re.findall(
+                    r"(?:https?://)?(?:www\.)?(?:linktr\.ee|beacons\.ai|taplink\.cc|bio\.link|carrd\.co|heylink\.me)/[A-Za-z0-9_.-]+",
+                    biography,
+                    re.IGNORECASE,
+                )
+                for am in agg_matches:
+                    clean_am = am if am.startswith("http") else f"https://{am}"
+                    if clean_am not in external_urls:
+                        external_urls.append(clean_am)
+                raw_urls = re.findall(r"https?://[A-Za-z0-9.-]+\.[a-z]{2,}(?:/[^\s\"'<>]*)?", biography)
+                for ru in raw_urls:
+                    if ru not in external_urls:
+                        external_urls.append(ru)
+
+            ext_meta = re.findall(r'"external_url":"([^"]+)"', html)
+            for em in ext_meta:
+                em_clean = em.replace("\\u0026", "&").replace("\\/", "/")
+                if em_clean.startswith("http") and em_clean not in external_urls:
+                    external_urls.append(em_clean)
 
             profile = InstagramProfile(
                 username=username,
@@ -515,8 +600,17 @@ class InstagramGhostScraper:
                 post_count=post_count,
                 profile_pic_url=profile_pic_url,
                 posts=posts,
+                external_urls=external_urls,
                 evidence_source="self_hosted_ghost_browser"
             )
+
+            # Eğer private ve post yoksa, sonraki ajanlar boş veriyle halüsinasyon görmesin
+            # ama meta veri (bio, isim, bağlı hesaplar) PrivateProfileEvidenceError ile kurtarılır
+            if is_private and len(posts) == 0:
+                raise PrivateProfileEvidenceError(
+                    f"Hedef profil gizli (Private) ve gönderi okunamıyor: {username}",
+                    profile=profile,
+                )
 
             # --- ANTI-HALÜSİNASYON KONTROLÜ ---
             # Eğer hem follower yok, hem bio yok, hem post yok -> bu sayfa boş, HALT
@@ -584,7 +678,7 @@ class InstagramGhostScraper:
                     break
             if matched is not None:
                 for key in ("caption", "taken_at", "like_count", "comment_count",
-                            "post_type", "video_url"):
+                            "post_type", "video_url", "display_url"):
                     if matched.get(key) is not None:
                         detail[key] = matched[key]
                 if matched.get("is_video"):
@@ -625,7 +719,18 @@ class InstagramGhostScraper:
                             if ld_type == "video":
                                 detail["is_video"] = True
 
-        # 3) article:published_time meta.
+        # 3) Gorsel kaniti (og:image) — SAYFALAMA ile DOM'dan bulunan postlar
+        #    icin tek gercek kaynak. Meta yoksa alan EKLENMEZ: display_url
+        #    olmadan post nesnesi uretilmez (uydurma URL yasak).
+        if "display_url" not in detail:
+            og_img = re.search(
+                r'<meta[^>]*property=["\']og:image["\'][^>]*content=["\']([^"\']+)["\']',
+                post_html, re.IGNORECASE,
+            )
+            if og_img and og_img.group(1).replace("&amp;", "&").startswith("http"):
+                detail["display_url"] = og_img.group(1).replace("&amp;", "&")
+
+        # 4) article:published_time meta.
         if "taken_at" not in detail:
             pub = re.search(
                 r'<meta[^>]*property="article:published_time"[^>]*content="([^"]+)"',
@@ -713,6 +818,179 @@ class InstagramGhostScraper:
                     continue
         return enriched
 
+    # ------------------------------------------------------------------ #
+    # SAYFALAMA (pagination) — 2026-10-23
+    # ------------------------------------------------------------------ #
+    #: Gönderi yolları: /p/, /reel/, /reels/, /tv/ (shortcode uzayı tektir).
+    #: DİKKAT: `re.compile` bu dosyada YASAK (test_p1_4_url_injection) —
+    #: desen metin olarak tutulur, `re.search` modül önbelleğini kullanır.
+    _SHORTCODE_PATH_PATTERN = r"/(?:p|reel|reels|tv)/([A-Za-z0-9_-]{5,})"
+
+    @staticmethod
+    def _shortcodes_from_hrefs(hrefs: Any) -> List[str]:
+        """Gönderi bağlantılarından shortcode listesi (belge sırası, tekil).
+
+        Saf fonksiyon: DOM'dan gelen href listesini alır, yalnız gerçek
+        gönderi yollarını ayıklar. Profil/keşif/etiket bağlantıları
+        (`/explore/`, `/p/` olmayan her şey) kendiliğinden elenir.
+        """
+        out: List[str] = []
+        seen: set[str] = set()
+        for href in hrefs or []:
+            if not isinstance(href, str) or not href:
+                continue
+            match = re.search(InstagramGhostScraper._SHORTCODE_PATH_PATTERN, href)
+            if not match:
+                continue
+            code = match.group(1)
+            if code in seen:
+                continue
+            seen.add(code)
+            out.append(code)
+        return out
+
+    @staticmethod
+    def _page_cursor(raw_json: Any) -> tuple[Optional[bool], Optional[str]]:
+        """Gömülü JSON'daki ``page_info`` → (has_next_page, end_cursor).
+
+        Dönen ``(None, None)`` = "sayfa bilgisi YOK" (meta-tag yolu ya da
+        farklı gömülü şema). Bu ayrım önemli: "bilinmiyor" ile "son sayfa"
+        karıştırılmaz; sayfalama kararı DOM büyümesine göre verilir, bu
+        değer yalnız telemetri/teşhis içindir.
+        """
+        found: list[tuple[Optional[bool], Optional[str]]] = []
+
+        def _walk(obj: Any, depth: int = 0) -> None:
+            if depth > 16 or found:
+                return
+            if isinstance(obj, dict):
+                info = obj.get("page_info")
+                if isinstance(info, dict) and "has_next_page" in info:
+                    cursor = info.get("end_cursor")
+                    found.append((
+                        bool(info.get("has_next_page")),
+                        cursor if isinstance(cursor, str) else None,
+                    ))
+                    return
+                for value in obj.values():
+                    _walk(value, depth + 1)
+            elif isinstance(obj, list):
+                for item in obj:
+                    _walk(item, depth + 1)
+
+        _walk(raw_json)
+        return found[0] if found else (None, None)
+
+    async def _post_from_detail_page(self, playwright_page, shortcode: str) -> Optional[InstagramPost]:
+        """Tek post sayfasından GERÇEK post nesnesi (görsel kanıtı şartı).
+
+        `display_url` (og:image ya da gömülü düğüm) yoksa ``None`` döner:
+        görseli olmayan post uydurulmaz (validation: URL http ile başlamalı).
+        """
+        try:
+            await playwright_page.goto(
+                f"{self.base_url}/p/{shortcode}/",
+                wait_until="domcontentloaded", timeout=15000,
+            )
+            post_html = await playwright_page.content()
+        except Exception as exc:
+            logging.warning("Sayfalama: post sayfası açılamadı (%s): %s", shortcode, type(exc).__name__)
+            return None
+        try:
+            detail = self._extract_post_detail(post_html, shortcode)
+        except Exception:
+            return None
+        if not detail.get("display_url"):
+            return None
+        try:
+            return InstagramPost(
+                shortcode=shortcode,
+                display_url=detail["display_url"],
+                caption=detail.get("caption"),
+                is_video=bool(detail.get("is_video")),
+                taken_at=detail.get("taken_at"),
+                like_count=detail.get("like_count"),
+                comment_count=detail.get("comment_count"),
+                post_type=detail.get("post_type"),
+                video_url=detail.get("video_url"),
+            )
+        except Exception:
+            return None
+
+    async def _paginate_grid(
+        self, playwright_page, username: str,
+        existing: List[InstagramPost], raw_json: Any = None,
+    ) -> List[InstagramPost]:
+        """Kaydırma ile ek gönderi sayfalarını toplar.
+
+        Sözleşme:
+          * Tavan ``PINEAL_IG_MAX_POSTS`` (varsayılan 48); tur sayısı
+            ``PINEAL_IG_SCROLL_PAGES`` (varsayılan 6, 0 = kapalı).
+          * İki tur üst üste YENİ shortcode gelmezse durulur (sonsuz
+            kaydırma yok, duvar/rate-limit fark edilir).
+          * Her aday shortcode gerçek post sayfasından doğrulanır; görsel
+            kanıtı olmayan aday post nesnesi ÜRETİLMEZ.
+          * Hata sayfalamayı oldurmez: o ana kadar toplanan döner.
+        """
+        pages = _ig_scroll_pages()
+        target = _ig_max_posts()
+        known = {p.shortcode for p in existing}
+        if pages <= 0 or len(known) >= target:
+            return []
+
+        has_next, cursor = self._page_cursor(raw_json)
+        if has_next is False and cursor is None and len(existing) >= target:
+            return []
+        logging.info(
+            "Sayfalama planı (%s): has_next_page=%s, cursor=%s, hedef=%s, tur=%s",
+            username, has_next, (cursor or "-")[:24], target, pages,
+        )
+
+        collected: List[InstagramPost] = []
+        stagnant = 0
+        deadline = time.monotonic() + _ig_pagination_budget()
+        # Tavan: mevcut + yeni ≤ target. `known` her adayda büyüdüğü için
+        # bütçe BAŞTA hesaplanır (çift sayım hatası olmasın).
+        budget = max(0, target - len(known))
+        for _ in range(pages):
+            if len(collected) >= budget:
+                break
+            if time.monotonic() >= deadline:
+                logging.info("Sayfalama bütçesi doldu (%s) — kalan sayfalar atlandı", username)
+                break
+            try:
+                await playwright_page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            except Exception:
+                break
+            await asyncio.sleep(_ig_scroll_pause())
+            try:
+                hrefs = await playwright_page.evaluate(
+                    "() => Array.from(document.querySelectorAll('a[href]')).map(a => a.href || '')"
+                )
+            except Exception:
+                break
+            new_codes = [c for c in self._shortcodes_from_hrefs(hrefs) if c not in known]
+            if not new_codes:
+                stagnant += 1
+                if stagnant >= 2:
+                    break
+                continue
+            stagnant = 0
+            for code in new_codes:
+                if len(collected) >= budget:
+                    break
+                known.add(code)
+                try:
+                    await self._post_detail_delay()
+                except Exception:
+                    pass
+                post = await self._post_from_detail_page(playwright_page, code)
+                if post is not None:
+                    collected.append(post)
+        if collected:
+            logging.info("Sayfalama: %s için %d ek post toplandı", username, len(collected))
+        return collected
+
     @staticmethod
     def _sort_chronological(posts: List[InstagramPost]) -> List[InstagramPost]:
         """[GÖREV 1.3] Postlari kronolojik siralar: t_0 -> t_N (artan).
@@ -769,7 +1047,71 @@ class InstagramGhostScraper:
             raise InsufficientEvidenceError(f"Instagram rate-limit: {username} - bekle ve tekrar dene")
 
         raw = self._extract_from_html(html, username)
+        
+        # DOM tabanlı Header & Bio kurtarma (özellikle gizli ve modern Instagram sayfalarında)
+        try:
+            dom_bio_text = await playwright_page.evaluate("""() => {
+                // 1. Standart header
+                let h = document.querySelector('header');
+                if (h && h.innerText && h.innerText.trim().length > 15) return h.innerText;
+
+                // 2. Main header veya ilk section
+                let mh = document.querySelector('main header') || document.querySelector('main section');
+                if (mh && mh.innerText && mh.innerText.trim().length > 15) return mh.innerText;
+
+                // 3. Role="main" veya genel section
+                let rm = document.querySelector('[role="main"] section') || document.querySelector('section');
+                if (rm && rm.innerText && rm.innerText.trim().length > 15) return rm.innerText;
+
+                // 4. h1/h2 yakınındaki profil üst bloğu
+                let h1 = document.querySelector('h1') || document.querySelector('h2');
+                if (h1 && h1.parentElement) {
+                    let parent = h1.closest('header') || h1.closest('section') || h1.parentElement.parentElement;
+                    if (parent && parent.innerText && parent.innerText.trim().length > 15) return parent.innerText;
+                }
+                return '';
+            }""")
+            if dom_bio_text and len(dom_bio_text.strip()) > 10:
+                html += f'\n<meta content="{dom_bio_text.replace(chr(34), "&quot;")} on Instagram: &quot;{dom_bio_text.replace(chr(34), "&quot;")}&quot;" name="description">\n'
+
+            # DOM'daki harici bio linklerini (linktr.ee vb.) doğrudan yakala
+            dom_ext_links = await playwright_page.evaluate("""() => {
+                const links = [];
+                const anchors = document.querySelectorAll('header a, main a, section a');
+                for (const a of anchors) {
+                    const href = a.href || '';
+                    if (href && (href.includes('linktr.ee') || href.includes('beacons.ai') || href.includes('taplink') || href.includes('bio.link') || a.getAttribute('rel')?.includes('me'))) {
+                        links.push(href);
+                    }
+                }
+                return links;
+            }""")
+            if dom_ext_links:
+                for elink in dom_ext_links:
+                    html += f'\n<link rel="me" href="{elink}">\n'
+        except Exception:
+            pass
+
         profile = self._parse_real_profile(raw, html, username)
+
+        # [2026-10-23 · SAYFALAMA] Izgara ilk yuklemede ~12 gonderi verir.
+        # Kaydirma ile gelen yeni shortcode'lar gercek post sayfalarindan
+        # dogrulanir; gizli profilde ve sayfalama kapaliyken HIC calismaz.
+        if not profile.is_private:
+            try:
+                extra_posts = await self._paginate_grid(
+                    playwright_page, username, profile.posts, raw
+                )
+            except Exception as exc:
+                logging.warning(
+                    "Sayfalama atlandi (%s): %s", username, type(exc).__name__
+                )
+                extra_posts = []
+            if extra_posts:
+                merged = {p.shortcode: p for p in profile.posts}
+                for post in extra_posts:
+                    merged.setdefault(post.shortcode, post)
+                profile.posts = list(merged.values())[:_ig_max_posts()]
 
         # [FAZ 1] Post-detay zenginlestirme: grid'de eksik kalan caption /
         # taken_at / counts, tekil post sayfalarindan tamamlanir. Bu adim

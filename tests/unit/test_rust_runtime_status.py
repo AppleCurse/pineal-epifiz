@@ -56,6 +56,8 @@ def test_python_product_path_has_no_rust_import_or_invocation():
         # `backend/api.py`'den ENJEKTE edilir. AST kapıları (import/invoke
         # yasağı) bu dosya için DEĞİŞMEDEN çalışır.
         ROOT / "backend/routes/telemetry.py",
+        # [DENETİM] Gölge denetim betiği depodaki gömülü varlıkları (rust_core vb.) sayar.
+        ROOT / "scripts/golge_denetimi.py",
     }
 
     for path in product_sources:

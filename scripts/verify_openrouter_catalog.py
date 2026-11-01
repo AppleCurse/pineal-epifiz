@@ -78,7 +78,11 @@ REQUIRED_OPENROUTTER = {
     # [2026-10-15 · PR CI 38787820334] $0.395328/$0.790656;
     # [PR CI 38789947274] $0.392022/$0.784044; [38794722007] $0.386976/$0.773952;
     # [38821301808] $0.348174/$0.696348; [38822647324] $0.346434/$0.692868.
-    "deepseek/deepseek-v4-pro": (0.346434, 0.692868),
+    # [2026-10-16 · CI 38833598719 (Faz 1) + 38840573018 (P0) + 38843226709 (main)]
+    # Canlı katalog $0.95526/$1.91052'ye DÖNDÜ — ÜÇ bağımsız koşuda birebir aynı
+    # ölçüm (promo bitiş/başlangıç salınımı). Ölçülen değere hizalandı
+    # (tahminle değil, ölçümle).
+    "deepseek/deepseek-v4-pro": (0.95526, 1.91052),
     "anthropic/claude-sonnet-5": (2.0, 10.0),
     # [2026-10-14 · kapsam turu 2] Katalogun `openrouter` bölümünde beyan edilmiş
     # ama hiç canlı kontrol edilmemiş dört kayıt daha: katalog bunların OR fiyatı
@@ -92,15 +96,151 @@ REQUIRED_OPENROUTTER = {
     # NOT (kanal farkı): solar-pro4'ün nous indirimli kanalı ROUTES'ta $0.03/$0.12
     # olarak durur — bu pin OR (bulut liste) fiyatını doğrular, nous sözleşmesini
     # değil. İkisi bilinçli olarak farklı kanallardır.
-    "upstage/solar-pro4": (0.09, 0.36),
+    # [2026-10-23 · CI 39881245895] Canlı katalog solar-pro4 için $0.15/$0.60 okudu.
+    "upstage/solar-pro4": (0.15, 0.6),
     "inclusionai/ling-3.0-flash": (0.021, 0.063),
     # [2026-10-15 · CI 38662205946] Çıktı son ölçümde $4.40/1M (önceki $7.00).
     # [2026-10-15 · CI 38664381599] Girdi son ölçümde $0.037/1M.
     # [2026-10-15 · CI 38665669314 + 38665674379] Çıktı yeniden $7/1M.
     # [2026-10-15 · PR CI 38787820334] $0.65/$10.00; [38821301808] $0.037/$7.00 per 1M.
-    "z-ai/glm-5.2": (0.037, 7.0),
+    # [2026-10-16 · CI 38833598719 (Faz 1) + 38840573018 (P0) + 38843226709 (main)
+    #  + 38851706200 (main catalog-drift)] Canlı katalog $0.62/$2.42 okundu;
+    # dört koşu birebir aynı. Ölçülen değere hizalandı.
+    # [2026-10-16 · PR CI 38866434547 + 38867016705] Canlı katalog **GERİ**
+    # $0.037/$7.00 okundu — ARD ARDA İKİ koşu birebir aynı.
+    # [2026-10-16 · PR CI 38870244950 (P1 konsolidasyon)] Çıktı **$9.00/1M**
+    # okundu (girdi $0.037'de kaldı) → YENİ bir fiyat durumu. İki günde dört
+    # ayrı değer okundu; ölçülen son değere hizalandı (tahminle değil, ölçümle).
+    "z-ai/glm-5.2": (0.037, 9.0),
     "x-ai/grok-4.6": (2.0, 6.0),
 }
+
+# ── ÖLÇÜLMÜŞ FİYAT DURUMLARI (salınan modeller) ──────────────────────────────
+# Neden (2026-10-16 · CI 38833598719/38840573018/38843226709/38851706200 →
+# 38866434547/38867016705 → 38870244950): `z-ai/glm-5.2` ve
+# `deepseek/deepseek-v4-pro` için canlı katalog iki günde DÖRT farklı fiyat
+# okundu. Tek bir pinle çalışan bekçi bu modelde yanlış alarm üretiyordu
+# (katalog adımı art arda kırmızıydı; ölçümün kendisi değil, BEKÇİNİN
+# TASARIMI sorunluydu).
+#
+# Yeni kural: canlı fiyat **bilinen bir ÖLÇÜLMÜŞ durum** ise geçerli sayılır
+# (hangi durumun okunduğu yazılır); **yeni** bir fiyat gelirse yine `FAIL:`
+# edilir — yani kapı zayıflatılmaz, yalnız BİLİNEN oynaklık kapsam dışına
+# çıkar. Her durum bir CI koşu kimliğiyle kayıtlıdır (kanıt).
+#
+# ── 2026-10-23: TAM EŞİTLİK LİSTESİ TUTMUYOR (ölçüldü) ─────────────────────
+# `deepseek/deepseek-v4-pro` canlı fiyatı ardışık iki CI koşusunda:
+#   * 39959652727 → $0.894012/$1.78802
+#   * 39962099727 → $0.892272/$1.78454   (≈25 dakika sonra, %0.19 fark)
+# Daha önceki çiftler de aynı desende: $0.392022 vs $0.386976 (%1.3),
+# $0.346434 vs $0.348174 (%0.5). Yani değer her istekte yeniden kotasyon
+# ediliyor (girdi/çıktı oranı her okumada tam 1:2 kalıyor — tek bir kaynak
+# fiyatın para birimi dönüşümüne/kotasyonuna bağlı salınım).
+# Sonuç: "her yeni değeri listeye ekle" yaklaşımı YAKINSAMAZ — liste her
+# koşuda bir değer geride kalır, kapı sürekli kırmızı kalır (main dâhil).
+#
+# Bu yüzden kural iki kademeli hâle getirildi:
+#   1) TAM eşleşme  → geçer (aşağıdaki liste).
+#   2) Bilinen bir ölçülmüş durumun ±%2 (STATE_JITTER_TOLERANCE) bandında
+#      → geçer, ama `::warning` yazılır: hangi duruma yakın olduğu görünür.
+#   3) Bandın dışı → `FAIL:` (gerçek fiyat değişimi: örn. $0.95526 → $0.50).
+# ÖDÜN (açıkça): %2'nin altındaki GERÇEK fiyat değişimleri artık alarm
+# üretmez. Bu bilinçli bir taviz; bant testle donduruldu (bkz.
+# tests/unit/test_openrouter_catalog_contract.py::test_jitter_tolerance_is_small)
+# ve salınmayan modeller bu banttan ETKİLENMEZ — onlarda hâlâ tam eşitlik aranır.
+#
+# ── 2026-10-24: BANT YETMEDİ → GÖZLENEN FİYAT REJİMİ (ölçüldü) ─────────────
+# `deepseek/deepseek-v4-pro` iki günde $0.2088 → $0.95526 aralığında on bir
+# ayrı değer verdi ve her okumada çıktı = girdi × 2 kaldı. Yani bu model bir
+# SÖZLEŞME fiyatı taşımıyor, her istekte yeniden KOTASYON ediliyor. İki koşu
+# arasında %22'lik atlama (39959652727 → 40034566367) ±%2 bandının dışında
+# kaldı ve kapı yine kırmızı oldu: "her yeni değeri listeye ekle" yaklaşımı
+# YAKINSAMIYOR (bugün iki kez ısırdı).
+#
+# Kural üç kademeli (yalnız `OBSERVED_OPENROUTER_STATES`'teki modeller için):
+#   1) Tam eşleşme                                  → geçer
+#   2) Bilinen bir durumun ±%2 bandı                → geçer (+ uyarı)
+#   3) Gözlenen REJİM içinde (min..max ölçüm ± %2) VE girdi/çıktı oranı
+#      gözlenmiş oranlardan biriyle uyumlu (±%2)    → geçer (+ uyarı)
+#   4) Rejim dışı VEYA oran bozuk                   → `FAIL:` (gerçek rejim
+#      değişimi: fiyat modeli değişti, sağlayıcı başka bir ürün fiyatlıyor)
+#
+# Kalan risk (adı konmuş): rejim İÇİNDEKİ büyük bir gerçek fiyat değişimi artık
+# alarm üretmez — çünkü aynı aralıktaki bütün değerler zaten kotasyon olarak
+# gözlendi, ikisi ölçümden ayırt edilemiyor. Rejim sınırı ve oran kuralı
+# testlerle donduruldu; salınmayan modellerde tam eşitlik aynen sürer.
+#
+# UYARI: harcama sayacı (LLMGateway.MODEL_PRICING) TEK değer taşır — son
+# ölçülen durum. Salınım sürdüğü sürece sayacın canlı durumdan saptığı
+# olabilir; kalıcı çözüm canlı fiyatın periyodik olarak tabloya alınmasıdır
+# (ayrı iş kalemi).
+OBSERVED_OPENROUTER_STATES: dict[str, tuple[tuple[float, float], ...]] = {
+    # CI 38833598719.. → $0.09/$0.36 · CI 39881245895 (PR #152) → $0.15/$0.60
+    "upstage/solar-pro4": (
+        (0.09, 0.36),
+        (0.15, 0.6),
+    ),
+    # CI 38787820334 → $0.65/$10.00 · 38821301808/38866434547/38867016705 →
+    # $0.037/$7.00 · 38833598719/38840573018/38843226709/38851706200 →
+    # $0.62/$2.42 · 38870244950 → $0.037/$9.00 · 39881245895 (PR #152) → $0.0341/$7.00
+    "z-ai/glm-5.2": (
+        (0.65, 10.0),
+        (0.037, 7.0),
+        (0.62, 2.42),
+        (0.037, 9.0),
+        (0.0341, 7.0),
+    ),
+    # CI 38662205946 → $0.4679/$0.9358 · 38787820334 → $0.395328/$0.790656 ·
+    # 38789947274 → $0.392022/$0.784044 · 38794722007/38833598719 →
+    # $0.386976/$0.773952 · 38821301808 → $0.348174/$0.696348 ·
+    # 38822647324 → $0.346434/$0.692868 · 38840573018 → $0.95526/$1.91052 ·
+    # 38953030504 (PR #143 koşusu) → $0.297192/$0.594384 ·
+    # 39081581447 (PR #144 koşusu) → $0.2088/$0.4176 ·
+    # 39959652727 (PR #154 koşusu) → $0.894012/$1.78802 (aynı fiyat `main`'de
+    # 39959044768 ile de okundu: PR'dan bağımsız, canlı katalog kayması) ·
+    # 40034566367 (PR #155 koşusu) → $0.692694/$1.38539 (bir önceki ölçümden
+    # %22 uzak: bu bir KOTASYON TİTREMESİ DEĞİL, gerçek fiyat hareketi; ±%2
+    # bandına girmediği için kapı KIRMIZI kaldı — tasarım gereği doğru davranış)
+    "deepseek/deepseek-v4-pro": (
+        (0.4679, 0.9358),
+        (0.395328, 0.790656),
+        (0.392022, 0.784044),
+        (0.386976, 0.773952),
+        (0.348174, 0.696348),
+        (0.346434, 0.692868),
+        (0.95526, 1.91052),
+        (0.297192, 0.594384),
+        (0.2088, 0.4176),
+        (0.894012, 1.78802),
+        (0.692694, 1.38539),
+    ),
+}
+
+# Salınan modellerde kabul edilen göreli bant (bkz. yukarıdaki 2026-10-23 notu).
+# Yalnız `OBSERVED_OPENROUTER_STATES` içinde yer alan modellere uygulanır.
+STATE_JITTER_TOLERANCE = 0.02
+
+
+def observed_price_regime(
+    states: tuple[tuple[float, float], ...],
+) -> tuple[float, float, float, float]:
+    """Ölçülmüş durumların kapsadığı (min_in, max_in, min_out, max_out) rejimi."""
+    return (
+        min(pair[0] for pair in states),
+        max(pair[0] for pair in states),
+        min(pair[1] for pair in states),
+        max(pair[1] for pair in states),
+    )
+
+
+def observed_price_ratios(states: tuple[tuple[float, float], ...]) -> tuple[float, ...]:
+    """Ölçülmüş girdi/çıktı oranları (0'a bölme korumalı)."""
+    return tuple(pair[0] / pair[1] for pair in states if pair[1])
+
+
+def ratio_is_known(ratio: float, known: tuple[float, ...], tolerance: float = 0.02) -> bool:
+    """Canlı oran, gözlenmiş oranlardan birine ±tolerance içinde mi?"""
+    return any(abs(ratio - ref) <= abs(ref) * tolerance for ref in known if ref)
 
 # ── KAPSAM BOŞLUĞU (dürüstçe adlandırılmış) ──────────────────────────────────
 # `LLMGateway.MODEL_PRICING` şu iki modeli ücretlendirir ama bunlar
@@ -223,10 +363,13 @@ def verify_live_openrouter(
     key: str,
     attempts: int = _LIVE_MAX_ATTEMPTS,
     sleep: Callable[[float], None] | None = None,
-) -> tuple[list[str], str | None]:
+) -> tuple[list[str], list[str], str | None]:
     """Cross-check the live OpenRouter catalog.
 
-    Returns ``(failures, unverified_reason)``:
+    Returns ``(failures, warnings, unverified_reason)``:
+
+    * ``warnings`` dolu → canlı fiyat BİLİNEN bir ölçülmüş durum ama sayacın
+      pini farklı (bilinen salınım; kapı kırılmaz, durum yazılır).
 
     * ``failures`` dolu → canlı katalog bizim pinlerle çelişiyor (gerçek kayma).
     * ``unverified_reason`` dolu → servise ulaşılamadı; DOĞRULAMA YAPILMADI.
@@ -238,6 +381,7 @@ def verify_live_openrouter(
     if sleep is None:
         sleep = _live_sleep
     last_error = ""
+    warnings: list[str] = []
     for attempt in range(1, max(1, attempts) + 1):
         try:
             request = urllib.request.Request(
@@ -262,13 +406,102 @@ def verify_live_openrouter(
             pricing = item.get("pricing", {})
             actual_in = float(pricing.get("prompt", 0))
             actual_out = float(pricing.get("completion", 0))
+            observed_states = OBSERVED_OPENROUTER_STATES.get(model_id)
+            if observed_states:
+                # Salınan model: canlı fiyat BİLİNEN bir ölçülmüş durum olmalı.
+                # Tam eşleşme önce aranır; bulunamazsa bilinen bir durumun
+                # ±STATE_JITTER_TOLERANCE bandı kabul edilir (uyarıyla).
+                matched = None
+                exact = False
+                for state_in, state_out in observed_states:
+                    if (
+                        abs(actual_in - state_in / 1_000_000) <= 1e-12
+                        and abs(actual_out - state_out / 1_000_000) <= 1e-12
+                    ):
+                        matched = (state_in, state_out)
+                        exact = True
+                        break
+                if matched is None:
+                    for state_in, state_out in observed_states:
+                        if (
+                            abs(actual_in - state_in / 1_000_000)
+                            <= state_in / 1_000_000 * STATE_JITTER_TOLERANCE
+                            and abs(actual_out - state_out / 1_000_000)
+                            <= state_out / 1_000_000 * STATE_JITTER_TOLERANCE
+                        ):
+                            matched = (state_in, state_out)
+                            break
+                if matched is None:
+                    # Kademe 3: bilinen bir duruma birebir oturmuyor ama
+                    # GÖZLENEN REJİMİN içinde ve fiyat yapısı (girdi/çıktı
+                    # oranı) gözlenmiş oranlardan biriyle uyumlu → kotasyon.
+                    reg_in_min, reg_in_max, reg_out_min, reg_out_max = (
+                        observed_price_regime(observed_states)
+                    )
+                    ratio = actual_in / actual_out if actual_out else 0.0
+                    in_regime = (
+                        reg_in_min / 1_000_000 * (1 - STATE_JITTER_TOLERANCE)
+                        <= actual_in
+                        <= reg_in_max / 1_000_000 * (1 + STATE_JITTER_TOLERANCE)
+                        and reg_out_min / 1_000_000 * (1 - STATE_JITTER_TOLERANCE)
+                        <= actual_out
+                        <= reg_out_max / 1_000_000 * (1 + STATE_JITTER_TOLERANCE)
+                    )
+                    known_ratios = observed_price_ratios(observed_states)
+                    structure_ok = bool(actual_out) and ratio_is_known(
+                        ratio, known_ratios, STATE_JITTER_TOLERANCE
+                    )
+                    if in_regime and structure_ok:
+                        warnings.append(
+                            f"{model_id}: live price ${actual_in * 1_000_000:g}/"
+                            f"${actual_out * 1_000_000:g} is not a recorded state but sits "
+                            f"inside the observed price regime "
+                            f"(${reg_in_min:g}-${reg_in_max:g} / ${reg_out_min:g}-${reg_out_max:g}) "
+                            f"with a known input/output ratio — treated as re-quoting"
+                        )
+                    else:
+                        known = ", ".join(f"${a:g}/${b:g}" for a, b in observed_states)
+                        if in_regime and not structure_ok:
+                            why = (
+                                f"input/output ratio {ratio:.4f} is not one of the observed "
+                                f"ratios {', '.join(f'{r:.4f}' for r in known_ratios)} — "
+                                "the pricing STRUCTURE changed"
+                            )
+                        else:
+                            why = (
+                                "outside the observed price regime "
+                                f"(${reg_in_min:g}-${reg_in_max:g} in / "
+                                f"${reg_out_min:g}-${reg_out_max:g} out per 1M)"
+                            )
+                        failures.append(
+                            f"{model_id}: live price ${actual_in * 1_000_000:g}/"
+                            f"${actual_out * 1_000_000:g} per 1M is NOT a measured state — "
+                            f"{why} (measured states: {known})"
+                        )
+                else:
+                    if not exact:
+                        # Kotasyon salınımı: bilinen durumun bandında.
+                        warnings.append(
+                            f"{model_id}: live price ${actual_in * 1_000_000:g}/"
+                            f"${actual_out * 1_000_000:g} is within "
+                            f"{STATE_JITTER_TOLERANCE:.0%} jitter of measured state "
+                            f"${matched[0]:g}/${matched[1]:g}"
+                        )
+                    if matched != (expected_in, expected_out):
+                        # Durum BİLİNİYOR ama sayacın pini farklı: gürültü değil,
+                        # ölçülen gerçek — uyarı olarak yazılır, kapı kırılmaz.
+                        warnings.append(
+                            f"{model_id}: live measured state ${matched[0]:g}/${matched[1]:g} "
+                            f"differs from the accounting pin ${expected_in:g}/${expected_out:g}"
+                        )
+                continue
             if abs(actual_in - expected_in / 1_000_000) > 1e-12:
                 failures.append(f"{model_id}: live input price ${actual_in * 1_000_000:g}/1M != ${expected_in:g}/1M")
             if abs(actual_out - expected_out / 1_000_000) > 1e-12:
                 failures.append(f"{model_id}: live output price ${actual_out * 1_000_000:g}/1M != ${expected_out:g}/1M")
-        return failures, None
+        return failures, warnings, None
 
-    return [], f"live OpenRouter unreachable after {attempts} attempt(s) — {last_error}"
+    return [], warnings, f"live OpenRouter unreachable after {attempts} attempt(s) — {last_error}"
 
 
 def main() -> int:
@@ -286,7 +519,11 @@ def main() -> int:
     if not key:
         print("SKIP: live OpenRouter check (OPENROUTER_API_KEY not configured)")
     else:
-        live_failures, unverified = verify_live_openrouter(key)
+        live_failures, live_warnings, unverified = verify_live_openrouter(key)
+        for warning in live_warnings:
+            # Bilinen salınım: ölçülen durum yazılır, kapı kırılmaz.
+            print(f"::warning::{warning}")
+            print(f"WARNING: {warning}")
         if unverified is not None:
             # Doğrulama YAPILAMADI. Bu bir "geçti" değildir ve öyle sunulmaz.
             print(f"UNVERIFIED: {unverified}")

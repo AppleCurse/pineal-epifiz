@@ -63,8 +63,16 @@ class ResonanceSynthesizerAgent:
         rituals = self._as_list(profile.get("private_rituals") or ctx.get("rituals"))
         playlist = self._as_list(profile.get("late_night_playlist") or ctx.get("playlist"))
         envies = self._as_list(profile.get("secret_envies") or ctx.get("envies"))
+        outreach_intent = str(
+            payload.get("outreach_intent")
+            or payload.get("intent")
+            or payload.get("communication_goal")
+            or ""
+        ).strip()
 
         lines = []
+        if outreach_intent:
+            lines.append(f"İletişim Hedefi & Niyeti: {outreach_intent}")
         if bio:
             lines.append(f"Kullanıcı Biyografisi: {bio}")
         if posts:
@@ -77,7 +85,7 @@ class ResonanceSynthesizerAgent:
             lines.append(f"Gizli İmrendikleri: {', '.join(envies)}")
         if not lines:
             return ""
-        return "Kullanıcı Frekansı (kullanıcının kendi beyanı):\n" + "\n".join(lines)
+        return "Kullanıcı Frekansı ve İletişim Niyeti:\n" + "\n".join(lines)
 
     async def execute(self, payload: Dict[str, Any]) -> AuthenticBridge:
         passions_data = payload.get("passions", {})

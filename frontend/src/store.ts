@@ -116,10 +116,15 @@ if (typeof localStorage !== 'undefined') {
     try { localStorage.setItem('pineal_voice_enabled', v ? '1' : '0'); } catch (_e) {}
   });
 }
-export const activeViewMode = writable<'warroom' | 'cockpit'>(
-  (typeof localStorage !== 'undefined' && (localStorage.getItem('pineal_view_mode') as 'warroom' | 'cockpit')) || 'warroom'
+// [P6 · CANLI PANEL] Üçüncü görünüm: 'control' → LiveControlPanel (canlı
+// kontrol paneli). 'warroom' | 'cockpit' | 'control'.
+export type ViewMode = 'warroom' | 'cockpit' | 'control' | 'spiderfoot';
+export const activeViewMode = writable<ViewMode>(
+  (typeof localStorage !== 'undefined' && (localStorage.getItem('pineal_view_mode') as ViewMode)) || 'cockpit'
 );
 export const inspectedAgentId = writable<string | null>(null);
+export const activeTargetUrl = writable<string>('');
+export const missionElapsed = writable<string>('00:00');
 
 // Scraper vb. state'ler
 export const scrapedUsername = writable('');

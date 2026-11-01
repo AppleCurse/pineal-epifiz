@@ -17,7 +17,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent_core.capabilities.adapters_osint import _flag
+import shutil
+
+from agent_core.capabilities.adapters_osint import _flag, _module_available
 from agent_core.capabilities.base import (
     Availability,
     BaseCapability,
@@ -37,6 +39,16 @@ __all__ = [
 
 GATE_REASON = f"gate_disabled:{media_forensics.GATE}"
 MAX_LINES = 25
+
+
+def _check_deps(cap_id: str) -> Availability:
+    if cap_id == "sensor.media.fetch":
+        if not (shutil.which("yt-dlp") or _module_available("yt_dlp")):
+            return Availability.unavailable("dependency_missing:yt-dlp")
+    elif cap_id in {"analyzer.media.frames", "analyzer.media.similarity"}:
+        if not _module_available("cv2"):
+            return Availability.unavailable("dependency_missing:opencv")
+    return Availability.ok()
 
 
 def _gate() -> Availability | None:
@@ -89,7 +101,7 @@ class MediaFetchCapability(BaseCapability):
         blocked = _gate()
         if blocked:
             return blocked
-        return Availability.ok()
+        return _check_deps(self.id)
 
     async def run(self, ctx: CapabilityContext) -> CapabilityResult:
         source = _source_from(ctx)
@@ -142,7 +154,7 @@ class MediaFramesCapability(BaseCapability):
         blocked = _gate()
         if blocked:
             return blocked
-        return Availability.ok()
+        return _check_deps(self.id)
 
     async def run(self, ctx: CapabilityContext) -> CapabilityResult:
         path, reason, meta = await _resolve_path(ctx)
@@ -233,7 +245,7 @@ class MediaTranscriptCapability(BaseCapability):
         engine, reason = media_forensics.resolve_engine()
         if not engine:
             return Availability.unavailable(reason or "no_engine")
-        return Availability.ok()
+        return _check_deps(self.id)
 
     async def run(self, ctx: CapabilityContext) -> CapabilityResult:
         path, reason, meta = await _resolve_path(ctx)
@@ -288,7 +300,7 @@ class MediaSimilarityCapability(BaseCapability):
         blocked = _gate()
         if blocked:
             return blocked
-        return Availability.ok()
+        return _check_deps(self.id)
 
     async def run(self, ctx: CapabilityContext) -> CapabilityResult:
         path, reason, meta = await _resolve_path(ctx)

@@ -53,6 +53,15 @@ async def test_strata():
     assert len(r.drifts) == 4 and r.early_range and r.late_range
 
 @pytest.mark.asyncio
+async def test_strata_small_sample_is_weak_and_below_floor_is_insufficient():
+    r_too_few = await StrataEngine().analyze(data(n=5, gap=2))
+    assert r_too_few.status == EvidenceStatus.INSUFFICIENT_DATA
+    r_small = await StrataEngine().analyze(data(n=8, gap=4))
+    assert r_small.status == EvidenceStatus.WEAK
+    assert len(r_small.drifts) == 4
+    assert "düşük örneklem" in r_small.machine_note
+
+@pytest.mark.asyncio
 async def test_gravity():
     r = await GravityEngine(min_recurrence=2).analyze(data())
     assert r.wells and r.dominant_attractor

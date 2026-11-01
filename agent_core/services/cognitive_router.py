@@ -110,10 +110,8 @@ class CognitiveRouter:
             # /api/experimental/interpreter/execute when ENABLE_INTERPRETER=true
             # AND (optionally) when the same env is set we may still register it
             # for explicit experimental use — never auto-schedule on profile jobs.
-            import os
-            if os.getenv("ENABLE_INTERPRETER", "false").lower() == "true" and os.getenv(
-                "PINEAL_ROUTE_INTERPRETER", "false"
-            ).lower() == "true":
+            from agent_core.capabilities.state import flag_enabled as _flag_enabled
+            if _flag_enabled("ENABLE_INTERPRETER") and _flag_enabled("PINEAL_ROUTE_INTERPRETER"):
                 agents.append('interpreter')
                 reasoning.append("Serbest Görev Yorumlayıcısı (opt-in)")
         

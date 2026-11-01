@@ -129,8 +129,22 @@ def _atomic_write(task_id: str, data: Dict[str, Any]) -> None:
     with open(tmp, "w", encoding="utf-8") as fh:
         fh.write(payload)
         fh.flush()
-        os.fsync(fh.fileno())
-    os.replace(tmp, path)
+    try:
+        os.replace(tmp, path)
+    except PermissionError:
+        # Windows / OneDrive kilit gecikmesi (WinError 5): 50ms bekle ve tekrar dene
+        import time
+        time.sleep(0.05)
+        try:
+            os.replace(tmp, path)
+        except Exception:
+            # Doğrudan yazma fallback
+            with open(path, "w", encoding="utf-8") as f_dest:
+                f_dest.write(payload)
+            try:
+                os.remove(tmp)
+            except Exception:
+                pass
 
 
 def set_input(

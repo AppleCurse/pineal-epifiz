@@ -37,6 +37,7 @@ GENERATOR = REPO_ROOT / "scripts" / "generate_inventory_page.py"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 API = REPO_ROOT / "backend" / "api.py"
 LANGUAGE_ROUTES = REPO_ROOT / "backend" / "routes" / "language.py"
+COMPANY_ROUTES = REPO_ROOT / "backend" / "routes" / "company.py"
 SPEECH_AUDIO_ROUTES = REPO_ROOT / "backend" / "routes" / "speech_audio.py"
 
 
@@ -86,8 +87,8 @@ def test_category_b_paths_are_visible_in_the_page():
     """B listesindeki dosyalar sayfada GERÇEKTEN listelenir (ad + satır)."""
     gen = _load_generator()
     page = PAGE.read_text(encoding="utf-8")
-    assert len(gen.CATEGORY_B) >= 31, (
-        f"B listesi 31 dosyaydı, şimdi {len(gen.CATEGORY_B)}"
+    assert len(gen.CATEGORY_B) >= 26, (
+        f"B listesi 26 dosya (scripts/archive/ bilerek silindi), şimdi {len(gen.CATEGORY_B)}"
     )
     absent = [rel for rel in gen.CATEGORY_B if rel not in page]
     assert not absent, f"sayfada görünmeyen B dosyaları: {absent}"
@@ -128,6 +129,9 @@ def test_endpoint_rows_match_real_decorators():
     decorators = re.findall(r'@app\.(?:get|post|put|delete|patch|websocket)\("', API.read_text(encoding="utf-8"))
     decorators += re.findall(
         r'^\s*@app\.(?:get|post|put|delete|patch)\("', LANGUAGE_ROUTES.read_text(encoding="utf-8"), re.M
+    )
+    decorators += re.findall(
+        r'^\s*@app\.(?:get|post|put|delete|patch)\("', COMPANY_ROUTES.read_text(encoding="utf-8"), re.M
     )
     decorators += re.findall(
         r'^\s*@router\.(?:get|post|put|delete|patch)\("', SPEECH_AUDIO_ROUTES.read_text(encoding="utf-8"), re.M
@@ -300,12 +304,13 @@ def test_binary_files_carry_no_fake_line_count():
     bir metin izlenimi veriyor ve `toplam satır` istatistiğini şişiriyordu.
     """
     gen = _load_generator()
-    assert gen.is_binary_path("docs/pineal_envanter.zip") is True
-    assert gen.loc_of(REPO_ROOT / "docs" / "pineal_envanter.zip") == 0
+    assert gen.is_binary_path("frontend/src/assets/living_pineal_disk.png") is True
+    assert gen.is_binary_path("docs/pineal_envanter.zip") is True  # üretilirse ikili sayılır
+    assert gen.loc_of(REPO_ROOT / "frontend" / "src" / "assets" / "living_pineal_disk.png") == 0
     assert gen.is_binary_path("backend/routes/language.py") is False
 
     page = PAGE.read_text(encoding="utf-8")
-    for arsiv in ("docs/pineal_envanter.zip",):
+    for arsiv in ("frontend/src/assets/living_pineal_disk.png",):
         eslesme = re.search(
             re.escape(f'<span class="mono">{arsiv}</span>') + r'.*?<td class="loc">([^<]*)</td>',
             page,

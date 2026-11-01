@@ -350,7 +350,7 @@ class PinealViewModel(
         viewModelScope.launch {
             kotlinx.coroutines.delay(600)
 
-            val replyText = aspasiaEngine.generateResponse(
+            val reply = aspasiaEngine.generateResponse(
                 userMessage = text,
                 currentProfile = state.holisticProfile,
                 liveHypotheses = reconEngine.liveReconState.value,
@@ -359,9 +359,16 @@ class PinealViewModel(
                 language = state.language,
                 apiKey = state.apiKey
             )
+            // [2026-10-23] Yanıtın KAYNAĞI gizlenmez: sunucu yolu mu, cihaz
+            // üzerinden Gemini'ye geri düşüş mü, hiç yanıt yok mu.
+            val sourceNote = when (reply.source) {
+                "backend" -> "sunucu · ${reply.detail}"
+                "gemini-fallback" -> "cihaz üzerinden Gemini (sunucuya ulaşılamadı)"
+                else -> "yanıt yok"
+            }
             val aspasiaMsg = ChatMessage(
                 sender = "ASPASIA",
-                text = replyText
+                text = "${reply.text}\n\n— kaynak: $sourceNote"
             )
             _uiState.update {
                 it.copy(

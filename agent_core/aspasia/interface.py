@@ -10,13 +10,17 @@ Mimari sözleşme:
 """
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import contextlib
 import os
 import re
 import uuid
 from collections import deque
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Literal, Optional
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -42,14 +46,10 @@ def _status_value(status: Any) -> Any:
 
 
 def _normalize_target_url(url: Optional[str]) -> str:
-    """[FAZ 2] Paylasim artiklarini dusur, katiligi koru.
-
-    Mobil paylasim URL'leri (?igsh=, ?utm_source=, #fragman) ayni profile
-    isaret eder; _TARGET_RE eslesmesi oncesi dusurulur. Host/path kurali
-    DEGISMEZ: yalniz https + instagram.com|instagr.am + tek segment kabul
-    edilir (lookalike host ve hedefsiz komut yine reddedilir).
-    """
+    """[FAZ 2] Paylasim artiklarini dusur, katiligi koru."""
     candidate = (url or "").strip()
+    if candidate and "://" not in candidate and "." in candidate and "/" in candidate:
+        candidate = "https://" + candidate
     try:
         parts = urlsplit(candidate)
     except ValueError:
@@ -150,6 +150,11 @@ class RoutingInspector:
         }
 
 
+#: [P8] Sayfalı çağrı penceresinin üst sınırı (bir istek çok fazla kayıt
+#: çekmesin; çağrı günlüğü zaten 500 kayıtla sınırlı).
+_MAX_CALL_WINDOW = 200
+
+
 class TelemetryReader:
     """Bounded view over the gateway call log; no parallel telemetry store."""
 
@@ -168,8 +173,39 @@ class TelemetryReader:
         for record in list(getattr(self._gateway, "call_log", []))[-self._limit:]:
             if agent_id and record.get("agent_id") != agent_id:
                 continue
-            rows.append({k: record.get(k) for k in self._FIELDS if record.get(k) is not None})
+            rows.append(self._row(record))
         return rows
+
+    def _row(self, record: Dict[str, Any]) -> Dict[str, Any]:
+        """Tek çağrı kaydının GÖRÜNÜR alanları (ölçülmüş; alan yoksa yazılmaz)."""
+        return {k: record.get(k) for k in self._FIELDS if record.get(k) is not None}
+
+    def total(self) -> int:
+        """Günlükteki TOPLAM çağrı sayısı (sayfalama için; kırpılmamış)."""
+        return len(list(getattr(self._gateway, "call_log", [])))
+
+    def log_call_ids(self) -> set:
+        """Günlükteki TÜM çağrı kimlikleri (sayfalama bağı için)."""
+        return {
+            str(record.get("call_id"))
+            for record in list(getattr(self._gateway, "call_log", []))
+            if record.get("call_id")
+        }
+
+    def window(self, *, offset: int = 0, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Çağrı günlüğünün sayfalı penceresi (eskiden yeniye).
+
+        [P8 · CANLI PANEL] `call_log` 500 kayıtla sınırlıdır; panel önceden
+        yalnız son 40 kaydı görebiliyordu. `offset`/`limit` ile geçmişe
+        gidilebilir — **kayıt UYDURULMAZ**, sadece pencerenin kaymasıdır.
+        """
+        log = list(getattr(self._gateway, "call_log", []))
+        size = self._limit if limit is None else int(limit)
+        size = max(0, min(size, _MAX_CALL_WINDOW))
+        off = max(0, int(offset))
+        end = max(0, len(log) - off)
+        start = max(0, end - size)
+        return [self._row(record) for record in log[start:end]]
 
     def anomalies(self) -> Dict[str, Any]:
         out: Dict[str, Any] = {"fallbacks": [], "substitution_denials": [], "model_mismatches": []}
@@ -202,6 +238,64 @@ class TelemetryReader:
                 out["model_mismatches"].append({"requested": requested, "actual": actual,
                                                 "provider": record.get("provider")})
         return out
+
+
+class CallBinder:
+    """`run.call_ids` ↔ gateway `call_log` bağlayıcısı (kimlik uzayı TEK).
+
+    Çağrı kimliği uzayı TEK yerdedir: gateway `call_id`. Koşu kaydındaki
+    `run.call_ids` ile çağrı günlüğündeki `call_id` AYNI kimliklerdir; aradaki
+    bağ sunucu tarafında kurulur — panel "hangi ajan hangi çağrıyı yaptı"
+    sorusunu gözlemek zorunda kalmaz.
+
+    Görünür pencerede olmayan koşu çağrıları SAYILIR ve sebebi yazılır
+    (call_log üst sınırı + okuma penceresi). Hiçbir kimlik/çağrı UYDURULMAZ.
+    """
+
+    def __init__(self, telemetry: Any):
+        self._telemetry = telemetry
+
+    def bind(
+        self,
+        run_view: Dict[str, Any],
+        *,
+        offset: int = 0,
+        limit: Optional[int] = None,
+    ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        """Çağrı satırlarını bağlar + bağlama özetini döner.
+
+        [P8] Üç ayrı küme KARIŞTIRILMAZ:
+          * `bound_call_count`  — çağrı kimliği **günlükte** (call_log) var mı?
+          * `page_call_count`   — **bu sayfada** görünen çağrı sayısı
+          * `missing_call_ids`  — günlükte HİÇ olmayan kimlik (üst sınır 500
+            nedeniyle düşen kayıt) → gerçek kopukluk, sebebi yazılır.
+        Sayfada olmayan ama günlükte olan kimlikler `page_missing_call_ids`
+        ile ayrılır (panelde "başka sayfada" olarak işaretlenir).
+        """
+        calls = self._telemetry.window(offset=offset, limit=limit)
+        id_to_agents: Dict[str, List[str]] = {}
+        for agent_name, run_row in ((run_view or {}).get("runs") or {}).items():
+            for call_id in (run_row or {}).get("call_ids") or []:
+                id_to_agents.setdefault(str(call_id), []).append(agent_name)
+        for row in calls:
+            row["bound_agents"] = id_to_agents.get(str(row.get("call_id")), [])
+        run_call_ids = set(id_to_agents.keys())
+        in_log = self._telemetry.log_call_ids()
+        in_page = {str(row.get("call_id")) for row in calls}
+        missing = sorted(run_call_ids - in_log)
+        binding = {
+            "run_call_count": len(run_call_ids),
+            "bound_call_count": len(run_call_ids & in_log),
+            "missing_call_ids": missing,
+            "missing_reason": (
+                "call_log üst sınırı (500 kayıt) nedeniyle günlükten düştü"
+                if missing else None
+            ),
+            "page_call_count": len(in_page),
+            "page_missing_call_ids": sorted((run_call_ids & in_log) - in_page),
+            "log_total": self._telemetry.total(),
+        }
+        return calls, binding
 
 
 class QuotaReader:
@@ -321,9 +415,19 @@ class AgentInspector:
             "planned": snapshot.get("planned_agents") or [],
             "completed": snapshot.get("completed_agents") or [],
             "current": snapshot.get("current_agent"),
+            # [P6 · CANLI PANEL] Koşu başına çağrı kimlikleri de taşınır:
+            # çağrı izi (gateway call_log) ile koşu arasındaki BAĞLAYICI
+            # `run.call_ids` -> `call_id` eşleşmesidir. Kimlik uzayı TEK
+            # yerdedir (gateway `call_id`); paralel kimlik üretilmez.
             "runs": {
-                name: {"status": run.get("status") if isinstance(run, dict) else
-                       getattr(run, "status", None)}
+                name: {
+                    "status": run.get("status") if isinstance(run, dict) else
+                              getattr(run, "status", None),
+                    "call_ids": list(
+                        (run.get("call_ids") if isinstance(run, dict)
+                         else getattr(run, "call_ids", None)) or []
+                    ),
+                }
                 for name, run in (snapshot.get("agent_runs") or {}).items()
             },
         }
@@ -348,19 +452,29 @@ class AspasiaIntent(BaseModel):
     goals: List[Literal[_GOAL_IDS]] = Field(default_factory=list)
 
 
-# Hedef dogrulama: yalnizca mevcut scraper sozlesmesinin gercek host'lari.
-# (Ornek-uydurmama doktrini [009]: placeholder veri ASLA uretilmez.)
-_TARGET_RE = re.compile(r"^https://(www\.)?(instagram\.com|instagr\.am)/[A-Za-z0-9._@-]{1,64}/?$")
+# Hedef dogrulama: desteklenen tum sosyal medya / profil platformlarinin gercek host'lari.
+# (Ornek-uydurmama doktrini [009]: placeholder veri ve lookalike alan adlari ASLA gecmez.)
+_TARGET_RE = re.compile(
+    r"^https://([a-z0-9-]+\.)?("
+    r"instagram\.com|instagr\.am|x\.com|twitter\.com|linkedin\.com|"
+    r"facebook\.com|fb\.com|tiktok\.com|youtube\.com|threads\.net|"
+    r"github\.com|reddit\.com|pinterest\.com|twitch\.tv|t\.me|"
+    r"telegram\.me|vk\.com|medium\.com|snapchat\.com|steamcommunity\.com|"
+    r"linktr\.ee|behance\.net|dribbble\.com"
+    r")(/[A-Za-z0-9._@%-]{1,64}){1,2}/?$"
+)
 
 _GOAL_DOC = "\n".join(f'- "{g}": {", ".join(agents)}' for g, agents in GOAL_FOCUS.items())
 
 _INTENT_INSTRUCTION = (
     "Kullanicinin cumlesini siniflandir. Yalniz su niyetler gecerlidir:\n"
-    '- "run_profile_analysis": kullanici belirli bir Instagram profilini inceletmek istiyor '
-    've mesajda acik bir profil URL\'i var -> target_url alanina BIREBIR URL yaz.\n'
+    '- "run_profile_analysis": kullanici belirli bir sosyal medya profilini (Instagram, X/Twitter, '
+    'LinkedIn, Facebook, TikTok, YouTube, Threads, GitHub, Reddit, Telegram vb.) inceletmek istiyor '
+    've mesajda acik bir profil URL\'i, alan adi (orn. instagram.com/kullanici) veya acik bir @kullanici_adi var -> '
+    'target_url alanina tam https://... profil URL\'ini yaz (yalniz @kullanici_adi verilmisse https://www.instagram.com/kullanici_adi/ olarak yaz).\n'
     '- "explain_status": kullanici sistem/ajan/analiz durumu hakkinda bilgi istiyor.\n'
     '- "none": hicbiri.\n'
-    "URL mesajda ACIKCA yoksa uydurma; intent='none' dondur.\n\n"
+    "Mesajda acik bir URL veya @kullanici_adi YOKSA kesinlikle isim/URL uydurma; target_url=null ve intent='none' dondur.\n\n"
     "goals: kullanicinin AMACINI tasir; AJAN ISMI YAZMAZSIN. Gecerli goal id'leri "
     "(baska isim UYDURMA; message'da acik karsiligi yoksa hic goal ekleme):\n"
     + _GOAL_DOC + "\n"
@@ -449,7 +563,8 @@ class AspasiaCommandGateway:
         # [FAZ 2] Eslesme normalize URL uzerinden (?igsh=/fragment dusmus);
         # dispatch'e de normalize URL gider (asagi akis ayni hedefi gorur).
         url = _normalize_target_url(intent.target_url)
-        if not _TARGET_RE.match(url):
+        from agent_core.services.profile_router import classify_url
+        if not _TARGET_RE.match(url) or not classify_url(url).runnable:
             self._record(command_id=command_id, status="rejected", intent=intent.intent,
                          reason="unsupported_or_missing_target")
             return AspasiaCommandResult(command_id=command_id, accepted=False,
@@ -740,8 +855,10 @@ def build_oversight_digest(
                 + (f" indirim={selected.get('discount_pct')}%" if selected.get("discount_pct") else "")
                 + fact_suffix
             )
-    except Exception:  # pragma: no cover
-        pass
+    except Exception as exc:  # pragma: no cover
+        logger.warning(
+            "[build_oversight_digest] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+        )
     try:
         anomalies = TelemetryReader(gateway).anomalies()
         counts = {k: len(v) for k, v in anomalies.items()}
@@ -759,8 +876,10 @@ def build_oversight_digest(
                 + "' saglayici dondurdu='" + str(denial.get("actual_model"))
                 + "' (" + str(denial.get("provider")) + ") — ikame reddedildi, zincir durdu"
             )
-    except Exception:  # pragma: no cover
-        pass
+    except Exception as exc:  # pragma: no cover
+        logger.warning(
+            "[build_oversight_digest] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+        )
     try:
         snap = CostReader(gateway).snapshot()
         if "error" not in snap:
@@ -769,8 +888,10 @@ def build_oversight_digest(
                 f"MALİYET: harcama=${snap.get('spend_usd', 0):.4f} rezerve=${snap.get('reserved_usd', 0):.4f} "
                 f"limit={'sinirsiz' if not snap.get('cap_usd') else '$%.2f' % snap.get('cap_usd', 0)}"
             )
-    except Exception:  # pragma: no cover
-        pass
+    except Exception as exc:  # pragma: no cover
+        logger.warning(
+            "[build_oversight_digest] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+        )
     try:
         quotas = []
         for provider in ("groq", "cerebras"):
@@ -783,8 +904,10 @@ def build_oversight_digest(
             ))
         if quotas and has_content:
             lines.append("KOTA: " + " | ".join(quotas))
-    except Exception:  # pragma: no cover
-        pass
+    except Exception as exc:  # pragma: no cover
+        logger.warning(
+            "[build_oversight_digest] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+        )
     try:
         # ROUTING-HARDENING: saglayici saglik devresi gorunur (gateway'in kendi
         # durumu okunur; yeni store yok). Bos ise satir eklenmez — gurultu yok.
@@ -795,8 +918,10 @@ def build_oversight_digest(
                 has_content = True
                 lines.append("SAĞLIK: " + " | ".join(
                     f"{p} cooldown={s:.0f}s" for p, s in sorted(cooling.items())))
-    except Exception:  # pragma: no cover
-        pass
+    except Exception as exc:  # pragma: no cover
+        logger.warning(
+            "[build_oversight_digest] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+        )
     if executor is not None:
         try:
             status = AgentInspector(executor).run_status(room_state)
@@ -852,8 +977,10 @@ def build_oversight_digest(
                         "HAFIZA-DISK: " + (" | ".join(chunks) if chunks else "kayıt-yok")
                         + suffix + " (RAM boş; diskten okundu)"
                     )
-        except Exception:  # pragma: no cover
-            pass
+        except Exception as exc:  # pragma: no cover
+            logger.warning(
+                "[build_oversight_digest] beklenmeyen hata (Exception) yutulmadı — iz bırakıldı: %s", exc, exc_info=True
+            )
     if command_gateway is not None:
         for entry in command_gateway.audit()[-3:]:
             has_content = True

@@ -1,0 +1,43 @@
+# ============================================================================
+# REQUIREMENTS-BLOCKED.TXT
+#
+# 9 hâlâ kapalı yeteneğin PIP-KURULABİLEN Python bağımlılıkları.
+# Sistem seviyesindeki araçlar (ffmpeg, theHarvester, piper, whisper CLI,
+# agent-reach npm, SearXNG Docker) bu dosyada YOK — onlar için
+# docs/reports/REMEDIYASYON.md'ye bakın.
+#
+# Kurulum:
+#   pip install -r requirements.txt
+#   pip install -r requirements-osint.txt
+#   pip install -r requirements-retina.txt
+#   pip install -r requirements-blocked.txt
+# ============================================================================
+
+# --- extractor.media.transcript: whisper CLI için openai-whisper -----------
+# (ffmpeg de gerektirir — sistem seviyesinde kurmalısınız)
+openai-whisper>=20240924
+
+# --- extractor.text.translate_local: trans CLI için -------------------------
+translate-cli>=1.0.0
+
+# --- renderer.report.video: ffmpeg Python wrapper (sistem ffmpeg gerekli) --
+ffmpeg-python>=0.2.0
+
+# --- sensor.web.agent_reach: Python paket değil, harici CLI ----------------
+# agent-reach PyPI'de ilgisiz bir paket; npm agent-reach da başka proje.
+# PINEAL_AGENT_REACH_CMD ile manuel path gösterin. Burada yok.
+
+# --- voice.stt.local: whisper CLI (aynı openai-whisper üstte) --------------
+# zaten üstte listelendi
+
+# --- voice.tts.local: piper Python yok; piper CLI sistem seviyesinde -------
+# piper GitHub releases'dan binary indirin: https://github.com/rhasspy/piper
+
+# --- sensor.ig.instagrapi: zaten requirements-retina.txt'te ---------------
+# instagrapi>=2.0.0 (zaten kurulu olabilir)
+
+# --- sensor.company.harvester: theHarvester PyPI paketi boş ---------------
+# Docker veya GitHub kaynağıyla kurulur; PINEAL_HARVESTER_CMD ile path gösterin.
+
+# --- sensor.search.searxng: ayrı servis, Python paketi yok ----------------
+# Docker searxng/searxng; SEARXNG_BASE_URL env ile path gösterin.

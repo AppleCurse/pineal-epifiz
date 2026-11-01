@@ -100,12 +100,10 @@ def availability() -> dict[str, tuple[bool, str]]:
 
 
 def _module_available(name: str) -> bool:
-    import importlib.util
+    """Tek kaynak: `optional_deps.module_available` (noktalı ad güvenli)."""
+    from agent_core.utils.optional_deps import module_available
 
-    try:
-        return importlib.util.find_spec(name) is not None
-    except Exception:
-        return False
+    return module_available(name)
 
 
 @dataclass

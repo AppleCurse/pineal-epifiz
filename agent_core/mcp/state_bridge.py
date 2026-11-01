@@ -60,7 +60,7 @@ _vault_cache: dict[str, tuple[float, bool, str]] = {}
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     """Yönlendirmeyi reddeder: yerel uç uzak adrese yönlendirip veri çıkaramaz."""
 
-    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D102
+    def redirect_request(self, req, fp, code, msg, headers, _newurl):  # noqa: D102
         raise urllib.error.HTTPError(req.full_url, code, "yönlendirme reddedildi", headers, fp)
 
 

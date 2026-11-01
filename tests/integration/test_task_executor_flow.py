@@ -88,13 +88,15 @@ async def test_execute_task_full_flow(executor):
     assert isinstance(status, TaskSnapshot)
     assert status.status == "completed"
     assert status.task_id == "task_1"
-    # 3 rota ajanı + 7-sütun + evidence adapter + neutral timeline + depth.
+    # 3 rota ajanı + 7-sütun + evidence adapter + neutral timeline + depth
+    # + life_rupture.
     # Empty evidence and its empty timeline are both explicit chain records.
     chain_agents = [record["agent"] for record in status.evidence_chain]
-    assert len(chain_agents) == 7, chain_agents
+    assert len(chain_agents) == 8, chain_agents
     assert chain_agents.count("psychodynamic_depth") == 1
     assert chain_agents.count("pineal_7pillar") == 1
     assert chain_agents.count("pillar_evidence_adapter") == 1
+    assert chain_agents.count("life_rupture") == 1
     adapter_record = next(
         record for record in status.evidence_chain
         if record["agent"] == "pillar_evidence_adapter"
@@ -115,7 +117,21 @@ async def test_execute_task_full_flow(executor):
                  "gravity_map", "pulse_map", "key_matrix"):
         assert pillars[name] is not None, f"{name} mühürde yok"
     assert pillars["version"] == "pillar-full-v1"
-    
+
+    # [LIFE-RUPTURE] Boylamsal katman gerçek yürütme akışında çağrılır ve
+    # sonucu görev sözleşmesine yazılır. Teşhis YOK: kök neden UNKNOWN.
+    assert status.life_rupture is not None
+    assert status.life_rupture["root_cause"] == "UNKNOWN"
+    assert status.life_rupture["schema_version"] == "life-rupture-v1"
+    assert str(status.life_rupture["report_id"]).startswith("lr_")
+    assert status.life_rupture["cluster_state"] in (
+        "DETECTED", "CANDIDATE", "INSUFFICIENT_EVIDENCE",
+        "NO_SIGNIFICANT_CLUSTER", "CONFOUNDED",
+    )
+    life_record = next(r for r in status.evidence_chain if r["agent"] == "life_rupture")
+    assert life_record["result"]["schema_version"] == "life-rupture-v1"
+    assert "evidence_timeline_entry_count" in life_record
+
     # Ensure memory was updated
     executor.memory.merge_evidence.assert_called_once()
     
@@ -132,8 +148,11 @@ async def test_execute_task_halt_low_confidence(executor):
     status = await executor.execute_task(input_data, "task_2")
     
     assert status.status == "halted_evidence"
-    # Raw pillar plus canonical-evidence and neutral-timeline records.
-    assert len(status.evidence_chain) == 3
+    # Raw pillar + canonical evidence + neutral timeline + LIFE-RUPTURE record.
+    # [LIFE-RUPTURE] Uzunlamasına katman bilerek eklendi: sapma iddiası
+    # üretilmese bile "ölçüldü/ölçülemedi" kaydı zincirde durur.
+    assert len(status.evidence_chain) == 4
+    assert [r["agent"] for r in status.evidence_chain].count("life_rupture") == 1
     
 @pytest.mark.asyncio
 async def test_execute_task_suspicious_research(executor):
@@ -171,8 +190,10 @@ async def test_execute_task_frequency_mismatch(executor):
     status = await executor.execute_task(input_data, "task_4")
     
     assert status.status == "halted_frequency"
-    # Three routed outputs plus raw pillar, canonical evidence, and timeline.
-    assert len(status.evidence_chain) == 6
+    # Three routed outputs + raw pillar + canonical evidence + timeline
+    # + LIFE-RUPTURE (deliberate: longitudinal layer is always sealed).
+    assert len(status.evidence_chain) == 7
+    assert [r["agent"] for r in status.evidence_chain].count("life_rupture") == 1
 
 
 @pytest.mark.asyncio
@@ -542,3 +563,310 @@ async def test_executor_records_tier2_allowlist_without_expanding_b6_timeline(
         for item in input_data["evidence_timeline"]["entries"]
     )
     assert input_data.get("message_evidence_context") is None
+
+
+@pytest.mark.asyncio
+async def test_executor_collects_dated_frames_for_lifecycle_layer(executor):
+    """[KARE HATTI] Havuz özeti yetmez: her gönderi TARİHLİ kare üretmeli.
+
+    Kare hattı yaşam kırılması katmanının tek zamanlı görsel kaynağıdır.
+    Kanıtsız provenance ``unknown`` kalır → habitat/bakış açılmaz (uydurma yok).
+    """
+    import base64
+    import io
+    from datetime import datetime, timedelta, timezone
+
+    from PIL import Image
+
+    from agent_core.lifecycle.observation_adapter import ObservationAdapter
+
+    t0 = datetime(2022, 3, 1, tzinfo=timezone.utc)
+    profile = {
+        "bio": "test",
+        "username": "@fixture",
+        "posts": ["gönderi 0", "gönderi 1"],
+        "post_times": [t0.isoformat(), (t0 + timedelta(days=30)).isoformat()],
+        "images": ["https://cdn.example.com/0.jpg", "https://cdn.example.com/1.jpg"],
+        "post_evidence_types": ["platform_post", "platform_post"],
+    }
+
+    def _png(rgb):
+        buffer = io.BytesIO()
+        Image.new("RGB", (48, 48), rgb).save(buffer, format="PNG")
+        return base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+    async def _fetch(url):
+        colour = (240, 240, 240) if url.endswith("0.jpg") else (10, 10, 12)
+        return {"status": "downloaded", "b64": _png(colour), "sha256": "x", "bytes": 10}
+
+    executor.vision_analyzer = MagicMock()
+    executor.vision_analyzer.fetch_image_record = _fetch
+    executor.vision_analyzer.analyze_images = AsyncMock(side_effect=RuntimeError("no llm"))
+
+    input_data = {"target_profile": profile}
+    status = await executor.execute_task(input_data, "task_frames")
+
+    frames = (status.visual_evidence or {}).get("frames") or []
+    assert len(frames) == 2
+    assert [frame["capture_class"] for frame in frames] == ["unknown", "unknown"]
+    assert all(frame["visual_stats"]["brightness"] >= 0.0 for frame in frames)
+
+    observations = ObservationAdapter().transform(
+        None, visual_evidence=status.visual_evidence
+    )
+    signal_ids = {observation.signal_id for observation in observations}
+    assert "media.frame_brightness" in signal_ids
+    assert not [signal_id for signal_id in signal_ids if signal_id.startswith("habitat.")]
+
+    # Kare kanıtı yaşam kırılması raporuna da yansır (ölçüldü/ölçülemedi farkı).
+    assert status.life_rupture is not None
+    assert status.life_rupture["root_cause"] == "UNKNOWN"
+
+
+@pytest.mark.asyncio
+async def test_executor_investigates_frame_gaps_and_records_once(executor):
+    """[SORUŞTURMA] Ölçüm boşluğu varsa İKİNCİ bakış denenir; sessiz kapanmaz.
+
+    Kare örneklemi ilk turda tavana takılır (12). Soruşturma daha geniş
+    örneklem ister, gelen kareler birleşir ve rapor tek kez kurulur — zincire
+    mükerrer ``life_rupture`` kaydı DÜŞMEZ.
+    """
+    import base64
+    import io
+    from datetime import datetime, timedelta, timezone
+
+    from PIL import Image
+
+    t0 = datetime(2021, 1, 1, tzinfo=timezone.utc)
+    count = 20
+    profile = {
+        "bio": "test",
+        "username": "@fixture",
+        "posts": [f"gönderi {index}" for index in range(count)],
+        "post_times": [(t0 + timedelta(days=20 * index)).isoformat() for index in range(count)],
+        "images": [f"https://cdn.example.com/{index}.jpg" for index in range(count)],
+        "post_evidence_types": ["platform_post"] * count,
+    }
+
+    def _png(shade):
+        buffer = io.BytesIO()
+        value = 40 + (shade % 6) * 35
+        Image.new("RGB", (48, 48), (value, value, value)).save(buffer, format="PNG")
+        return base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+    async def _fetch(url):
+        index = int(url.rsplit("/", 1)[-1].split(".")[0])
+        return {"status": "downloaded", "b64": _png(index), "sha256": f"s{index}", "bytes": 10}
+
+    executor.vision_analyzer = MagicMock()
+    executor.vision_analyzer.fetch_image_record = _fetch
+    executor.vision_analyzer.analyze_images = AsyncMock(side_effect=RuntimeError("no llm"))
+
+    status = await executor.execute_task({"target_profile": profile}, "task_investigation")
+
+    investigation = status.investigation
+    assert investigation is not None, "kare boşluğu varken soruşturma kaydı beklenir"
+    assert investigation["questions"], "boşluk soruya çevrilmeden kapanmış görünmemeli"
+    # İlk tur 12 kareyle sınırlıydı; soruşturma örneklemi genişletti.
+    frames = (status.visual_evidence or {}).get("frames") or []
+    assert len(frames) == count
+    assert investigation["extra_frame_count"] > 0
+    assert [r["agent"] for r in status.evidence_chain].count("life_rupture") == 1
+    assert status.life_rupture["root_cause"] == "UNKNOWN"
+
+    # Kareler RAPORA ulaşmalı: yalnız durum nesnesinde kalan kanıt, raporda
+    # "görsel kare yok" diye okunur (gerçek hata buydu).
+    record = next(r for r in status.evidence_chain if r["agent"] == "life_rupture")
+    coverage = {row["signal_id"]: row for row in record["result"]["data_coverage"]}
+    assert "media.frame_brightness" in coverage
+    assert coverage["media.frame_brightness"]["comparison_observations"] > 0
+    # Soruşturma sonucu raporda görünür — kapanmayan soru sessizce yutulmaz.
+    assert record["result"]["diagnostics"]["investigation"]["question_count"] > 0
+    assert any(
+        str(unknown).startswith("soruşturma açık: ") for unknown in record["result"]["unknowns"]
+    ), "soruşturma boşlukları rapora yazılmalı"
+
+
+@pytest.mark.asyncio
+async def test_executor_asks_model_only_at_change_points_and_keeps_inference_separate(executor):
+    """[KADEME 2] Model etiketi ÖLÇÜM alanına yazılmaz; ritüel sözlüğünü beslemez.
+
+    Ölçüm (tier-1) ile iddia (tier-2) ayrı defterlerde yaşar. Etiket
+    ``detected_objects``e yazılsaydı, model halüsinasyonu "ritüel kayboldu"
+    iddiasına dönüşürdü.
+    """
+    import base64
+    import io
+    from datetime import datetime, timedelta, timezone
+
+    from pydantic import BaseModel
+    from PIL import Image
+
+    t0 = datetime(2021, 1, 1, tzinfo=timezone.utc)
+    count = 8
+    profile = {
+        "posts": [f"gönderi {index}" for index in range(count)],
+        "post_times": [(t0 + timedelta(days=30 * index)).isoformat() for index in range(count)],
+        "images": [f"https://cdn.example.com/{index}.jpg" for index in range(count)],
+        "post_evidence_types": ["platform_post"] * count,
+    }
+
+    def _png(value):
+        buffer = io.BytesIO()
+        Image.new("RGB", (48, 48), (value, value, value)).save(buffer, format="PNG")
+        return base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+    async def _fetch(url):
+        index = int(url.rsplit("/", 1)[-1].split(".")[0])
+        value = 240 if index < count // 2 else 12
+        return {"status": "downloaded", "b64": _png(value), "sha256": f"s{index}", "bytes": 10}
+
+    class _Labels(BaseModel):
+        labels: list = []
+
+    vision_calls: list[str] = []
+
+    async def _query_json(**kwargs):
+        vision_calls.append(kwargs.get("model"))
+        return _Labels(
+            labels=[
+                {"label": "kitchen table", "kind": "object"},
+                {"label": "yalnız adam", "kind": "object"},  # teşhis sızmaz
+            ]
+        )
+
+    executor.vision_analyzer = MagicMock()
+    executor.vision_analyzer.fetch_image_record = _fetch
+    executor.vision_analyzer.analyze_images = AsyncMock(side_effect=RuntimeError("no llm"))
+    executor.llm_gateway.capable_chain = MagicMock(return_value=["model_a", "model_b"])
+    executor.llm_gateway.query_json = AsyncMock(side_effect=_query_json)
+
+    status = await executor.execute_task({"target_profile": profile}, "task_semantics")
+
+    # Model YALNIZ değişim noktalarına soruldu (tüm karelere değil) ve
+    # İKİ FARKLI modele soruldu (bağımsızlık gerçek olmalı).
+    frames = (status.visual_evidence or {}).get("frames") or []
+    assert len(frames) == count
+    assert set(vision_calls) == {"model_a", "model_b"}
+    assert max(vision_calls.count(model) for model in set(vision_calls)) <= 4
+    # Etiketler çıkarım defterinde; teşhis etiketi reddedildi.
+    labels = [row["label"] for row in status.semantic_inferences]
+    assert set(labels) == {"kitchen table"}
+    assert len({row["frame_id"] for row in status.semantic_inferences}) == len(labels)
+    assert status.semantic_inferences[0]["counts_toward_cluster"] is False
+    # ÖLÇÜM alanı boş kaldı: modele yazdırılmadı.
+    assert all(frame["detected_objects"] == [] for frame in frames)
+
+    # İki model aynı etiketi verdi → mutabakat: ritüel sözlüğünün tek kaynağı.
+    # Yalnız DEĞİŞİM NOKTALARINDAKİ kareler etiketlidir (maliyet duvarı).
+    labelled = [frame for frame in frames if frame.get("corroborated_objects")]
+    assert labelled, "mutabakat etiketi kareye yazılmalı"
+    assert all(frame["corroborated_objects"] == ["kitchen table"] for frame in labelled)
+    assert len(labelled) <= 4
+    assert all(frame["detected_objects"] == [] for frame in frames)  # ölçüm alanı TEMİZ
+
+    record = next(r for r in status.evidence_chain if r["agent"] == "life_rupture")
+    assert record["result"]["semantic_inference_count"] == len(labels)
+    assert record["result"]["corroborated_labels"], "mutabakat rapora yazılmalı"
+    assert record["result"]["corroborated_signal_count"] > 0
+    assert record["result"]["evidence_grade_counts"].get("corroborated", 0) > 0
+    assert any("kanıt dereceleri" in str(unknown) for unknown in record["result"]["unknowns"]), (
+        "hangi sinyalin araç ölçümü, hangisinin mutabakat olduğu raporda yazılmalı"
+    )
+    assert record["result"]["semantic_inferences_count_toward_cluster"] is False
+    assert any("model çıkarımıdır" in str(unknown) for unknown in record["result"]["unknowns"])
+
+
+@pytest.mark.asyncio
+async def test_executor_semantic_failure_does_not_fabricate_labels(executor):
+    """Model çökerse etiket UYDURULMAZ; sebep yazılır."""
+    import base64
+    import io
+    from datetime import datetime, timedelta, timezone
+
+    from PIL import Image
+
+    t0 = datetime(2021, 1, 1, tzinfo=timezone.utc)
+    profile = {
+        "posts": ["a", "b", "c"],
+        "post_times": [(t0 + timedelta(days=30 * i)).isoformat() for i in range(3)],
+        "images": [f"https://cdn.example.com/{i}.jpg" for i in range(3)],
+        "post_evidence_types": ["platform_post"] * 3,
+    }
+    buffer = io.BytesIO()
+    Image.new("RGB", (48, 48), (100, 100, 100)).save(buffer, format="PNG")
+    encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+    async def _fetch(url):
+        return {"status": "downloaded", "b64": encoded, "sha256": "x", "bytes": 10}
+
+    executor.vision_analyzer = MagicMock()
+    executor.vision_analyzer.fetch_image_record = _fetch
+    executor.vision_analyzer.analyze_images = AsyncMock(side_effect=RuntimeError("no llm"))
+    executor.llm_gateway.capable_chain = MagicMock(return_value=["model_a", "model_b"])
+    executor.llm_gateway.query_json = AsyncMock(side_effect=RuntimeError("provider down"))
+
+    status = await executor.execute_task({"target_profile": profile}, "task_semantics_fail")
+
+    assert status.semantic_inferences == []
+    problems = (status.visual_evidence or {}).get("semantic_problems") or []
+    assert any("semantic_call_failed" in problem for problem in problems)
+    assert all(frame["detected_objects"] == [] for frame in (status.visual_evidence or {}).get("frames") or [])
+
+
+@pytest.mark.asyncio
+async def test_same_model_twice_never_becomes_consensus(executor):
+    """Tek model iki kez = TEKRAR, mutabakat değil. Ritüel ekseni AÇILMAZ."""
+    import base64
+    import io
+    from datetime import datetime, timedelta, timezone
+
+    from pydantic import BaseModel
+    from PIL import Image
+
+    t0 = datetime(2021, 1, 1, tzinfo=timezone.utc)
+    count = 5
+    profile = {
+        "posts": [f"gönderi {index}" for index in range(count)],
+        "post_times": [(t0 + timedelta(days=30 * index)).isoformat() for index in range(count)],
+        "images": [f"https://cdn.example.com/{index}.jpg" for index in range(count)],
+        "post_evidence_types": ["platform_post"] * count,
+    }
+    buffer = io.BytesIO()
+    Image.new("RGB", (48, 48), (120, 120, 120)).save(buffer, format="PNG")
+    encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+    async def _fetch(url):
+        return {"status": "downloaded", "b64": encoded, "sha256": "x", "bytes": 10}
+
+    class _Labels(BaseModel):
+        labels: list = []
+
+    calls: list[str] = []
+
+    async def _query_json(**kwargs):
+        calls.append(kwargs.get("model"))
+        return _Labels(labels=[{"label": "kitchen table", "kind": "object"}])
+
+    executor.vision_analyzer = MagicMock()
+    executor.vision_analyzer.fetch_image_record = _fetch
+    executor.vision_analyzer.analyze_images = AsyncMock(side_effect=RuntimeError("no llm"))
+    # Tek yetenekli model: ikinci geçiş YAPILMAZ (uydurma bağımsızlık yok).
+    executor.llm_gateway.capable_chain = MagicMock(return_value=["model_a"])
+    executor.llm_gateway.query_json = AsyncMock(side_effect=_query_json)
+
+    status = await executor.execute_task({"target_profile": profile}, "task_single_model")
+
+    assert set(calls) == {"model_a"}
+    frames = (status.visual_evidence or {}).get("frames") or []
+    assert all(not frame.get("corroborated_objects") for frame in frames)
+    consensus = (status.visual_evidence or {}).get("semantic_consensus") or {}
+    assert consensus["diagnostics"]["corroborated_count"] == 0
+    assert any("insufficient_independent_views" in problem for problem in consensus["problems"])
+
+    record = next(r for r in status.evidence_chain if r["agent"] == "life_rupture")
+    assert record["result"]["corroborated_signal_count"] == 0
+    assert record["result"]["corroborated_labels"] == []
+    # İddia yine de kaydedilir — ama çıkarım olarak, kanıt olarak değil.
+    assert status.semantic_inferences
+    assert all(row["counts_toward_cluster"] is False for row in status.semantic_inferences)

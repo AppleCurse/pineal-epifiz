@@ -3,6 +3,11 @@ package com.example.pineal.engine
 import com.example.pineal.data.model.HolisticProfile
 import com.example.pineal.i18n.AppLanguage
 import com.example.pineal.engine.gemini.*
+import com.example.pineal.engine.backend.BackendClient
+import com.example.pineal.engine.backend.ChatReply
+import com.example.pineal.engine.backend.CoachHypothesis
+import com.example.pineal.engine.backend.CoachProfileContext
+import com.example.pineal.engine.backend.CoachRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import android.graphics.Bitmap
@@ -19,9 +24,28 @@ class AspasiaChatEngine {
         imageBitmap: Bitmap?,
         language: AppLanguage,
         apiKey: String
-    ): String = withContext(Dispatchers.IO) {
+    ): ChatReply = withContext(Dispatchers.IO) {
+        // [2026-10-23] ÖNCE SUNUCU: istem sunucuda kurulur, kasa/maliyet/kota
+        // ve telemetri devrede kalır. Anahtar cihazda tutulmaz.
+        val backendReply = tryBackend(
+            userMessage = userMessage,
+            currentProfile = currentProfile,
+            liveHypotheses = liveHypotheses,
+            hasImage = hasImage,
+            imageBitmap = imageBitmap,
+            language = language
+        )
+        if (backendReply != null) {
+            return@withContext backendReply
+        }
+        // Sunucu yoksa/yanıt vermezse: dürüst geri düşüş. Anahtar yoksa
+        // "çalışıyor" numarası yapılmaz — kaynak ve sebep açıkça söylenir.
         if (apiKey.isBlank()) {
-            return@withContext if (language == AppLanguage.TR) "API Anahtarı eksik." else "API Key is missing."
+            val msg = if (language == AppLanguage.TR)
+                "Sunucuya ulaşılamadı ve cihazda API anahtarı yok. Sunucuyu çalıştırın ya da ayarlardan anahtar girin."
+            else
+                "Backend unreachable and no on-device API key. Start the backend or set a key in settings."
+            return@withContext ChatReply(text = msg, source = "unavailable")
         }
 
         val hypothesesStr = if (liveHypotheses.isEmpty()) "Canlı hipotez yok." else liveHypotheses.joinToString("\n") { "- [${it.status}] ${it.psychologicalTrait}: ${it.forensicImplication} (Kanıt: ${it.extractedEvidence})" }
@@ -104,9 +128,71 @@ class AspasiaChatEngine {
             } else {
                 RetrofitClient.service.generateContentPro(apiKey, request) // Pro mode for better strategic reasoning
             }
-            apiResponse.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: "Bilinmeyen yanıt."
+            val text = apiResponse.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+                ?: if (language == AppLanguage.TR) "Model boş yanıt döndürdü." else "Model returned an empty answer."
+            ChatReply(text = text, source = "gemini-fallback", detail = "backend unreachable")
         } catch (e: Exception) {
-            "Error: ${e.message}"
+            ChatReply(
+                text = if (language == AppLanguage.TR)
+                    "Yanıt alınamadı: ${e.message}"
+                else
+                    "No answer: ${e.message}",
+                source = "gemini-fallback",
+                detail = e::class.java.simpleName
+            )
+        }
+    }
+
+    /**
+     * Sunucu yolunu dener. Başarısızsa NULL döner — çağıran geri düşüşü
+     * KENDİSİ raporlar (sessiz yutma yok).
+     */
+    private suspend fun tryBackend(
+        userMessage: String,
+        currentProfile: HolisticProfile?,
+        liveHypotheses: List<ForensicHypothesis>,
+        hasImage: Boolean,
+        imageBitmap: Bitmap?,
+        language: AppLanguage
+    ): ChatReply? {
+        return try {
+            val context = currentProfile?.let {
+                CoachProfileContext(
+                    username = it.username,
+                    communication_tone = it.cognitive.communicationTone,
+                    core_passions = it.passions.corePassions,
+                    narcissism = it.shadowProfile.darkProfile.narcissism.level,
+                    machiavellianism = it.shadowProfile.darkProfile.machiavellianism.level,
+                    psychopathy = it.shadowProfile.darkProfile.psychopathy.level,
+                    manipulation_strategy = it.shadowProfile.strategy,
+                    suggested_opening_message = it.bridge?.suggestedOpeningMessage
+                )
+            }
+            val hypotheses = liveHypotheses.take(12).map {
+                CoachHypothesis(
+                    status = it.status,
+                    trait = it.psychologicalTrait,
+                    evidence = it.extractedEvidence
+                )
+            }
+            val imageBase64 = if (hasImage && imageBitmap != null) {
+                val outputStream = ByteArrayOutputStream()
+                imageBitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
+                Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
+            } else null
+
+            val reply = BackendClient.api.coach(
+                CoachRequest(
+                    user_message = userMessage,
+                    language = if (language == AppLanguage.TR) "tr" else "en",
+                    profile_context = context,
+                    hypotheses = hypotheses,
+                    image_data = imageBase64
+                )
+            )
+            ChatReply(text = reply.answer, source = reply.source, detail = reply.model ?: "")
+        } catch (e: Exception) {
+            null
         }
     }
 }

@@ -10,6 +10,7 @@
 
 ## Anahtarlar (`.env` veya UI Kasası)
 - `OPENROUTER_API_KEY` + `LIVE_LLM_E2E=1` → canlı bulut LLM.
+- **9Router kipinde kasa anahtarı — `sk-pineal` önek şartı (M-3):** `OPENROUTER_BASE_URL` içinde `20128` varsa `/api/vault` yalnızca `NINEROUTER_API_KEY` / `PINEAL_LLM_API_KEY` / `OPENROUTER_API_KEY` **ortam değişkenindeki** anahtarı, **ve bu anahtar `sk-pineal` ile başlıyorsa** kullanır; aksi halde kasa (vault) anahtarı tercih edilir (`backend/api.py:1231-1240`). Yani sıradan `sk-...` ile başlayan bir 9Router anahtarı **kasadan girildiğinde 9Router yolu seçilmez** — somut tuzak. Çözüm: anahtarı `NINEROUTER_API_KEY` ortam değişkeniyle verin ya da `sk-pineal` önekli bir anahtar kullanın. **[P4 · 2026-10-16] kod yoluyla ölçüldü; canlı 9Router çağrısı DOĞRULANMADI (egress kapalı).**
 - Yerel: `USE_LOCAL_LLM=true`, `LOCAL_LLM_URL=http://localhost:11434/v1`, `LOCAL_LLM_MODEL=...` (anahtar gerekmez).
   Not: API sunucusunda Kasa'daki "yerel model" seçimi (`use_local`) bu env'i ezer; env varsayılanı yalnız Kasa seçimi yapılmamışsa geçerlidir.
 - `TAVILY_API_KEY`, `SERPAPI_API_KEY`, `EXA_API_KEY` → AutonomousVerifier web doğrulaması (yoksa DuckDuckGo + SearXNG yedeği).
@@ -246,6 +247,7 @@ Sistem sağlığı ve 7 rotanın canlılığı `scripts/preflight_9router.py` il
 - `osint_investigator`: `pineal-osint-pipeline` (yedek: `(pipeline)`) — *Not: Pineal iç arama ve web kazıma orkestrasyonudur (`SearchEngine` + Tavily/SerpAPI). 9Router combo'su değildir.*
 - `authenticity_auditor`: `pineal-vision` (yedek: `(forensic)`)
 - `depth_analyst`: `pineal-deep-reasoning` (yedek: `(combo)`)
+- `dialogue_manager`: **9Router kanonik zinciri YOK (M-1)** — `LLMGateway.NINEROUTER_AGENT_CHAINS` (20 ajan) içinde bulunmadığı için 9Router kipinde `config/task_routing.json`'daki **bulut** model-id'lerine düşer (`openai/gpt-oss-120b`, `poolside/laguna-s-2.1:free`); yerel hub bu id'leri tanımaz. Görev yürütücüsünde çağıran yoktur (`config/agent_tiers.json`: "DORMANT: no gateway callers"), ancak `/api/chat/respond` yolu `dialogue_manager.llm` üzerinden çağırır. Zinciri 9Router kipinde de kanonik tutmak için: `OPENROUTER_AGENT_CHAIN_DIALOGUE_MANAGER=pineal-fast-extract,pineal-general-reasoning` (env override; `llm_gateway.py:760-766`). **[P4 · 2026-10-16] kod yoluyla ölçüldü (zincir çözümü `9router_canonical` DEĞİL, `task_routing`); canlı 9Router çağrısı DOĞRULANMADI.**
 
 ## Aspasia komut katmanı (ASPASIA-PROMOTION)
 Aspasia merkezi doğal-dil arayüzüdür; **orchestrator değildir.** Görev
@@ -264,7 +266,10 @@ yaratma/planlama politikası değişmedi: plan = `CognitiveRouter`, yürütme =
   `/api/initiate` ile birebir aynı akışı çağırır (rate limit, lifecycle,
   mission_tasks). Ajan listesi/model/quota niyete yazılamaz — şema reddeder.
 - **Uçlar:** `POST /api/aspasia/command` (komut), `GET /api/aspasia/state`
-  (salt-okur denetim görünümü). `chat()` sözleşmesi (AspasiaResponse, pin,
+  (salt-okur denetim görünümü; **[P7]** artık `calls` (cagri izi) ve
+  `call_binding` (kosu cagri kimligi bagi + pencere disi sayimi) da yayinliyor;
+  `WS snapshot_update` de `channel_status` tasiyor → "hangi modul nerede
+  calisiyor" anlik gorunur). `chat()` sözleşmesi (AspasiaResponse, pin,
   image_data) geriye dönük uyumludur; DENETİM KATMANI bloğu yalnız gerçek
   içerik varsa prompt'a eklenir.
 - **Amaç (goal) katmanı — TRUE CHIEF LAYER:** sozluk TEK kaynak
@@ -285,6 +290,45 @@ yaratma/planlama politikası değişmedi: plan = `CognitiveRouter`, yürütme =
   `accepted && task_id` varsa gorev kartina baglanir, degilse chat fallback.
   Yapilandirilmis form (URL/ritual) bilincli olarak `/api/initiate`'te kalir:
   programatik giris Aspasia'siz olabilir, KULLANICI dogal dili olamaz.
+  **[P7 · 2026-10-18] Bu madde artık KODDA GERCEK: onceki donemde yalnizca
+  BELGEDE yaziliydi (kod yalniz `/api/aspasia/chat` cagriyordu) — "belge koddan
+  once" yaziyordu. Duzeltme: `AtlasPinealCockpit.svelte:729/:791`. Kabul
+  edilmezse sebep loglanir ve sohbete dusulur; SAHTE "emir alindi" metni
+  uretilmez.**
+- **[P7 · 2026-10-18] Canli kontrol paneli** (`frontend/src/components/LiveControlPanel.svelte`,
+  `App.svelte:440` ile bagli; `store.ts:121` `ViewMode='control'`): ajan hatti
+  (kuyruk + anlik ajan) · anlik kanal ve "hangi ajan nereyi kaziyor" ·
+  muhakeme (karar/gerekce/sorumluluk) · toplanan bilgi (kanit akisi) · cagri izi
+  (`call_id → ajan → model → ms → $`). Veri kaynagi: WS `snapshot_update` +
+  `GET /api/aspasia/state`. **Olcum yoksa sebebiyle birlikte "YETERSIZ KANIT"
+  yazar**; ornek/elle veri YOK. Cagri kimligi bagi `run.call_ids` ↔ gateway
+  `call_log` uzerinden kurulur (`interface.py:207 CallBinder`); pencere disindaki
+  cagrilar SAYILIR ve sebebi yazilir.
+- **[P8 · 2026-10-18] Canli kontrol paneli — "en donanimli" surum**
+  (`frontend/src/components/LiveControlPanel.svelte`, 920 satir, 6 blok):
+  1) AJAN HATTI (kuyruk + anlik ajan) · 2) ANLIK KANAL + **SIRADAKI AJAN** +
+  **NE KAZILIYOR** (canli ajanin URL girdisi) · 3) MUHAKEME (karar/güven/model/
+  sorumluluk/cagri kimlikleri + **CIKTI `output_summary` satir satir**) ·
+  4) TOPLANAN BILGI (**kanit zinciri ajan→kanit GRUPLU** + kanal yapisi) ·
+  5) CAGRI IZI (**sayfali**: `← DAHA ESKI` · `DAHA YENI →` · `CANLIYA DON`) ·
+  6) AJAN DETAYI (secili ajanin tam dokumu). Ayrica **metin + durum filtresi**
+  ve **ajan secimi** (`selectedAgent` → canli ajan → kuyrugun ilk ajani).
+  Olcum yoksa `YETERSIZ KANIT` + **sebep**; ornek/elle veri YOK.
+  Veri kaynagi: WS `snapshot_update`/`result` + `GET /api/aspasia/state`.
+- **[P8 · 2026-10-18] Cagri izi sayfalamasi + bag ayrimi:** durum ucu
+  `GET /api/aspasia/state?client_id=…&offset=…&limit=…` kabul eder; yanit
+  `call_window` (`offset`/`limit`/`total`) ve `call_binding` (`bound_call_count`
+  = günlükte var mi · `page_call_count` = bu sayfada kaç · `page_missing_call_ids`
+  = başka sayfada · `missing_call_ids` = günlükte HIC yok, `missing_reason` ile)
+  döner. Kayit **UYDURULMAZ** — pencere kayar.
+- **[P8 · 2026-10-18] Canli komut dongusu dogrulama komutu:**
+  `python scripts/verify_command_loop.py --url <profil-url> [--base-url ...]`
+  → `komut → görev → ajan → kanit → cagri izi` zincirini gercek API'ye karsi
+  kosturur ve **ham ciktiyi** basar. Cikis kodu: `0` kanitlandi · `1` dongu
+  KIRIK (sebeple) · `2` on kosul saglanmadi (API'ye ulasilamadi) · `Ctrl-C` →
+  `DOGRULANMADI`. Kanit zinciri icin WS yakalamasi `websockets` paketine baglidir
+  (prod imajinda kurulu — `Dockerfile:41`; CI'da kurulu DEGIL → betik bunu
+  acikca yazar ve WS'siz de calisir).
 - **Extension noktasi (simdilik YOK):** cancel/halt intent'leri —
   lifecycle.terminate'a baglanacak; bu fazda kasten yok.
 

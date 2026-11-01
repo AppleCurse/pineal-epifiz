@@ -1,8 +1,8 @@
 services:
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    # Redis is an internal service. Do not publish 6379 on the host;
+    # access it from other Compose services via redis:6379.
     volumes:
       - pineal_redis:/data
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
@@ -44,33 +44,20 @@ services:
   # [AUDIT 2026-10-07 · Madde 3] BU SERVİSLER ANALİZ YÜRÜTMEZ.
 
   #
-
   # Eski adları `agent-*` idi ve "12 bağımsız ajan servisi" diye
-
   # belgelenmişti; bu, her konteynerin kendi başına analiz çalıştırdığı
-
   # izlenimini veriyordu. GERÇEK: analizleri `PinealExecutor` SÜREÇ İÇİNDE
-
   # (in-process) yürütür; bu konteynerler yalnızca "yuva boşta ve canlı"
-
   # sinyalini KENDİ kanallarına (`pineal:agent:beacon`) yayınlar.
-
   #
-
   # Eski kod ayrıca her 30 saniyede bir koşulsuz `Ready` basıyordu; yani
-
   # hiçbir ajan çalışmadan operasyonel durum UYDURUYORDU. Artık ajan durum
-
   # kanalına (`pineal:agent:status`) YAZILMAZ, dolayısıyla yürütücünün
-
   # yazdığı gerçek Active/Ready/Done/Error geçişleri de EZİLMEZ.
-
-  # Ayrıntı: agent_core/workers/agent_worker.py (modül docstring'i).
-
   #
-
+  # Ayrıntı: agent_core/workers/agent_worker.py (modül docstring'i).
+  #
   # Aynı imaj, farklı AGENT_ID env ile çalışır.
-
   # Her biri Redis Pub/Sub üzerinden durum yayınlar: Ready/Active/Wait
   # Backend /api/agents/status üzerinden de POST edebilirler
   # Aynı imaj, farklı AGENT_ID env ile çalışır
