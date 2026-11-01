@@ -71,5 +71,8 @@ backups/
 
 # [AUDIT 2026-10-07] Denetim doğrulama ortamı (yerel; üretime girmez)
 .venv-audit/
+.venv_audit/
+tools/
+models/
 # [temizlik] Eski envanter arşivi (4 MB, bayat anlık görüntü): üretilirse izlenmez.
 docs/pineal_envanter.zip
