@@ -12,7 +12,6 @@ Komutan & Ajan Konseyi Modülü — POST /api/commander/dispatch & POST /api/com
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import logging
@@ -25,7 +24,6 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from agent_core.agents.lilith_growth import LilithGrowthAgent
-from agent_core.services.llm_gateway import LLMGateway
 
 logger = logging.getLogger(__name__)
 
