@@ -867,7 +867,7 @@ class PinealExecutor:
         result = await run_investigation(
             first_pass,
             probes=probes,
-            config=InvestigationConfig(max_questions=4, max_rounds=1, question_timeout_seconds=50.0),
+            config=InvestigationConfig(max_questions=4, max_rounds=3, question_timeout_seconds=50.0),
             questions=questions,
         )
 
