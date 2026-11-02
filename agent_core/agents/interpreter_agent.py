@@ -21,7 +21,7 @@ class InterpreterResult(BaseModel):
     prompt: str
     code_blocks: List[str] = []
     output: str = ""
-    status: str = "success"  # "success", "error", "halted"
+    status: str = "empty_response"  # No execution success without independent evidence
     error_message: Optional[str] = None
     
     model_config = ConfigDict(extra="forbid")
@@ -85,21 +85,29 @@ class InterpreterAgent:
                 messages = interpreter.chat(prompt, display=False)
                 output_text = ""
                 code_list = []
+                saw_execution_output = False
                 for msg in messages:
                     if msg.get("type") == "code":
                         code_list.append(msg.get("code", ""))
                     if msg.get("type") == "output":
+                        saw_execution_output = True
                         output_text += msg.get("output", "") + "\n"
                     elif msg.get("content"):
                         output_text += str(msg.get("content")) + "\n"
-                return code_list, output_text.strip()
+                return code_list, output_text.strip(), saw_execution_output
 
-            code_blocks, output = await asyncio.to_thread(_run)
+            code_blocks, output, saw_execution_output = await asyncio.to_thread(_run)
+            # Provider messages do not independently prove an execution result.
+            if saw_execution_output:
+                status = "execution_unknown"
+            elif any(str(code).strip() for code in code_blocks):
+                status = "code_proposed"
+            elif output:
+                status = "response_received"
+            else:
+                status = "empty_response"
             return InterpreterResult(
-                prompt=prompt,
-                code_blocks=code_blocks,
-                output=output or "İşlem tamamlandı.",
-                status="success"
+                prompt=prompt, code_blocks=code_blocks, output=output, status=status,
             )
         except Exception as e:
             return InterpreterResult(

@@ -4852,17 +4852,17 @@ async def interpreter_execute(req: InterpreterPayload):
             detail="ENABLE_INTERPRETER açık ama ajan bu odada kayıtlı değil.",
         )
         
-    broadcast_log(req.client_id, "INFO", f"INTERPRETER: Görev icra ediliyor -> {req.prompt[:60]}...")
+    broadcast_log(req.client_id, "INFO", "INTERPRETER: Yanıt isteniyor; icra henüz doğrulanmadı.")
     res = await interpreter_agent.execute_task(
         prompt=req.prompt,
         api_key=executor.llm_gateway.api_key,
         auto_run=req.auto_run
     )
     
-    if res.status == "success":
-        broadcast_log(req.client_id, "INFO", "INTERPRETER: İcra başarıyla tamamlandı.")
+    if res.status == "error":
+        broadcast_log(req.client_id, "ERROR", "INTERPRETER: Yanıt alınamadı.")
     else:
-        broadcast_log(req.client_id, "ERROR", f"INTERPRETER HATA: {res.error_message}")
+        broadcast_log(req.client_id, "INFO", f"INTERPRETER: Yanıt durumu {res.status}; icra doğrulanmadı.")
         
     return res.model_dump()
 
