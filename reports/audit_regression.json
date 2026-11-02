@@ -57,7 +57,7 @@
       "evidence": [
         "satır başı `import httpx` (egress dışı) → 0 dosya (denetim 8 idi)",
         "egress dışı `httpx.AsyncClient(` inşası → 0 nokta (deterministik tarama)",
-        "omurgaya bağlı dosya (open_client kullanan) → 18 dosya",
+        "omurgaya bağlı dosya (open_client kullanan) → 19 dosya",
         "agent_core/capabilities/egress.py:123: def open_client("
       ],
       "note": "Dışa çıkış tek sırtta: inşa yalnız open_client, her dosya omurgaya bağlı.",
@@ -87,7 +87,7 @@
       "status": "closed",
       "evidence": [
         "agent_core/agents/human_behavior.py: `input_data: Dict[str, Any]` imzası kalkmış",
-        "agent_core toplam: 203"
+        "agent_core toplam: 208"
       ],
       "note": "Payload Pydantic modele bağlanmış.",
       "regression": false
@@ -405,12 +405,12 @@
       "check_kind": "static",
       "status": "closed",
       "evidence": [
-        "frontend/src/components/AtlasPinealCockpit.svelte:166: const INSUFFICIENT_EVIDENCE = 'YETERSİZ KANIT';",
-        "frontend/src/components/AtlasPinealCockpit.svelte:157: function hasEvidence(value: unknown): boolean {",
+        "frontend/src/components/AtlasPinealCockpit.svelte:117: const INSUFFICIENT_EVIDENCE = 'YETERSİZ KANIT';",
+        "frontend/src/components/AtlasPinealCockpit.svelte:119: function hasEvidence(val: any): boolean {",
         "`INSUFFICIENT_EVIDENCE` kullanımı → 17 satır",
-        "`hasEvidence(...)` kapısı → 17 satır",
+        "`hasEvidence(...)` kapısı → 26 satır",
         "CANLI dolgu kalıbı (yorum olmayan satırda) → 0 (yok)",
-        "kalıbın geçtiği tek yer: kaldırılmış kusuru anlatan AÇIKLAMA YORUMU → 2 satır"
+        "kalıbın geçtiği tek yer: kaldırılmış kusuru anlatan AÇIKLAMA YORUMU → 0 satır"
       ],
       "note": "E6: null/undefined/boş metin/NaN/boş dizi 'kanıt yok' sayılıyor ve alan `YETERSİZ KANIT` etiketi + `evidence-insufficient` sınıfıyla basılıyor; graf kanıt yoksa boş kalıyor (uydurma yok).",
       "regression": false

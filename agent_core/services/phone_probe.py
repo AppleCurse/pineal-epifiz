@@ -22,7 +22,8 @@ import logging
 import re
 import time
 from typing import Any, Dict, List
-import httpx
+
+from agent_core.capabilities.egress import open_client
 from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
@@ -157,7 +158,12 @@ async def _search_web_footprint(query_variants: List[str]) -> List[Dict[str, Any
         return hits
 
     try:
-        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+        async with open_client(
+            purpose="probe",
+            target=url,
+            timeout=8.0,
+            follow_redirects=True,
+        ) as client:
             resp = await client.post(url, data={"q": primary_query}, headers=headers)
             if resp.status_code == 200:
                 html = resp.text
