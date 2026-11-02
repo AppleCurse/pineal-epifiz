@@ -32,6 +32,7 @@ kendisi bu pencereyi tek başına kapatmaz, GİZLEMEZ.
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import os
@@ -228,6 +229,33 @@ def persist_status(snapshot: Any, *, owner: Optional[str] = None) -> None:
                     data["owner"] = owner
 
             update(task_id, _merged)
+
+
+def archive_before_resume(task_id: str, expected_status: Dict[str, Any], previous_run_id: Optional[str]) -> str:
+    """Archive the current snapshot before resume, or fail closed.
+
+    This uses the checkpoint's existing process-local write lock; it is not a
+    cross-worker claim or a substitute for durable multi-process transactions.
+    """
+    attempt_id = uuid.uuid4().hex
+
+    def _archive(data: Dict[str, Any]) -> None:
+        if data.get("status") != expected_status:
+            raise CheckpointError("checkpoint changed before resume")
+        version = data.get("attempt_history_version", 1)
+        history = data.get("attempt_history", [])
+        if version != 1 or not isinstance(history, list) or len(history) >= 100:
+            raise CheckpointError("unsupported or full attempt history")
+        data["attempt_history_version"] = 1
+        data["attempt_history"] = history + [{
+            "attempt_id": attempt_id,
+            "previous_run_id": previous_run_id,
+            "archived_at": datetime.now(timezone.utc).isoformat(),
+            "snapshot": copy.deepcopy(expected_status),
+        }]
+
+    update(task_id, _archive)
+    return attempt_id
 
 
 def resolved_record_valid(entry: Dict[str, Any]) -> bool:

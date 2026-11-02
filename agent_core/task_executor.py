@@ -67,6 +67,7 @@ from agent_core.domain.memory_models import (
     TaskSnapshot,
 )
 from agent_core.domain.pipeline_status import PipelineStatus
+from agent_core.domain.task_execution_state import COMPLETION_POLICY, constrain_completion
 from agent_core.config_loader import DecisionConfig
 from agent_core.services.canonical_memory import MemoryCorruptedError, MemoryState
 from agent_core.services.claim_decision_gate import (
@@ -2392,6 +2393,17 @@ class PinealExecutor:
                         self._snapshot(status)
                         continue
 
+                # A provider response or proposed code is not an observed execution.
+                if agent_name == "interpreter":
+                    provider_error = getattr(result, "status", None) == "error"
+                    run.status = "failed" if provider_error else "unavailable"
+                    run.error_code = "INTERPRETER_PROVIDER_ERROR" if provider_error else "INTERPRETER_EXECUTION_UNCONFIRMED"
+                    run.completed_at = datetime.now(timezone.utc)
+                    run.output_summary = result.model_dump()
+                    self._rack_update(agent_name, "wait")
+                    self._snapshot(status)
+                    continue
+
                 check = self.uncertainty.evaluate(result, agent_name)
                 if agent_name == "autonomous_verifier" and (
                     getattr(result, "data_confidence", True) is False
@@ -3192,31 +3204,41 @@ class PinealExecutor:
             # motorundan ÖNCE). Eski sondaki blok KALDIRILDI: çıktı
             # input_data'ya yazılmadığı için kullanılamıyordu.
 
-            # Determine final status via DecisionEngine
-            final_status = self.decision_engine.make_decision(status.agent_runs)
+            # DecisionEngine returns a pipeline status, not a domain decision.
+            final_status = constrain_completion(
+                self.decision_engine.make_decision(status.agent_runs),
+                task_id, status.planned_agents, status.agent_runs,
+            )
             status.status = final_status
-            
+            # Resumed snapshots can contain earlier attempts; do not certify them.
+            if resume_from is None and final_status == PipelineStatus.COMPLETED:
+                status.completion_policy = COMPLETION_POLICY
+
             if final_status == PipelineStatus.PARTIALLY_COMPLETED:
-                failed_agents = [name for name, run in status.agent_runs.items() if run.status in ("failed", "halted")]
-                self._log("WARNING", f"[{task_id}] TAMAMLANDI (KISMİ). Başarısız ajanlar: {', '.join(failed_agents)}")
+                self._log("WARNING", f"[{task_id}] GÖREV KISMİ SONLANDI.")
+            elif final_status == PipelineStatus.COMPLETED and status.completion_policy == COMPLETION_POLICY:
+                self._log("INFO", f"[{task_id}] PLANLANAN KOŞULAR SONLANDI. Kanıt adımı: {len(status.evidence_chain)}")
+            elif final_status == PipelineStatus.COMPLETED:
+                self._log("WARNING", f"[{task_id}] GÖREV SONLANDI: önceki koşuların tamamlanma kanıtı belirsiz.")
             else:
-                self._log("INFO", f"[{task_id}] TAMAMLANDI. Kanıt adımı: {len(status.evidence_chain)}")
-                
+                self._log("WARNING", f"[{task_id}] GÖREV SONLANDI: {final_status.value}")
+
             status.completed_at = datetime.now(timezone.utc)
             await self._merge_task_memory(task_id, status)
             self._snapshot(status)
-            
-            # P0-FIX: Gercek SHA-256 kanit hash'i ve gercek sure (ms)
-            import hashlib, json as _json
-            _chain_bytes = _json.dumps(status.evidence_chain, default=str, sort_keys=True).encode()
-            _real_hash = hashlib.sha256(_chain_bytes).hexdigest()
-            _duration_ms = int((datetime.now(timezone.utc) - _task_wall_start).total_seconds() * 1000)
-            self._emit(TaskCompletedEvent(
-                task_id=task_id,
-                agent_name="PinealExecutor",
-                final_result_hash=_real_hash,
-                duration_ms=_duration_ms
-            ))
+
+            # A terminal halt or partial attempt is not a TaskCompleted event.
+            if final_status == PipelineStatus.COMPLETED and status.completion_policy == COMPLETION_POLICY:
+                import hashlib, json as _json
+                _chain_bytes = _json.dumps(status.evidence_chain, default=str, sort_keys=True).encode()
+                _real_hash = hashlib.sha256(_chain_bytes).hexdigest()
+                _duration_ms = int((datetime.now(timezone.utc) - _task_wall_start).total_seconds() * 1000)
+                self._emit(TaskCompletedEvent(
+                    task_id=task_id,
+                    agent_name="PinealExecutor",
+                    final_result_hash=_real_hash,
+                    duration_ms=_duration_ms
+                ))
         except InsufficientEvidenceError as e:
             self._log("ERROR", "[" + task_id + "] KANIT KILIDI: " + str(e))
             status.status = "halted_evidence"

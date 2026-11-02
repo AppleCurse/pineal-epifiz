@@ -148,13 +148,15 @@
     const planCount = $taskStatus?.planned_agents?.length || 12;
     const tName = $taskStatus?.target_profile?.name || $taskStatus?.target_profile?.username || targetUrl || $activeTargetUrl || '';
 
-    if ($isProcessing || st === 'running' || st === 'processing' || anyActiveAgentKey) {
+    if (st === 'running' || st === 'processing' || (!st && ($isProcessing || anyActiveAgentKey))) {
       const step = cur || activeLabel || 'Kazı & Analiz Sürüyor';
       return `⚡ ŞU AN ÇALIŞIYOR: ${tName ? `[${tName}] · ` : ''}${step} (${doneCount}/${planCount} tamamlandı)`;
     }
-    if (st && (st === 'completed' || st === 'partially_completed')) {
-      return `SON İŞLEM TAMAMLANDI ${tName ? `(${tName})` : ''} — İstihbarat raporları hazır.`;
-    }
+    if (st === 'partially_completed') return 'GÖREV KISMİ SONLANDI — tüm koşular tamamlanmadı.';
+    if (st === 'completed' && $taskStatus?.task_outcome === 'completed') return 'PLANLANAN KOŞULAR BİTTİ — karar durumu BELİRSİZ.';
+    if (st === 'completed') return 'GÖREV SONLANDI — tamamlanma kanıtı BELİRSİZ.';
+    if (st === 'timed_out') return 'GÖREV ZAMAN AŞIMINA UĞRADI.';
+    if (st.startsWith('halted') || st === 'failed') return 'GÖREV DURDU.';
     return 'HAZIR — Hedef girin, ajana görev verin veya komutan yetkisiyle kanıt mühürleyin.';
   })();
 

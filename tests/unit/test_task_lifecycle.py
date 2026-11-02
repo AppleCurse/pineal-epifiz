@@ -239,3 +239,43 @@ def test_dev_redis_import_failure_degrades_visibly(monkeypatch, caplog):
             )
         )
     assert "DEGRADED_MODE" in caplog.text
+
+
+def test_timeout_and_partial_are_distinct_terminal_states():
+    lifecycle = TaskLifecycleRegistry()
+    timeout = lifecycle.transition("timeout", "timed_out")
+    partial = lifecycle.transition("partial", "partially_completed")
+    assert timeout.state.value == "TIMED_OUT"
+    assert partial.state.value == "PARTIALLY_COMPLETED"
+    assert not lifecycle.transition("timeout", "processing").accepted
+    assert not lifecycle.transition("partial", "completed").accepted
+
+
+def test_resume_starts_a_new_run_without_rewriting_terminal_identity():
+    lifecycle = TaskLifecycleRegistry()
+    first = lifecycle.record_event(_started("resume-task")).envelope
+    lifecycle.transition("resume-task", "halted_evidence")
+    terminal = lifecycle.get_run("resume-task")
+    assert not lifecycle.transition("resume-task", "processing").accepted
+    assert lifecycle.reopen("resume-task", "processing").accepted
+    resumed = lifecycle.get_run("resume-task")
+    assert resumed["run_id"] != terminal["run_id"] == first.run_id
+    assert terminal["state"] == "HALTED"
+
+
+def test_new_attempt_accepts_same_start_event_under_new_run_id():
+    lifecycle = TaskLifecycleRegistry()
+    first = lifecycle.record_event(_started('repeatable')).envelope
+    lifecycle.transition('repeatable', 'halted_evidence')
+    lifecycle.reopen('repeatable', 'processing')
+    second = lifecycle.record_event(_started('repeatable'))
+    assert second.accepted
+    assert second.envelope.run_id != first.run_id
+    assert second.envelope.sequence > first.sequence
+
+
+def test_reopen_creates_new_identity_even_when_previous_terminal_event_was_missed():
+    lifecycle = TaskLifecycleRegistry()
+    first = lifecycle.record_event(_started('missed')).envelope
+    lifecycle.reopen('missed', 'processing')
+    assert lifecycle.get_run('missed')['run_id'] != first.run_id

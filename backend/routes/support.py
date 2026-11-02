@@ -410,8 +410,19 @@ def register_support_routes(
                 ckpt.release_resume(task_id, token)
             raise
 
-        # Terminal koşu YENİDEN AÇILIR (mevcut durum makinesi — yeni durum yok).
-        lifecycle_registry(room).reopen(task_id, "processing")
+        # Preserve the prior snapshot before creating a new lifecycle run.
+        # Archive failures deny resume; the original safety gates stay in force.
+        try:
+            registry = lifecycle_registry(room)
+            prior_run = registry.get_run(task_id)
+            ckpt.archive_before_resume(task_id, status_dump, prior_run.get("run_id") if prior_run else None)
+            registry.reopen(task_id, "processing")
+        except Exception:
+            ckpt.release_resume(task_id, token)
+            return JSONResponse(
+                {"error": {"code": "RESUME_ARCHIVE_FAILED", "message": "Önceki görev durumu korunamadı; resume başlatılmadı"}},
+                status_code=503,
+            )
         broadcast_log(
             client_id,
             "INFO",

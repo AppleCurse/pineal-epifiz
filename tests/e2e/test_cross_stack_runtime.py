@@ -169,7 +169,14 @@ def test_critical_cross_stack_happy_path_without_method_mocks(
     task_events = [event for event in events if event["task_id"] == task_id]
     sequences = [event["sequence"] for event in task_events]
     assert sequences == sorted(set(sequences))
-    assert any(event["event_type"] == "TaskCompleted" for event in task_events)
+    completed_events = [event for event in task_events if event["event_type"] == "TaskCompleted"]
+    if final["status"] == "completed":
+        assert final["task_outcome"] == "completed"
+        assert completed_events
+    else:
+        assert final["task_outcome"] == "partial"
+        assert not completed_events
+    assert final["decision_state"] == "unknown"
 
     # The built UI consumes the same snapshot/event/result protocol exercised above.
     app_source = Path(__file__).resolve().parents[2] / "frontend/src/App.svelte"

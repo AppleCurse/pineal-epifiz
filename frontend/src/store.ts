@@ -87,7 +87,7 @@ export const taskStatus = writable<any>(null);
 export function mergeTaskSnapshot(previous: any, incoming: any): any {
   if (typeof incoming?.task_id !== 'string' || !incoming.task_id.trim()) return previous;
   const base = previous?.task_id === incoming.task_id ? previous : {};
-  return { ...base, ...incoming, runs: incoming.runs || {} };
+  return { ...base, task_phase: 'unknown', task_outcome: 'unknown', decision_state: 'unknown', ...incoming, runs: incoming.runs || {} };
 }
 export const isProcessing = writable(false);
 export const telemetryEvents = writable<any[]>([]);

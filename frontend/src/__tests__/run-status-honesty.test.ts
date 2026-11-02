@@ -62,6 +62,31 @@ describe('task-bound run status', () => {
 it('does not carry runs across task changes or accept an unbound frame', async () => {
   const { mergeTaskSnapshot } = await import('../store');
   const first = {task_id:'old', runs:{osint_investigator:{status:'completed'}}};
-  expect(mergeTaskSnapshot(first, {task_id:'new', status:'processing'})).toEqual({task_id:'new',status:'processing',runs:{}});
+  expect(mergeTaskSnapshot(first, {task_id:'new', status:'processing'})).toEqual({task_id:'new',status:'processing',runs:{},task_phase:'unknown',task_outcome:'unknown',decision_state:'unknown'});
   expect(mergeTaskSnapshot(first, {status:'completed'})).toEqual(first);
+});
+
+it.each([
+  ['partially_completed', 'partial', 'KISMİ'],
+  ['completed', 'unknown', 'BELİRSİZ'],
+])('Atlas distinguishes %s with %s outcome', (status, task_outcome, label) => {
+  taskStatus.set({task_id:'t', status, task_outcome, runs:{}});
+  const view = render(Atlas);
+  const banner = view.container.querySelector('.mission-status-banner') || view.container;
+  expect(banner.textContent).toContain(label);
+  expect(banner.textContent).not.toContain('SON İŞLEM TAMAMLANDI');
+});
+
+it('does not let a global processing flag hide the selected partial task', () => {
+  taskStatus.set({task_id:'t', status:'partially_completed', task_outcome:'partial', runs:{}});
+  isProcessing.set(true);
+  const view = render(Atlas);
+  expect(view.container.querySelector('.live-status-badge')?.textContent).toContain('KISMİ');
+});
+
+it('does not carry a prior outcome when a newer frame omits it', async () => {
+  const { mergeTaskSnapshot } = await import('../store');
+  const old = {task_id:'t', status:'completed', task_outcome:'completed', decision_state:'unknown'};
+  const next = mergeTaskSnapshot(old, {task_id:'t', status:'timed_out'});
+  expect(next.task_outcome).toBe('unknown');
 });

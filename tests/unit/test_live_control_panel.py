@@ -636,3 +636,40 @@ def test_aspasia_state_exposes_pricing_from_policy():
     assert response.status_code == 200
     rows = response.json()["pricing"]
     assert {row["route_key"] for row in rows} == set(gateway_module.ROUTES)
+
+
+def test_snapshot_and_result_both_expose_legacy_task_outcome_as_unknown(monkeypatch):
+    import asyncio
+    import json
+    from agent_core.domain.memory_models import TaskSnapshot
+    from backend import api
+
+    sent = []
+    class FakeWS:
+        async def send_text(self, text):
+            sent.append(json.loads(text))
+    snapshot = TaskSnapshot(task_id="legacy-contract", status="completed")
+    room = {"websockets": {FakeWS()}}
+    asyncio.run(api._send_snapshot(room, snapshot))
+    assert sent[-1]["task_phase"] == "finished"
+    assert sent[-1]["task_outcome"] == "unknown"
+    assert sent[-1]["decision_state"] == "unknown"
+    queued = []
+    monkeypatch.setitem(api.app.state.rooms, "legacy-contract-room", room)
+    monkeypatch.setattr(api, "_enqueue", lambda _client, item: queued.append(item))
+    api.broadcast_result("legacy-contract-room", snapshot)
+    payload = queued[-1][1]
+    assert payload["task_outcome"] == "unknown"
+    assert payload["decision_state"] == "unknown"
+
+
+def test_error_result_reports_its_own_timeout_state(monkeypatch):
+    from backend import api
+
+    captured = []
+    monkeypatch.setattr(api, '_enqueue', lambda _cid, item: captured.append(item))
+    monkeypatch.setattr(api, 'broadcast_log', lambda *_args: None)
+    api.broadcast_result_error('room-absent', 'timed_out', 'timeout', 't')
+    assert captured[-1][1]['task_phase'] == 'finished'
+    assert captured[-1][1]['task_outcome'] == 'timed_out'
+    assert captured[-1][1]['decision_state'] == 'unknown'

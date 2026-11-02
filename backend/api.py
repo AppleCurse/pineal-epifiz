@@ -119,6 +119,7 @@ from agent_core.version import VERSION
 # [P0 · DENETİM 2026-10-16] Kanal durumu sözleşmesi: "koştu / ÇALIŞMADI
 # (sebep) / hata" — boş liste değil. Dosya kuralları `backend/services/
 # web_dossier.py` modülünde (API-BÖLME 3).
+from agent_core.domain.task_execution_state import task_state_fields
 from agent_core.domain.channel_status import (
     ChannelRun,
     failed as channel_failed,
@@ -2173,6 +2174,7 @@ async def _send_snapshot(room: dict, snapshot: Any):
 
     payload = _ws_json({
         "type": "snapshot_update",
+        **task_state_fields(snapshot),
         "task_id": snapshot.task_id,
         "current_agent": snapshot.current_agent,
         "status": snapshot.status,
@@ -2901,8 +2903,8 @@ def broadcast_result_error(client_id, status, msg, task_id: Optional[str] = None
     if room is not None:
         _close_active_task(room, task_id, status)
         if task_id:
-            room["latest_result"] = {"task_id": task_id, "status": status, "halted_reason": msg}
-    payload = {"type": "result", "status": status}
+            room["latest_result"] = {"task_id": task_id, "status": status, "halted_reason": msg, **task_state_fields(status)}
+    payload = {"type": "result", "status": status, **task_state_fields(status)}
     if task_id:
         payload["task_id"] = task_id
     _enqueue(client_id, ("result_error", payload))
@@ -2937,6 +2939,7 @@ def broadcast_result(client_id, res):
 
     payload = {
         "type": "result",
+        **task_state_fields(res),
         "task_id": res.task_id,
         "status": res.status,
         "evidence_chain": redact_structure(getattr(res, "evidence_chain", []) or []),
