@@ -82,7 +82,8 @@ REQUIRED_OPENROUTTER = {
     # Canlı katalog $0.95526/$1.91052'ye DÖNDÜ — ÜÇ bağımsız koşuda birebir aynı
     # ölçüm (promo bitiş/başlangıç salınımı). Ölçülen değere hizalandı
     # (tahminle değil, ölçümle).
-    "deepseek/deepseek-v4-pro": (0.95526, 1.91052),
+    # CI 41398881323 and 41398888412: measured $1.60/$3.20 per 1M.
+    "deepseek/deepseek-v4-pro": (1.6, 3.2),
     "anthropic/claude-sonnet-5": (2.0, 10.0),
     # [2026-10-14 · kapsam turu 2] Katalogun `openrouter` bölümünde beyan edilmiş
     # ama hiç canlı kontrol edilmemiş dört kayıt daha: katalog bunların OR fiyatı
@@ -111,7 +112,8 @@ REQUIRED_OPENROUTTER = {
     # [2026-10-16 · PR CI 38870244950 (P1 konsolidasyon)] Çıktı **$9.00/1M**
     # okundu (girdi $0.037'de kaldı) → YENİ bir fiyat durumu. İki günde dört
     # ayrı değer okundu; ölçülen son değere hizalandı (tahminle değil, ölçümle).
-    "z-ai/glm-5.2": (0.037, 9.0),
+    # CI 41398881323 and 41398888412: measured $0.006/$6.80 per 1M.
+    "z-ai/glm-5.2": (0.006, 6.8),
     "x-ai/grok-4.6": (2.0, 6.0),
 }
 
@@ -189,6 +191,7 @@ OBSERVED_OPENROUTER_STATES: dict[str, tuple[tuple[float, float], ...]] = {
         (0.62, 2.42),
         (0.037, 9.0),
         (0.0341, 7.0),
+        (0.006, 6.8),  # CI 41398881323 and 41398888412
     ),
     # CI 38662205946 → $0.4679/$0.9358 · 38787820334 → $0.395328/$0.790656 ·
     # 38789947274 → $0.392022/$0.784044 · 38794722007/38833598719 →
@@ -213,7 +216,15 @@ OBSERVED_OPENROUTER_STATES: dict[str, tuple[tuple[float, float], ...]] = {
         (0.2088, 0.4176),
         (0.894012, 1.78802),
         (0.692694, 1.38539),
+        (1.6, 3.2),  # CI 41398881323 and 41398888412
     ),
+}
+
+# New measured endpoints are exact-only: adding them must not silently widen
+# the historical interpolation regime or grant an unobserved price ±2% jitter.
+EXACT_ONLY_OBSERVED_OPENROUTER_STATES = {
+    "deepseek/deepseek-v4-pro": frozenset({(1.6, 3.2)}),
+    "z-ai/glm-5.2": frozenset({(0.006, 6.8)}),
 }
 
 # Salınan modellerde kabul edilen göreli bant (bkz. yukarıdaki 2026-10-23 notu).
@@ -423,6 +434,8 @@ def verify_live_openrouter(
                         break
                 if matched is None:
                     for state_in, state_out in observed_states:
+                        if (state_in, state_out) in EXACT_ONLY_OBSERVED_OPENROUTER_STATES.get(model_id, ()):
+                            continue
                         if (
                             abs(actual_in - state_in / 1_000_000)
                             <= state_in / 1_000_000 * STATE_JITTER_TOLERANCE
@@ -435,8 +448,12 @@ def verify_live_openrouter(
                     # Kademe 3: bilinen bir duruma birebir oturmuyor ama
                     # GÖZLENEN REJİMİN içinde ve fiyat yapısı (girdi/çıktı
                     # oranı) gözlenmiş oranlardan biriyle uyumlu → kotasyon.
+                    historical_states = tuple(
+                        state for state in observed_states
+                        if state not in EXACT_ONLY_OBSERVED_OPENROUTER_STATES.get(model_id, ())
+                    )
                     reg_in_min, reg_in_max, reg_out_min, reg_out_max = (
-                        observed_price_regime(observed_states)
+                        observed_price_regime(historical_states)
                     )
                     ratio = actual_in / actual_out if actual_out else 0.0
                     in_regime = (
@@ -447,7 +464,7 @@ def verify_live_openrouter(
                         <= actual_out
                         <= reg_out_max / 1_000_000 * (1 + STATE_JITTER_TOLERANCE)
                     )
-                    known_ratios = observed_price_ratios(observed_states)
+                    known_ratios = observed_price_ratios(historical_states)
                     structure_ok = bool(actual_out) and ratio_is_known(
                         ratio, known_ratios, STATE_JITTER_TOLERANCE
                     )
