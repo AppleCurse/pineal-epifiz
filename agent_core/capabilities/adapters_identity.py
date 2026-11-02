@@ -19,6 +19,7 @@ from __future__ import annotations
 from typing import Any
 
 from agent_core.capabilities.adapters_osint import _flag
+from agent_core.domain.pillar_models import EvidenceStatus
 
 from agent_core.capabilities.base import (
     Availability,
@@ -132,15 +133,13 @@ class PhoneProbeCapability(BaseCapability):
     )
 
     def availability(self) -> Availability:
-        if self.id == "sensor.identity.handle_probe" and not _flag("ENABLE_CROSS_PLATFORM"):
-            return Availability.unavailable("gate_disabled:ENABLE_CROSS_PLATFORM")
         return Availability.ok()
 
     async def run(self, ctx: CapabilityContext) -> CapabilityResult:
         from agent_core.services.phone_probe import probe_phone
 
         raw_phone = (ctx.subject or ctx.params.get("phone") or "").strip()
-        auto_bridge = bool(ctx.params.get("auto_bridge", True))
+        auto_bridge = bool(ctx.params.get("auto_bridge", False))
 
         result = await probe_phone(raw_phone, auto_bridge_social=auto_bridge)
         notes: dict[str, Any] = {
@@ -151,6 +150,8 @@ class PhoneProbeCapability(BaseCapability):
             "is_valid": result.metadata.is_valid,
             "messaging_count": len(result.messaging_probes),
             "web_hits_count": len(result.web_footprint_hits),
+            "web_search_status": result.web_search_status,
+            "social_bridge_status": result.social_bridge_status,
             "associated_handles": result.associated_handles,
             "elapsed_ms": result.elapsed_ms,
         }
@@ -171,18 +172,20 @@ class PhoneProbeCapability(BaseCapability):
 
         for hit in result.web_footprint_hits:
             evidence.append(make_evidence(
-                content=f"Numarayla ilişkili açık web izi: {hit.get('url')} - {hit.get('snippet')[:120]}",
+                content=f"Doğrulanmamış arama sonucu: {hit.get('url')} - {hit.get('snippet')[:120]}",
                 source_engine="phone_probe_web",
-                epistemic_type="observation",
+                epistemic_type="inference",
+                source_status=EvidenceStatus.INCONCLUSIVE,
                 scope={"url": hit.get("url")},
                 source_metrics={"engine": hit.get("engine")},
             ))
 
         for sp in result.social_probes:
             evidence.append(make_evidence(
-                content=f"Numarayla bağlantılı '{sp.get('handle')}' adı {sp.get('platform')} profilinde bulundu: {sp.get('url')}",
+                content=f"Doğrulanmamış aday: '{sp.get('handle')}' adı {sp.get('platform')} profilinde bulundu: {sp.get('url')}",
                 source_engine="phone_social_bridge",
-                epistemic_type="observation",
+                epistemic_type="inference",
+                source_status=EvidenceStatus.INCONCLUSIVE,
                 scope={"platform": sp.get("platform"), "url": sp.get("url")},
                 source_metrics={"http_status": sp.get("http_status")},
             ))

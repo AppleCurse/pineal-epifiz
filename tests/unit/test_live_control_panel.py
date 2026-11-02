@@ -624,3 +624,15 @@ def test_aspasia_command_endpoint_rejects_without_gateway():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+def test_aspasia_state_exposes_pricing_from_policy():
+    from fastapi.testclient import TestClient
+    from backend.api import app
+    from agent_core.services import final_routing_policy as gateway_module
+
+    with TestClient(app) as client:
+        response = client.get("/api/aspasia/state", params={"client_id": "pricing_probe"})
+    assert response.status_code == 200
+    rows = response.json()["pricing"]
+    assert {row["route_key"] for row in rows} == set(gateway_module.ROUTES)

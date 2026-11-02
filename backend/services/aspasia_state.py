@@ -66,6 +66,7 @@ def build_state_payload(
         "registry": inspector.registry(),
         "run": run_view,
         "budget": CostReader(gateway).snapshot(),
+        "pricing": CostReader(gateway).pricing_overview(),
         "quota": {
             provider: QuotaReader(gateway=gateway).snapshot(provider)
             for provider in _QUOTA_PROVIDERS

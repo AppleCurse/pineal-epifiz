@@ -793,8 +793,9 @@ class PinealExecutor:
 
         Tek geçiş ölçemediği şeyi ``unknowns`` altına yazıp susuyordu. Burada
         ilk rapor sorulara çevrilir ve yalnız GERÇEKTEN cevaplanabilir olanlar
-        sorulur. Sınırlar sert: en fazla 4 soru, tek tur. Sonda kayıtlı değilse
-        soru açık kalır — "kapandı" sayılmaz. Getirilen kareler birleştirilir ve
+        sorulur. Sınırlar sert: tur başına 4, toplam en fazla 12 soru,
+        3 tur ve sondalar için 120 saniyelik bütçe. Sonda
+        kayıtlı değilse soru açık kalır — "kapandı" sayılmaz. Getirilen kareler birleştirilir ve
         rapor tek kez, ZENGİNLEŞMİŞ kanıtla yeniden kurulur (zincire tek kayıt
         düşer; mükerrer life_rupture satırı yazılmaz).
         """
@@ -806,6 +807,12 @@ class PinealExecutor:
         )
         from agent_core.lifecycle.pipeline import analyze_life_rupture
 
+        # Checkpointed frames are authoritative on resume; the original task
+        # input may predate evidence collected during investigation rounds.
+        if isinstance(status.visual_evidence, dict):
+            restored_visual = dict(input_data.get("visual_evidence") or {})
+            restored_visual.update(status.visual_evidence)
+            input_data["visual_evidence"] = restored_visual
         try:
             first_pass = analyze_life_rupture(
                 input_data.get("target_profile"),
@@ -856,19 +863,44 @@ class PinealExecutor:
                         detail="genişletilmiş örneklem yeni kare getirmedi",
                     )
                 return ProbeOutcome(
-                    status="resolved" if question.kind == "frame_coverage_gap" else "no_new_evidence",
-                    detail=f"yeni kare: {len(fresh)}",
+                    status="no_new_evidence",  # A fresh frame alone does not close a gap.
+                    detail=f"yeni kare: {len(fresh)}; ölçüm yeniden değerlendirilmeli",
                     observations_added=len(fresh),
                     frames=fresh,
                 )
 
             probes["frame_window"] = _frame_window_probe
 
+        def _reassess(result):
+            # Only actual measured coverage in the recomputed report can close
+            # a question; unrelated or undated frames do not count.
+            merged = {str(frame.get("frame_id")): frame for frame in list(measured or []) + result.extra_frames
+                      if isinstance(frame, dict) and frame.get("frame_id")}
+            ordered = sorted(merged.values(), key=lambda frame: (str(frame.get("observed_at")), str(frame.get("frame_id"))))
+            if not isinstance(status.visual_evidence, dict):
+                status.visual_evidence = {}
+            status.visual_evidence["frames"] = ordered
+            if not isinstance(input_data.get("visual_evidence"), dict):
+                input_data["visual_evidence"] = {}
+            input_data["visual_evidence"]["frames"] = ordered
+            return analyze_life_rupture(
+                input_data.get("target_profile"), visual_evidence=input_data["visual_evidence"],
+                frequency_map=status.frequency_map, strata_map=status.strata_map,
+                subject_id=str(status.task_id),
+            ).model_dump(mode="json")
+
+        def _record_round(result):
+            status.investigation = result.to_dict()
+            self._snapshot(status)
+
         result = await run_investigation(
             first_pass,
             probes=probes,
-            config=InvestigationConfig(max_questions=4, max_rounds=1, question_timeout_seconds=50.0),
+            config=InvestigationConfig(max_questions=4, max_rounds=3, question_timeout_seconds=30.0,
+                                       total_timeout_seconds=120.0),
             questions=questions,
+            reassess=_reassess,
+            on_round=_record_round,
         )
 
         if result.extra_frames:
@@ -1572,7 +1604,7 @@ class PinealExecutor:
                 "shadow_profile", "follower_audit", "timing_forensics",
                 "holistic_profile", "frequency_map", "seismos_events",
                 "void_map", "strata_map", "gravity_map", "pulse_map",
-                "key_matrix", "visual_evidence",
+                "key_matrix", "visual_evidence", "investigation",
             ):
                 _prior = getattr(resume_from, _fld, None)
                 if _prior is not None:

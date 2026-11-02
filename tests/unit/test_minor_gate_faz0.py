@@ -78,10 +78,10 @@ def test_minor_blocked_for_non_missing_case_type():
     assert decision.reason_code == "case_type_not_allowed"
 
 
-def test_minor_allowed_when_all_four_conditions_met():
+def test_minor_blocked_when_only_self_attested_conditions_met():
     decision = MinorGate().evaluate(_approved_case())
-    assert decision.allowed is True
-    assert decision.reason_code == "approved"
+    assert decision.allowed is False
+    assert decision.reason_code == "independent_approval_unavailable"
 
 
 def test_adult_is_never_blocked():
@@ -115,8 +115,8 @@ async def test_runner_blocks_every_capability_for_unapproved_minor_case():
 
 
 @pytest.mark.asyncio
-async def test_runner_allows_approved_missing_child_case():
-    """Kayıp çocuk vakası, 4 şart tamamsa ARAŞTIRILABİLİR (istisna çalışır)."""
+async def test_runner_blocks_self_attested_missing_child_case():
+    """Operatör beyanları bağımsız onayın yerine geçemez."""
     reg = CapabilityRegistry()
     bootstrap(reg)
     state = PolicyState(
@@ -130,14 +130,13 @@ async def test_runner_allows_approved_missing_child_case():
         registry=reg,
         state=state,
     )
-    # Kilit açıldı: artık politikaya/uygunluğa bakılır, "minor:" engeli yoktur.
-    assert result.denied_by != "minor_safe"
-    assert not str(result.unavailable_reason).startswith("minor:")
+    assert result.denied_by == "minor_safe"
+    assert str(result.unavailable_reason).startswith("minor:")
 
 
 @pytest.mark.asyncio
 async def test_vault_still_rules_over_approved_minor_case():
-    """Kasa kapalıysa onaylı vaka bile koşamaz (kilit, kasayı ezmez)."""
+    """Çocuk kapısı kasadan önce denetlenir."""
     reg = CapabilityRegistry()
     bootstrap(reg)
     state = PolicyState(vault_locked=True, minor_case=_approved_case())
@@ -147,7 +146,7 @@ async def test_vault_still_rules_over_approved_minor_case():
         registry=reg,
         state=state,
     )
-    assert result.denied_by == "vault"
+    assert result.denied_by == "minor_safe"
     assert result.items == ()
 
 
@@ -184,10 +183,11 @@ def test_ledger_records_denied_minor_attempt_without_raw_identity(tmp_path):
     assert json.loads(lines[0])["reason_code"] == "council_approval_missing"
 
 
-def test_ledger_records_approved_case_with_approvals(tmp_path):
+def test_ledger_records_self_attested_case_as_denied(tmp_path):
     ledger = MinorCaseLedger(tmp_path / "minor.jsonl")
     case = _approved_case()
     entry = ledger.record(case, MinorGate().evaluate(case), capability_id="sensor.x", subject="x")
-    assert entry["allowed"] is True
+    assert entry["allowed"] is False
+    assert entry["reason_code"] == "independent_approval_unavailable"
     assert entry["case_id"] == "case-2026-4471"
     assert len(entry["approvals"]) >= MIN_COUNCIL_APPROVALS

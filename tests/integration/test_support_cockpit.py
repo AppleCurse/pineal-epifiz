@@ -596,3 +596,33 @@ def test_ui_wiring_support_panel_and_awaiting_human():
     # Store: kalıcı geri yükleme yardımcısı:
     assert "export async function refreshSupport" in store_src
     assert "supportRequests" in store_src
+
+
+@pytest.mark.parametrize('support_status,approved', [('resolved', False), ('unknown', True)])
+def test_resume_rejects_unproven_or_unknown_blocking_support(client, env, support_status, approved):
+    cid = f'legacy-room-{uuid.uuid4().hex[:8]}'
+    task_id = f'legacy_{uuid.uuid4().hex[:8]}'
+    _seed_room(client, cid)
+    ckpt.set_input(task_id, {'target_profile': {}})
+    ckpt.update(task_id, lambda d: d.update(status={'support_requests': [{
+        'support_id': 'legacy-support', 'status': support_status, 'kind': 'operator_response',
+        'requires': 'operator_response', 'blocks_resume': True, 'approved': approved,
+        'responses': [] if not approved else [{'by':'operator'}], 'resolution': 'operator_response',
+    }]}))
+    result = client.post(f'/api/tasks/{task_id}/resume', params={'client_id': cid}, json={})
+    assert result.status_code == 409
+    assert result.json()['error']['code'] == 'RESUME_SUPPORT_MISSING'
+
+
+def test_resume_does_not_close_vault_support_without_response(client, env):
+    cid = f'no-response-{uuid.uuid4().hex[:8]}'
+    task_id = f'no_response_{uuid.uuid4().hex[:8]}'
+    _seed_room(client, cid)
+    ckpt.set_input(task_id, {'target_profile': {}})
+    ckpt.update(task_id, lambda d: d.update(status={'support_requests': [{
+        'support_id': 'vault-support', 'status': 'pending', 'kind': 'vault_open',
+        'requires': 'vault_open', 'blocks_resume': True, 'approved': False, 'responses': [],
+    }]}))
+    result = client.post(f'/api/tasks/{task_id}/resume', params={'client_id': cid}, json={})
+    assert result.status_code == 409
+    assert result.json()['error']['code'] == 'RESUME_SUPPORT_MISSING'

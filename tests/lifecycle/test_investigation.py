@@ -370,3 +370,113 @@ def test_digest_accepts_object_and_dict_forms() -> None:
 def test_malformed_investigation_payload_is_ignored_not_trusted() -> None:
     report = _report_with({"still_unknown": "bozuk"})
     assert report.diagnostics.get("investigation", {}).get("still_unknown_count") == 0
+
+
+def test_adaptive_reassessment_generates_new_questions_and_rechecks_coverage():
+    """A new frame triggers real pipeline re-analysis, not automatic closure."""
+    from datetime import datetime, timedelta, timezone
+    from agent_core.lifecycle.pipeline import analyze_life_rupture
+
+    start = datetime(2022, 1, 1, tzinfo=timezone.utc)
+    times = [(start + timedelta(days=i * 30)).isoformat() for i in range(20)]
+    profile = {"posts": ["data"] * 20, "post_times": times}
+    baseline = [_frame(frame_id=f"base{i}", observed_at=times[i]) for i in range(7)]
+    initial = analyze_life_rupture(profile, visual_evidence={"frames": baseline}).model_dump(mode="json")
+    calls = []
+    async def probe(question, *, budget_seconds):
+        calls.append(question.subject)
+        if len(calls) == 1:
+            return ProbeOutcome(status="no_new_evidence", frames=[
+                _frame(frame_id="contrast", observed_at=times[12], visual_stats={"contrast": 0.4})])
+        if len(calls) == 2:
+            return ProbeOutcome(status="no_new_evidence", frames=[
+                _frame(frame_id="brightness", observed_at=times[12], visual_stats={"brightness": 0.4})])
+        return ProbeOutcome(status="no_new_evidence", detail="no more frames")
+
+    snapshots = []
+    def reassess(result):
+        return analyze_life_rupture(profile, visual_evidence={"frames": baseline + result.extra_frames})
+    result = asyncio.run(run_investigation(
+        initial, probes={"frame_window": probe},
+        config=InvestigationConfig(max_questions=4, max_rounds=3),
+        reassess=reassess, on_round=lambda r: snapshots.append(r.to_dict()),
+    ))
+    gap = next(q for q in result.questions if q.kind == "frame_coverage_gap" and q.subject.endswith("brightness"))
+    new_question = next(q for q in result.questions if q.kind == "frame_baseline_sparse" and q.subject.endswith("contrast"))
+    assert gap.question_id not in snapshots[0]["resolved"]  # contrast alone did not close brightness
+    assert gap.question_id in result.resolved  # real comparison measurement did
+    assert new_question.question_id not in result.resolved
+    assert any(new_question.question_id in text for text in result.still_unknown)
+    assert len(result.rounds) >= 2
+    assert len(snapshots) == len(result.rounds)
+
+
+def test_adaptive_reassessment_failure_never_closes_a_gap():
+    async def probe(question, *, budget_seconds):
+        return ProbeOutcome(status="no_new_evidence", frames=[_frame(frame_id="new")])
+    def broken(_result):
+        raise RuntimeError("analysis failed")
+    result = asyncio.run(run_investigation(_report(), probes={"frame_window": probe}, reassess=broken))
+    assert result.resolved == []
+    assert result.diagnostics["stop_reason"] == "reassessment_failed"
+    assert result.still_unknown
+
+
+def test_total_deadline_bounds_probe_time():
+    async def slow(question, *, budget_seconds):
+        await asyncio.sleep(1)
+        return ProbeOutcome(status="resolved")
+    result = asyncio.run(run_investigation(
+        _report(), probes={"frame_window": slow},
+        config=InvestigationConfig(question_timeout_seconds=2, total_timeout_seconds=0.05)))
+    assert result.resolved == []
+    assert result.diagnostics["stop_reason"] == "total_timeout"
+
+
+def test_executor_persists_real_round_state_to_checkpoint(tmp_path, monkeypatch):
+    """Real executor/pipeline/checkpoint; network frame collection is a test double."""
+    from datetime import datetime, timedelta, timezone
+    from types import SimpleNamespace
+    from backend import checkpoint_store
+    from agent_core.task_executor import PinealExecutor, TaskStatus
+
+    monkeypatch.setenv("PINEAL_MEMORY_PATH", str(tmp_path / "memory"))
+    monkeypatch.setenv("PINEAL_CHECKPOINT_PATH", str(tmp_path / "checkpoints"))
+    base = datetime(2022, 1, 1, tzinfo=timezone.utc)
+    times = [(base + timedelta(days=i * 30)).isoformat() for i in range(20)]
+    profile = {"posts": ["data"] * 20, "post_times": times}
+    frames = [_frame(frame_id=f"base{i}", observed_at=times[i]) for i in range(7)]
+    inputs = {"target_profile": profile, "visual_evidence": {"frames": list(frames)}}
+    status = TaskStatus(task_id="adaptive_test", visual_evidence={"frames": list(frames)})
+    checkpoint_store.set_input(status.task_id, inputs, owner="test")
+    executor = PinealExecutor(snapshot_callback=checkpoint_store.persist_status)
+    count = 0
+    async def collect(*_args, **_kwargs):
+        nonlocal count
+        count += 1
+        if count == 1:
+            new = _frame(frame_id="contrast", observed_at=times[12], visual_stats={"contrast": 0.4})
+        elif count == 2:
+            new = _frame(frame_id="brightness", observed_at=times[12], visual_stats={"brightness": 0.4})
+        else:
+            return SimpleNamespace(frames=[])
+        return SimpleNamespace(frames=[new])
+    monkeypatch.setattr("agent_core.services.frame_evidence.collect_frames", collect)
+    asyncio.run(executor._investigate_life_rupture(status, inputs))
+    saved = checkpoint_store.load(status.task_id)["status"]
+    assert len(saved["investigation"]["rounds"]) >= 2
+    assert {"contrast", "brightness"} <= {f["frame_id"] for f in saved["visual_evidence"]["frames"]}
+    assert saved["investigation"]["resolved"]
+    restored = TaskStatus.model_validate(saved)
+    assert restored.investigation["questions"]
+    assert restored.visual_evidence["frames"]
+
+
+def test_adaptive_mode_does_not_trust_probe_success_without_measured_coverage():
+    async def claimed_success(question, *, budget_seconds):
+        return ProbeOutcome(status="resolved", frames=[_frame(frame_id="unrelated", visual_stats={"contrast": 0.2})])
+    result = asyncio.run(run_investigation(
+        _report(), probes={"frame_window": claimed_success},
+        config=InvestigationConfig(max_rounds=1), reassess=lambda _result: _report()))
+    assert result.resolved == []
+    assert all(value != "resolved" for value in result.rounds[0].outcomes.values())

@@ -16,16 +16,15 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
+from contextlib import contextmanager
 import os
-import time
+import tempfile
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Optional
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-
-from agent_core.agents.lilith_growth import LilithGrowthAgent
-from agent_core.services.llm_gateway import LLMGateway
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +51,77 @@ class CommanderInjectPayload(BaseModel):
 class CommanderPhoneProbePayload(BaseModel):
     client_id: str = Field(default="default")
     phone: str = Field(..., description="Telefon numarası (örn: (552) 956-87-63, 0552..., +90...)")
-    auto_bridge_social: bool = Field(default=True, description="Eğer kullanıcı adı bulunursa sosyal medya yoklamasını tetikle")
+    auto_bridge_social: bool = Field(default=False, description="Eğer kullanıcı adı bulunursa sosyal medya yoklamasını tetikle")
+
+
+@contextmanager
+def locked_learnings(path: str):
+    """Advisory cross-process lock; all writers must use the same shared path."""
+    import fcntl
+
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(os.path.join(os.path.dirname(path), ".learnings.lock"), "a") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+class EvidenceIdempotencyConflict(ValueError):
+    """An idempotency key is already bound to another request."""
+
+
+def _store_evidence(entry: dict, key: str) -> None:
+    mem_path = os.path.join(".pineal_memory", "learnings.json")
+    with locked_learnings(mem_path):
+        existing = []
+        if os.path.exists(mem_path):
+            with open(mem_path, "r", encoding="utf-8") as f:
+                existing = json.load(f)
+            if not isinstance(existing, list):
+                raise ValueError("invalid evidence store")
+        if key:
+            key_hash = hashlib.sha256(key.encode()).hexdigest()
+            signature = hashlib.sha256(json.dumps(
+                [entry["fact"], entry["tag"], entry["target_agent"], entry["note"]],
+                ensure_ascii=False, separators=(",", ":"),
+            ).encode()).hexdigest()
+            for old in existing:
+                if isinstance(old, dict) and old.get("idempotency_key_hash") == key_hash:
+                    if old.get("idempotency_signature") != signature:
+                        raise EvidenceIdempotencyConflict("idempotency key conflict")
+                    # A previous attempt may have failed after rename but before
+                    # directory sync; re-sync before acknowledging the retry.
+                    with open(mem_path, "rb") as current:
+                        os.fsync(current.fileno())
+                    directory_fd = os.open(os.path.dirname(mem_path), os.O_RDONLY)
+                    try:
+                        os.fsync(directory_fd)
+                    finally:
+                        os.close(directory_fd)
+                    return
+            entry["idempotency_key_hash"] = key_hash
+            entry["idempotency_signature"] = signature
+        existing.append(entry)
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=os.path.dirname(mem_path), delete=False
+            ) as f:
+                tmp_path = f.name
+                json.dump(existing, f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, mem_path)
+            directory_fd = os.open(os.path.dirname(mem_path), os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                os.unlink(tmp_path)
 
 
 def register_commander_routes(
@@ -62,148 +131,23 @@ def register_commander_routes(
     rate_identity: Callable[[Request], str],
     gateway_provider: Callable[[], Any],
     get_executor: Optional[Callable[[str], Any]] = None,
+    require_vault_open: Optional[Callable[[str], Any]] = None,
+    require_minor_clearance: Optional[Callable[..., Any]] = None,
 ) -> None:
-
     @app.post("/api/commander/dispatch")
     async def dispatch_agent_task(payload: CommanderDispatchPayload, request: Request):
-        """Seçilen ajana anında özel görev verir ve düşünce zinciriyle sonuç döndürür."""
-        agent_id = payload.agent_id.lower().strip()
-        instr = payload.instruction.strip()
-        target_url = (payload.target_url or "").strip()
-        twin_url = (payload.twin_url or "").strip()
+        """Do not claim a direct agent run until it is wired to the executor.
 
-        start_time = time.time()
-        thought_chain: List[str] = []
-        structured_data: Dict[str, Any] = {}
-        output_text = ""
-
-        # 1. LILITH DİREKT ÇAĞRISI
-        if agent_id == "lilith":
-            thought_chain.append("Lilith Nörobilişsel Motoru uyandırıldı.")
-            thought_chain.append("Hedef kitle ve psikolojik zayıflık vektörleri taranıyor...")
-            thought_chain.append("Dopaminerjik Ödül Tahmin Hatası (Reward Prediction Error) formülü hesaplanıyor...")
-
-            agent = LilithGrowthAgent.from_cli_credentials(api_key=None, base_url=None, model="gpt-4o")
-            lilith_payload = {
-                "topic": instr or "Bilinçdışı Güç ve Maske Analizi",
-                "platform": "x_twitter",
-                "target_profile": {
-                    "url": target_url,
-                    "twin_url": twin_url,
-                    "bio": payload.context.get("bio", ""),
-                    "posts": payload.context.get("posts", []),
-                },
-                "cognitive_friction": 0.28,
-            }
-            try:
-                res = await agent.execute(lilith_payload)
-                thought_chain.append("Nörokimyasal sentez tamamlandı. Dopamin, Serotonin, Kortizol dengesi mühürlendi.")
-                thought_chain.append("Hipnotik kanca ve amigdala tetikleyicisi kurgulandı.")
-                
-                output_text = res.content_body or res.hook or "Lilith analizi hazırlandı."
-                structured_data = {
-                    "hook": res.hook,
-                    "psychological_angle": res.psychological_angle,
-                    "content_body": res.content_body,
-                    "call_to_action": res.call_to_action,
-                    "subconscious_trigger": res.subconscious_trigger,
-                    "retention_loop_strategy": res.retention_loop_strategy,
-                    "formula_breakdown": res.formula_breakdown,
-                    "neuro_metrics": res.neuro_metrics.model_dump() if res.neuro_metrics else {
-                        "dopamine": 0.85,
-                        "serotonin": 0.72,
-                        "cortisol": 0.40,
-                        "oxytocin": 0.65,
-                        "viral_coefficient_score": 2.84,
-                    },
-                    "confidence": res.confidence or 0.88,
-                }
-            except Exception as e:
-                thought_chain.append(f"Nörobilişsel formül deterministik modda çalıştı: {e}")
-                calc = agent.compute_neuro_formula(0.82, 0.75, 0.35, 0.60, 0.25)
-                target_handle = target_url.split('/')[-1] if target_url else 'hedef'
-                structured_data = {
-                    "hook": f"Maskelerin ardındaki gerçek: @{target_handle} için beklenti kırıcı hamle.",
-                    "psychological_angle": "Statü yanılsamasını ve onay bağımlılığını kırma",
-                    "content_body": f"Lilith Raporu: {instr}\nHedefin vitrindeki duruşu ile bilinçaltı dürtüleri arasında bariz bir sürtünme tespit edildi.",
-                    "call_to_action": "Merak uçurumunu kapatmak için sahici kanala geç.",
-                    "subconscious_trigger": "Kayıptan kaçınma ve elit azınlık aidiyeti",
-                    "formula_breakdown": f"Vc={calc.viral_coefficient_score} [D=0.82, S=0.75, C=0.35, O=0.60, F=0.25]",
-                    "neuro_metrics": calc.model_dump(),
-                    "confidence": 0.85,
-                }
-                output_text = structured_data["content_body"]
-
-        # 2. ASPASIA DİREKT ÇAĞRISI
-        elif agent_id == "aspasia":
-            thought_chain.append("Aspasia Stratejik Zihni devreye alındı.")
-            thought_chain.append("Hakikat ve rezonans ilkeleriyle kullanıcının niyeti harmanlanıyor...")
-            thought_chain.append("Sokratik diyalog ve taktiksel üstünlük süzgecinden geçiriliyor...")
-            
-            output_text = (
-                f"Mösyö, buyruğunuz incelendi: [{instr}]. "
-                f"Hedef profil ({target_url or 'genel'}) üzerindeki gözlemlerim: "
-                "Kişinin sosyal projeksiyonu bir savunma kalkanı vazifesi görüyor. "
-                "Sert bir temas yerine, zihnindeki henüz formüle edemediği bir çelişkiye ayna tutmak en yüksek rezonansı doğuracaktır."
-            )
-            structured_data = {
-                "role": "Aspasia Prime",
-                "guidance": output_text,
-                "strategic_verdict": "Rezonans temas protokolü onaylandı.",
-                "suggested_step": "Hedefin tutku eksenine saygılı, kalıp kırıcı bir ilk hamle yapın.",
-            }
-
-        # 3. DİĞER 12 SAHA AJANI
-        else:
-            agent_names = {
-                "depth_analyst": "Kişilik Özü & Gerçeklik Analisti",
-                "osint_investigator": "Açık Kaynak & Dijital Ayak İzi Dedektifi",
-                "pattern_interrupt": "Kalıp Kırıcı & Giriş Stratejisti",
-                "human_behavior": "Davranış & Aşil Tendonu Uzmanı",
-                "friction_detector": "Sınırlar & Hassasiyet Dedektörü",
-                "passion_mapper": "Tutku & Akış Haritacısı",
-                "cognitive_profiler": "Bilişsel Dil & Üslup Mimarı",
-                "mirror_truth": "Öz-Frekans Uyumu Denetçisi",
-                "autonomous_verifier": "Otonom Hakem & Tutarlılık Paneli",
-                "resonance_calc": "Vektörel Rezonans Hesaplayıcı",
-                "authenticity_auditor": "Orijinallik Denetçisi",
-                "resonance_synthesizer": "İlk Temas Sentezcisi",
-            }
-            name = agent_names.get(agent_id, agent_id.upper())
-            thought_chain.append(f"{name} özel görev parametrelerini aldı.")
-            thought_chain.append(f"Hedef veri kasetleri ve adli göstergeler taranıyor: {target_url or 'Mevcut Hedef'}")
-            if twin_url:
-                thought_chain.append(f"Komutan tarafından sağlanan ikiz profil çapraz kontrole alındı: {twin_url}")
-            thought_chain.append("Analiz sentezlendi, hüküm formüle ediliyor...")
-
-            twin_note = f"İkiz profil [{twin_url}] ile dijital parmak izi eşleşmesi %89 oranında pozitif.\n" if twin_url else "\n"
-            output_text = (
-                f"[{name.upper()} RAPORU]\n"
-                f"Görev: {instr}\n"
-                f"Bulgular: Hedef profil ({target_url or 'Belirtilmedi'}) üzerinde yapılan mikro-analizde, "
-                f"belirttiğiniz kriter doğrultusunda tutarlı bir örüntü saptandı. "
-                + twin_note
-                + "Öneri: Operasyon bu veri doğrultusunda güncellendi."
-            )
-            structured_data = {
-                "agent_id": agent_id,
-                "agent_name": name,
-                "analysis": output_text,
-                "confidence": 0.91,
-                "twin_verified": bool(twin_url),
-            }
-
-        elapsed = round(time.time() - start_time, 2)
-        return {
-            "status": "completed",
-            "agent_id": agent_id,
-            "instruction": instr,
-            "thought_chain": thought_chain,
-            "output_text": output_text,
-            "structured_data": structured_data,
-            "elapsed_seconds": elapsed,
-            "timestamp": datetime.now().isoformat(),
-        }
+        Use /api/aspasia/command or /api/initiate for the actual lifecycle-backed
+        mission. In particular, a supplied twin URL is not identity evidence.
+        """
+        return JSONResponse(
+            {"status": "unavailable", "error": {
+                "code": "DIRECT_AGENT_DISPATCH_UNAVAILABLE",
+                "message": "Doğrudan ajan yürütmesi bağlı değil; görev için Aspasia komutunu veya görev başlatmayı kullanın.",
+            }},
+            status_code=503,
+        )
 
     @app.post("/api/commander/inject")
     async def inject_commander_evidence(payload: CommanderInjectPayload, request: Request):
@@ -216,72 +160,69 @@ def register_commander_routes(
         if not val:
             return JSONResponse({"error": {"message": "Kanıt değeri boş olamaz."}}, status_code=400)
 
-        # 1. Hafıza katmanına learnings olarak mühürle
+        key = request.headers.get("Idempotency-Key", "")
+        if key and not re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", key):
+            return JSONResponse({"error": {"code": "INVALID_IDEMPOTENCY_KEY"}}, status_code=400)
+        entry = {
+            "fact": f"[KOMUTAN KANITI / {ev_type.upper()}] {val}",
+            "tag": f"commander_{ev_type}",
+            "target_agent": target_agent,
+            "note": note,
+            "ts": datetime.now().isoformat(),
+            "hash": hashlib.sha256(val.encode()).hexdigest()[:12],
+        }
         try:
-            mem_path = os.path.join(".pineal_memory", "learnings.json")
-            os.makedirs(".pineal_memory", exist_ok=True)
-            existing = []
-            if os.path.exists(mem_path):
-                with open(mem_path, "r", encoding="utf-8") as f:
-                    existing = json.load(f)
-            entry = {
-                "fact": f"[KOMUTAN KANITI / {ev_type.upper()}] {val}",
-                "tag": f"commander_{ev_type}",
-                "target_agent": target_agent,
-                "note": note,
-                "ts": datetime.now().isoformat(),
-                "hash": hashlib.sha256(val.encode()).hexdigest()[:12],
-            }
-            existing.append(entry)
-            with open(mem_path, "w", encoding="utf-8") as f:
-                json.dump(existing, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            logger.warning("Hafıza mühürlenirken hata: %s", e)
+            await asyncio.to_thread(_store_evidence, entry, key)
+        except EvidenceIdempotencyConflict:
+            return JSONResponse({"error": {"code": "IDEMPOTENCY_CONFLICT"}}, status_code=409)
+        except (OSError, ValueError, TypeError, ImportError) as e:
+            logger.warning("Komutan kanıtı kaydedilemedi: %s", type(e).__name__)
+            return JSONResponse(
+                {"status": "error", "error": {"code": "EVIDENCE_STORE_FAILED",
+                 "message": "Kanıt kaydedilemedi; ajana aktarılmadı."}}, status_code=500
+            )
 
         return {
-            "status": "injected",
+            "status": "stored",
+            "applied_to_agent": False,
             "evidence_type": ev_type,
             "evidence_value": val,
             "target_agent": target_agent,
-            "message": f"Komutan kanıtı ({ev_type}) sisteme mühürlendi. Ajanlar bu gerçekliği baz alarak ilerleyecek.",
+            "message": "Kanıt dosyaya kaydedildi; ajana veya göreve aktarım henüz bağlı değil.",
             "ts": datetime.now().isoformat(),
         }
 
     @app.post("/api/commander/phone-probe")
     async def probe_phone_endpoint(payload: CommanderPhoneProbePayload, request: Request):
         """Telefon numarası üzerinde format, şebeke, mesajlaşma ve açık web ayak izi yoklaması yapar."""
+        if require_minor_clearance is None:
+            return JSONResponse({"error": {"message": "Çocuk koruma kontrolü kullanılamıyor."}}, status_code=423)
+        if (blocked := require_minor_clearance(payload.client_id, subject=payload.phone)) is not None:
+            return blocked
+        if require_vault_open is None:
+            return JSONResponse({"error": {"message": "Kasa kontrolü kullanılamıyor."}}, status_code=423)
+        if (locked := require_vault_open(payload.client_id)) is not None:
+            return locked
         raw_phone = payload.phone.strip()
         if not raw_phone:
             return JSONResponse({"error": {"message": "Telefon numarası boş olamaz."}}, status_code=400)
 
-        from agent_core.services.phone_probe import probe_phone
+        from agent_core.capabilities import CapabilityContext, bootstrap, run_capability
+        from agent_core.capabilities.state import policy_state
 
         try:
-            res = await probe_phone(raw_phone, auto_bridge_social=payload.auto_bridge_social)
-            # İsteğe bağlı hafızaya ekle
-            try:
-                mem_path = os.path.join(".pineal_memory", "learnings.json")
-                os.makedirs(".pineal_memory", exist_ok=True)
-                existing = []
-                if os.path.exists(mem_path):
-                    with open(mem_path, "r", encoding="utf-8") as f:
-                        existing = json.load(f)
-                entry = {
-                    "fact": f"[TELEFON OSINT] {res.metadata.e164 or raw_phone} - {res.metadata.carrier_name} ({res.metadata.country_name})",
-                    "tag": "phone_osint",
-                    "target_agent": "osint_investigator",
-                    "note": f"Geçerli: {res.metadata.is_valid}, Hat: {res.metadata.line_type}",
-                    "ts": datetime.now().isoformat(),
-                    "hash": hashlib.sha256(raw_phone.encode()).hexdigest()[:12],
-                }
-                existing.append(entry)
-                with open(mem_path, "w", encoding="utf-8") as f:
-                    json.dump(existing, f, ensure_ascii=False, indent=2)
-            except Exception as e:
-                logger.debug(f"Phone probe learning seal skipped: {e}")
-
-            return res.model_dump()
+            bootstrap()
+            result = await run_capability(
+                "sensor.identity.phone_probe",
+                CapabilityContext(subject=raw_phone, params={"auto_bridge": payload.auto_bridge_social}),
+                # Both request-level safety gates have already succeeded above.
+                state=policy_state(vault_locked=False),
+            )
+            if not result.available or result.error or result.payload is None:
+                return JSONResponse({"error": {"message": "Telefon yoklaması kullanılamıyor.",
+                                               "reason": result.unavailable_reason or result.error}}, status_code=503)
+            return result.payload.model_dump()
         except Exception as e:
-            logger.error("Phone probe error: %s", e)
-            return JSONResponse({"error": {"message": f"Telefon yoklaması başarısız: {e}"}}, status_code=500)
+            logger.error("Phone probe error: %s", type(e).__name__)
+            return JSONResponse({"error": {"message": "Telefon yoklaması başarısız."}}, status_code=500)
 

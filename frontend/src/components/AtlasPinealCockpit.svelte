@@ -73,6 +73,9 @@
   let injectTargetAgent = 'all';
   let injectNote = '';
   let isInjecting = false;
+  let vaultKnown = false;
+  let vaultBusy = false;
+  let vaultError = '';
   let injectHistory: Array<{ type: string; value: string; target: string; note: string; ts: string }> = [];
 
   // Telefon OSINT State
@@ -163,6 +166,7 @@
   }
 
   onMount(() => {
+    void refreshVaultState();
     missionTimer = setInterval(() => {
       if (missionStartTime) {
         const diff = Math.floor((Date.now() - missionStartTime) / 1000);
@@ -262,7 +266,7 @@
         body: JSON.stringify({
           client_id: $clientId || 'default',
           phone,
-          auto_bridge_social: true
+          auto_bridge_social: false
         })
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -310,7 +314,10 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error?.error?.message || `HTTP ${res.status}`);
+      }
       dispatchResult = await res.json();
       playClick(600, 50);
 
@@ -326,7 +333,7 @@
         status: 'error',
         agent_id: selectedAgentId,
         thought_chain: ['Aksaklık oluştu: ' + (e?.message || e)],
-        output_text: 'Ajana görev iletilirken bir hata yaşandı.',
+        output_text: `Görev yürütülmedi: ${e?.message || e}`,
       };
     } finally {
       isDispatching = false;
@@ -350,8 +357,11 @@
           note: injectNote.trim()
         })
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error?.message || `HTTP ${res.status}`);
+      if (data?.status !== 'stored' || data?.applied_to_agent !== false) {
+        throw new Error('Kanıt kaydı doğrulanamadı.');
+      }
       playClick(700, 60);
 
       injectHistory = [{
@@ -365,13 +375,13 @@
       chatMessages = [...chatMessages, {
         ts: nowTime(),
         sender: 'KOMUTAN MÜDAHALESİ',
-        text: `Gerçeklik Enjekte Edildi [${injectType.toUpperCase()}]: "${injectValue.trim()}" -> ${injectTargetAgent.toUpperCase()} ajanına mühürlendi.`
+        text: `Kanıt kaydedildi [${injectType.toUpperCase()}]; ajana veya göreve aktarım henüz bağlı değil.`
       }];
       injectValue = '';
       injectNote = '';
     } catch (e: any) {
       playHalt();
-      alert('Enjeksiyon başarısız: ' + (e?.message || e));
+      alert('Kanıt kaydedilemedi: ' + (e?.message || e));
     } finally {
       isInjecting = false;
     }
@@ -385,15 +395,38 @@
     chatMessages = [...chatMessages, { ts: nowTime(), sender: 'SİZ', text }];
 
     try {
+      let commandReason = '';
+      try {
+        const command = await apiFetch('/api/aspasia/command', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ client_id: $clientId, user_message: text })
+        });
+        if ([401, 403, 429].includes(command.status)) throw new Error(`HTTP ${command.status}`);
+        if (command.ok) {
+          const data = await command.json();
+          if (data.accepted && data.task_id) {
+            chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: `Emir alındı. Görev: ${data.task_id}` }];
+            return;
+          }
+          commandReason = data.reason || 'görev başlatılmadı';
+        } else {
+          commandReason = `komut kanalı HTTP ${command.status}`;
+        }
+      } catch (error: any) {
+        if (/HTTP (401|403|429)/.test(String(error?.message))) throw error;
+        commandReason = 'komut durumu doğrulanamadı';
+      }
       const res = await apiFetch('/api/aspasia/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ client_id: $clientId, message: text })
+        body: JSON.stringify({ client_id: $clientId, user_message: text })
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      const reply = data.reply || data.response || 'Mesajınız alındı Mösyö.';
-      chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: reply }];
+      if (data.error) throw new Error(data.error.message || data.error.code || 'sohbet kullanılamıyor');
+      const reply = data.message || data.reply || data.response || 'Sohbet yanıtı boş.';
+      chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: `Komut: ${commandReason}. ${reply}` }];
     } catch (e: any) {
       chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: `Bağlantı kesintisi: ${e?.message || e}` }];
     } finally {
@@ -401,9 +434,50 @@
     }
   }
 
-  function toggleVaultLock() {
-    vaultLocked.update(v => !v);
-    playClick(400, 30);
+  async function refreshVaultState() {
+    const cid = $clientId || 'default';
+    try {
+      const res = await apiFetch(`/api/vault/status?client_id=${encodeURIComponent(cid)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const state = await res.json();
+      if (typeof state?.locked !== 'boolean') throw new Error('Geçersiz kasa durumu');
+      if (cid !== ($clientId || 'default')) throw new Error('İstemci değişti');
+      vaultLocked.set(state.locked);
+      vaultKnown = true;
+      return state.locked as boolean;
+    } catch (error: any) {
+      vaultKnown = false;
+      vaultError = `Kasa durumu doğrulanamadı: ${error?.message || 'ağ hatası'}`;
+      return null;
+    }
+  }
+
+  async function toggleVaultLock() {
+    if (vaultBusy) return;
+    vaultBusy = true;
+    vaultError = '';
+    try {
+      if (!vaultKnown) {
+        await refreshVaultState();
+        return;
+      }
+      const desiredLocked = !$vaultLocked;
+      const res = await apiFetch('/api/vault/status', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id: $clientId || 'default', action: desiredLocked ? 'lock' : 'unlock' })
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error?.message || `HTTP ${res.status}`);
+      const actual = await refreshVaultState();
+      if (actual !== null && actual !== desiredLocked) vaultError = 'Kasa istenen duruma geçmedi.';
+      if (actual === desiredLocked) playClick(400, 30);
+    } catch (error: any) {
+      const detail = error?.message || 'ağ hatası';
+      await refreshVaultState();
+      vaultError = `Kasa işlemi başarısız: ${detail}`;
+    } finally {
+      vaultBusy = false;
+    }
   }
 
   function togglePillar(id: string) {
@@ -470,14 +544,16 @@
       </div>
       <button
         class="vault-lock-btn"
-        class:locked={$vaultLocked}
+        class:locked={!vaultKnown || $vaultLocked}
         on:click={toggleVaultLock}
-        title={$vaultLocked ? 'Kasa Kilitli (OSINT korumalı) — Tıkla ve Aç' : 'Kasa Açık — Tıkla ve Kilitle'}
+        disabled={vaultBusy}
+        title={!vaultKnown ? 'Kasa durumu bilinmiyor — yeniden kontrol et' : $vaultLocked ? 'Kasa kilitli — açmayı dene' : 'Kasa açık — kilitle'}
       >
         <span class="vault-dot"></span>
-        <span class="vault-label">{$vaultLocked ? 'KASA KİLİTLİ' : 'KASA AÇIK'}</span>
+        <span class="vault-label">{!vaultKnown ? 'KASA DURUMU BİLİNMİYOR' : $vaultLocked ? 'KASA KİLİTLİ' : 'KASA AÇIK'}</span>
       </button>
     </div>
+    {#if vaultError}<span role="alert">{vaultError}</span>{/if}
   </header>
 
   <!-- ==================== 2. ANA 3 SÜTUNLU GÖVDE ==================== -->
@@ -528,27 +604,8 @@
         </div>
         <p class="station-desc">Dopamin Kancası, Amigdala Uyarımı, Maske Yırtıcı ve Viralite</p>
 
-        <!-- CANLI NÖROKİMYA FORMÜL METRİKLERİ -->
-        <div class="lilith-neuro-meters">
-          <div class="nm-row">
-            <span class="nm-name">DOPAMİN (Ödül):</span>
-            <div class="nm-bar-track"><div class="nm-fill fill-dopamine" style="width: 85%;"></div></div>
-            <span class="nm-score">85%</span>
-          </div>
-          <div class="nm-row">
-            <span class="nm-name">SEROTONİN (Statü):</span>
-            <div class="nm-bar-track"><div class="nm-fill fill-serotonin" style="width: 72%;"></div></div>
-            <span class="nm-score">72%</span>
-          </div>
-          <div class="nm-row">
-            <span class="nm-name">KORTİZOL (Aciliyet):</span>
-            <div class="nm-bar-track"><div class="nm-fill fill-cortisol" style="width: 40%;"></div></div>
-            <span class="nm-score">40%</span>
-          </div>
-          <div class="nm-viral-chip">
-            <span>VİRAL KATSAYI (Vc):</span>
-            <strong class="highlight-green">2.84</strong>
-          </div>
+        <div class="lilith-neuro-meters" aria-label="Lilith ölçümleri">
+          <p>Canlı nörokimya veya viralite ölçümü mevcut değil.</p>
         </div>
 
         <div class="station-presets">
@@ -566,7 +623,7 @@
           <span class="box-icon">🛡️</span>
           <h3>KOMUTAN MÜDAHALESİ ("İşte bu da onun!")</h3>
         </div>
-        <p class="box-sub">Ajanlar kazarken benzerini veya ikizini bulamazsa, limitsiz komutan yetkinizle doğrudan sisteme zorla enjekte edin.</p>
+        <p class="box-sub">Kanıtı kaydedin. Ajanlara veya aktif göreve aktarım henüz bağlı değil; hedef seçimi yalnızca kayıt bilgisidir.</p>
 
         <div class="override-form">
           <div class="form-dual-fields">
@@ -578,7 +635,7 @@
               <option value="note">Kritik Taktik Not</option>
             </select>
             <select bind:value={injectTargetAgent} class="select-field">
-              <option value="all">Tüm Ajanlar (Genel Hafıza)</option>
+              <option value="all">Tümü (kayıt etiketi)</option>
               <option value="lilith">Lilith (Gölge & Kanca)</option>
               <option value="osint_investigator">OSINT Investigator</option>
               <option value="depth_analyst">Depth Analyst</option>
@@ -596,13 +653,13 @@
             on:click={injectCommanderEvidence}
             disabled={isInjecting || !injectValue.trim()}
           >
-            {isInjecting ? '⚡ ENJEKTE EDİLİYOR...' : '🔥 KANITI ZORLA ENJEKTE ET & KAZIYI GÜNCELLE'}
+            {isInjecting ? '⚡ KAYDEDİLİYOR...' : '🔥 KANITI KAYDET'}
           </button>
         </div>
 
         {#if injectHistory.length > 0}
           <div class="inject-history-ticker">
-            <span class="ticker-title">MÜHÜRLENEN KANITLAR:</span>
+            <span class="ticker-title">KAYDEDİLEN KANITLAR:</span>
             {#each injectHistory.slice(0, 2) as h}
               <div class="ticker-row">
                 <span class="t-type">[{h.type.toUpperCase()}]</span>
@@ -819,7 +876,7 @@
             </div>
             <div class="pod-chip">
               <span class="pod-lbl">Doğruluk:</span>
-              <span class="pod-val highlight-green">{phoneProbeResult.metadata?.is_valid ? '✓ Geçerli GSM' : 'Doğrulanamadı'}</span>
+              <span class="pod-val highlight-green">{phoneProbeResult.metadata?.is_valid ? '✓ Geçerli numara formatı' : 'Doğrulanamadı'}</span>
             </div>
           </div>
 
@@ -845,7 +902,7 @@
           <!-- TESPİT EDİLEN KULLANICI ADLARI / AĞLAR -->
           {#if (phoneProbeResult.associated_handles || []).length > 0}
             <div class="pod-handles-strip">
-              <span class="pod-sub-title">İlişkili Kullanıcı Adları (@):</span>
+              <span class="pod-sub-title">Doğrulanmamış aday kullanıcı adları (@):</span>
               <div class="pod-handle-pills">
                 {#each phoneProbeResult.associated_handles as handle}
                   <button
@@ -863,7 +920,7 @@
           <!-- BULUNAN SOSYAL AĞLAR -->
           {#if (phoneProbeResult.social_probes || []).length > 0}
             <div class="pod-social-strip">
-              <span class="pod-sub-title">Tespit Edilen Sosyal Profiller:</span>
+              <span class="pod-sub-title">İlişkisi doğrulanmamış aday profiller:</span>
               <div class="pod-social-pills">
                 {#each phoneProbeResult.social_probes as sp}
                   <a href={sp.url} target="_blank" rel="noopener noreferrer" class="pod-social-pill">

@@ -13,8 +13,8 @@
       3. DOĞRULANMIŞ                      (vakanın gerçekliği teyit edilmiş)
       4. KONSORSİYUM ONAYI                (konsey onayı — asgari 2 onay)
 
-Bu dört şarttan BİRİ bile eksikse sistem durur. "Emin olunmadan" hiçbir çocuk
-araştırması başlamaz.
+Bu dört şarttan BİRİ bile eksikse sistem durur. İsim ve doğrulama beyanları
+bağımsız onay değildir; yetkili vaka-onay altyapısı yokken istisna kapalıdır.
 
 Bu kilit:
   - **Küreseldir:** yeteneğin kendi kapıları ne olursa olsun, koşucu (runner)
@@ -207,10 +207,14 @@ class MinorGate:
                 f"(en az {MIN_COUNCIL_APPROVALS} farklı onay gerekir; "
                 f"şu an {len(unique_approvals)}).",
             )
-        return MinorDecision.allow(
-            "approved",
-            "Kayıp/yaralanma vakası: 4 şart tamam — aile bilgili, sebep net, "
-            "doğrulandı, konsorsiyum onayladı.",
+        # Names and flags come from the same untrusted declaration. There is
+        # no independently authenticated, case-scoped approval authority yet.
+        # Never promote those declarations to permission, including for direct
+        # runner callers that bypass the HTTP API.
+        return MinorDecision.deny(
+            "independent_approval_unavailable",
+            "Bağımsız vaka doğrulaması ve yetkili onay altyapısı yok; "
+            "beyan araştırma izni vermez.",
         )
 
 

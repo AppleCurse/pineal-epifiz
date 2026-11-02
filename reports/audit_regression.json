@@ -57,7 +57,7 @@
       "evidence": [
         "satır başı `import httpx` (egress dışı) → 0 dosya (denetim 8 idi)",
         "egress dışı `httpx.AsyncClient(` inşası → 0 nokta (deterministik tarama)",
-        "omurgaya bağlı dosya (open_client kullanan) → 18 dosya",
+        "omurgaya bağlı dosya (open_client kullanan) → 19 dosya",
         "agent_core/capabilities/egress.py:123: def open_client("
       ],
       "note": "Dışa çıkış tek sırtta: inşa yalnız open_client, her dosya omurgaya bağlı.",
@@ -87,7 +87,7 @@
       "status": "closed",
       "evidence": [
         "agent_core/agents/human_behavior.py: `input_data: Dict[str, Any]` imzası kalkmış",
-        "agent_core toplam: 203"
+        "agent_core toplam: 208"
       ],
       "note": "Payload Pydantic modele bağlanmış.",
       "regression": false
@@ -310,13 +310,13 @@
       "status": "closed",
       "evidence": [
         "backend/api.py:3128: if (blocked := _require_minor_clearance(req.client_id, subject=req.url)) is not None:",
+        "backend/api.py:3652: register_hook_studio_routes(app, rate_limit=rate_limit, rate_identity=_rate_identity, gateway_provider=lambda: getattr(aspasia_chief, \"llm\", None), get_executor=get_executor, require_vault_open=lambda client_id: _require_vault_open(client_id), require_minor_clearance=lambda client_id, subject: _require_minor_clearance(client_id, subject=subject))",
         "backend/api.py:3933: def _require_minor_clearance(",
         "backend/api.py:3941: if (blocked := _require_minor_clearance(req.client_id)) is not None:",
         "backend/api.py:4225: if (blocked := _require_minor_clearance(payload.client_id, subject=payload.username)) is not None:",
         "backend/api.py:4259: if (blocked := _require_minor_clearance(payload.client_id, subject=payload.email)) is not None:",
         "backend/api.py:4289: if (blocked := _require_minor_clearance(payload.client_id, subject=payload.url)) is not None:",
         "backend/api.py:4321: if (blocked := _require_minor_clearance(payload.client_id, subject=payload.url)) is not None:",
-        "backend/api.py:4338: if (blocked := _require_minor_clearance(None)) is not None:",
         "backend/api.py:3814: class MinorCasePayload(BaseModel):",
         "backend/api.py:734: app.state.minor_cases = {}  # client_id -> MinorCaseContext (yalnız beyan edilmişse)",
         "backend/api.py:3855: `app.state.minor_cases` içinde tutulur — oda tahliyesi (30 dk boşta)",
@@ -405,12 +405,12 @@
       "check_kind": "static",
       "status": "closed",
       "evidence": [
-        "frontend/src/components/AtlasPinealCockpit.svelte:166: const INSUFFICIENT_EVIDENCE = 'YETERSİZ KANIT';",
-        "frontend/src/components/AtlasPinealCockpit.svelte:157: function hasEvidence(value: unknown): boolean {",
+        "frontend/src/components/AtlasPinealCockpit.svelte:112: const INSUFFICIENT_EVIDENCE = 'YETERSİZ KANIT';",
+        "frontend/src/components/AtlasPinealCockpit.svelte:114: function hasEvidence(val: any): boolean {",
         "`INSUFFICIENT_EVIDENCE` kullanımı → 17 satır",
-        "`hasEvidence(...)` kapısı → 17 satır",
+        "`hasEvidence(...)` kapısı → 26 satır",
         "CANLI dolgu kalıbı (yorum olmayan satırda) → 0 (yok)",
-        "kalıbın geçtiği tek yer: kaldırılmış kusuru anlatan AÇIKLAMA YORUMU → 2 satır"
+        "kalıbın geçtiği tek yer: kaldırılmış kusuru anlatan AÇIKLAMA YORUMU → 0 satır"
       ],
       "note": "E6: null/undefined/boş metin/NaN/boş dizi 'kanıt yok' sayılıyor ve alan `YETERSİZ KANIT` etiketi + `evidence-insufficient` sınıfıyla basılıyor; graf kanıt yoksa boş kalıyor (uydurma yok).",
       "regression": false
