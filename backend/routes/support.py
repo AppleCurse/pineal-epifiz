@@ -70,7 +70,7 @@ def _budget_blocked(room: dict) -> bool:
         gateway = room["executor"].llm_gateway
         reader = getattr(gateway, "budget_status", None)
         if not callable(reader):
-            return False
+            return True
         budget = reader()
         cap = float(budget.get("cap_usd") or 0.0)
         if cap <= 0.0:
@@ -158,7 +158,7 @@ def register_support_routes(
                 {"error": {"code": "NOT_FOUND", "message": "Checkpoint bulunamadı"}},
                 status_code=404,
             )
-        open_views = [v for v in views if v.get("status") == "pending"]
+        open_views = [v for v in views if v.get("status") != "resolved"]
         return {
             "task_id": task_id,
             "task_status": _clean_ts(
@@ -262,11 +262,13 @@ def register_support_routes(
         if code == "PENDING_LIVE_CHECK":
             raw_entry = ckpt.finalize_support(task_id, support_id) or raw_entry
 
+        resolved = bool(raw_entry and raw_entry.get("status") == "resolved")
         broadcast_log(
             client_id,
             "INFO",
-            f"DESTEK SAĞLANDI: {task_id} · {support_id} · "
-            f"talep={redact_text(str(entry.get('agent_name') or ''))} — kapandı.",
+            f"DESTEK YANITI: {task_id} · {support_id} · "
+            f"talep={redact_text(str(entry.get('agent_name') or ''))} — "
+            + ("engel kaldırıldı." if resolved else "engel açık."),
         )
         return {"status": "accepted", "support": ckpt.support_view(raw_entry or {})}
 
@@ -349,25 +351,31 @@ def register_support_routes(
                 )
             missing = []
             for r in status_dump.get("support_requests") or []:
-                if r.get("status") != "pending" or not r.get("blocks_resume"):
+                if not r.get("blocks_resume"):
                     continue
-                req = r.get("requires")
-                if req == "vault_open":
-                    # Kasa şu an AÇIK (yukarıdaki 423 kapısı geçildi) →
-                    # engel kalkmıştır; resume sırasında executor yeniden
-                    # doğrular ve talebi ``verified_vault_open`` ile kapatır.
-                    continue
-                if r.get("kind") == "spend_cap" and not _budget_blocked(room):
-                    continue  # bütçe sınırı aşılmıyor → engel kalktı
-                if r.get("approved") and r.get("responses"):
-                    continue  # destek geldi; kapatma checkpoint'e işlenmemiş
+                req = r.get("requires") or "operator_response"
+                status = r.get("status")
+                if status == "resolved":
+                    valid = ckpt.resolved_record_valid(r)
+                    if r.get("kind") == "spend_cap":
+                        valid = valid and not _budget_blocked(room)
+                    if valid:
+                        continue
+                elif status == "pending":
+                    responded = r.get("approved") is True and bool(r.get("responses"))
+                    if responded and req == "vault_open":
+                        continue  # vault checked above; executor checks again
+                    if responded and r.get("kind") == "spend_cap" and not _budget_blocked(room):
+                        continue
+                    if responded and req == "operator_response":
+                        continue
                 missing.append(r.get("support_id"))
             if missing:
                 ckpt.release_resume(task_id, token)
                 open_views = [
                     ckpt.support_view(r)
                     for r in status_dump.get("support_requests") or []
-                    if r.get("status") == "pending" and r.get("blocks_resume")
+                    if r.get("blocks_resume") and r.get("support_id") in missing
                 ]
                 return JSONResponse(
                     {
@@ -402,8 +410,19 @@ def register_support_routes(
                 ckpt.release_resume(task_id, token)
             raise
 
-        # Terminal koşu YENİDEN AÇILIR (mevcut durum makinesi — yeni durum yok).
-        lifecycle_registry(room).reopen(task_id, "processing")
+        # Preserve the prior snapshot before creating a new lifecycle run.
+        # Archive failures deny resume; the original safety gates stay in force.
+        try:
+            registry = lifecycle_registry(room)
+            prior_run = registry.get_run(task_id)
+            ckpt.archive_before_resume(task_id, status_dump, prior_run.get("run_id") if prior_run else None)
+            registry.reopen(task_id, "processing")
+        except Exception:
+            ckpt.release_resume(task_id, token)
+            return JSONResponse(
+                {"error": {"code": "RESUME_ARCHIVE_FAILED", "message": "Önceki görev durumu korunamadı; resume başlatılmadı"}},
+                status_code=503,
+            )
         broadcast_log(
             client_id,
             "INFO",

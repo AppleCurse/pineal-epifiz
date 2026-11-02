@@ -165,3 +165,4 @@ zipp==4.1.0
 redis==5.2.1
 hiredis==3.0.0
 yt-dlp==2026.10.26
+phonenumbers==9.0.42

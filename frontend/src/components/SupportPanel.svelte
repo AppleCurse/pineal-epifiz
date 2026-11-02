@@ -91,11 +91,11 @@
     </header>
 
     {#each $supportRequests as req (req.support_id)}
-      <article class:resolved={req.status !== 'pending'} data-testid="support-card">
+      <article class:resolved={req.status === 'resolved'} data-testid="support-card">
         <div class="row">
           <span class="sid" title={req.support_id}>talep: {shortId(req.support_id)}</span>
           <span class="badge" class:open={req.status === 'pending'}>
-            {req.status === 'pending' ? 'AÇIK' : 'KAPANDI'}
+            {req.status === 'pending' ? 'AÇIK' : req.status === 'resolved' ? 'KAPANDI' : 'DURUM BİLİNMİYOR'}
           </span>
         </div>
         <div class="field"><span>ajan:</span> {req.agent_name || '—'}</div>

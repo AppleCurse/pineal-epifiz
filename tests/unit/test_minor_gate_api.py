@@ -384,21 +384,15 @@ def test_explicit_false_declares_adult_without_blocking():
 
 
 @pytest.mark.parametrize("method,path,body", EGRESS_CALLS, ids=[p for _, p, _ in EGRESS_CALLS])
-def test_approved_missing_case_does_not_block(monkeypatch, method, path, body):
-    """Dört şart tamamsa çocuk kapısı 451 DÖNMEZ (kapı, her şeyi reddetmiyor).
-
-    Alt motora inilmesi beklenmez (kasa/env kapıları ardından gelir); ölçülen
-    şey çocuk kapısının onaylı vakayı GEÇİRMESİDİR.
-    """
+def test_self_attested_missing_case_is_blocked(monkeypatch, method, path, body):
+    """İsim beyanları bağımsız onay değildir; her egress kapısı kapalı kalır."""
     cid = _cid()
     _declare_approved(cid)
     try:
         with TestClient(app) as client:
             r = _call(client, method, path, body(cid))
-        assert r.status_code != 451, f"{path} onaylı vakada 451 döndü: {r.text[:200]}"
-        if r.status_code == 200:
-            payload = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
-            assert payload.get("error", {}).get("code") != "MINOR_BLOCKED"
+        assert r.status_code == 451, f"{path}: {r.status_code} {r.text[:200]}"
+        assert r.json()["error"]["code"] == "MINOR_BLOCKED"
     finally:
         _cleanup(cid)
 
@@ -550,7 +544,7 @@ def test_ledger_records_both_rejections_and_approvals(tmp_path):
             )
         lines = [json.loads(l) for l in ledger.read_text(encoding="utf-8").splitlines() if l.strip()]
         assert lines, "defter boş: karar sessizce yutulmuş"
-        assert any(l["reason_code"] == "approved" for l in lines), lines
+        assert any(l["reason_code"] == "independent_approval_unavailable" for l in lines), lines
         assert all("case_id" in l for l in lines)
         # Hedefin ham kimliği (telefon/e-posta) dosyaya GİRMEZ; yalnız özet.
         api._require_minor_clearance(cid, subject="+90 555 000 00 00")

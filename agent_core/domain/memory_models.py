@@ -124,6 +124,7 @@ class TaskSnapshot(BaseModel):
     completed_at: Optional[datetime] = None
     current_agent: Optional[str] = None
     planned_agents: List[str] = []
+    completion_policy: Optional[str] = None
     completed_agents: List[str] = []
     halted_reason: Optional[str] = None
     resonance_score: Optional[float] = None

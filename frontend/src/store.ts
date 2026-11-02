@@ -82,6 +82,13 @@ export const clientId = writable(getOrCreateClientId());
 // Global state
 export const logs = writable<Array<{ts: string, level: string, msg: string}>>([]);
 export const taskStatus = writable<any>(null);
+
+/** Never carry task runs into a different or unidentified WS task frame. */
+export function mergeTaskSnapshot(previous: any, incoming: any): any {
+  if (typeof incoming?.task_id !== 'string' || !incoming.task_id.trim()) return previous;
+  const base = previous?.task_id === incoming.task_id ? previous : {};
+  return { ...base, task_phase: 'unknown', task_outcome: 'unknown', decision_state: 'unknown', ...incoming, runs: incoming.runs || {} };
+}
 export const isProcessing = writable(false);
 export const telemetryEvents = writable<any[]>([]);
 export const agentStatuses = writable<Record<string, { status: string; updatedAt: number; metadata?: any }>>({});

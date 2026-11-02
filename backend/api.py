@@ -96,6 +96,9 @@ from agent_core.shadow.shadow_executor import ShadowExecutor
 # [API-BÖLME 5 · 2026-10-18] Koşu kaydı serileştiricisi ayrı modüle taşındı
 # (tavan kuralı: satır eklemek yerine MODÜL ÇIKAR). Dış sözleşme bozulmaz —
 # aşağıdaki iki adres `backend.api` üzerinden yeniden ihraç edilir.
+from backend.services.vault_state import (
+    _is_placeholder_key as _is_placeholder_key, _is_real_key, _cookie_pool_has_key, _room_vault_unlocked,
+)
 from backend.services.aspasia_state import build_state_payload
 from backend.services.run_entries import (  # noqa: F401  # yeniden dışa aktarım
     run_display_fields as _run_display_fields,
@@ -116,6 +119,7 @@ from agent_core.version import VERSION
 # [P0 · DENETİM 2026-10-16] Kanal durumu sözleşmesi: "koştu / ÇALIŞMADI
 # (sebep) / hata" — boş liste değil. Dosya kuralları `backend/services/
 # web_dossier.py` modülünde (API-BÖLME 3).
+from agent_core.domain.task_execution_state import task_state_fields
 from agent_core.domain.channel_status import (
     ChannelRun,
     failed as channel_failed,
@@ -954,48 +958,9 @@ def _extract_vault_provider_keys(vault: dict) -> tuple:
 # kurulum yolu (`get_room`, `/api/vault`) ve dosya denetimi aynı
 # `_is_real_key` kapısından geçer; placeholder fail-closed reddedilir.
 # Değerler ASLA loglanmaz/döndürülmez — bu yardımcılar yalnızca boolean üretir.
-_PLACEHOLDER_KEY_PREFIXES: tuple = ("sk-or-v1-YOUR",)
-_PLACEHOLDER_KEY_MARKERS: tuple = (
-    "YOUR_", "YOUR-", "YOUR ", "_YOUR",
-    "PLACEHOLDER", "EXAMPLE", "CHANGE_ME", "CHANGEME",
-    "REPLACE_ME", "REPLACEME", "INSERT_", "SAMPLE_KEY",
-)
 _SEARCH_CONTAINER_NAMES: frozenset = frozenset({
     "searchandosint", "searchosint", "searchandall", "search",
 })
-
-
-def _is_placeholder_key(value: object) -> bool:
-    """Placeholder/örnek anahtar metni mi? (fail-closed sınıflandırıcı)"""
-    if not isinstance(value, str):
-        return True
-    text = value.strip()
-    if not text:
-        return True
-    for prefix in _PLACEHOLDER_KEY_PREFIXES:
-        if text.startswith(prefix):
-            return True
-    upper = text.upper()
-    return any(marker in upper for marker in _PLACEHOLDER_KEY_MARKERS)
-
-
-def _is_real_key(value: object) -> bool:
-    """Gerçek sır malzemesi mi? Boş + placeholder reddedilir."""
-    return (
-        isinstance(value, str)
-        and bool(value.strip())
-        and not _is_placeholder_key(value)
-    )
-
-
-def _cookie_pool_has_key(value: object) -> bool:
-    """Çok satırlı cookie havuzunda en az bir gerçek satır var mı?"""
-    if not isinstance(value, str):
-        return False
-    lines = [line for line in value.splitlines() if line.strip()]
-    if not lines:
-        return _is_real_key(value)
-    return any(_is_real_key(line) for line in lines)
 
 
 def _vault_file_has_key_material(vault: dict) -> bool:
@@ -1036,23 +1001,6 @@ def _vault_file_has_key_material(vault: dict) -> bool:
             if _is_real_key(key):
                 return True
     return False
-
-
-def _room_vault_unlocked(vault: dict) -> bool:
-    """Oda kasası açık mı? Bayraklar YALNIZCA gerçek malzemeyle kurulur
-    (`get_room` + `/api/vault` aynı kapıdan geçer), bu yüzden bayraklar
-    güvenilirdir. `/api/vault/lock` bayrakları temizler -> kilitli."""
-    if not isinstance(vault, dict):
-        return False
-    if vault.get("or_key") is True:
-        return True
-    if vault.get("provider_keys_set"):
-        return True
-    if vault.get("search_keys") is True:
-        return True
-    if _is_real_key(vault.get("ig_sessionid")):
-        return True
-    return _cookie_pool_has_key(vault.get("x_cookie"))
 
 
 # [AUDIT P0-4] Oda kayıt defteri sınırları. client_id istemcinin seçtiği,
@@ -2226,6 +2174,7 @@ async def _send_snapshot(room: dict, snapshot: Any):
 
     payload = _ws_json({
         "type": "snapshot_update",
+        **task_state_fields(snapshot),
         "task_id": snapshot.task_id,
         "current_agent": snapshot.current_agent,
         "status": snapshot.status,
@@ -2954,8 +2903,8 @@ def broadcast_result_error(client_id, status, msg, task_id: Optional[str] = None
     if room is not None:
         _close_active_task(room, task_id, status)
         if task_id:
-            room["latest_result"] = {"task_id": task_id, "status": status, "halted_reason": msg}
-    payload = {"type": "result", "status": status}
+            room["latest_result"] = {"task_id": task_id, "status": status, "halted_reason": msg, **task_state_fields(status)}
+    payload = {"type": "result", "status": status, **task_state_fields(status)}
     if task_id:
         payload["task_id"] = task_id
     _enqueue(client_id, ("result_error", payload))
@@ -2990,6 +2939,7 @@ def broadcast_result(client_id, res):
 
     payload = {
         "type": "result",
+        **task_state_fields(res),
         "task_id": res.task_id,
         "status": res.status,
         "evidence_chain": redact_structure(getattr(res, "evidence_chain", []) or []),
@@ -3208,6 +3158,7 @@ async def api_vault(req: VaultPayload):
         )
     vault = get_vault(req.client_id)
     executor = get_executor(req.client_id)
+    credential_submitted = bool(req.x_cookie or req.api_key)
     if req.x_cookie:
         vault["x_cookie"] = req.x_cookie
         broadcast_log(req.client_id, "INFO", "KASA: Cookie belleğe mühürlendi.")
@@ -3246,6 +3197,7 @@ async def api_vault(req: VaultPayload):
             else:
                 broadcast_log(req.client_id, "WARNING", f"KASA: saglayici anahtari uygulanamadi: {provider_id}")
         if applied:
+            credential_submitted = True
             vault["provider_keys_set"] = sorted(set(applied))
             broadcast_log(req.client_id, "INFO", f"KASA: {len(applied)} dogrudan-saglayici anahtari havuza eklendi.")
 
@@ -3292,11 +3244,18 @@ async def api_vault(req: VaultPayload):
         except Exception:
             logger.error(
                 "ARAMA MOTORU POLİTİKASI AKTARILAMADI (/api/vault) — dar taraf: "
-                "kasa KİLİTLİ", exc_info=True,
+                "kasa KİLİTLİ",
             )
+            get_room(req.client_id)["vault_manually_locked"] = True
+            return JSONResponse({"error": {"code": "VAULT_POLICY_FAILED", "message": "Kasa politikası uygulanamadı; kasa kilitli."}}, status_code=503)
+        if real_search:
             vault["search_keys"] = True
+            credential_submitted = True
             broadcast_log(req.client_id, "INFO", "KASA: Arama Motoru anahtarları mühürlendi.")
-        
+
+    # Only newly submitted key material may reopen a manually locked room.
+    if credential_submitted and _room_vault_unlocked(vault):
+        get_room(req.client_id)["vault_manually_locked"] = False
     return {"status": "secured"}
 
 class OverridePayload(BaseModel):
@@ -3306,8 +3265,6 @@ class OverridePayload(BaseModel):
     # depolamayı hem prompt maliyetini sınırlar.
     fact: str = Field(min_length=1, max_length=2000)
     tag: str = Field(min_length=1, max_length=64)
-
-_override_lock = asyncio.Lock()
 
 
 def _read_learnings_safe(lp: str) -> tuple:
@@ -3397,12 +3354,15 @@ async def api_override(req: OverridePayload):
         executor = get_executor(req.client_id)
         mem_dir = executor.memory.storage_path
         lp = os.path.join(mem_dir, "learnings.json")
-        async with _override_lock:
-            learn, problem = await asyncio.to_thread(_read_learnings_safe, lp)
-            if problem:
-                quarantined = await asyncio.to_thread(_quarantine_learnings, lp, problem)
-            learn.append({"fact": req.fact.strip(), "tag": req.tag.strip(), "ts": datetime.now().isoformat(), "hash": hashlib.sha256(req.fact.strip().encode()).hexdigest()[:12]})
-            await asyncio.to_thread(_write_learnings_atomic, lp, learn)
+        def _locked_override_write():
+            from backend.routes.commander import locked_learnings
+            with locked_learnings(lp):
+                learn, problem = _read_learnings_safe(lp)
+                backup = _quarantine_learnings(lp, problem) if problem else None
+                learn.append({"fact": req.fact.strip(), "tag": req.tag.strip(), "ts": datetime.now().isoformat(), "hash": hashlib.sha256(req.fact.strip().encode()).hexdigest()[:12]})
+                _write_learnings_atomic(lp, learn)
+                return backup
+        quarantined = await asyncio.to_thread(_locked_override_write)
         if quarantined:
             broadcast_log(req.client_id, "WARNING", f"HAFIZA: bozuk learnings.json yedeklendi ({os.path.basename(quarantined)}); kayıtsız devam")
         broadcast_log(req.client_id, "INFO", f"HAFIZA: Yeni konsept mühürlendi [{req.tag.strip()}]")
@@ -3536,6 +3496,7 @@ async def api_vault_lock(payload: VaultStatusPayload):
     room = get_room(payload.client_id)
     # Vault'u temizle
     room["vault"] = {}
+    room["vault_manually_locked"] = True
     broadcast_log(payload.client_id, "WARNING", "VAULT KILITLENDI: Dis dunya erisimi durduruldu, OSINT/Scraper bloklandi")
     return {"status": "locked", "message": "Kasa kilitlendi, dis dunya erisimi durduruldu"}
 
@@ -3544,9 +3505,10 @@ async def api_vault_lock(payload: VaultStatusPayload):
 async def api_vault_unlock(payload: VaultStatusPayload):
     """Vault kilidini ac - backend tarafinda sadece durum raporu, gercek acma /api/vault ile"""
     room = get_room(payload.client_id)
-    vault = room["vault"]
-    has_key = _room_vault_unlocked(vault)
-    if not has_key:
+    previously_locked = room.get("vault_manually_locked", False)
+    room["vault_manually_locked"] = False
+    if not _check_vault_interlock(payload.client_id):
+        room["vault_manually_locked"] = previously_locked
         return JSONResponse(
             {"error": {"code": "VAULT_LOCKED", "message": "Kasada anahtar yok, once /api/vault ile anahtar girin"}},
             status_code=423
@@ -3616,9 +3578,11 @@ def _check_vault_interlock(client_id: str) -> bool:
     kasa ancak GERÇEK anahtar/oturum malzemesi taşıyorsa açıktır.
     """
     try:
+        room = get_room(client_id)
+        if room.get("vault_manually_locked"):
+            return False
         if os.getenv("PINEAL_ROUTER_LIVE") == "1":
             return True
-        room = get_room(client_id)
         vault = room["vault"]
         unlocked = bool(
             vault.get("or_key") or vault.get("ig_sessionid") or vault.get("x_cookie")
@@ -3649,7 +3613,7 @@ from backend.routes.mobile_coach import register_mobile_coach_routes
 from backend.routes.hook_studio import register_hook_studio_routes
 
 register_mobile_coach_routes(app, rate_limit=rate_limit, rate_identity=_rate_identity, gateway_provider=lambda: getattr(aspasia_chief, "llm", None))
-register_hook_studio_routes(app, rate_limit=rate_limit, rate_identity=_rate_identity, gateway_provider=lambda: getattr(aspasia_chief, "llm", None), get_executor=get_executor)
+register_hook_studio_routes(app, rate_limit=rate_limit, rate_identity=_rate_identity, gateway_provider=lambda: getattr(aspasia_chief, "llm", None), get_executor=get_executor, require_vault_open=lambda client_id: _require_vault_open(client_id), require_minor_clearance=lambda client_id, subject: _require_minor_clearance(client_id, subject=subject))
 
 app.include_router(
     build_speech_router(
@@ -3973,7 +3937,7 @@ async def api_minor_case_register(req: MinorCasePayload):
 
     Kayıt, beyanı "onay" değil "dur" olarak kurar: dört şart tamam değilse
     yanıt `allowed:false` döner ve o odanın TÜM dış-çıkış kapıları 451 verir.
-    Şartlar tamamlanınca yanıt `allowed:true` olur ve akış normalleşir.
+    Bağımsız vaka/onay altyapısı yokken beyan izin vermez ve kilit kapalı kalır.
     """
     if not req.client_id or len(req.client_id) > _MAX_CLIENT_ID_LENGTH:
         return JSONResponse(
@@ -4891,17 +4855,17 @@ async def interpreter_execute(req: InterpreterPayload):
             detail="ENABLE_INTERPRETER açık ama ajan bu odada kayıtlı değil.",
         )
         
-    broadcast_log(req.client_id, "INFO", f"INTERPRETER: Görev icra ediliyor -> {req.prompt[:60]}...")
+    broadcast_log(req.client_id, "INFO", "INTERPRETER: Yanıt isteniyor; icra henüz doğrulanmadı.")
     res = await interpreter_agent.execute_task(
         prompt=req.prompt,
         api_key=executor.llm_gateway.api_key,
         auto_run=req.auto_run
     )
     
-    if res.status == "success":
-        broadcast_log(req.client_id, "INFO", "INTERPRETER: İcra başarıyla tamamlandı.")
+    if res.status == "error":
+        broadcast_log(req.client_id, "ERROR", "INTERPRETER: Yanıt alınamadı.")
     else:
-        broadcast_log(req.client_id, "ERROR", f"INTERPRETER HATA: {res.error_message}")
+        broadcast_log(req.client_id, "INFO", f"INTERPRETER: Yanıt durumu {res.status}; icra doğrulanmadı.")
         
     return res.model_dump()
 
@@ -5066,6 +5030,8 @@ async def api_task_graph(
         )
 
     room = get_room(client_id)
+    if _task_access(task_id, room.get("_owner") or _get_principal()) == "forbidden":
+        raise TaskForbiddenError(task_id)
     executor = room.get("executor")
     if executor is None:
         return JSONResponse(

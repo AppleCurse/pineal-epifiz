@@ -112,6 +112,8 @@ def register_hook_studio_routes(
     rate_identity: Callable[[Request], str],
     gateway_provider: Callable[[], Any],
     get_executor: Optional[Callable[[str], Any]] = None,
+    require_vault_open: Optional[Callable[[str], Any]] = None,
+    require_minor_clearance: Optional[Callable[..., Any]] = None,
 ) -> None:
     @app.get("/api/hook/archetypes")
     async def list_archetypes():
@@ -302,4 +304,6 @@ Aşağıdaki JSON şemasında yanıt ver:
         rate_identity=rate_identity,
         gateway_provider=gateway_provider,
         get_executor=get_executor,
+        require_vault_open=require_vault_open,
+        require_minor_clearance=require_minor_clearance,
     )

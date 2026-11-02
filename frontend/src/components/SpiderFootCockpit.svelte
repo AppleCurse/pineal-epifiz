@@ -663,7 +663,9 @@
       // Durum, tahminle değil YANITLA yazılır.
       if (body?.status === 'unlocked') vaultLocked.set(false);
       else if (body?.status === 'locked') vaultLocked.set(true);
-      else vaultLocked.set(wasLocked ? false : true);
+      else {
+        pushOperator('⚠️ Kasa yanıtı geçersiz; durum doğrulanmadı.');
+      }
 
       // Kontrol deneyi: kilidin gerçekten istendiği durumda olduğunu doğrula.
       const confirm = await apiFetch(`/api/vault/status?client_id=${encodeURIComponent(cid)}`);
@@ -704,14 +706,16 @@
       const urls = [...(ts.target_profile.detected_urls || []), ...(ts.target_profile.external_urls || [])];
       for (const u of urls) {
         addUrlNode('Instagram', u, u.replace(/^https?:\/\/(www\.)?/, ''));
-        evidenceItems.push({
-          id: `ev_${Math.random().toString(36).substring(2, 6)}`,
-          type: 'Biyografi Bağlantısı',
-          value: u,
-          source: 'Instagram Ghost Scraper',
-          verified: true,
-          time: new Date().toLocaleTimeString()
-        });
+        if (!evidenceItems.some(item => item.value === u && item.type === 'Biyografi Bağlantısı')) {
+          evidenceItems.push({
+            id: `ev_${Math.random().toString(36).substring(2, 6)}`,
+            type: 'Biyografi Bağlantısı',
+            value: u,
+            source: 'Profil verisi',
+            verified: false,
+            time: new Date().toLocaleTimeString()
+          });
+        }
       }
       evidenceItems = [...evidenceItems];
       pipelineSteps[2].status = 'completed';
@@ -722,7 +726,7 @@
     // Görev tamamlandıysa
     if (ts.status === 'completed' || ts.status === 'done') {
       isProcessing.set(false);
-      pipelineSteps.forEach(s => s.status = 'completed');
+      pipelineSteps.forEach(s => { if (s.status === 'running') s.status = 'idle'; });
       pipelineSteps = [...pipelineSteps];
       if (timerInterval) clearInterval(timerInterval);
     }
@@ -1305,7 +1309,7 @@
             </div>
             <div class="intel-col">
               <span class="intel-label">İLETİŞİM TONU</span>
-              <span class="intel-value">{liveCognitive?.communication_tone || 'Dengeli / Analitik'}</span>
+              <span class="intel-value">{liveCognitive?.communication_tone || 'Veri yok'}</span>
             </div>
             <div class="intel-col">
               <span class="intel-label">BİRİNCİL TUTKU</span>
@@ -1313,11 +1317,11 @@
             </div>
             <div class="intel-col">
               <span class="intel-label">HASSASİYET / MAYIN</span>
-              <span class="intel-value friction">{liveFrictions?.sensitivities?.[0] || 'Klişeler & Yüzeysellik'}</span>
+              <span class="intel-value friction">{liveFrictions?.sensitivities?.[0] || 'Veri yok'}</span>
             </div>
             <div class="intel-col">
               <span class="intel-label">BİLİŞSEL GÜVEN</span>
-              <span class="intel-value badge-conf">%{Math.round((liveBridge?.confidence || 0.92) * 100)}</span>
+              <span class="intel-value badge-conf">{typeof liveBridge?.confidence === 'number' && Number.isFinite(liveBridge.confidence) && liveBridge.confidence >= 0 && liveBridge.confidence <= 1 ? `%${Math.round(liveBridge.confidence * 100)}` : 'Veri yok'}</span>
             </div>
           </div>
 
@@ -1418,6 +1422,9 @@
               </button>
             </div>
 
+            {#if customHookResult?.data_confidence === false}
+              <p role="status">Bu sonuç güvenilir veriyle doğrulanmadı{customHookResult?.fallback_reason ? ` (${customHookResult.fallback_reason})` : ''}.</p>
+            {/if}
             <div class="message-content-box">
               {#if activeOpeningMessage}
                 <p class="opening-message-text">"{activeOpeningMessage}"</p>
@@ -1802,7 +1809,7 @@
       {:else if activeTab === 'evidence'}
         <div class="evidence-list">
           {#if evidenceItems.length === 0}
-            <div class="empty-state">Henüz doğrulanmış adli kanıt kaydı yok. Görevi başlatın.</div>
+            <div class="empty-state">Henüz bağlantı kaydı yok. Görevi başlatın.</div>
           {:else}
             {#each evidenceItems as ev}
               <div class="evidence-row">
@@ -1810,7 +1817,7 @@
                 <span class="ev-type">{ev.type}</span>
                 <span class="ev-val">{ev.value}</span>
                 <span class="ev-source">{ev.source}</span>
-                <span class="ev-check">✓ Mühürlü</span>
+                <span class="ev-check">{ev.verified ? 'Doğrulandı' : 'Tespit edildi · doğrulanmadı'}</span>
               </div>
             {/each}
           {/if}

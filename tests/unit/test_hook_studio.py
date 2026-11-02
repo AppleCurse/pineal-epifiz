@@ -95,3 +95,21 @@ def test_generate_hook_llm_failure_returns_honest_fallback():
     assert "@dev_ali" in data["opening_message"]
     assert data["fallback_reason"] == "llm_unavailable_template_fallback"
     assert len(data["dialogue_tree"]) == 3
+
+
+def test_direct_dispatch_does_not_fabricate_agent_results():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from backend.routes.commander import register_commander_routes
+
+    app = FastAPI()
+    register_commander_routes(app, rate_limit=lambda *_: True, rate_identity=lambda *_: "test",
+                              gateway_provider=lambda: None)
+    client = TestClient(app)
+    for agent in ("aspasia", "lilith", "osint_investigator"):
+        response = client.post("/api/commander/dispatch", json={"agent_id": agent,
+                               "instruction": "araştır", "twin_url": "https://example.com/test"})
+        assert response.status_code == 503
+        assert response.json()["error"]["code"] == "DIRECT_AGENT_DISPATCH_UNAVAILABLE"
+        assert "twin_verified" not in response.text
+        assert "0.91" not in response.text

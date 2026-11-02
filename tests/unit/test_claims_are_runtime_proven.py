@@ -153,7 +153,7 @@ def test_every_capability_reports_availability_without_raising():
     from agent_core.capabilities.registry import bootstrap
 
     caps = bootstrap()._caps
-    assert len(caps) == 27, f"kayıtlı yetenek sayısı değişti: {len(caps)}"
+    assert len(caps) == 28, f"kayıtlı yetenek sayısı değişti: {len(caps)}"
     for cap_id, cap in caps.items():
         availability = cap.availability()
         assert isinstance(availability, Availability), cap_id

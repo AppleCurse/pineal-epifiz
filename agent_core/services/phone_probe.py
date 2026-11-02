@@ -18,12 +18,13 @@ Dürüstlük sözleşmesi:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 import time
-from typing import Any, Dict, List, Optional
-import httpx
+from typing import Any, Dict, List
+from agent_core.capabilities.egress import open_client
+from agent_core.capabilities.state import flag_enabled
+from agent_core.scraper.vault_gate import VaultLockedError
 from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
@@ -69,6 +70,8 @@ class PhoneProbeResult(BaseModel):
     social_probes: List[Dict[str, Any]] = Field(default_factory=list)
     summary_report: str = ""
     elapsed_ms: int = 0
+    web_search_status: str = "not_attempted"
+    social_bridge_status: str = "not_requested"
 
     model_config = ConfigDict(extra="allow")
 
@@ -133,7 +136,7 @@ def parse_phone_metadata(raw_phone: str, default_region: str = "TR") -> PhoneMet
             is_possible=possible,
         )
     except Exception as e:
-        logger.warning(f"phonenumbers parse failed for '{raw_phone}': {e}")
+        logger.warning("phonenumbers parse failed: %s", type(e).__name__)
         return PhoneMetadata(
             raw_input=raw_phone,
             e164=cleaned,
@@ -144,7 +147,7 @@ def parse_phone_metadata(raw_phone: str, default_region: str = "TR") -> PhoneMet
         )
 
 
-async def _search_web_footprint(query_variants: List[str]) -> List[Dict[str, Any]]:
+async def _search_web_footprint(query_variants: List[str]) -> tuple[List[Dict[str, Any]], str]:
     """Açık arama motorları üzerinden numaranın web izlerini (dorking) güvenle tarar."""
     hits: List[Dict[str, Any]] = []
     # DuckDuckGo HTML Lite sorgusu
@@ -155,11 +158,13 @@ async def _search_web_footprint(query_variants: List[str]) -> List[Dict[str, Any
 
     primary_query = f'"{query_variants[0]}"' if query_variants else ""
     if not primary_query:
-        return hits
+        return hits, "not_attempted"
 
     try:
-        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+        async with open_client(purpose="search", target=url, timeout=8.0, follow_redirects=False) as client:
             resp = await client.post(url, data={"q": primary_query}, headers=headers)
+            if resp.status_code != 200:
+                return hits, "unavailable"
             if resp.status_code == 200:
                 html = resp.text
                 # Basit başlık ve snippet ayıklayıcı
@@ -172,13 +177,16 @@ async def _search_web_footprint(query_variants: List[str]) -> List[Dict[str, Any
                         "snippet": clean_snip,
                         "engine": "duckduckgo_lite",
                     })
+    except VaultLockedError:
+        raise
     except Exception as e:
-        logger.debug(f"Web footprint search timeout/err: {e}")
+        logger.warning("Web footprint search failed: %s", type(e).__name__)
+        return hits, "unavailable"
 
-    return hits
+    return hits, "completed"
 
 
-async def probe_phone(raw_phone: str, auto_bridge_social: bool = True) -> PhoneProbeResult:
+async def probe_phone(raw_phone: str, auto_bridge_social: bool = False) -> PhoneProbeResult:
     """Telefon numarası üzerinde tam spektrum OSINT ve varlık yoklaması yürütür."""
     t0 = time.time()
     meta = parse_phone_metadata(raw_phone)
@@ -220,7 +228,7 @@ async def probe_phone(raw_phone: str, auto_bridge_social: bool = True) -> PhoneP
     if nat_digits and nat_digits not in query_variants:
         query_variants.append(nat_digits)
 
-    footprint_hits = await _search_web_footprint(query_variants)
+    footprint_hits, web_search_status = await _search_web_footprint(query_variants)
 
     # 3. İsim ve Kullanıcı Adı Ayıklama
     associated_handles: List[str] = []
@@ -235,7 +243,14 @@ async def probe_phone(raw_phone: str, auto_bridge_social: bool = True) -> PhoneP
 
     # 4. Otomatik Sosyal Medya Köprüsü (Handle Probe)
     social_probes: List[Dict[str, Any]] = []
-    if auto_bridge_social and associated_handles:
+    bridge_enabled = flag_enabled("ENABLE_CROSS_PLATFORM")
+    social_bridge_status = "not_requested"
+    if auto_bridge_social and not bridge_enabled:
+        social_bridge_status = "disabled:ENABLE_CROSS_PLATFORM"
+    elif auto_bridge_social and not associated_handles:
+        social_bridge_status = "no_candidates" if web_search_status == "completed" else "unavailable"
+    elif auto_bridge_social:
+        social_bridge_status = "attempted_unverified"
         from agent_core.services.handle_probe import probe_handle
         for handle in associated_handles[:2]:
             try:
@@ -249,7 +264,7 @@ async def probe_phone(raw_phone: str, auto_bridge_social: bool = True) -> PhoneP
                             "http_status": probe.http_status,
                         })
             except Exception as e:
-                logger.debug(f"Handle probe bridge failed for {handle}: {e}")
+                logger.warning("Handle probe bridge failed: %s", type(e).__name__)
 
     # Özet Rapor Metni
     summary_lines = [
@@ -263,13 +278,15 @@ async def probe_phone(raw_phone: str, auto_bridge_social: bool = True) -> PhoneP
     ]
     if footprint_hits:
         summary_lines.append(f"• Açık Web İzi: {len(footprint_hits)} adet web kaydı/ilan/forum eşleşmesi bulundu.")
+    elif web_search_status == "completed":
+        summary_lines.append("• Açık Web İzi: Arama yanıtında eşleşme bulunamadı; bu yokluğu kanıtlamaz.")
     else:
-        summary_lines.append("• Açık Web İzi: Açık arama motorlarında halka açık ilan veya dizin kaydı tespit edilmedi.")
+        summary_lines.append("• Açık Web İzi: Arama doğrulanamadı (" + web_search_status + ").")
 
     if associated_handles:
-        summary_lines.append(f"• Tespit Edilen Kullanıcı Adları: {', '.join(associated_handles)}")
+        summary_lines.append(f"• Doğrulanmamış Aday Kullanıcı Adları: {', '.join(associated_handles)}")
     if social_probes:
-        summary_lines.append(f"• Aktif Sosyal Medya Hesapları: {', '.join([p['platform'] for p in social_probes])}")
+        summary_lines.append(f"• İlişkisi Doğrulanmamış Aday Profiller: {', '.join([p['platform'] for p in social_probes])}")
 
     elapsed = int((time.time() - t0) * 1000)
 
@@ -282,4 +299,6 @@ async def probe_phone(raw_phone: str, auto_bridge_social: bool = True) -> PhoneP
         social_probes=social_probes,
         summary_report="\n".join(summary_lines),
         elapsed_ms=elapsed,
+        web_search_status=web_search_status,
+        social_bridge_status=social_bridge_status,
     )

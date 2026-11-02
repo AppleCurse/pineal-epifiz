@@ -78,12 +78,13 @@ class InvestigationConfig:
     max_questions: int = DEFAULT_MAX_QUESTIONS
     max_rounds: int = DEFAULT_MAX_ROUNDS
     question_timeout_seconds: float = DEFAULT_QUESTION_TIMEOUT_SECONDS
+    total_timeout_seconds: float = 120.0
 
     def __post_init__(self) -> None:
         if self.max_questions < 0 or self.max_rounds < 0:
             raise ValueError("soruşturma sınırları negatif olamaz")
-        if self.question_timeout_seconds <= 0:
-            raise ValueError("soru zaman aşımı pozitif olmalı")
+        if self.question_timeout_seconds <= 0 or self.total_timeout_seconds <= 0:
+            raise ValueError("soru ve toplam zaman aşımı pozitif olmalı")
 
 
 @dataclass(frozen=True)
@@ -300,11 +301,14 @@ async def run_investigation(
     probes: Mapping[str, ProbeCallable],
     config: Optional[InvestigationConfig] = None,
     questions: Optional[Sequence[InvestigationQuestion]] = None,
+    reassess: Optional[Callable[[InvestigationResult], Any]] = None,
+    on_round: Optional[Callable[[InvestigationResult], None]] = None,
 ) -> InvestigationResult:
     """Sınırlı soruşturma döngüsü.
 
-    Her turda kapatılmamış sorular sırayla sorulur. Tur sonunda **hiçbir** yeni
-    gözlem gelmediyse döngü durur (``stop_reason="no_new_evidence"``). Sondası
+    Her turda kapatılmamış sorular sırayla sorulur. İsteğe bağlı yeniden
+    değerlendirme, yeni kanıttan ölçümü günceller ve sınırlı yeni sorular planlar.
+    Tur sonunda **hiçbir** yeni gözlem gelmediyse döngü durur (``stop_reason="no_new_evidence"``). Sondası
     olmayan sorular hiç sorulmaz; ``still_unknown`` altında gerekçeleriyle kalır.
     """
     config = config or InvestigationConfig()
@@ -332,6 +336,7 @@ async def run_investigation(
     }
 
     seen_frame_ids: set[str] = set()
+    deadline = asyncio.get_running_loop().time() + config.total_timeout_seconds
     if not planned:
         stop_reason = "no_questions"
     elif not pending:
@@ -345,16 +350,21 @@ async def run_investigation(
             break
         round_record = InvestigationRound(index=index)
         answered: set[str] = set()
-        for question in pending:
+        timed_out = False
+        for question in pending[:config.max_questions]:
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                timed_out = True
+                break
             probe = probes.get(question.probe or "")
             if probe is None:  # pragma: no cover - pending bunu garanti eder
                 continue
             round_record.asked.append(question.question_id)
             result.diagnostics["probes_run"] += 1
             try:
+                timeout = min(config.question_timeout_seconds, remaining)
                 raw = await asyncio.wait_for(
-                    probe(question, budget_seconds=config.question_timeout_seconds),
-                    timeout=config.question_timeout_seconds,
+                    probe(question, budget_seconds=timeout), timeout=timeout,
                 )
                 outcome = _normalise_outcome(raw)
             except asyncio.TimeoutError:
@@ -363,11 +373,15 @@ async def run_investigation(
                 outcome = ProbeOutcome(status="failed", detail=f"{type(error).__name__}: {error}"[:160])
 
             round_record.outcomes[question.question_id] = outcome.status
-            if outcome.status == "resolved":
+            if outcome.status == "resolved" and reassess is None:
                 answered.add(question.question_id)
                 result.resolved.append(question.question_id)
             else:
-                unresolved_reasons[question.question_id] = outcome.detail or outcome.status
+                if outcome.status == "resolved":
+                    round_record.outcomes[question.question_id] = "pending_reassessment"
+                unresolved_reasons[question.question_id] = outcome.detail or (
+                    "yeniden değerlendirme gerekli" if outcome.status == "resolved" else outcome.status
+                )
             for frame in outcome.frames:
                 if not isinstance(frame, Mapping):
                     continue
@@ -380,11 +394,62 @@ async def run_investigation(
         result.rounds.append(round_record)
         result.diagnostics["rounds_run"] = index + 1
         pending = [question for question in pending if question.question_id not in answered]
+        if reassess is not None and round_record.observations_added:
+            try:
+                updated = _as_mapping(reassess(result))
+                coverage = {str(row.get("signal_id")): row for row in updated.get("data_coverage", [])
+                            if isinstance(row, Mapping)}
+                for question in pending:
+                    row = coverage.get(question.subject)
+                    if not row:
+                        continue  # Missing data is not a resolution.
+                    comparison = int(row.get("comparison_observations") or 0)
+                    baseline = int(row.get("baseline_observations") or 0)
+                    closed = ((question.kind == "frame_coverage_gap" and comparison > 0)
+                              or (question.kind == "frame_baseline_sparse"
+                                  and comparison > 0 and baseline >= MIN_BASELINE_OBSERVATIONS))
+                    if closed:
+                        answered.add(question.question_id)
+                        result.resolved.append(question.question_id)
+                        round_record.outcomes[question.question_id] = "resolved"
+                pending = [q for q in pending if q.question_id not in answered]
+                known_ids = {q.question_id for q in planned}
+                for question in plan_questions(updated, max_questions=config.max_questions):
+                    if question.question_id in result.resolved:
+                        # A shifted measurement window can make a former gap recur.
+                        result.resolved.remove(question.question_id)
+                        if question.probe in probes and all(q.question_id != question.question_id for q in pending):
+                            pending.append(question)
+                        unresolved_reasons[question.question_id] = "yeni ölçümle tekrar açık"
+                        continue
+                    if question.question_id in known_ids or len(planned) >= config.max_questions * config.max_rounds:
+                        continue
+                    planned.append(question)
+                    known_ids.add(question.question_id)
+                    if question.probe in probes:
+                        pending.append(question)
+                    else:
+                        unresolved_reasons[question.question_id] = "sonda kayıtlı değil"
+            except Exception as error:  # Fail closed: no inferred resolution.
+                unresolved_reasons.update({q.question_id: "yeniden değerlendirme başarısız: "
+                                           + type(error).__name__ for q in pending})
+                stop_reason = "reassessment_failed"
+        result.still_unknown = [f"{q.question_id}:{q.subject}:{unresolved_reasons.get(q.question_id, 'açık')}"
+                                for q in planned if q.question_id not in result.resolved]
+        if on_round is not None:
+            result.diagnostics["stop_reason"] = "in_progress"
+            on_round(result)
+        if stop_reason == "reassessment_failed":
+            break
+        if timed_out or asyncio.get_running_loop().time() >= deadline:
+            stop_reason = "total_timeout"
+            break
         if round_record.observations_added == 0:
             stop_reason = "no_new_evidence"
             break
         if not pending:
-            stop_reason = "all_attempted_questions_answered"
+            stop_reason = ("all_questions_resolved" if not result.still_unknown
+                           else "no_more_actionable_questions")
             break
     else:
         if pending and config.max_rounds == 0:
@@ -401,6 +466,7 @@ async def run_investigation(
         if question.question_id not in result.resolved
     ]
     result.extra_frames.sort(key=lambda frame: (str(frame.get("observed_at")), str(frame.get("frame_id"))))
+    result.diagnostics["planned_question_count"] = len(planned)
     result.diagnostics["extra_frame_count"] = len(result.extra_frames)
     result.diagnostics["resolved_count"] = len(result.resolved)
     result.diagnostics["still_unknown_count"] = len(result.still_unknown)

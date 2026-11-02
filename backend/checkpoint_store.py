@@ -32,6 +32,7 @@ kendisi bu pencereyi tek başına kapatmaz, GİZLEMEZ.
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import os
@@ -230,6 +231,46 @@ def persist_status(snapshot: Any, *, owner: Optional[str] = None) -> None:
             update(task_id, _merged)
 
 
+def archive_before_resume(task_id: str, expected_status: Dict[str, Any], previous_run_id: Optional[str]) -> str:
+    """Archive the current snapshot before resume, or fail closed.
+
+    This uses the checkpoint's existing process-local write lock; it is not a
+    cross-worker claim or a substitute for durable multi-process transactions.
+    """
+    attempt_id = uuid.uuid4().hex
+
+    def _archive(data: Dict[str, Any]) -> None:
+        if data.get("status") != expected_status:
+            raise CheckpointError("checkpoint changed before resume")
+        version = data.get("attempt_history_version", 1)
+        history = data.get("attempt_history", [])
+        if version != 1 or not isinstance(history, list) or len(history) >= 100:
+            raise CheckpointError("unsupported or full attempt history")
+        data["attempt_history_version"] = 1
+        data["attempt_history"] = history + [{
+            "attempt_id": attempt_id,
+            "previous_run_id": previous_run_id,
+            "archived_at": datetime.now(timezone.utc).isoformat(),
+            "snapshot": copy.deepcopy(expected_status),
+        }]
+
+    update(task_id, _archive)
+    return attempt_id
+
+
+def resolved_record_valid(entry: Dict[str, Any]) -> bool:
+    """A historical closure has a matching response and resolution type."""
+    if entry.get("status") != "resolved" or entry.get("approved") is not True or not entry.get("responses"):
+        return False
+    requires = entry.get("requires") or "operator_response"
+    resolution = entry.get("resolution")
+    if requires == "vault_open":
+        return resolution == "verified_vault_open"
+    if entry.get("kind") == "spend_cap":
+        return requires == "budget_authority" and resolution == "verified_budget_authority"
+    return requires == "operator_response" and resolution in {"operator_response", "verified_operator_response"}
+
+
 def support_view(entry: Dict[str, Any]) -> Dict[str, Any]:
     """UI'a giden GÜVENLİ PROJEKSİYON: gerekçe ``redact_text``'ten geçer;
     input_data / anahtar / çerez ASLA bu nesneye girmez."""
@@ -242,6 +283,9 @@ def support_view(entry: Dict[str, Any]) -> Dict[str, Any]:
         }
         for r in (entry.get("responses") or [])
     ]
+    status = entry.get("status")
+    if status == "resolved" and not resolved_record_valid(entry):
+        status = "legacy_unverified"
     return {
         "support_id": entry.get("support_id"),
         "task_id": entry.get("task_id"),
@@ -253,7 +297,7 @@ def support_view(entry: Dict[str, Any]) -> Dict[str, Any]:
         "blocks_resume": bool(entry.get("blocks_resume")),
         "options": list(entry.get("options") or []),
         "next_action": entry.get("next_action"),
-        "status": entry.get("status"),
+        "status": status,
         "created_at": entry.get("created_at"),
         "approved": bool(entry.get("approved")),
         "resolved_at": entry.get("resolved_at"),
@@ -307,43 +351,24 @@ def record_support_response(
             }
         )
         requires = target.get("requires") or "operator_response"
-        if requires == "vault_open" and approved:
-            # Kasa hâlâ kilitliyse yanıt ALINIR ama talep KAPANMAZ:
-            # "destek sağlandı + engel giderildi" birlikte doğrulanmalı.
-            # (Canlı kasa kontrolü çağıran katmanda yapılır; burada kasa
-            # kapalı gelirse engel işareti düşürülmez.)
-            target["approved"] = True
-            holder["code"] = "PENDING_LIVE_CHECK"
-            holder["entry"] = target
-            return
-        target["approved"] = bool(approved)
-        holder["code"] = "OK"
+        target["approved"] = approved is True
         holder["entry"] = target
+        if not approved:
+            holder["code"] = "BLOCKER_NOT_CLEARED"
+        elif requires == "vault_open" or target.get("kind") == "spend_cap":
+            holder["code"] = "PENDING_LIVE_CHECK"
+        elif requires == "operator_response":
+            target["status"] = "resolved"
+            target["resolved_at"] = datetime.now(timezone.utc).isoformat()
+            target["resolution"] = "operator_response"
+            holder["code"] = "OK"
+        else:
+            holder["code"] = "BLOCKER_NOT_CLEARED"
 
     with _WRITE_LOCK:
-        data = update(task_id, _apply)
-    code = holder.get("code")
+        update(task_id, _apply)
     entry = holder.get("entry")
-    if code == "OK" and entry is not None:
-        # Talep kapat: destek GELDİ ve (operator_response için) yetki verildi.
-        def _close(d: Dict[str, Any]) -> None:
-            for e in (d.get("status") or {}).get("support_requests") or []:
-                if e.get("support_id") == support_id and e.get("status") == "pending":
-                    e["status"] = "resolved"
-                    e["resolved_at"] = datetime.now(timezone.utc).isoformat()
-                    e["resolution"] = "operator_response"
-
-        with _WRITE_LOCK:
-            data = update(task_id, _close)
-        for e in (data.get("status") or {}).get("support_requests") or []:
-            if e.get("support_id") == support_id:
-                entry = e
-                break
-    elif code == "PENDING_LIVE_CHECK" and entry is not None:
-        # Canlı kasa kontrolünden GEÇTİYSE çağıran katman ``finalize_support``
-        # ile kapatır; geçmediyse yanıt kalır, talep açık kalır.
-        pass
-    return str(code), (dict(entry) if entry is not None else None)
+    return str(holder.get("code")), (dict(entry) if entry is not None else None)
 
 
 def finalize_support(task_id: str, support_id: str) -> Optional[Dict[str, Any]]:
@@ -351,11 +376,17 @@ def finalize_support(task_id: str, support_id: str) -> Optional[Dict[str, Any]]:
     def _close(d: Dict[str, Any]) -> None:
         for e in (d.get("status") or {}).get("support_requests") or []:
             if e.get("support_id") == support_id and e.get("status") == "pending":
-                if not e.get("approved"):
+                if not e.get("approved") or not e.get("responses"):
+                    return
+                if e.get("requires") == "vault_open":
+                    resolution = "verified_vault_open"
+                elif e.get("kind") == "spend_cap" and e.get("requires") == "budget_authority":
+                    resolution = "verified_budget_authority"
+                else:
                     return
                 e["status"] = "resolved"
                 e["resolved_at"] = datetime.now(timezone.utc).isoformat()
-                e["resolution"] = "verified_vault_open"
+                e["resolution"] = resolution
 
     with _WRITE_LOCK:
         try:

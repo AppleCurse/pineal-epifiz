@@ -5,7 +5,7 @@
     apiToken, currentApiToken, apiFetch, clientId, wsUrl, logs, taskStatus,
     speechState, lastSpeech, voiceEnabled,
     isProcessing, powerEngaged, recordEngaged, agentStatuses, vaultLocked,
-    activeViewMode, agentStatusSource, supportRequests, supportTaskId, refreshSupport
+    activeViewMode, agentStatusSource, supportRequests, supportTaskId, refreshSupport, mergeTaskSnapshot
   } from './store';
   import { uplinkState } from './lib/telemetry';
   import AtlasPinealCockpit from './components/AtlasPinealCockpit.svelte';
@@ -13,6 +13,8 @@
   // [P6 · CANLI PANEL] Canlı kontrol paneli: ajan hattı, anlık kanal, muhakeme,
   // kanıt akışı ve çağrı izi — hepsi MEVCUT SoT'tan (WS + /api/aspasia/state).
   import LiveControlPanel from './components/LiveControlPanel.svelte';
+  import AgentRack from './components/AgentRack.svelte';
+  import HolographicResonanceMesh from './components/HolographicResonanceMesh.svelte';
   import SpiderFootCockpit from './components/SpiderFootCockpit.svelte';
   import NeuralTelemetryBoard from './components/visualizers/NeuralTelemetryBoard.svelte';
   import SupportPanel from './components/SupportPanel.svelte';
@@ -24,6 +26,31 @@
   let lastToken = currentApiToken();
   let telemetryData: any = null;
   let telemetryPoll: any = null;
+  let evidenceGraph: any = null;
+  let graphMessage = 'Görev seçilmedi';
+  let graphGeneration = 0;
+  $: graphTaskId = $taskStatus?.task_id || '';
+  $: graphRoom = $clientId;
+  $: if ($activeViewMode === 'control') loadEvidenceGraph(graphTaskId, graphRoom);
+
+  async function loadEvidenceGraph(taskId: string, roomId: string) {
+    const generation = ++graphGeneration;
+    evidenceGraph = null;
+    if (!taskId) { graphMessage = 'Görev seçilmedi'; return; }
+    graphMessage = 'Kanıt grafı yükleniyor';
+    try {
+      const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}/graph?client_id=${encodeURIComponent(roomId)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const graph = await res.json();
+      if (generation !== graphGeneration) return;
+      evidenceGraph = graph;
+      graphMessage = graph.available ? 'Kanıt grafı' : `Kanıt grafı kullanılamıyor: ${graph.reason || 'veri yok'}`;
+    } catch (error: any) {
+      if (generation !== graphGeneration) return;
+      graphMessage = `Kanıt grafı yüklenemedi: ${error?.message || 'hata'}`;
+    }
+  }
+
   let activeSpeechAudio: HTMLAudioElement | null = null;
   let activeSpeechObjectUrl: string | null = null;
   let speechPlaybackRequest: AbortController | null = null;
@@ -249,27 +276,21 @@
             handleAgentStatusUpdate({ agent_id: agentName, status: rackStatus });
           }
         } else if (data.type === "snapshot_update") {
-          taskStatus.update(s => ({ ...s, ...data }));
+          if (!data.task_id) return;
+          taskStatus.update(s => mergeTaskSnapshot(s, data));
           // Snapshot içinde current_agent varsa onu Active yap
           if (data.current_agent) {
             handleAgentStatusUpdate({ agent_id: data.current_agent, status: 'Active' });
           }
         } else if (data.type === "result") {
-          taskStatus.update(s => ({ ...s, ...data }));
+          if (!data.task_id) return;
+          taskStatus.update(s => mergeTaskSnapshot(s, data));
           isProcessing.set(false);
           const terminal = String(data.status || "").toLowerCase();
           const okStates = ["completed", "partially_completed"];
           logLine(okStates.includes(terminal) ? "INFO" : "ERROR", "OPERASYON SONUÇLANDI: " + data.status);
-          // Tüm ajanları Ready yap (iş bitti)
-          agentStatuses.update(s => {
-            const updated: any = { ...s };
-            for (const k of Object.keys(updated)) {
-              if (updated[k].status === 'Active') {
-                updated[k] = { ...updated[k], status: 'Ready', updatedAt: Date.now() };
-              }
-            }
-            return updated;
-          });
+          // Rack states describe availability; a task result must not rewrite
+          // other agents (or other concurrent tasks) as Ready.
         }
       } catch(e) {
         console.error("WS parse error", e);
@@ -436,8 +457,29 @@
 </script>
 
 <main class="fullscreen-cockpit-viewport">
-  <!-- TEK BÜTÜNLEŞİK MASTER KOKPİT (Dağınık görünümler ve butonlar kaldırıldı) -->
-  <AtlasPinealCockpit />
+  <nav class="view-switcher" aria-label="Görünüm seçimi">
+    <button class:is-active={$activeViewMode === 'cockpit'} on:click={() => activeViewMode.set('cockpit')}>Kokpit</button>
+    <button class:is-active={$activeViewMode === 'warroom'} on:click={() => activeViewMode.set('warroom')}>Muharebe masası</button>
+    <button class:is-active={$activeViewMode === 'control'} on:click={() => activeViewMode.set('control')}>Canlı kontrol</button>
+    <button class:is-active={$activeViewMode === 'spiderfoot'} on:click={() => activeViewMode.set('spiderfoot')}>Araştırma</button>
+  </nav>
+  {#if $activeViewMode === 'cockpit'}
+    <AtlasPinealCockpit />
+  {:else if $activeViewMode === 'warroom'}
+    <TacticalWarRoom />
+  {:else if $activeViewMode === 'control'}
+    <LiveControlPanel />
+    <section aria-label="Ajan durumu ve kanıt grafı">
+      <AgentRack compact={true} />
+      <p>{graphMessage}</p>
+      {#if graphTaskId}<button on:click={() => loadEvidenceGraph(graphTaskId, graphRoom)}>Kanıt grafını yenile</button>{/if}
+      <HolographicResonanceMesh graph={evidenceGraph} size={360} />
+    </section>
+  {:else if $activeViewMode === 'spiderfoot'}
+    <SpiderFootCockpit />
+  {:else}
+    <AtlasPinealCockpit />
+  {/if}
 
   <!--
     Adli Telemetri & Sözleşme Köprüsü — ARTIK GERÇEKTEN GÖRÜNÜR.

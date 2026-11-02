@@ -422,3 +422,24 @@ def test_minor_seal_does_not_create_a_room(client, prod_posture):
         "/api/minor/state", params={"client_id": "hicbir-oda-yok"}, headers=_headers(BOB_TOKEN)
     )
     assert len(api.app.state.rooms) == before
+
+
+def test_stranger_cannot_read_another_operators_graph(client, prod_posture):
+    _seal_room(client, BOB_ROOM, BOB_TOKEN)
+    record_owner(VICTIM_TASK, "alice")
+    _write_evidence(prod_posture, VICTIM_TASK)
+    response = client.get(f"/api/tasks/{VICTIM_TASK}/graph", params={"client_id": BOB_ROOM},
+                          headers=_headers(BOB_TOKEN))
+    assert response.status_code == 403
+    assert "mirror_truth" not in response.text
+
+
+def test_owner_can_read_graph_from_real_task_file(client, prod_posture):
+    _seal_room(client, ALICE_ROOM, ALICE_TOKEN)
+    record_owner(VICTIM_TASK, "alice")
+    _write_evidence(prod_posture, VICTIM_TASK)
+    response = client.get(f"/api/tasks/{VICTIM_TASK}/graph", params={"client_id": ALICE_ROOM},
+                          headers=_headers(ALICE_TOKEN))
+    assert response.status_code == 200, response.text
+    assert response.json()["available"] is True
+    assert response.json()["node_count"] > 0

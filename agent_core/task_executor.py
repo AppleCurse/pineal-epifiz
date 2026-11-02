@@ -67,6 +67,7 @@ from agent_core.domain.memory_models import (
     TaskSnapshot,
 )
 from agent_core.domain.pipeline_status import PipelineStatus
+from agent_core.domain.task_execution_state import COMPLETION_POLICY, constrain_completion
 from agent_core.config_loader import DecisionConfig
 from agent_core.services.canonical_memory import MemoryCorruptedError, MemoryState
 from agent_core.services.claim_decision_gate import (
@@ -793,8 +794,9 @@ class PinealExecutor:
 
         Tek geçiş ölçemediği şeyi ``unknowns`` altına yazıp susuyordu. Burada
         ilk rapor sorulara çevrilir ve yalnız GERÇEKTEN cevaplanabilir olanlar
-        sorulur. Sınırlar sert: en fazla 4 soru, tek tur. Sonda kayıtlı değilse
-        soru açık kalır — "kapandı" sayılmaz. Getirilen kareler birleştirilir ve
+        sorulur. Sınırlar sert: tur başına 4, toplam en fazla 12 soru,
+        3 tur ve sondalar için 120 saniyelik bütçe. Sonda
+        kayıtlı değilse soru açık kalır — "kapandı" sayılmaz. Getirilen kareler birleştirilir ve
         rapor tek kez, ZENGİNLEŞMİŞ kanıtla yeniden kurulur (zincire tek kayıt
         düşer; mükerrer life_rupture satırı yazılmaz).
         """
@@ -806,6 +808,12 @@ class PinealExecutor:
         )
         from agent_core.lifecycle.pipeline import analyze_life_rupture
 
+        # Checkpointed frames are authoritative on resume; the original task
+        # input may predate evidence collected during investigation rounds.
+        if isinstance(status.visual_evidence, dict):
+            restored_visual = dict(input_data.get("visual_evidence") or {})
+            restored_visual.update(status.visual_evidence)
+            input_data["visual_evidence"] = restored_visual
         try:
             first_pass = analyze_life_rupture(
                 input_data.get("target_profile"),
@@ -856,19 +864,44 @@ class PinealExecutor:
                         detail="genişletilmiş örneklem yeni kare getirmedi",
                     )
                 return ProbeOutcome(
-                    status="resolved" if question.kind == "frame_coverage_gap" else "no_new_evidence",
-                    detail=f"yeni kare: {len(fresh)}",
+                    status="no_new_evidence",  # A fresh frame alone does not close a gap.
+                    detail=f"yeni kare: {len(fresh)}; ölçüm yeniden değerlendirilmeli",
                     observations_added=len(fresh),
                     frames=fresh,
                 )
 
             probes["frame_window"] = _frame_window_probe
 
+        def _reassess(result):
+            # Only actual measured coverage in the recomputed report can close
+            # a question; unrelated or undated frames do not count.
+            merged = {str(frame.get("frame_id")): frame for frame in list(measured or []) + result.extra_frames
+                      if isinstance(frame, dict) and frame.get("frame_id")}
+            ordered = sorted(merged.values(), key=lambda frame: (str(frame.get("observed_at")), str(frame.get("frame_id"))))
+            if not isinstance(status.visual_evidence, dict):
+                status.visual_evidence = {}
+            status.visual_evidence["frames"] = ordered
+            if not isinstance(input_data.get("visual_evidence"), dict):
+                input_data["visual_evidence"] = {}
+            input_data["visual_evidence"]["frames"] = ordered
+            return analyze_life_rupture(
+                input_data.get("target_profile"), visual_evidence=input_data["visual_evidence"],
+                frequency_map=status.frequency_map, strata_map=status.strata_map,
+                subject_id=str(status.task_id),
+            ).model_dump(mode="json")
+
+        def _record_round(result):
+            status.investigation = result.to_dict()
+            self._snapshot(status)
+
         result = await run_investigation(
             first_pass,
             probes=probes,
-            config=InvestigationConfig(max_questions=4, max_rounds=1, question_timeout_seconds=50.0),
+            config=InvestigationConfig(max_questions=4, max_rounds=3, question_timeout_seconds=30.0,
+                                       total_timeout_seconds=120.0),
             questions=questions,
+            reassess=_reassess,
+            on_round=_record_round,
         )
 
         if result.extra_frames:
@@ -1572,7 +1605,7 @@ class PinealExecutor:
                 "shadow_profile", "follower_audit", "timing_forensics",
                 "holistic_profile", "frequency_map", "seismos_events",
                 "void_map", "strata_map", "gravity_map", "pulse_map",
-                "key_matrix", "visual_evidence",
+                "key_matrix", "visual_evidence", "investigation",
             ):
                 _prior = getattr(resume_from, _fld, None)
                 if _prior is not None:
@@ -2359,6 +2392,17 @@ class PinealExecutor:
                         self._log("WARNING", f"[{task_id}] Non-critical agent {agent_name} failed. Continuing pipeline (graceful degradation).")
                         self._snapshot(status)
                         continue
+
+                # A provider response or proposed code is not an observed execution.
+                if agent_name == "interpreter":
+                    provider_error = getattr(result, "status", None) == "error"
+                    run.status = "failed" if provider_error else "unavailable"
+                    run.error_code = "INTERPRETER_PROVIDER_ERROR" if provider_error else "INTERPRETER_EXECUTION_UNCONFIRMED"
+                    run.completed_at = datetime.now(timezone.utc)
+                    run.output_summary = result.model_dump()
+                    self._rack_update(agent_name, "wait")
+                    self._snapshot(status)
+                    continue
 
                 check = self.uncertainty.evaluate(result, agent_name)
                 if agent_name == "autonomous_verifier" and (
@@ -3160,31 +3204,41 @@ class PinealExecutor:
             # motorundan ÖNCE). Eski sondaki blok KALDIRILDI: çıktı
             # input_data'ya yazılmadığı için kullanılamıyordu.
 
-            # Determine final status via DecisionEngine
-            final_status = self.decision_engine.make_decision(status.agent_runs)
+            # DecisionEngine returns a pipeline status, not a domain decision.
+            final_status = constrain_completion(
+                self.decision_engine.make_decision(status.agent_runs),
+                task_id, status.planned_agents, status.agent_runs,
+            )
             status.status = final_status
-            
+            # Resumed snapshots can contain earlier attempts; do not certify them.
+            if resume_from is None and final_status == PipelineStatus.COMPLETED:
+                status.completion_policy = COMPLETION_POLICY
+
             if final_status == PipelineStatus.PARTIALLY_COMPLETED:
-                failed_agents = [name for name, run in status.agent_runs.items() if run.status in ("failed", "halted")]
-                self._log("WARNING", f"[{task_id}] TAMAMLANDI (KISMİ). Başarısız ajanlar: {', '.join(failed_agents)}")
+                self._log("WARNING", f"[{task_id}] GÖREV KISMİ SONLANDI.")
+            elif final_status == PipelineStatus.COMPLETED and status.completion_policy == COMPLETION_POLICY:
+                self._log("INFO", f"[{task_id}] PLANLANAN KOŞULAR SONLANDI. Kanıt adımı: {len(status.evidence_chain)}")
+            elif final_status == PipelineStatus.COMPLETED:
+                self._log("WARNING", f"[{task_id}] GÖREV SONLANDI: önceki koşuların tamamlanma kanıtı belirsiz.")
             else:
-                self._log("INFO", f"[{task_id}] TAMAMLANDI. Kanıt adımı: {len(status.evidence_chain)}")
-                
+                self._log("WARNING", f"[{task_id}] GÖREV SONLANDI: {final_status.value}")
+
             status.completed_at = datetime.now(timezone.utc)
             await self._merge_task_memory(task_id, status)
             self._snapshot(status)
-            
-            # P0-FIX: Gercek SHA-256 kanit hash'i ve gercek sure (ms)
-            import hashlib, json as _json
-            _chain_bytes = _json.dumps(status.evidence_chain, default=str, sort_keys=True).encode()
-            _real_hash = hashlib.sha256(_chain_bytes).hexdigest()
-            _duration_ms = int((datetime.now(timezone.utc) - _task_wall_start).total_seconds() * 1000)
-            self._emit(TaskCompletedEvent(
-                task_id=task_id,
-                agent_name="PinealExecutor",
-                final_result_hash=_real_hash,
-                duration_ms=_duration_ms
-            ))
+
+            # A terminal halt or partial attempt is not a TaskCompleted event.
+            if final_status == PipelineStatus.COMPLETED and status.completion_policy == COMPLETION_POLICY:
+                import hashlib, json as _json
+                _chain_bytes = _json.dumps(status.evidence_chain, default=str, sort_keys=True).encode()
+                _real_hash = hashlib.sha256(_chain_bytes).hexdigest()
+                _duration_ms = int((datetime.now(timezone.utc) - _task_wall_start).total_seconds() * 1000)
+                self._emit(TaskCompletedEvent(
+                    task_id=task_id,
+                    agent_name="PinealExecutor",
+                    final_result_hash=_real_hash,
+                    duration_ms=_duration_ms
+                ))
         except InsufficientEvidenceError as e:
             self._log("ERROR", "[" + task_id + "] KANIT KILIDI: " + str(e))
             status.status = "halted_evidence"

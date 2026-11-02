@@ -19,6 +19,8 @@ from agent_core.schemas.telemetry import AgentEvent, AgentEventType, TelemetryEv
 class LifecycleState(str, Enum):
     ACTIVE = "ACTIVE"
     COMPLETED = "COMPLETED"
+    PARTIALLY_COMPLETED = "PARTIALLY_COMPLETED"
+    TIMED_OUT = "TIMED_OUT"
     HALTED = "HALTED"
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
@@ -26,6 +28,8 @@ class LifecycleState(str, Enum):
 
 TERMINAL_STATES = frozenset({
     LifecycleState.COMPLETED,
+    LifecycleState.PARTIALLY_COMPLETED,
+    LifecycleState.TIMED_OUT,
     LifecycleState.HALTED,
     LifecycleState.FAILED,
     LifecycleState.CANCELLED,
@@ -115,8 +119,12 @@ class TaskLifecycleRegistry:
         normalized = str(value or "").strip().lower()
         if normalized.startswith("halted"):
             return LifecycleState.HALTED
-        if normalized in {"completed", "partially_completed"}:
+        if normalized == "completed":
             return LifecycleState.COMPLETED
+        if normalized == "partially_completed":
+            return LifecycleState.PARTIALLY_COMPLETED
+        if normalized == "timed_out":
+            return LifecycleState.TIMED_OUT
         if normalized in {"failed", "error"}:
             return LifecycleState.FAILED
         if normalized in {"cancelled", "canceled"}:
@@ -174,29 +182,19 @@ class TaskLifecycleRegistry:
             return LifecycleDecision(True, "TRANSITIONED", state=run.state)
 
     def reopen(self, task_id: str, requested: object) -> LifecycleDecision:
-        """[B0 · DESTEKLE DEVAM] Terminal koşu resume için YENİDEN AÇILIR.
+        """Start a new run identity after the authorized resume gate.
 
-        Durum makinesi DEĞİŞTİRİLMEDİ: terminal durumlar (halted_*/failed/…)
-        mevcut; yalnızca ``resume`` kanıtı olan koşu ``terminal → processing``
-        tek geçişiyle tekrar canlıya alınabilir. Terminal işaretçileri
-        (event/snapshot fingerprint) sıfırlanır, sıra (sequence) ve parmak
-        izleri korunur — böylece eski olaylar yeniden kabul edilmez, yeni
-        olaylar reddedilmez.
+        The previous terminal run is not mutated. Sequence remains task-scoped;
+        deduplication is per run. The checkpoint route archives the previous snapshot.
         """
         requested_state = self.normalize_state(requested)
+        if requested_state != LifecycleState.ACTIVE:
+            raise ValueError("Resume must start an active run")
         with self._lock:
             run = self._run(task_id)
-            if run.state not in TERMINAL_STATES:
-                if run.state == requested_state:
-                    return LifecycleDecision(True, "IDEMPOTENT", state=run.state)
-                run.state = requested_state
-                run.last_activity = self._clock_now()
-                return LifecycleDecision(True, "TRANSITIONED", state=run.state)
-            run.state = requested_state
-            run.terminal_event_recorded = False
-            run.terminal_snapshot_fingerprint = None
-            run.last_activity = self._clock_now()
-            return LifecycleDecision(True, "REOPENED", state=run.state)
+            fresh = LifecycleRun(task_id=task_id, sequence=run.sequence)
+            self._runs[task_id] = fresh
+            return LifecycleDecision(True, "REOPENED", state=fresh.state)
 
     def accept_snapshot(self, snapshot: object) -> LifecycleDecision:
         task_id = getattr(snapshot, "task_id", "")

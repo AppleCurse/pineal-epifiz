@@ -283,6 +283,9 @@ def test_e2e_block_visible_support_authorized_response_resume_verified(client, m
     r = _get_support(client, cid, task_id)
     data = r.json()
     assert data["resume_running"] is False
+    archived = ckpt.load(task_id)["attempt_history"]
+    assert len(archived) == 1
+    assert archived[0]["snapshot"]["status"] in ("halted_evidence", "halted_critical")
     # Kaldığı yerden devam: cognitive 1. koşuda tamamlandı, tekrar çalışmadı:
     assert counts["cognitive_profiler"] == 1, counts
     assert counts["depth_analyst"] >= 2, counts  # engelli tur + devam turu
@@ -596,3 +599,79 @@ def test_ui_wiring_support_panel_and_awaiting_human():
     # Store: kalıcı geri yükleme yardımcısı:
     assert "export async function refreshSupport" in store_src
     assert "supportRequests" in store_src
+
+
+@pytest.mark.parametrize('support_status,approved', [('resolved', False), ('unknown', True)])
+def test_resume_rejects_unproven_or_unknown_blocking_support(client, env, support_status, approved):
+    cid = f'legacy-room-{uuid.uuid4().hex[:8]}'
+    task_id = f'legacy_{uuid.uuid4().hex[:8]}'
+    _seed_room(client, cid)
+    ckpt.set_input(task_id, {'target_profile': {}})
+    ckpt.update(task_id, lambda d: d.update(status={'support_requests': [{
+        'support_id': 'legacy-support', 'status': support_status, 'kind': 'operator_response',
+        'requires': 'operator_response', 'blocks_resume': True, 'approved': approved,
+        'responses': [] if not approved else [{'by':'operator'}], 'resolution': 'operator_response',
+    }]}))
+    result = client.post(f'/api/tasks/{task_id}/resume', params={'client_id': cid}, json={})
+    assert result.status_code == 409
+    assert result.json()['error']['code'] == 'RESUME_SUPPORT_MISSING'
+
+
+def test_resume_does_not_close_vault_support_without_response(client, env):
+    cid = f'no-response-{uuid.uuid4().hex[:8]}'
+    task_id = f'no_response_{uuid.uuid4().hex[:8]}'
+    _seed_room(client, cid)
+    ckpt.set_input(task_id, {'target_profile': {}})
+    ckpt.update(task_id, lambda d: d.update(status={'support_requests': [{
+        'support_id': 'vault-support', 'status': 'pending', 'kind': 'vault_open',
+        'requires': 'vault_open', 'blocks_resume': True, 'approved': False, 'responses': [],
+    }]}))
+    result = client.post(f'/api/tasks/{task_id}/resume', params={'client_id': cid}, json={})
+    assert result.status_code == 409
+    assert result.json()['error']['code'] == 'RESUME_SUPPORT_MISSING'
+
+
+def test_resume_archive_keeps_the_previous_snapshot_immutable(env):
+    from agent_core.task_executor import TaskStatus
+
+    task_id = 'archive-snapshot-test'
+    ckpt.set_input(task_id, {'target_profile': {}})
+    first = TaskStatus(task_id=task_id, status='halted_evidence', halted_reason='original')
+    ckpt.persist_status(first)
+    expected = ckpt.load(task_id)['status']
+    ckpt.archive_before_resume(task_id, expected, 'prior-run')
+    ckpt.persist_status(TaskStatus(task_id=task_id, status='processing'))
+    stored = ckpt.load(task_id)
+    assert stored['attempt_history_version'] == 1
+    assert stored['attempt_history'][0]['previous_run_id'] == 'prior-run'
+    assert stored['attempt_history'][0]['snapshot'] == expected
+    assert stored['status']['status'] == 'processing'
+
+
+def test_resume_archive_rejects_changed_snapshot(env):
+    from agent_core.task_executor import TaskStatus
+
+    task_id = 'archive-race-test'
+    ckpt.set_input(task_id, {})
+    ckpt.persist_status(TaskStatus(task_id=task_id, status='halted_evidence'))
+    stale = ckpt.load(task_id)['status']
+    ckpt.persist_status(TaskStatus(task_id=task_id, status='halted_critical'))
+    with pytest.raises(ckpt.CheckpointError):
+        ckpt.archive_before_resume(task_id, stale, None)
+    assert not ckpt.load(task_id).get('attempt_history')
+
+
+def test_resume_archive_failure_refuses_to_start(client, monkeypatch, env):
+    from agent_core.task_executor import TaskStatus
+
+    cid = f'archive-fail-{uuid.uuid4().hex[:8]}'
+    task_id = f'archive_fail_{uuid.uuid4().hex[:8]}'
+    _seed_room(client, cid)
+    ckpt.set_input(task_id, {'target_profile': {}})
+    ckpt.persist_status(TaskStatus(task_id=task_id, status='halted_evidence'))
+    monkeypatch.setattr(ckpt, 'archive_before_resume', MagicMock(side_effect=OSError('disk')))
+    result = client.post(f'/api/tasks/{task_id}/resume', params={'client_id': cid}, json={})
+    assert result.status_code == 503
+    assert result.json()['error']['code'] == 'RESUME_ARCHIVE_FAILED'
+    assert not ckpt.is_resume_running(task_id)
+    assert ckpt.load(task_id)['status']['status'] == 'halted_evidence'

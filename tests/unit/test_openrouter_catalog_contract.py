@@ -697,3 +697,41 @@ def test_observed_price_regime_covers_every_recorded_state():
         for state_in, state_out in states:
             assert lo_in <= state_in <= hi_in, f"{model_id}: {state_in} rejim dışı"
             assert lo_out <= state_out <= hi_out, f"{model_id}: {state_out} rejim dışı"
+
+
+def test_current_ci_observed_prices_are_consistent_across_catalog_and_accounting():
+    """Two CI runs measured these OpenRouter prices; the spend table must agree."""
+    from agent_core.services.llm_gateway import LLMGateway
+
+    expected = {
+        "deepseek/deepseek-v4-pro": (1.6, 3.2),
+        "z-ai/glm-5.2": (0.006, 6.8),
+    }
+    catalog = oc._catalog_models(oc._load_catalog())
+    for model, price in expected.items():
+        assert oc.REQUIRED_OPENROUTTER[model] == price
+        assert oc._pricing(catalog[f"openrouter/{model}"]) == price
+        assert (LLMGateway.MODEL_PRICING[model]["in"], LLMGateway.MODEL_PRICING[model]["out"]) == price
+
+
+def test_current_pin_is_accepted_without_widening_historical_regime(monkeypatch):
+    """A new measured pin passes exactly; intervening unseen prices still fail."""
+    pins = dict(oc.REQUIRED_OPENROUTTER)
+    pins.update({"deepseek/deepseek-v4-pro": (1.6, 3.2), "z-ai/glm-5.2": (0.006, 6.8)})
+    monkeypatch.setattr(oc, "REQUIRED_OPENROUTTER", pins)
+    monkeypatch.setattr(oc.urllib.request, "urlopen", lambda *a, **k: _Response(_payload()))
+    failures, _warnings, unverified = oc.verify_live_openrouter("key")
+    assert unverified is None
+    assert failures == []
+    monkeypatch.setattr(oc.urllib.request, "urlopen", lambda *a, **k: _Response(
+        _payload({"deepseek/deepseek-v4-pro": (1.5, 3.0)})
+    ))
+    failures, _warnings, unverified = oc.verify_live_openrouter("key")
+    assert unverified is None
+    assert any("NOT a measured state" in failure for failure in failures)
+    monkeypatch.setattr(oc.urllib.request, "urlopen", lambda *a, **k: _Response(
+        _payload({"deepseek/deepseek-v4-pro": (1.6016, 3.2032)})
+    ))
+    failures, _warnings, unverified = oc.verify_live_openrouter("key")
+    assert unverified is None
+    assert any("NOT a measured state" in failure for failure in failures)
