@@ -19,8 +19,10 @@ import pytest
 from agent_core.lifecycle.investigation import (
     FRAME_SIGNAL_PREFIX,
     InvestigationConfig,
+    InvestigationHypothesis,
     InvestigationQuestion,
     ProbeOutcome,
+    formulate_hypotheses,
     plan_questions,
     run_investigation,
 )
@@ -370,3 +372,118 @@ def test_digest_accepts_object_and_dict_forms() -> None:
 def test_malformed_investigation_payload_is_ignored_not_trusted() -> None:
     report = _report_with({"still_unknown": "bozuk"})
     assert report.diagnostics.get("investigation", {}).get("still_unknown_count") == 0
+
+
+
+# --- Çok Turlu Hipotez ve Muhakeme Testleri ----------------------------------
+
+
+def test_investigation_formulates_hypotheses_for_questions() -> None:
+    questions = plan_questions(_report())
+    hypotheses = formulate_hypotheses(questions)
+
+    assert len(hypotheses) == len(questions)
+    assert all(isinstance(h, InvestigationHypothesis) for h in hypotheses)
+    assert all(h.status == "pending" for h in hypotheses)
+    assert all(h.claim for h in hypotheses)
+    assert all(h.hypothesis_id.startswith("hyp_") for h in hypotheses)
+
+
+def test_multi_round_investigation_corroborates_hypothesis() -> None:
+    """Sonda kanıt getirdiğinde hipotez 'corroborated' olarak güncellenir."""
+    frames = [_frame(frame_id="fr_corr_1", observed_at="2022-04-01T00:00:00+00:00")]
+    probe = _probe_returning(
+        lambda q: ProbeOutcome(status="resolved", observations_added=1, frames=frames)
+    )
+
+    result = asyncio.run(
+        run_investigation(
+            _report(),
+            probes={"frame_window": probe},
+            config=InvestigationConfig(max_rounds=2),
+        )
+    )
+
+    corroborated = [h for h in result.hypotheses if h.status == "corroborated"]
+    assert corroborated
+    assert corroborated[0].supporting_observations == 1
+    assert corroborated[0].round_evaluated == 1
+
+
+def test_multi_round_investigation_refutes_hypothesis_on_counter_evidence() -> None:
+    """Karşı kanıt veya red durumunda hipotez 'refuted' olarak güncellenir ve kaydedilir."""
+    probe = _probe_returning(
+        lambda q: ProbeOutcome(status="refuted", detail="çelişkili gözlem: zaman sapması kesinleşti")
+    )
+
+    result = asyncio.run(
+        run_investigation(
+            _report(),
+            probes={"timestamp_crosscheck": probe},
+            config=InvestigationConfig(max_rounds=2),
+        )
+    )
+
+    assert result.refuted_hypotheses
+    refuted = [h for h in result.hypotheses if h.status == "refuted"]
+    assert len(refuted) == len(result.refuted_hypotheses)
+    assert "çelişkili gözlem" in refuted[0].notes
+
+
+def test_multi_round_generates_new_questions_from_fresh_evidence() -> None:
+    """İlk turda gelen yeni kanıt raporu günceller ve ikinci turda YENİ sorular üretilir."""
+    round_calls = []
+
+    async def _dynamic_probe(question, *, budget_seconds):
+        round_calls.append(question.question_id)
+        if question.kind == "frame_coverage_gap":
+            # Yeni kareler getir ama contrast sinyali için seyrek baseline oluşturacak şekilde
+            new_frames = [
+                _frame(frame_id=f"fr_dyn_{i}", observed_at=f"2022-0{i+1}-01T00:00:00+00:00")
+                for i in range(2)
+            ]
+            return ProbeOutcome(status="resolved", observations_added=2, frames=new_frames)
+        return ProbeOutcome(status="resolved", observations_added=1)
+
+    def _custom_re_eval(current_report, extra_frames):
+        # Beyin raporu yeni kanıtla yeniden değerlendirir:
+        updated = dict(current_report)
+        cov = list(updated.get("data_coverage", []))
+        # Yeni bir sinyal açığı ortaya çıksın (2. tur için yeni soru)
+        cov.append({
+            "signal_id": FRAME_SIGNAL_PREFIX + "deep_spectrum",
+            "baseline_observations": 12,
+            "comparison_observations": 0,
+        })
+        updated["data_coverage"] = cov
+        return updated
+
+    result = asyncio.run(
+        run_investigation(
+            _report(),
+            probes={"frame_window": _dynamic_probe},
+            config=InvestigationConfig(max_rounds=2),
+            re_evaluate=_custom_re_eval,
+        )
+    )
+
+    # 2. turda yeni türetilen soru listeye eklenmiş olmalı
+    question_subjects = [q.subject for q in result.questions]
+    assert FRAME_SIGNAL_PREFIX + "deep_spectrum" in question_subjects
+    assert result.diagnostics["rounds_run"] == 2
+
+
+def test_honest_stop_reason_on_no_new_evidence() -> None:
+    """Yeni kanıt gelmediğinde döngü sonsuza gitmez, dürüstçe 'no_new_evidence' ile durur."""
+    probe = _probe_returning(lambda q: ProbeOutcome(status="no_new_evidence"))
+
+    result = asyncio.run(
+        run_investigation(
+            _report(),
+            probes={"frame_window": probe},
+            config=InvestigationConfig(max_rounds=3),
+        )
+    )
+
+    assert result.diagnostics["stop_reason"] == "no_new_evidence"
+    assert result.diagnostics["rounds_run"] == 1

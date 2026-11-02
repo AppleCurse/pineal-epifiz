@@ -174,22 +174,16 @@ def register_commander_routes(
                 thought_chain.append(f"Komutan tarafından sağlanan ikiz profil çapraz kontrole alındı: {twin_url}")
             thought_chain.append("Analiz sentezlendi, hüküm formüle ediliyor...")
 
-            twin_note = f"İkiz profil [{twin_url}] ile dijital parmak izi eşleşmesi %89 oranında pozitif.\n" if twin_url else "\n"
-            output_text = (
-                f"[{name.upper()} RAPORU]\n"
-                f"Görev: {instr}\n"
-                f"Bulgular: Hedef profil ({target_url or 'Belirtilmedi'}) üzerinde yapılan mikro-analizde, "
-                f"belirttiğiniz kriter doğrultusunda tutarlı bir örüntü saptandı. "
-                + twin_note
-                + "Öneri: Operasyon bu veri doğrultusunda güncellendi."
+            return JSONResponse(
+                {
+                    "status": "unavailable",
+                    "error": {
+                        "code": "DIRECT_AGENT_DISPATCH_UNAVAILABLE",
+                        "message": f"{name} için doğrudan senkron yürütme bağlı değil; görev için Aspasia komutunu veya görev başlatmayı (/api/initiate) kullanın.",
+                    },
+                },
+                status_code=503,
             )
-            structured_data = {
-                "agent_id": agent_id,
-                "agent_name": name,
-                "analysis": output_text,
-                "confidence": 0.91,
-                "twin_verified": bool(twin_url),
-            }
 
         elapsed = round(time.time() - start_time, 2)
         return {
@@ -235,6 +229,15 @@ def register_commander_routes(
                 json.dump(existing, f, ensure_ascii=False, indent=2)
         except Exception as e:
             logger.warning("Hafıza mühürlenirken hata: %s", e)
+            return JSONResponse(
+                {
+                    "error": {
+                        "code": "EVIDENCE_PERSISTENCE_FAILED",
+                        "message": f"Kanıt hafızaya kaydedilemedi (fail-closed): {e}",
+                    }
+                },
+                status_code=500,
+            )
 
         return {
             "status": "injected",
@@ -251,6 +254,16 @@ def register_commander_routes(
         raw_phone = payload.phone.strip()
         if not raw_phone:
             return JSONResponse({"error": {"message": "Telefon numarası boş olamaz."}}, status_code=400)
+
+        # Çocuk koruma (451) ve Kasa egress kilidi (423) kapısı
+        try:
+            from backend.api import _require_minor_clearance, _require_vault_open
+            if (blocked := _require_minor_clearance(payload.client_id, subject=raw_phone)) is not None:
+                return blocked
+            if (locked := _require_vault_open(payload.client_id)) is not None:
+                return locked
+        except ImportError:
+            pass
 
         from agent_core.services.phone_probe import probe_phone
 

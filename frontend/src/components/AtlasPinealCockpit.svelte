@@ -66,6 +66,11 @@
   let commandTwinUrl = '';
   let isDispatching = false;
   let dispatchResult: any = null;
+  $: neuroMetrics = dispatchResult?.structured_data?.neuro_metrics || null;
+  $: dopaminePct = neuroMetrics && typeof neuroMetrics.dopamine === 'number' ? Math.round(neuroMetrics.dopamine * 100) : null;
+  $: serotoninPct = neuroMetrics && typeof neuroMetrics.serotonin === 'number' ? Math.round(neuroMetrics.serotonin * 100) : null;
+  $: cortisolPct = neuroMetrics && typeof neuroMetrics.cortisol === 'number' ? Math.round(neuroMetrics.cortisol * 100) : null;
+  $: viralScore = neuroMetrics && typeof neuroMetrics.viral_coefficient_score === 'number' ? neuroMetrics.viral_coefficient_score.toFixed(2) : null;
 
   // Komutan Müdahalesi State
   let injectType = 'twin_url';
@@ -401,9 +406,22 @@
     }
   }
 
-  function toggleVaultLock() {
-    vaultLocked.update(v => !v);
+  async function toggleVaultLock() {
     playClick(400, 30);
+    const targetAction =  ? 'unlock' : 'lock';
+    try {
+      const res = await apiFetch('/api/vault/' + targetAction, {
+        method: 'POST',
+        body: JSON.stringify({ client_id:  || 'default', action: targetAction }),
+      });
+      if (res && res.status) {
+        vaultLocked.set(res.status === 'locked');
+      } else {
+        vaultLocked.update(v => !v);
+      }
+    } catch (e) {
+      console.error('Vault toggle failed:', e);
+    }
   }
 
   function togglePillar(id: string) {
@@ -532,22 +550,22 @@
         <div class="lilith-neuro-meters">
           <div class="nm-row">
             <span class="nm-name">DOPAMİN (Ödül):</span>
-            <div class="nm-bar-track"><div class="nm-fill fill-dopamine" style="width: 85%;"></div></div>
-            <span class="nm-score">85%</span>
+            <div class="nm-bar-track"><div class="nm-fill fill-dopamine" style="width: {dopaminePct !== null ? dopaminePct + '%' : '0%'};"></div></div>
+            <span class="nm-score">{dopaminePct !== null ? dopaminePct + '%' : '—'}</span>
           </div>
           <div class="nm-row">
             <span class="nm-name">SEROTONİN (Statü):</span>
-            <div class="nm-bar-track"><div class="nm-fill fill-serotonin" style="width: 72%;"></div></div>
-            <span class="nm-score">72%</span>
+            <div class="nm-bar-track"><div class="nm-fill fill-serotonin" style="width: {serotoninPct !== null ? serotoninPct + '%' : '0%'};"></div></div>
+            <span class="nm-score">{serotoninPct !== null ? serotoninPct + '%' : '—'}</span>
           </div>
           <div class="nm-row">
             <span class="nm-name">KORTİZOL (Aciliyet):</span>
-            <div class="nm-bar-track"><div class="nm-fill fill-cortisol" style="width: 40%;"></div></div>
-            <span class="nm-score">40%</span>
+            <div class="nm-bar-track"><div class="nm-fill fill-cortisol" style="width: {cortisolPct !== null ? cortisolPct + '%' : '0%'};"></div></div>
+            <span class="nm-score">{cortisolPct !== null ? cortisolPct + '%' : '—'}</span>
           </div>
           <div class="nm-viral-chip">
             <span>VİRAL KATSAYI (Vc):</span>
-            <strong class="highlight-green">2.84</strong>
+            <strong class="highlight-green">{viralScore !== null ? viralScore : 'Ölçüm Bekleniyor'}</strong>
           </div>
         </div>
 

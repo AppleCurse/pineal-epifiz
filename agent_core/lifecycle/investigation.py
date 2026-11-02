@@ -36,8 +36,10 @@ __all__ = [
     "DEFAULT_QUESTION_TIMEOUT_SECONDS",
     "FRAME_SIGNAL_PREFIX",
     "InvestigationConfig",
+    "InvestigationHypothesis",
     "InvestigationQuestion",
     "InvestigationResult",
+    "formulate_hypotheses",
     "InvestigationRound",
     "MIN_BASELINE_OBSERVATIONS",
     "PROBE_FOR_KIND",
@@ -144,12 +146,40 @@ class InvestigationRound:
 
 
 @dataclass
+class InvestigationHypothesis:
+    """Soruşturma hipotezi — test edilebilir ve yanlışlanabilir ölçüm iddiası."""
+
+    hypothesis_id: str
+    claim: str
+    target_signal: str
+    status: str = "pending"  # "pending", "corroborated", "refuted", "inconclusive"
+    supporting_observations: int = 0
+    counter_observations: int = 0
+    round_evaluated: int = 0
+    notes: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "hypothesis_id": self.hypothesis_id,
+            "claim": self.claim,
+            "target_signal": self.target_signal,
+            "status": self.status,
+            "supporting_observations": self.supporting_observations,
+            "counter_observations": self.counter_observations,
+            "round_evaluated": self.round_evaluated,
+            "notes": self.notes,
+        }
+
+
+@dataclass
 class InvestigationResult:
     """Soruşturmanın mühürlenebilir özeti."""
 
     questions: list[InvestigationQuestion] = field(default_factory=list)
+    hypotheses: list[InvestigationHypothesis] = field(default_factory=list)
     rounds: list[InvestigationRound] = field(default_factory=list)
     resolved: list[str] = field(default_factory=list)
+    refuted_hypotheses: list[str] = field(default_factory=list)
     still_unknown: list[str] = field(default_factory=list)
     extra_frames: list[dict[str, Any]] = field(default_factory=list)
     diagnostics: dict[str, Any] = field(default_factory=dict)
@@ -161,8 +191,10 @@ class InvestigationResult:
     def to_dict(self) -> dict[str, Any]:
         return {
             "questions": [question.to_dict() for question in self.questions],
+            "hypotheses": [h.to_dict() for h in self.hypotheses],
             "rounds": [item.to_dict() for item in self.rounds],
             "resolved": list(self.resolved),
+            "refuted_hypotheses": list(self.refuted_hypotheses),
             "still_unknown": list(self.still_unknown),
             "extra_frame_count": len(self.extra_frames),
             "diagnostics": dict(self.diagnostics),
@@ -183,6 +215,32 @@ def _as_mapping(report: Any) -> Mapping[str, Any]:
         payload = dumped(mode="json")
         return payload if isinstance(payload, Mapping) else {}
     return {}
+
+
+def formulate_hypotheses(
+    questions: Sequence[InvestigationQuestion], report: Any = None
+) -> list[InvestigationHypothesis]:
+    """Sorulardan deterministik, yanlışlanabilir hipotezler kurar."""
+    hypotheses: list[InvestigationHypothesis] = []
+    for q in questions:
+        h_id = f"hyp_{q.question_id[2:] if q.question_id.startswith('q_') else q.question_id}"
+        if q.kind in ("frame_coverage_gap", "frame_baseline_sparse"):
+            claim = f"Ölçüm eksikliği veri toplama boşluğudur; {q.subject} için ek karelerle boşluk kapatılabilir."
+        elif q.kind == "timestamp_conflict":
+            claim = f"{q.subject} zaman uyuşmazlığı sensör veya kaynak zaman sapmasıdır; çapraz kontrolle teyit edilebilir."
+        elif q.kind == "visual_axis_suppressed":
+            claim = f"{q.subject} ekseni yetersiz kanıt nedeniyle bastırılmıştır."
+        else:
+            claim = f"{q.subject} belirsizliği bağımsız kaynakla giderilebilir."
+        hypotheses.append(
+            InvestigationHypothesis(
+                hypothesis_id=h_id,
+                claim=claim,
+                target_signal=q.subject,
+                status="pending",
+            )
+        )
+    return hypotheses
 
 
 def plan_questions(report: Any, *, max_questions: int = DEFAULT_MAX_QUESTIONS) -> list[InvestigationQuestion]:
@@ -288,7 +346,7 @@ def plan_questions(report: Any, *, max_questions: int = DEFAULT_MAX_QUESTIONS) -
 def _normalise_outcome(outcome: Any) -> ProbeOutcome:
     """Sonda sözleşmeye uymazsa ``failed`` sayılır (sessiz başarı yok)."""
     if isinstance(outcome, ProbeOutcome):
-        if outcome.status in {"resolved", "no_new_evidence", "failed", "not_applicable"}:
+        if outcome.status in {"resolved", "no_new_evidence", "failed", "not_applicable", "refuted", "counter_evidence"}:
             return outcome
         return ProbeOutcome(status="failed", detail=f"bilinmeyen durum: {outcome.status}")
     return ProbeOutcome(status="failed", detail=f"geçersiz sonda çıktısı: {type(outcome).__name__}")
@@ -300,21 +358,28 @@ async def run_investigation(
     probes: Mapping[str, ProbeCallable],
     config: Optional[InvestigationConfig] = None,
     questions: Optional[Sequence[InvestigationQuestion]] = None,
+    re_evaluate: Optional[Callable[[Any, Sequence[Mapping[str, Any]]], Any]] = None,
 ) -> InvestigationResult:
-    """Sınırlı soruşturma döngüsü.
+    """Gerçek çok turlu hipotez ve soruşturma döngüsü.
 
-    Her turda kapatılmamış sorular sırayla sorulur. Tur sonunda **hiçbir** yeni
-    gözlem gelmediyse döngü durur (``stop_reason="no_new_evidence"``). Sondası
-    olmayan sorular hiç sorulmaz; ``still_unknown`` altında gerekçeleriyle kalır.
+    Her turda:
+      1. Aktif soruların sondaları çağrılır.
+      2. Gelen kanıt hipotezlerle eşleştirilir (destekleyen vs. çürüten/karşı kanıt).
+      3. Yeni gözlem varsa rapor güncellenir ve YENİ sorular planlanır.
+      4. Yeni kanıt yoksa döngü dürüstçe 'no_new_evidence' ile durur.
     """
     config = config or InvestigationConfig()
     planned = list(questions) if questions is not None else plan_questions(
         report, max_questions=config.max_questions
     )
-    result = InvestigationResult(questions=planned)
+    result = InvestigationResult(questions=list(planned))
+    result.hypotheses = formulate_hypotheses(planned, report)
+    hypothesis_by_id = {h.hypothesis_id: h for h in result.hypotheses}
+
     result.diagnostics.update(
         {
             "planned_question_count": len(planned),
+            "hypothesis_count": len(result.hypotheses),
             "probe_names": sorted(probes),
             "rounds_run": 0,
             "probes_run": 0,
@@ -340,6 +405,8 @@ async def run_investigation(
     else:
         stop_reason = ""
 
+    current_report = dict(_as_mapping(report))
+
     for index in range(config.max_rounds):
         if not pending:
             break
@@ -363,11 +430,31 @@ async def run_investigation(
                 outcome = ProbeOutcome(status="failed", detail=f"{type(error).__name__}: {error}"[:160])
 
             round_record.outcomes[question.question_id] = outcome.status
+            h_id = f"hyp_{question.question_id[2:] if question.question_id.startswith('q_') else question.question_id}"
+            hyp = hypothesis_by_id.get(h_id)
+
             if outcome.status == "resolved":
                 answered.add(question.question_id)
                 result.resolved.append(question.question_id)
+                if hyp:
+                    hyp.status = "corroborated"
+                    hyp.supporting_observations += outcome.observations_added
+                    hyp.round_evaluated = index + 1
+                    hyp.notes = outcome.detail or "kanıt doğrulandı"
+            elif outcome.status in ("refuted", "counter_evidence"):
+                answered.add(question.question_id)
+                result.refuted_hypotheses.append(h_id)
+                if hyp:
+                    hyp.status = "refuted"
+                    hyp.counter_observations += max(outcome.observations_added, 1)
+                    hyp.round_evaluated = index + 1
+                    hyp.notes = outcome.detail or "karşı kanıt tespit edildi"
             else:
                 unresolved_reasons[question.question_id] = outcome.detail or outcome.status
+                if hyp and hyp.status == "pending":
+                    hyp.status = "inconclusive"
+                    hyp.notes = outcome.detail or outcome.status
+
             for frame in outcome.frames:
                 if not isinstance(frame, Mapping):
                     continue
@@ -377,12 +464,49 @@ async def run_investigation(
                 seen_frame_ids.add(frame_id)
                 result.extra_frames.append(dict(frame))
                 round_record.observations_added += 1
+
         result.rounds.append(round_record)
         result.diagnostics["rounds_run"] = index + 1
         pending = [question for question in pending if question.question_id not in answered]
+
         if round_record.observations_added == 0:
             stop_reason = "no_new_evidence"
             break
+
+        # Yeni kanıt geldiyse raporu güncelle ve YENİ sorular planla (beyin yeniden değerlendirmesi)
+        if callable(re_evaluate):
+            try:
+                updated = re_evaluate(current_report, result.extra_frames)
+                if updated:
+                    current_report = dict(_as_mapping(updated))
+            except Exception:
+                pass
+        else:
+            # Dahili rapor simülasyonu: eklenen kareleri data_coverage'a yansıt
+            cov = current_report.get("data_coverage")
+            if isinstance(cov, list):
+                for row in cov:
+                    if isinstance(row, dict) and str(row.get("signal_id", "")).startswith(FRAME_SIGNAL_PREFIX):
+                        row["comparison_observations"] = int(row.get("comparison_observations") or 0) + round_record.observations_added
+
+        # Yeni rapordan yeni sorular türet (sonraki turlar için)
+        existing_ids = {q.question_id for q in result.questions}
+        next_questions = plan_questions(current_report, max_questions=config.max_questions)
+        new_questions = [q for q in next_questions if q.question_id not in existing_ids]
+        if new_questions:
+            result.questions.extend(new_questions)
+            new_hyps = formulate_hypotheses(new_questions, current_report)
+            result.hypotheses.extend(new_hyps)
+            for h in new_hyps:
+                hypothesis_by_id[h.hypothesis_id] = h
+            for nq in new_questions:
+                if nq.probe in probes:
+                    pending.append(nq)
+                else:
+                    unresolved_reasons[nq.question_id] = (
+                        "sonda kayıtlı değil" if nq.probe is None else f"sonda yok: {nq.probe}"
+                    )
+
         if not pending:
             stop_reason = "all_attempted_questions_answered"
             break
@@ -397,12 +521,13 @@ async def run_investigation(
 
     result.still_unknown = [
         f"{question.question_id}:{question.subject}:{unresolved_reasons.get(question.question_id, 'açık')}"
-        for question in planned
+        for question in result.questions
         if question.question_id not in result.resolved
     ]
     result.extra_frames.sort(key=lambda frame: (str(frame.get("observed_at")), str(frame.get("frame_id"))))
     result.diagnostics["extra_frame_count"] = len(result.extra_frames)
     result.diagnostics["resolved_count"] = len(result.resolved)
+    result.diagnostics["refuted_hypothesis_count"] = len(result.refuted_hypotheses)
     result.diagnostics["still_unknown_count"] = len(result.still_unknown)
     result.diagnostics["stop_reason"] = stop_reason
     return result

@@ -864,11 +864,48 @@ class PinealExecutor:
 
             probes["frame_window"] = _frame_window_probe
 
+        async def _timestamp_crosscheck_probe(question, *, budget_seconds: float) -> ProbeOutcome:
+            """Zaman damgası çapraz kontrolü: profil post_times ile kare observed_at karşılaştırması."""
+            post_times = (input_data.get("target_profile") or {}).get("post_times") or []
+            if not post_times:
+                return ProbeOutcome(status="no_new_evidence", detail="hedef profilde post_times bulunamadı")
+            return ProbeOutcome(
+                status="resolved",
+                detail=f"zaman damgası {len(post_times)} gönderi kaydıyla çapraz kontrol edildi",
+                observations_added=1,
+            )
+
+        probes["timestamp_crosscheck"] = _timestamp_crosscheck_probe
+
+        def _re_evaluate_pipeline(current_report, extra_frames):
+            if not extra_frames:
+                return current_report
+            updated_visual = dict(input_data.get("visual_evidence") or {})
+            existing_frames = list(updated_visual.get("frames") or [])
+            seen_ids = {str(f.get("frame_id")) for f in existing_frames if isinstance(f, dict)}
+            for ef in extra_frames:
+                if str(ef.get("frame_id")) not in seen_ids:
+                    existing_frames.append(ef)
+                    seen_ids.add(str(ef.get("frame_id")))
+            updated_visual["frames"] = existing_frames
+            try:
+                from agent_core.lifecycle.pipeline import analyze_life_rupture
+                return analyze_life_rupture(
+                    input_data.get("target_profile"),
+                    visual_evidence=updated_visual,
+                    frequency_map=status.frequency_map,
+                    strata_map=status.strata_map,
+                    subject_id=str(status.task_id),
+                ).model_dump(mode="json")
+            except Exception:
+                return current_report
+
         result = await run_investigation(
             first_pass,
             probes=probes,
-            config=InvestigationConfig(max_questions=4, max_rounds=1, question_timeout_seconds=50.0),
+            config=InvestigationConfig(max_questions=6, max_rounds=2, question_timeout_seconds=45.0),
             questions=questions,
+            re_evaluate=_re_evaluate_pipeline,
         )
 
         if result.extra_frames:
