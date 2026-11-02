@@ -6,6 +6,7 @@
     speechState, lastSpeech, voiceEnabled, activeTargetUrl, missionElapsed
   } from '../store';
   import { playClick, playHalt, playRunning } from '../lib/consoleAudio';
+  import { taskRuns, taskRunLabel, rackAvailability } from '../lib/taskRunStatus';
 
   export let telemetryData: any = null;
 
@@ -132,6 +133,8 @@
     if (pillarId === 'resonance') return hasEvidence(resonanceCalc);
     return false;
   }
+
+  $: scopedRuns = taskRuns($taskStatus);
 
   // Aktif Ajan Algılama
   $: anyActiveAgent = Object.entries($agentStatuses || {}).find(([k, v]) => (v as any)?.status?.toLowerCase() === 'active');
@@ -682,7 +685,7 @@
       <!-- 12 SAHA AJANI MATRİSİ -->
       <div class="field-matrix-grid">
         {#each FIELD_AGENTS as ag}
-          {@const rStatus = $agentStatuses?.[ag.id]?.status || $taskStatus?.runs?.[ag.id]?.status || 'Wait'}
+          {@const rStatus = scopedRuns[ag.id] ? taskRunLabel(scopedRuns[ag.id]) : rackAvailability($agentStatuses?.[ag.id]?.status)}
           <div
             class="agent-matrix-chip {selectedAgentId === ag.id ? 'is-selected' : ''} {rStatus.toLowerCase()}"
             on:click={() => selectAgent(ag.id)}

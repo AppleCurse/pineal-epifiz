@@ -5,7 +5,7 @@
     apiToken, currentApiToken, apiFetch, clientId, wsUrl, logs, taskStatus,
     speechState, lastSpeech, voiceEnabled,
     isProcessing, powerEngaged, recordEngaged, agentStatuses, vaultLocked,
-    activeViewMode, agentStatusSource, supportRequests, supportTaskId, refreshSupport
+    activeViewMode, agentStatusSource, supportRequests, supportTaskId, refreshSupport, mergeTaskSnapshot
   } from './store';
   import { uplinkState } from './lib/telemetry';
   import AtlasPinealCockpit from './components/AtlasPinealCockpit.svelte';
@@ -276,27 +276,21 @@
             handleAgentStatusUpdate({ agent_id: agentName, status: rackStatus });
           }
         } else if (data.type === "snapshot_update") {
-          taskStatus.update(s => ({ ...s, ...data }));
+          if (!data.task_id) return;
+          taskStatus.update(s => mergeTaskSnapshot(s, data));
           // Snapshot içinde current_agent varsa onu Active yap
           if (data.current_agent) {
             handleAgentStatusUpdate({ agent_id: data.current_agent, status: 'Active' });
           }
         } else if (data.type === "result") {
-          taskStatus.update(s => ({ ...s, ...data }));
+          if (!data.task_id) return;
+          taskStatus.update(s => mergeTaskSnapshot(s, data));
           isProcessing.set(false);
           const terminal = String(data.status || "").toLowerCase();
           const okStates = ["completed", "partially_completed"];
           logLine(okStates.includes(terminal) ? "INFO" : "ERROR", "OPERASYON SONUÇLANDI: " + data.status);
-          // Tüm ajanları Ready yap (iş bitti)
-          agentStatuses.update(s => {
-            const updated: any = { ...s };
-            for (const k of Object.keys(updated)) {
-              if (updated[k].status === 'Active') {
-                updated[k] = { ...updated[k], status: 'Ready', updatedAt: Date.now() };
-              }
-            }
-            return updated;
-          });
+          // Rack states describe availability; a task result must not rewrite
+          // other agents (or other concurrent tasks) as Ready.
         }
       } catch(e) {
         console.error("WS parse error", e);

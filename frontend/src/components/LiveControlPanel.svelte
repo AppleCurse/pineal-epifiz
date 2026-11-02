@@ -17,6 +17,7 @@
    *   · Boş bölüm "veri yok" diye SESSİZCE boş kalmaz; nedeni yazılır.
    *   · Uzun metin kırpılır ama kırpıldığı SAYILIR ("… +N karakter").
    */
+  import { taskRuns } from '../lib/taskRunStatus';
   import { onMount, onDestroy } from 'svelte';
   import { get } from 'svelte/store';
   import { apiFetch, clientId, taskStatus, activeViewMode, isProcessing } from '../store';
@@ -92,7 +93,7 @@
   // [P8-D] Çağrı izi sayfalama (0 = en yeniler).
   let callOffset = 0;
 
-  $: runs = ($taskStatus?.runs || {}) as Record<string, RunEntry>;
+  $: runs = taskRuns($taskStatus) as Record<string, RunEntry>;
   $: planned = ($taskStatus?.planned_agents || []) as string[];
   $: currentAgent = ($taskStatus?.current_agent || null) as string | null;
   $: channels = ($taskStatus?.channel_status || []) as ChannelRow[];
@@ -115,7 +116,7 @@
   /** Kuyruk + durum: planlanan her ajan için ANLIK gerçek durum. */
   $: agentLane = planned.map((name, index) => {
     const run = runs[name] as RunEntry | undefined;
-    const status = run?.status || 'pending';
+    const status = run?.status || ($taskStatus?.task_id ? 'pending' : 'unknown');
     return {
       name,
       queue: index,

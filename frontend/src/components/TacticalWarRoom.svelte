@@ -5,6 +5,7 @@
     agentStatuses, vaultLocked, activeViewMode, inspectedAgentId
   } from '../store';
   import { playClick, playHalt, playRunning } from '../lib/consoleAudio';
+  import { taskRuns, taskRunLabel, rackAvailability } from '../lib/taskRunStatus';
   // [P0 · DENETİM 2026-10-16] Kanal durumu: "koştu / ÇALIŞMADI (sebep)".
   // [P1 · DENETİM 2026-10-16] Derin tarama defteri: bulunan profilin gerçek
   // kazım durumu (ölçülmüş gönderi sayısı + koşmama sebebi).
@@ -54,7 +55,7 @@
 
   // Seçili ajan (varsayılan: ilk biten veya osint)
   $: selectedAgent = $inspectedAgentId || 'osint_investigator';
-  $: activeRuns = $taskStatus?.runs || {};
+  $: activeRuns = taskRuns($taskStatus);
   $: completedCount = $taskStatus?.completed_agents?.length || 0;
   // Planlanmayan görevde "12" basmak uydurma sayıdır; gerçek plan uzunluğu ya
   // da null (ekranda "—") gösterilir.
@@ -119,23 +120,9 @@
 
   function getAgentStatus(id: string) {
     const run = activeRuns[id];
-    if (run) {
-      if (run.status === 'completed') return 'DONE';
-      // [RÖNTGEN 2026-09-23] GÖREV TAMAMLANDI ≠ KARAR ÜRETİLDİ: ajan koştu
-      // ama çıktısı kendi sözleşmesine göre karar değil (data_confidence=False).
-      // DONE diye boyanırsa "karar üretildi" okunur; ayrı etiket + ayrı renk.
-      if (run.status === 'completed_no_decision') return 'NO-DECISION';
-      if (run.status === 'running') return 'ACTIVE';
-      if (run.status === 'halted') return 'HALTED';
-      if (run.status === 'failed') return 'FAILED';
-    }
+    if (run) return taskRunLabel(run);
     if (currentRunningAgent === id) return 'ACTIVE';
-    if ($agentStatuses[id]?.status) {
-      const s = $agentStatuses[id].status.toUpperCase();
-      if (s === 'ACTIVE') return 'ACTIVE';
-      if (s === 'READY') return 'DONE';
-      if (s === 'WAIT') return 'WAIT';
-    }
+    if ($agentStatuses[id]?.status) return rackAvailability($agentStatuses[id].status);
     return 'WAIT';
   }
 
