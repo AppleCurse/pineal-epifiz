@@ -149,17 +149,31 @@ def adopt(task_id: str, principal: Optional[str]) -> None:
 
 
 def task_access(task_id: str, principal: Optional[str]) -> Optional[str]:
-    """Görev erişim kararı — oda mührünün görev düzeyindeki karşılığı.
+    """Görev erişim kararı — fail-closed mimarisi.
 
     Dönüş:
       * ``None``        -> erişim SERBEST (kayıt yazıldı/taşındı ya da kimlik
                            doğrulama kapalı).
-      * ``"forbidden"`` -> görev BAŞKA bir operatöre kayıtlı; çağıran 403
-                           (``TaskForbiddenError``) üretmelidir.
+      * ``"forbidden"`` -> görev BAŞKA bir operatöre kayıtlı ya da veritabanı
+                           erişilemez durumda; çağıran 403 (``TaskForbiddenError``)
+                           veya güvenli ret üretmelidir.
     """
     if principal is None:
         return None
-    existing = owner_of(task_id)
+    connection = _connect()
+    if connection is None:
+        return FORBIDDEN
+    try:
+        row = connection.execute(
+            "SELECT principal FROM task_owners WHERE task_id = ?", (task_id,)
+        ).fetchone()
+        existing = row[0] if row else None
+    except sqlite3.Error as exc:
+        logger.warning("TASK_ACCESS_DB_ERROR: %s", str(exc)[:160])
+        return FORBIDDEN
+    finally:
+        connection.close()
+
     if existing is None:
         record_owner(task_id, principal)
         return None

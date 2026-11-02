@@ -297,15 +297,15 @@ def test_first_owner_wins_on_conflicting_record(monkeypatch, tmp_path):
     assert owner_of("op_race_1") == "alice"
 
 
-def test_unusable_db_fails_open_without_blocking_tasks(monkeypatch, tmp_path):
-    """Kayıt okunamıyorsa görev ERİŞİLEBİLİR kalır (kayıt kanıt değildir)."""
+def test_unusable_db_fails_closed_and_blocks_access(monkeypatch, tmp_path):
+    """Kayıt okunamıyorsa fail-closed: görev erişimi engellenir (forbidden)."""
     blocked = tmp_path / "a_file_not_a_dir"
     blocked.write_text("x", encoding="utf-8")
     monkeypatch.setenv(
         "PINEAL_TASK_OWNERS_DB", str(blocked / "nested" / "owners.db")
     )
     assert owner_of("op_x") is None
-    assert task_access("op_x", "alice") is None
+    assert task_access("op_x", "alice") == "forbidden"
 
 
 # --- 7. Görev oluşturma sahipliği kaydediyor mu? ---------------------------
