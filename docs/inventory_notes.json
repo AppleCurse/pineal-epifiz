@@ -24,7 +24,7 @@
     "config": "Çalışma zamanı yapılandırması: ajan→tier niyeti, görev→model zincirleri, sağlayıcı kataloğu, karar eşikleri, RTK bypass politikası ve router örneği. Değerler kod içine gömülmez.",
     "functions": "Cloudflare Pages Functions: /api/* ve /ws/* isteklerini BACKEND_ORIGIN'e taşıyan catch-all proxy. BACKEND_ORIGIN tanımsızsa uydurma davranış yok — 502 + açık hata kodu döner.",
     "kök / diğer": "Depo kökü: giriş noktaları (main.py, scraper.py, run_lilith.py, live_llm_gate.py), bağımlılık listeleri, sürüm dosyası ve dağıtım yapılandırmaları (Dockerfile, docker-compose.yml, railway.toml, vercel.json, wrangler.toml, .env.example).",
-    "docs · dokümanlar": "Sözleşme ve rapor külliyatı: kök README/RUNBOOK/GO_LIVE/CHANGELOG/ARCHITECTURE, docs/ sözleşmeleri (PINEAL_TUZUK, MEDYA_ADLI, MCP, ZERO_TRUST, KURUM_HEDEFI…) ve docs/reports/ altındaki tarihli denetim/karar raporları. Raporlar karar KAYDIDIR: hangi ölçümün hangi tarihte alındığını yazar."
+    "docs · dokümanlar": "Sözleşmeler ve teknik kayıtlar: kök README/RUNBOOK/GO_LIVE/CHANGELOG/ARCHITECTURE ile docs/ altındaki PINEAL_TUZUK, MEDYA_ADLI, MCP, ZERO_TRUST ve KURUM_HEDEFI belgeleri. Yalnızca CI veya ürün testlerinin doğrudan kullandığı sınırlı teknik kayıtlar sürüm kontrolünde tutulur."
   },
   "folder_highlights": {
     "agent_core · ajanlar": "12 uzman rol + otonom doğrulayıcı + insan davranışı",

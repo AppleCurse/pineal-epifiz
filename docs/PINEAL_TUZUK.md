@@ -2,7 +2,6 @@
 
 **Yürürlük:** 2026-10-05
 **Yerine geçtiği metin:** `README.md` §1 "Sistemin 4 Dokunulmaz İlkesi" (o ilkeler bu tüzüğün 1–4. maddeleridir; ilkeler değişmedi, **bağlamı büyüdü**).
-**Bağlı olduğu karar belgesi:** [`docs/reports/YILDIZ_DEPO_KARAR_AGACI_2026-10-05.md`](reports/YILDIZ_DEPO_KARAR_AGACI_2026-10-05.md) — 325 depo, 8 kapı, 10 faz.
 **Kod karşılığı:** `agent_core/capabilities/` — bu tüzüğün maddeleri, yetenek omurgasında **kapı (gate)** olarak çalışır. Tüzük metni ile kod arasında fark varsa, denetim raporu yazılır; sessizce fark bırakılmaz.
 
 ---
@@ -163,7 +162,7 @@ Bunlar ürüne girmez; karar belgesi §5'te gerekçeleriyle kayıtlıdır:
 1. Bu tüzük, **koddaki kapılara** bağlıdır: bir madde ihlal edilirse ilgili capability `PolicyKernel` tarafından kapatılır, uyarı verilmez.
 2. Tüzük değişikliği: karar belgesi + `CHANGELOG` kaydı + (gerekiyorsa) test ile yapılır. **Sessiz ilke değişikliği yoktur.**
 3. Bir yetenek eklenirken sorulacak tek soru: *"Bu, tüzüğün hangi maddesine hizmet ediyor ve hangi kapılardan geçiyor?"* Cevap yoksa yetenek eklenmez.
-4. Denetim: her fazın sonunda tüzük ↔ kod farkı raporlanır (`docs/reports/`).
+4. Denetim: her fazın sonunda tüzük ↔ kod farkı otomatik testler ve CI kapılarıyla doğrulanır; geçici denetim çıktıları kaynak depoda biriktirilmez.
 
 ---
 

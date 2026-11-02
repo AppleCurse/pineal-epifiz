@@ -32,7 +32,6 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-PAGE = REPO_ROOT / "docs" / "envanter.html"
 GENERATOR = REPO_ROOT / "scripts" / "generate_inventory_page.py"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 API = REPO_ROOT / "backend" / "api.py"
@@ -49,21 +48,18 @@ def _load_generator():
     return module
 
 
-def test_generator_exists_and_page_is_not_stale():
-    """Sayfa kaynaktan üretilmiş olmalı; bayatsa bu test DÜŞER."""
+def _page_text() -> str:
+    """Envanter HTML'sini test sırasında üret; büyük çıktı depoda tutulmaz."""
+    gen = _load_generator()
+    return gen.build_html(gen.build_entries())
+
+
+def test_generator_builds_inventory_without_committed_html():
+    """Üretici çalışır; üretilmiş HTML'nin Git'te tutulması gerekmez."""
     assert GENERATOR.is_file(), "envanter üreticisi yok: scripts/generate_inventory_page.py"
-    proc = subprocess.run(
-        [sys.executable, str(GENERATOR), "--check"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    )
-    assert proc.returncode == 0, (
-        "docs/envanter.html kaynakla uyuşmuyor (bayat). "
-        "Yeniden üret: python scripts/generate_inventory_page.py\n"
-        f"stdout: {proc.stdout[-400:]}\nstderr: {proc.stderr[-400:]}"
-    )
+    page = _page_text()
+    assert "agent_core/task_executor.py" in page
+    assert "backend/api.py" in page
 
 
 def test_every_category_a_file_has_a_module_docstring():
@@ -86,7 +82,7 @@ def test_every_category_a_file_has_a_module_docstring():
 def test_category_b_paths_are_visible_in_the_page():
     """B listesindeki dosyalar sayfada GERÇEKTEN listelenir (ad + satır)."""
     gen = _load_generator()
-    page = PAGE.read_text(encoding="utf-8")
+    page = _page_text()
     assert len(gen.CATEGORY_B) >= 26, (
         f"B listesi 26 dosya (scripts/archive/ bilerek silindi), şimdi {len(gen.CATEGORY_B)}"
     )

@@ -14,8 +14,7 @@ P9 düzeltmeleri:
   2. README yetenek sayısı kayıt defteriyle aynı olmalı (27)
   3. README dalga motoru sayısı kodla aynı olmalı (7)
   4. README API ucu sayısı uygulamayla aynı olmalı (69)
-  5. README envanter dosya sayısı haritanın kendi ölçümüyle aynı olmalı
-  6. README sistemin haritasına (docs/envanter.html) bağlanmalı
+  5. Envanter HTML'si depoda tutulmaz; yerel olarak üretilebilir
   7. README her ajanı ve her yeteneği ADIYLA anmalı
 
 [2026-10-23 · BULUNAN KUSUR] Bu betikteki "eski metin" değerleri ELLE
@@ -146,20 +145,21 @@ NUMERIC_STEPS: tuple[tuple[str, str, str], ...] = (
         r"## 11 · API yüzeyi \((\d+)\s+HTTP ucu",
         "tests/unit/test_readme_claims.py::test_readme_endpoint_count_matches_the_app",
     ),
-    (
-        "P9-5 README envanter sayısı haritadan koptu",
-        r"(\d+)\s+dosya,\s+klasör klasör",
-        "tests/unit/test_readme_claims.py::test_readme_inventory_count_matches_the_map",
-    ),
 )
 
 #: Yapısal adımlar: (ad, README'de aranan metin, yerine yazılan, hedef test).
 STRUCTURAL_STEPS: tuple[tuple[str, str, str, str], ...] = (
     (
-        "P9-6 README sistemin haritasına bağlanmıyor",
-        "**Tam ve aranabilir harita:** **[docs/envanter.html](docs/envanter.html)**",
-        "**Tam ve aranabilir harita:** (bağlantı kaldırıldı) REVERT",
-        "tests/unit/test_readme_claims.py::test_readme_points_to_the_map",
+        "P9-5 README envanter üretimini açıklamıyor",
+        "**İsteğe bağlı tam envanter:** `python scripts/generate_inventory_page.py` komutuyla yerel olarak üretilebilir.",
+        "**İsteğe bağlı tam envanter:** (üretim komutu kaldırıldı) REVERT",
+        "tests/unit/test_readme_claims.py::test_readme_describes_on_demand_inventory_generation",
+    ),
+    (
+        "P9-6 README üretilmiş HTML'nin depoda tutulmadığını açıklamıyor",
+        "Üretilen büyük HTML dosyası kaynak depoya commit edilmez.",
+        "Üretilen büyük HTML dosyası kaynak depoya commit edilir. REVERT",
+        "tests/unit/test_readme_claims.py::test_readme_does_not_require_committed_inventory_html",
     ),
     (
         "P9-7 README bir ajanı anmıyor",

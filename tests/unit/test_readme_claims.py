@@ -168,30 +168,17 @@ def test_readme_mentions_the_websocket_route():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 5. ENVANTER (SİSTEMİN YENİ HARİTASI) — README ile aynı sayım
+# 5. ENVANTER — isteğe bağlı yerel çıktı
 # ─────────────────────────────────────────────────────────────────────────────
-def test_readme_inventory_count_matches_the_map():
-    """README'deki dosya sayısı = haritanın (envanter) kendi ölçümü."""
+def test_readme_describes_on_demand_inventory_generation():
+    """Büyük üretilmiş HTML depoya bağlanmaz; geliştirici isterse yerel üretir."""
     readme = _readme()
-    match = re.search(r"(\d+)\s+dosya,\s+klasör klasör", readme)
-    assert match, "README'de envanter dosya sayısı yazılı değil"
-    claimed = int(match.group(1))
-    actual = len(_inventory_entries())
-    assert claimed == actual, (
-        f"README {claimed} dosya diyor, harita {actual} dosya sayıyor — "
-        "harita `python scripts/generate_inventory_page.py` ile yenilenmeli"
-    )
+    assert "python scripts/generate_inventory_page.py" in readme
+    assert "yerel olarak üretilebilir" in readme
 
 
-def test_readme_points_to_the_map():
-    """README, sistemin haritasına **gerçek bir bağlantıyla** bağlanmalı.
-
-    [2026-10-23] Eskiden yalnız `"docs/envanter.html" in readme` kontrol
-    ediliyordu; dosya adı düz metin olarak bir cümlede geçtiğinde de test
-    yeşil kalıyordu — yani `scripts/revert_verification_p9.py` bağlantıyı
-    kaldırdığında test KIRMIZI olmuyordu (revert-doğrulama sessizce
-    çürümüştü). Artık Markdown **bağlantısı** aranıyor.
-    """
-    assert "[docs/envanter.html](docs/envanter.html)" in _readme(), (
-        "README haritayı bağlamıyor (Markdown bağlantısı yok)"
-    )
+def test_readme_does_not_require_committed_inventory_html():
+    """README, üretilmiş envanter HTML'sini depoda zorunlu tutmamalı."""
+    readme = _readme()
+    assert "[docs/envanter.html](docs/envanter.html)" not in readme
+    assert "Üretilen büyük HTML dosyası kaynak depoya commit edilmez." in readme

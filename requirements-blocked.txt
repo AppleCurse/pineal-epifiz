@@ -4,7 +4,7 @@
 # 9 hâlâ kapalı yeteneğin PIP-KURULABİLEN Python bağımlılıkları.
 # Sistem seviyesindeki araçlar (ffmpeg, theHarvester, piper, whisper CLI,
 # agent-reach npm, SearXNG Docker) bu dosyada YOK — onlar için
-# docs/reports/REMEDIYASYON.md'ye bakın.
+# Kurulum ve güvenlik ilkeleri için docs/PINEAL_TUZUK.md ve GO_LIVE.md'ye bakın.
 #
 # Kurulum:
 #   pip install -r requirements.txt

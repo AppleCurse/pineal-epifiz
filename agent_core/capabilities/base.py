@@ -4,7 +4,7 @@ Bu modül, Pineal'e giren HER yeteneğin (kendi kodumuz veya harici bir
 depodan gelen adaptör) uymak zorunda olduğu sözleşmeyi tanımlar.
 
 Neden var?
-    Yıldız depo karar ağacı (``docs/reports/YILDIZ_DEPO_KARAR_AGACI_2026-10-05.md``)
+    Depo kararları ve yetenek ilkeleri (``docs/PINEAL_TUZUK.md``)
     hükmü: bir yetenek ancak tek sözleşmeye, tek kanıt zincirine, tek
     telemetriye ve tek güvenlik çekirdeğine bağlanıyorsa ürüne girer.
     Aksi halde ortaya çıkan şey entegrasyon değil yamalı bohçadır.

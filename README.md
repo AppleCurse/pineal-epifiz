@@ -339,11 +339,10 @@ karşı** koşturur ve ham çıktıyı basar: `0` kanıtlandı · `1` döngü k�
 | **P6** | Ölü kod dedektörü (`scripts/dead_code_audit.py`, CI'da kapı); 12 ölü arayüz dosyası silindi; 13 ajanın 13'ü canlı |
 | **P7** | Aspasia komut döngüsü (`/api/aspasia/command`) + **ilk canlı kontrol paneli** + çağrı kimliği bağı |
 | **P8** | Panelin "en donanımlı" sürümü (6 blok, filtre, ajan detayı, kanıt zinciri gruplama), çağrı izi **sayfalaması**, `scripts/verify_command_loop.py` doğrulayıcısı, `api.py` satır tavanı 5772 → **5760** |
-| **P9** | README baştan yazıldı (15 bölüm, düz dil) + `docs/envanter.html` sisteme bağlandı + `tests/unit/test_readme_claims.py` sayıları koddan ölçer |
+| **P9** | README baştan yazıldı (15 bölüm, düz dil); envanter sayfası artık isteğe bağlı yerel çıktıdır |
 | **P10** | Çapraz arama **kablosu**: IG bio ve X gönderi/biyografi adresleri `detected_urls` → derin tarama; operatör onayı X/IG sensörlerini o görev için açar; `holehe` iddiaları `inference` olarak etiketlendi; tek IG gönderi tavanı (`PINEAL_IG_MAX_POSTS`); Android koç sohbeti sunucuya taşındı (`/api/mobile/coach`); noktalı modül yoklaması (`agent_core/utils/optional_deps.py`) |
 
-Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
-`docs/reports/` (56 tarihli rapor).
+Ayrıntılı sürüm geçmişi: **[CHANGELOG.md](CHANGELOG.md)**. `docs/reports/` altında yalnızca CI veya ürün testleri tarafından doğrudan kullanılan teknik kayıtlar tutulur; tarihsel durum ve yapay zekâ değerlendirme yığınları depoda tutulmaz.
 
 ---
 
@@ -398,12 +397,10 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 | `functions/` · `worker.ts` | Cloudflare Pages/Workers `/api` ve `/ws` edge vekilleri |
 | `tests/` | 272 test modülü (birim + entegrasyon) |
 | `scripts/` | Denetim ve doğrulama araçları: ölü kod denetimi, regresyon bekçisi, envanter üreteci, revert doğrulamaları, 9Router ön kontrolü |
-| `docs/` | Tüzük, sözleşmeler, mimari, `docs/reports/` (56 rapor) ve **tam envanter sayfası** |
+| `docs/` | Tüzük, sözleşmeler, mimari ve CI/ürün tarafından kullanılan sınırlı teknik kayıtlar |
 | `config/` | Yönlendirme, sağlayıcı kataloğu, karar yapılandırması, RTK politikası |
 
-**Tam ve aranabilir harita:** **[docs/envanter.html](docs/envanter.html)** —
-815 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
-ile yenilenir, CI `--check` ile bayatlamayı yakalar.
+**İsteğe bağlı tam envanter:** `python scripts/generate_inventory_page.py` komutuyla yerel olarak üretilebilir. Üretilen büyük HTML dosyası kaynak depoya commit edilmez.
 
 **Ayrıca:** [ARCHITECTURE.md](ARCHITECTURE.md) · [README_TECHNICAL.md](README_TECHNICAL.md) ·
 [GO_LIVE.md](GO_LIVE.md) · [RUNBOOK.md](RUNBOOK.md) · [docs/PINEAL_TUZUK.md](docs/PINEAL_TUZUK.md)
@@ -428,9 +425,8 @@ yükler; `tests/unit/test_revert_verification_contract.py` aradıkları metin
 README'den/koddan koptuğunda ya da hedef test silindiğinde kırmızıya döner —
 kanıt sessizce çürüyemez.
 
-CI (`.github/workflows/ci.yml`) bunları ve ayrıca envanter tazeliliğini, sağlayıcı
-kataloğunu, svelte tip kontrolünü, sözleşme testlerini (`npm test`), smoke testini,
-Rust ve Android derlemesini çalıştırır.
+CI (`.github/workflows/ci.yml`) bunları, sağlayıcı kataloğunu, Svelte tip kontrolünü,
+sözleşme testlerini (`npm test`), smoke testini, Rust ve Android derlemesini çalıştırır.
 
 **Kanlı ayrıntı — koşmayan kapı yok:** `9Router Preflight Verification` işi
 operatörün makinesindeki hub'ı (`127.0.0.1:20128`) doğrular; barındırılan runner
