@@ -277,10 +277,24 @@ def register_hook_studio_routes(
             or "Hedef Kişi"
         )
 
-        # Operatör kip seçimi & Psikolojik Strateji Kuralı
-        is_offensive_or_shadow = payload.intent in ("shadow_hook", "pattern_interrupt") or (
-            bool(payload.custom_goal and any(w in payload.custom_goal.lower() for w in ["kır", "baskı", "savunma", "zaaf", "yara", "sınır", "nlp", "shadow"]))
+        # Operatör kip seçimi & Psikolojik Strateji Kuralı (Arketip temelli koruma/penetrasyon)
+        # DİKKAT: "kır" alt-dizesi "kırmızı" kelimesini yakalamamalıdır!
+        goal_lower = (payload.custom_goal or "").lower()
+        has_explicit_respect_rule = any(
+            phrase in goal_lower
+            for phrase in ["kırmızı", "kırmızı çizgi", "basma", "saygılı", "hassasiyet", "koru", "empatik"]
         )
+        is_offensive_archetype = payload.intent in ("shadow_hook", "pattern_interrupt")
+        has_offensive_intent = bool(
+            not has_explicit_respect_rule and any(
+                phrase in goal_lower
+                for phrase in [
+                    "direnci kır", "gardını düşür", "savunmasını kır", "zaafını bul",
+                    "yara izi", "baskı kur", "açığını yakala", "nlp kancası", "gölge kanca"
+                ]
+            )
+        )
+        is_offensive_or_shadow = (is_offensive_archetype and not has_explicit_respect_rule) or has_offensive_intent
         if is_offensive_or_shadow:
             psychological_rule = (
                 "3. TAKTİKSEL PSİKOLOJİK HEDEFLEME & YARA İZİ: Hedefin savunma mekanizmasını aşmak için "
