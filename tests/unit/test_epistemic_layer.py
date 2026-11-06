@@ -1,12 +1,10 @@
 """Epistemik Katman, Model Alanları ve Sınır Durumları Kapsamlı Doğrulama Testleri."""
 
-import math
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from agent_core.services.epistemic import build_epistemic_state, clamp, VERIFICATION, CHANNEL_WEIGHT
+from agent_core.services.epistemic import build_epistemic_state, clamp
 from agent_core.services.llm_gateway import LLMGateway
 from agent_core.domain.memory_models import PassionProfile, FrictionProfile, CognitiveStyle
 from backend.routes.hook_studio import register_hook_studio_routes, HookResult
@@ -100,15 +98,25 @@ def test_input_present_does_not_mean_data_confidence():
     assert verified_state["input_data_present"] is True
     assert verified_state["data_confidence"] is True
 
-    # Alıntıyla ölçülmüş alanlar ve veri kanalları mevcut olduğunda -> data_confidence True
+    # Alıntıyla ölçülmüş alanlar olsa bile has_verified_proof=False ise data_confidence FALSE kalmalıdır
+    # ("girdi varlığı doğruluk iddiası değildir")
     measured_state = build_epistemic_state(
         {"bio": "Kullanıcı bio bilgisi", "posts": ["Yazılım mimarisi"]},
         profiles={"core_passions": ["Yazılım Mimarisi"]},
         has_verified_proof=False,
     )
     assert measured_state["input_data_present"] is True
-    assert measured_state["data_confidence"] is True
+    assert measured_state["data_confidence"] is False
     assert measured_state["measured_count"] > 0
+
+    # has_verified_proof=True olduğunda data_confidence True olur
+    verified_measured_state = build_epistemic_state(
+        {"bio": "Kullanıcı bio bilgisi", "posts": ["Yazılım mimarisi"]},
+        profiles={"core_passions": ["Yazılım Mimarisi"]},
+        has_verified_proof=True,
+    )
+    assert verified_measured_state["input_data_present"] is True
+    assert verified_measured_state["data_confidence"] is True
 
 
 # ============================================================================
@@ -128,9 +136,9 @@ def test_memory_models_support_conceptual_aliases():
     assert f.boundary_signals == ["Özel Hayat"]
     assert f.forbidden_territories == ["Özel Hayat"]
 
-    c = CognitiveStyle(thinking_style="Kavramsal / Analitik")
-    assert c.complexity_level == "Kavramsal / Analitik"
-    assert c.thinking_style == "Kavramsal / Analitik"
+    c = CognitiveStyle(complexity_level="kavramsal", thinking_style="rasyonel-mantıksal")
+    assert c.complexity_level == "kavramsal"
+    assert c.thinking_style == "rasyonel-mantıksal"
 
 
 def test_memory_models_preserve_different_content_in_aliases():
@@ -246,3 +254,42 @@ def test_hook_studio_kirmizi_cizgi_in_custom_goal_does_not_trigger_offensive():
     # 'kırmızı' kelimesindeki 'kır' hecesi yanıltmamalı; saygılı dal seçilmeli
     assert "HASSASİYETLERE VE SINIRLARA ASLA BASMA (Kırmızı Çizgi Koruması)" in prompt
     assert "TAKTİKSEL PSİKOLOJİK HEDEFLEME & YARA İZİ" not in prompt
+
+def test_data_confidence_is_single_source_of_truth_in_hook_result():
+    """HookResult içinde üst düzey data_confidence ile epistemic.data_confidence daima eşittir."""
+    app = FastAPI()
+    mock_gw = MagicMock(spec=LLMGateway)
+
+    async def mock_query(prompt, **kwargs):
+        return HookResult(
+            opening_message="Test mesajı",
+            opening_topic="Test konusu",
+            rationale="Gerekçe",
+            archetype="authentic_connection",
+            confidence=0.85,
+        )
+
+    mock_gw.query_json_chain = AsyncMock(side_effect=mock_query)
+
+    register_hook_studio_routes(
+        app,
+        rate_limit=lambda ip, action: True,
+        rate_identity=lambda req: "127.0.0.1",
+        gateway_provider=lambda: mock_gw,
+        get_executor=None,
+    )
+    client = TestClient(app)
+
+    # Doğrulanmamış girdi durumunda her iki alan da False ve birbirine eşit olmalı
+    resp = client.post("/api/hook/generate", json={
+        "client_id": "test_room",
+        "intent": "authentic_connection",
+        "target_username": "unverified_user",
+        "target_profile": {"bio": "Doğrulanmamış bio"},
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["data_confidence"] is False
+    assert data["epistemic"]["data_confidence"] is False
+    assert data["data_confidence"] == data["epistemic"]["data_confidence"]
+

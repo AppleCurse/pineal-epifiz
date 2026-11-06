@@ -113,6 +113,8 @@ Confidence kuralı: confidence alanını yalnızca verilen doğrudan kanıtın t
 Aşağıdaki JSON şemasına birebir uygun yanıt ver:
 {{
   "core_passions": ["Kişinin somut paylaşımlarından ve fotoğraflarından kanıtlanan 1-3 ana tutku alanı"],
+  "passion_anchors": ["Kişiyi kimliğine ve temel motivasyonuna sabitleyen kök tutku çapaları"],
+  "secondary_interests": ["Ana tutkularının çevresindeki ikincil/yan ilgi alanları ve hobiler"],
   "energizing_topics": ["Konuşmaktan, üretmekten veya görselleştirmekten keyif aldığı spesifik konular"],
   "flow_triggers": ["Onu üretken veya coşkulu kılan somut tetikleyiciler"],
   "sentiment_polarity": 0.6,
@@ -207,6 +209,7 @@ Aşağıdaki JSON şemasına birebir uygun yanıt ver:
   "sensitivities": ["Kişinin hoşlanmadığı, mesafeli durduğu veya hassas olduğu somut konular"],
   "stress_triggers": ["Onu yoran, tepkisini çeken durumlar"],
   "boundary_signals": ["İletişimde aşılmaması gereken kişisel sınırlar"],
+  "forbidden_territories": ["Asla girilmemesi gereken yasak bölgeler ve kırmızı çizgiler"],
   "evidence_quotes": ["Metinden veya fotoğraflardan doğrudan alıntılanan somut kanıtlar"],
   "confidence": 0.8
 }}
@@ -290,6 +293,7 @@ Aşağıdaki JSON şemasına birebir uygun yanıt ver:
 {{
   "communication_tone": "doğrudan | analitik | samimi | mesafeli | metaforik",
   "complexity_level": "sade | teknik | kavramsal",
+  "thinking_style": "rasyonel-mantıksal | sezgisel-duygusal | şüpheci-sorgulayıcı",
   "humor_style": "ironi | hiciv | kuru mizah | yok",
   "social_orientation": "toplulukçu | bağımsız | gözlemci",
   "confidence": 0.8

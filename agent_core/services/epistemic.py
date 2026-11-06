@@ -1,6 +1,6 @@
 """Kanıt taşıyan çıkarımların güven filtresi. LLM'e sorulmaz, SAYILIR."""
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict
 from agent_core.services.uncertainty_engine import UncertaintyEngine
 from agent_core.services.confidence import normalize_confidence
 
@@ -62,9 +62,8 @@ def build_epistemic_state(
     measured_count = sum(1 for s in statuses.values() if s == "measured")
     
     # Girdi varlığı doğruluk iddiası değildir:
-    # data_confidence = Yalnızca girdi mevcutsa VE (onaylı görev raporu YA DA ölçülmüş alıntı kanıtı) varsa True.
-    is_verified = bool(has_verified_proof or (measured_count > 0 and any(channels.values())))
-    data_confidence = bool(present and ceiling > 0.0 and is_verified)
+    # data_confidence = Yalnızca girdi mevcutsa VE bağımsız doğrulanmış kanıt (has_verified_proof=True) varsa True.
+    data_confidence = bool(present and ceiling > 0.0 and has_verified_proof)
 
     return {
         "input_data_present": present,

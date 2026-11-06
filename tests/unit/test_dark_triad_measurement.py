@@ -1,6 +1,5 @@
 """Karanlık Üçlü (Dark Triad) Kanıt ve Psikodinamik Derinlik Ölçüm Testleri."""
 
-import pytest
 from agent_core.psychology.dark_triad import DarkTriadAnalyzer, DarkTriadProfile
 from agent_core.shadow.shadow_executor import ShadowExecutor
 
