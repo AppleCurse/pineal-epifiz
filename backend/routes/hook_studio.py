@@ -206,7 +206,8 @@ def register_hook_studio_routes(
         boundary_signals = frictions.get("boundary_signals") or frictions.get("forbidden_territories") or []
 
         comm_tone = cognitive.get("communication_tone") or "Dengeli"
-        complexity = cognitive.get("complexity_level") or cognitive.get("thinking_style") or "Orta Düzey"
+        complexity = cognitive.get("complexity_level") or "Orta Düzey"
+        thinking = cognitive.get("thinking_style") or "Dengeli"
         social_orient = cognitive.get("social_orientation") or "Dengeli"
         humor_style = cognitive.get("humor_style") or "Doğal"
 
@@ -323,6 +324,7 @@ HEDEFİN KANITLANMIŞ PROFİLİ:
   * Sınır Sinyalleri & Defans Noktaları: {boundary_signals}
 - İletişim Üslubu & Bilişsel Yapı:
   * İletişim Tonu: {comm_tone}
+  * Düşünme Modeli (Thinking Style): {thinking}
   * Karmaşıklık Düzeyi: {complexity}
   * Sosyal Yönelim: {social_orient}
   * Mizah Anlayışı: {humor_style}
@@ -373,17 +375,18 @@ Aşağıdaki JSON şemasında yanıt ver:
             clamped_conf = clamp(conf if valid else 0.85, epistemic_state)
             # Eğer model conf dönmüşse ama epistemic tavan sıfırsa clamp sıfırlar
             final_conf = clamped_conf if valid else clamp(0.85, epistemic_state)
-            verified_ok = bool(has_verified_proof and valid and final_conf > 0.0)
+            epistemic_dc = bool(epistemic_state.get("data_confidence", False) and valid and final_conf > 0.0)
+            epistemic_state["data_confidence"] = epistemic_dc
             ev_status = normalize_evidence_verification_status(
-                "verified" if verified_ok else "unverified",
-                has_verified_proof=verified_ok,
+                "verified" if epistemic_dc else "unverified",
+                has_verified_proof=epistemic_dc,
             )
             used_evidence = [str(x) for x in (core_passions + energizing_topics + stress_triggers)[:5]]
             return res.model_copy(update={
                 "confidence": final_conf if final_conf > 0.0 else (conf if valid else 0.85),
                 "input_data_present": input_data_present,
                 "evidence_verification_status": ev_status,
-                "data_confidence": verified_ok,
+                "data_confidence": epistemic_dc,
                 "archetype": payload.intent,
                 "epistemic": epistemic_state,
                 "evidence_used": used_evidence,
@@ -397,6 +400,8 @@ Aşağıdaki JSON şemasında yanıt ver:
                 else (energizing_topics[0] if energizing_topics else "çalışmalarınız")
             )
             fallback_conf = clamp(0.5, epistemic_state)
+            fallback_dc = bool(epistemic_state.get("data_confidence", False) and fallback_conf > 0.0)
+            epistemic_state["data_confidence"] = fallback_dc
             return HookResult(
                 opening_message=f"Merhaba @{target_name}, {default_topic} üzerine yaklaşımınız dikkatimi çekti. Özellikle son dönemdeki bakış açınızdaki tutarlılık oldukça ilham verici.",
                 opening_topic=str(default_topic),
@@ -421,9 +426,9 @@ Aşağıdaki JSON şemasında yanıt ver:
                 ],
                 shared_points=[str(default_topic)],
                 confidence=fallback_conf,
-                data_confidence=False,
+                data_confidence=fallback_dc,
                 input_data_present=input_data_present,
-                evidence_verification_status="unverified",
+                evidence_verification_status="verified" if fallback_dc else "unverified",
                 fallback_reason="llm_unavailable_template_fallback",
                 epistemic=epistemic_state,
                 evidence_used=[str(default_topic)] if default_topic else [],

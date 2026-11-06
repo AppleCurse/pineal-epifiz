@@ -119,7 +119,7 @@ class CognitiveStyle(BaseModel):
     """Kişinin düşünce kalıbı, iletişim üslubu ve sosyal ritmi."""
     communication_tone: str = "unknown"  # doğrudan, analitik, metaforik, samimi, mesafeli
     complexity_level: str = "unknown"  # sade, teknik, kavramsal
-    thinking_style: str = "unknown"  # alias for complexity_level / cognitive style
+    thinking_style: str = "unknown"  # rasyonel-mantıksal, sezgisel-duygusal, şüpheci-sorgulayıcı
     humor_style: Optional[str] = None  # hiciv, ironi, kuru mizah, yok
     social_orientation: str = "unknown"  # toplulukçu, bağımsız, gözlemci
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -127,20 +127,6 @@ class CognitiveStyle(BaseModel):
     fallback_reason: Optional[str] = "unavailable"
 
     model_config = ConfigDict(extra="allow")
-
-    def model_post_init(self, __context: Any) -> None:
-        self._sync_aliases()
-
-    def _sync_aliases(self) -> None:
-        if self.thinking_style == "unknown" and self.complexity_level != "unknown":
-            self.thinking_style = self.complexity_level
-        elif self.complexity_level == "unknown" and self.thinking_style != "unknown":
-            self.complexity_level = self.thinking_style
-
-    def model_copy(self, *, update: Optional[Dict[str, Any]] = None, deep: bool = False) -> CognitiveStyle:
-        cp = super().model_copy(update=update, deep=deep)
-        cp._sync_aliases()
-        return cp
 
 class AuthenticBridge(BaseModel):
     """Kullanıcı ile hedef arasındaki sahici ortak değerler ve yapıcı iletişim köprüsü."""

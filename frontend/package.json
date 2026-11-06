@@ -11,8 +11,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@jridgewell/trace-mapping": "^0.3.25",
-    "@rollup/rollup-win32-x64-msvc": "^4.67.5",
     "@tauri-apps/api": "^2.11.0"
   },
   "devDependencies": {
