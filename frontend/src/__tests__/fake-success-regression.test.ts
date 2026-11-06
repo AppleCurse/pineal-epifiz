@@ -115,4 +115,19 @@ describe('SpiderFoot evidence and confidence', () => {
     await fireEvent.click(screen.getByRole('button', {name:/HEDEFE ÖZEL KANCA ÜRET/}));
     await waitFor(() => expect(document.body.textContent).toContain('llm_unavailable_template_fallback'));
   });
+
+  it('shows unverified evidence warning even when input_data_present is true', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => response({
+      opening_message: 'Merhaba, profiliniz dikkatimi çekti.',
+      rationale: 'Biyografi bazlı.',
+      dialogue_tree: [],
+      input_data_present: true,
+      evidence_verification_status: 'unverified',
+      data_confidence: true,
+    })));
+    render(Spider);
+    await fireEvent.click(screen.getByRole('button', {name:/İLK TEMAS & KANCA/}));
+    await fireEvent.click(screen.getByRole('button', {name:/HEDEFE ÖZEL KANCA ÜRET/}));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('doğrulama yapılmadı'));
+  });
 });
