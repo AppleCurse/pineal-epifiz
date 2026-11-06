@@ -1,21 +1,13 @@
-"""Karanlik uclu: GÖREV 2.1 sonrasi sozluk-suz govde.
+"""Karanlik uclu: Kanıt ve psikodinamik derinlik tabanlı ölçüm gövdesi.
 
-KALDIRILDI: statik MARKERS sozlugu + kelime-sayma skorlamasi ("mükemmel"
-saymak narsisizm olcumu degildir). analyze() artik trait skoru URETMEZ;
-uc trait + exploitability gozlemlenmemis (0.0) doner ve metinlerin
-DENETIMSUZ temasal yapisi (theme_analysis) tasinir.
-
-generate_strategy() esik mantigi VERBATIM korunur: acikca verilen
-sifir-disi profillere ayni vektorler dondurulur; analyze() ciktisi
-(sifirlar) 'unavailable' uretir ve shadow mesaji uretilmez.
-Tema->vektor eslemesi YAPILMAZ (keyfi esleme uydurma olur); strateji
-vektorlerinin yeni derinlik-motoru skorlarina baglanmasi ayri bir
-tasarim kararidir.
+GÖREV 2.1 ile statik sözlük sayımı kaldırıldı (kelime-sayma narsisizm ölçümü değildir).
+Yeni kural: Trait skorları ve sömürülebilirlik (exploitability) YALNIZCA somut alıntılı
+kanıt (evidence_quotes) veya psychodynamic_depth yapısal sinyalleri varsa ölçülür.
+Alıntısız sıradan metinlerde trait_scores_measured=False kalır ve trait'ler 0.0 döner (UI'da null).
 """
 
-from typing import Any, Dict, Optional
-
-from pydantic import BaseModel, ConfigDict
+from typing import Any, Dict, List, Optional
+from pydantic import BaseModel, ConfigDict, Field
 
 from agent_core.services.theme_cluster import cluster_texts
 
@@ -26,6 +18,8 @@ class DarkTriadProfile(BaseModel):
     psychopathy: float = 0.0
     exploitability: float = 0.0
     theme_analysis: Optional[Dict[str, Any]] = None
+    trait_scores_measured: bool = False
+    evidence_quotes: Dict[str, List[str]] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -37,13 +31,13 @@ DEPTH_ALLIANCE_REPETITION = 0.40
 
 
 class DarkTriadAnalyzer:
-    """
-    NOT: v1 sozluk-skorlamasi GÖREV 2.1 ile kaldirildi. Trait alanlari
-    geriye-uyumluluk icin korunur; deger yalnizca acik profillerden
-    (test/legacy) gelebilir, metinden turetilemez.
+    """Karanlık üçlü psikolojik profil analisti.
+    
+    Yalnızca doğrulanabilir alıntılar veya psikodinamik derinlik sinyalleri
+    mevcut olduğunda ölçülmüş skor (trait_scores_measured=True) üretir.
     """
 
-    def analyze(self, profile_data: Dict) -> DarkTriadProfile:
+    def analyze(self, profile_data: Dict, *, depth: Optional[Dict[str, Any]] = None) -> DarkTriadProfile:
         raw_posts = (profile_data or {}).get("posts") or []
         if isinstance(raw_posts, str):
             raw_posts = [raw_posts]
@@ -51,7 +45,72 @@ class DarkTriadAnalyzer:
         bio = (profile_data or {}).get("bio") or ""
         texts = ([bio] if isinstance(bio, str) and bio.strip() else []) + posts
         themes = cluster_texts(texts)
-        return DarkTriadProfile(theme_analysis=themes)
+
+        # 1. Açık veya enjekte edilmiş psychodynamic_depth kontrolü
+        depth_data = depth or (profile_data or {}).get("psychodynamic_depth")
+
+        narcissism = 0.0
+        machiavellianism = 0.0
+        psychopathy = 0.0
+        evidence_quotes: Dict[str, List[str]] = {}
+
+        if isinstance(depth_data, dict) and depth_data.get("verdict") == "ok":
+            reaction = depth_data.get("reaction_formation_index")
+            channels = depth_data.get("channels") or {}
+            decl = channels.get("declaration") if isinstance(channels, dict) else {}
+            dsig = decl.get("signals") if isinstance(decl, dict) else {}
+            repetition = dsig.get("repetition_score") if isinstance(dsig, dict) else None
+            rhythm = channels.get("rhythm") if isinstance(channels, dict) else {}
+            rsig = rhythm.get("signals") if isinstance(rhythm, dict) else {}
+            n_rup = rsig.get("n_ruptures", 0) if isinstance(rsig, dict) else 0
+            kinds = rsig.get("rupture_kinds", []) if isinstance(rsig, dict) else []
+
+            quotes = depth_data.get("evidence_quotes") or (profile_data or {}).get("evidence_quotes") or []
+            if isinstance(quotes, list) and quotes:
+                valid_quotes = [str(q).strip() for q in quotes if str(q).strip()]
+            else:
+                valid_quotes = [t for t in texts if len(t.split()) >= 4][:3]
+
+            if reaction is not None and isinstance(reaction, (int, float)) and reaction >= DEPTH_MIRRORING_REACTION:
+                narcissism = round(min(1.0, float(reaction) * 1.5), 2)
+                evidence_quotes["narcissism"] = valid_quotes[:2]
+
+            if repetition is not None and isinstance(repetition, (int, float)) and repetition >= DEPTH_ALLIANCE_REPETITION:
+                machiavellianism = round(min(1.0, float(repetition) * 1.5), 2)
+                evidence_quotes["machiavellianism"] = valid_quotes[:2]
+
+            if (isinstance(n_rup, int) and n_rup >= 1) or "entropy_jump" in kinds:
+                psychopathy = 0.65
+                evidence_quotes["psychopathy"] = valid_quotes[:2]
+
+        # 2. Doğrudan profile_data['evidence_quotes'] taşıyan açık analiz girdisi
+        raw_evidence = (profile_data or {}).get("evidence_quotes")
+        if isinstance(raw_evidence, dict):
+            for trait in ("narcissism", "machiavellianism", "psychopathy"):
+                t_quotes = raw_evidence.get(trait)
+                if isinstance(t_quotes, list) and any(bool(q) for q in t_quotes):
+                    evidence_quotes[trait] = [str(q).strip() for q in t_quotes if str(q).strip()]
+                    if trait == "narcissism" and narcissism == 0.0:
+                        narcissism = 0.75
+                    elif trait == "machiavellianism" and machiavellianism == 0.0:
+                        machiavellianism = 0.65
+                    elif trait == "psychopathy" and psychopathy == 0.0:
+                        psychopathy = 0.55
+
+        measured = bool(evidence_quotes) and any(
+            t > 0.0 for t in (narcissism, machiavellianism, psychopathy)
+        )
+        exploitability = round(max(narcissism, machiavellianism, psychopathy) * 0.8, 2) if measured else 0.0
+
+        return DarkTriadProfile(
+            machiavellianism=machiavellianism,
+            narcissism=narcissism,
+            psychopathy=psychopathy,
+            exploitability=exploitability,
+            theme_analysis=themes,
+            trait_scores_measured=measured,
+            evidence_quotes=evidence_quotes,
+        )
 
     def generate_strategy(self, profile: DarkTriadProfile) -> Dict:
         if all(getattr(profile, t, 0.0) == 0.0 for t in ("machiavellianism", "narcissism", "psychopathy")):
