@@ -106,6 +106,7 @@ def test_real_cognitive_profile_passes():
     real = CognitiveStyle(
         communication_tone="analitik",
         complexity_level="teknik",
+        thinking_style="rasyonel-mantıksal",
         humor_style="kuru mizah",
         social_orientation="gözlemci",
         confidence=0.9,
