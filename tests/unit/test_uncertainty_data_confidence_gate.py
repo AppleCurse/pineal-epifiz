@@ -105,3 +105,32 @@ def test_resonance_calc_failclosed_reason_admits_it_is_not_a_decision(comp_score
     assert result.confidence == comp_score
     assert "uydurulmadı" in result.reason
     assert "tamamlandı" not in result.reason, "eski sahte 'analiz tamamlandı' iddiası dönemez"
+
+
+def test_legacy_data_confidence_true_does_not_escalate_to_verified_status():
+    """Eski data_confidence=True, açık doğrulama kanıtı olmadan evidence_verification_status='verified' sayılmaz."""
+    from agent_core.domain.memory_models import PassionProfile
+
+    profile = PassionProfile(core_passions=["müzik"], confidence=0.8, data_confidence=True)
+    report = UncertaintyEngine().evaluate(profile, "passion_mapper")
+    assert report.input_data_present is True
+    assert report.evidence_verification_status != "verified"
+    assert report.evidence_verification_status in ("unverified", "unknown")
+
+
+def test_input_data_present_false_fails_closed_even_if_data_confidence_flag_set():
+    """input_data_present=False açıkça bildirildiyse data_confidence=True olsa bile fail-closed olmalı."""
+    from types import SimpleNamespace
+
+    fake_result = SimpleNamespace(
+        core_passions=["müzik"],
+        confidence=0.85,
+        data_confidence=True,
+        input_data_present=False,
+        evidence_verification_status="unverified",
+    )
+    report = UncertaintyEngine().evaluate(fake_result, "passion_mapper")
+    assert report.is_suspicious is True
+    assert report.confidence == 0.0
+    assert report.input_data_present is False
+    assert report.evidence_verification_status == "unverified"

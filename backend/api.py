@@ -5715,6 +5715,12 @@ app.delete("/api/tasks/{task_id}")(
 
 
 static_dir = "frontend/dist" if os.path.exists("frontend/dist") else "frontend"
-os.makedirs(static_dir, exist_ok=True)
-# Sona ekliyoruz ki api rotaları statik dosyalardan önce ezilmesin
-app.mount("/", StaticFiles(directory=static_dir, html=True), name="frontend")
+try:
+    os.makedirs(static_dir, exist_ok=True)
+except OSError as exc:
+    logger.warning("Statik dizin oluşturulamadı (%s); arayüz mount edilmedi.", exc)
+    static_dir = None
+
+if static_dir and os.path.exists(static_dir):
+    # Sona ekliyoruz ki api rotaları statik dosyalardan önce ezilmesin
+    app.mount("/", StaticFiles(directory=static_dir, html=True), name="frontend")

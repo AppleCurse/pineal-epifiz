@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import Any, Callable, Optional
+from starlette.websockets import WebSocketDisconnect
 
 from agent_core.utils.security import (
     SecurityConfigurationError,
@@ -148,7 +149,7 @@ async def _authenticate(websocket: Any) -> Optional[str]:
         auth_message = await asyncio.wait_for(
             websocket.receive_json(), timeout=WS_AUTH_TIMEOUT_S
         )
-    except (asyncio.TimeoutError, ValueError, RuntimeError):
+    except (asyncio.TimeoutError, ValueError, RuntimeError, WebSocketDisconnect):
         # ValueError  -> bozuk JSON gövdesi
         # RuntimeError -> istemci kimlik göndermeden soketi kapattı
         return None

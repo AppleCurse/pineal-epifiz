@@ -1422,8 +1422,8 @@
               </button>
             </div>
 
-            {#if customHookResult?.data_confidence === false}
-              <p role="status">Bu sonuç güvenilir veriyle doğrulanmadı{customHookResult?.fallback_reason ? ` (${customHookResult.fallback_reason})` : ''}.</p>
+            {#if customHookResult?.data_confidence === false || customHookResult?.evidence_verification_status === 'unverified'}
+              <p role="status">Bu sonuç için henüz bağımsız kanıtla doğrulama yapılmadı{customHookResult?.fallback_reason ? ` (${customHookResult.fallback_reason})` : ''}.</p>
             {/if}
             <div class="message-content-box">
               {#if activeOpeningMessage}

@@ -113,3 +113,109 @@ def test_direct_dispatch_does_not_fabricate_agent_results():
         assert response.json()["error"]["code"] == "DIRECT_AGENT_DISPATCH_UNAVAILABLE"
         assert "twin_verified" not in response.text
         assert "0.91" not in response.text
+
+
+def test_generate_hook_separates_unverified_input_from_verified_evidence(client_app):
+    """Dolu ama doğrulanmamış bio: input_data_present=True, fakat evidence_verification_status='unverified' ve data_confidence=False olmalı."""
+    client, _ = client_app
+    payload = {
+        "client_id": "test_room",
+        "intent": "authentic_connection",
+        "target_username": "unverified_user",
+        "target_profile": {"bio": "Sentetik doğrulanmamış biyografi metni"},
+    }
+    resp = client.post("/api/hook/generate", json=payload)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["input_data_present"] is True
+    assert data["evidence_verification_status"] == "unverified"
+    assert data["data_confidence"] is False
+
+
+def test_generate_hook_rejects_whitespace_and_placeholder_as_input_data(client_app):
+    """Boşluk veya placeholder metinler input_data_present=False üretmeli."""
+    client, _ = client_app
+    payload = {
+        "client_id": "test_room",
+        "intent": "authentic_connection",
+        "target_username": "empty_user",
+        "target_profile": {"bio": "   ", "posts": ["bilinmiyor", "yok"]},
+        "passions": {"core_passions": ["-"]},
+    }
+    resp = client.post("/api/hook/generate", json=payload)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["input_data_present"] is False
+    assert data["evidence_verification_status"] == "unverified"
+    assert data["data_confidence"] is False
+
+
+def test_generate_hook_grants_verified_status_only_when_task_verifier_report_verified(
+    monkeypatch,
+):
+    """Yalnız görevde doğrulanmış VerifierReport varsa ve ham override enjekte edilmemişse evidence_verification_status='verified' olur."""
+    from types import SimpleNamespace
+
+    app = FastAPI()
+    mock_gw = MagicMock(spec=LLMGateway)
+    mock_gw.query_json_chain = AsyncMock(
+        return_value=HookResult(
+            opening_message="Doğrulanmış ortak nokta üzerinden mesaj.",
+            opening_topic="Açık Kaynak Sistemler",
+            rationale="Bağımsız doğrulanmış katkı geçmişi.",
+            archetype="intellectual_collab",
+            dialogue_tree=[],
+            shared_points=["Rust"],
+            confidence=0.88,
+        )
+    )
+    fake_task = SimpleNamespace(
+        target_profile={"bio": "Doğrulanmış açık kaynak geliştiricisi"},
+        holistic_profile=SimpleNamespace(
+            passions=SimpleNamespace(model_dump=lambda: {"core_passions": ["Rust"]}),
+            frictions=None,
+            cognitive=None,
+        ),
+        depth_report=None,
+        verification_report=SimpleNamespace(
+            status="VERIFIED",
+            data_confidence=True,
+        ),
+    )
+    fake_executor = SimpleNamespace(tasks={"task-verified-1": fake_task}, last_status=fake_task)
+
+    register_hook_studio_routes(
+        app,
+        rate_limit=lambda ip, action: True,
+        rate_identity=lambda req: "127.0.0.1",
+        gateway_provider=lambda: mock_gw,
+        get_executor=lambda client_id: fake_executor,
+    )
+    client = TestClient(app)
+
+    # 1. Doğrulanmış görev verisiyle çağrı (ham override yok)
+    resp = client.post(
+        "/api/hook/generate",
+        json={"client_id": "c1", "task_id": "task-verified-1", "intent": "intellectual_collab"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["input_data_present"] is True
+    assert data["evidence_verification_status"] == "verified"
+    assert data["data_confidence"] is True
+
+    # 2. Aynı görev ID'sine dışarıdan doğrulanmamış bio enjekte edilirse unverified'a düşmeli
+    resp_override = client.post(
+        "/api/hook/generate",
+        json={
+            "client_id": "c1",
+            "task_id": "task-verified-1",
+            "intent": "intellectual_collab",
+            "target_profile": {"bio": "Operatörün doğrulanmamış manuel girdisi"},
+        },
+    )
+    assert resp_override.status_code == 200
+    data_override = resp_override.json()
+    assert data_override["input_data_present"] is True
+    assert data_override["evidence_verification_status"] == "unverified"
+    assert data_override["data_confidence"] is False

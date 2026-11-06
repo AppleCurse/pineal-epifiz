@@ -19,7 +19,10 @@ from typing import Any, Dict, Tuple
 from pydantic import BaseModel, ConfigDict
 
 from agent_core.config_loader import DecisionConfig
-from agent_core.services.confidence import normalize_confidence
+from agent_core.services.confidence import (
+    normalize_confidence,
+    normalize_evidence_verification_status,
+)
 
 
 class UncertaintyReport(BaseModel):
@@ -35,6 +38,8 @@ class UncertaintyReport(BaseModel):
     #: gerçekten çalıştı) ne de karar-Grade "completed". Güven UYDURULMAZ
     #: (eski resonance_calc 0.75 tabanı).
     no_decision: bool = False
+    input_data_present: bool = False
+    evidence_verification_status: str = "unknown"
     model_config = ConfigDict(extra="forbid")
 
 class UncertaintyEngine:
@@ -66,6 +71,8 @@ class UncertaintyEngine:
     # gibi sonuç-anlamlı alanlar hariç tutulur.
     RUNTIME_METADATA_FIELDS = frozenset({
         'confidence', 'data_confidence', 'fallback_reason',
+        'input_data_present', 'evidence_verification_status',
+        'confidence_source', 'confidence_method', 'confidence_basis',
         'model', 'model_name', 'provider', 'source_provider',
         'usage', 'tokens', 'token_usage', 'metrics',
         'duration_ms', 'elapsed_ms', 'latency_ms', 'elapsed',
@@ -254,9 +261,21 @@ class UncertaintyEngine:
             "data_confidence",
             result.get("data_confidence", missing_flag) if isinstance(result, dict) else missing_flag,
         )
+        raw_input_present = getattr(
+            result,
+            "input_data_present",
+            result.get("input_data_present", missing_flag) if isinstance(result, dict) else missing_flag,
+        )
+        raw_ev_status = getattr(
+            result,
+            "evidence_verification_status",
+            result.get("evidence_verification_status", missing_flag) if isinstance(result, dict) else missing_flag,
+        )
         # Preserve legacy typed results that predate the flag, but do not treat
         # truthy strings/integers as an explicit evidence assertion.
         data_conf_flag = True if raw_data_confidence is missing_flag else raw_data_confidence is True
+        if raw_input_present is False:
+            data_conf_flag = False
         
         agent_config = self.config.get_agent_config(agent_name)
         
@@ -281,6 +300,24 @@ class UncertaintyEngine:
         elif 'evidence' in result_text and 'bulunamadı' in result_text:
             is_empty = True
 
+        if isinstance(raw_input_present, bool):
+            input_present = raw_input_present and not is_empty
+        elif isinstance(result, BaseModel):
+            input_present = not is_empty and data_score > 0.0
+        else:
+            input_present = not is_empty and data_conf_flag
+
+        if raw_ev_status is not missing_flag:
+            ev_status = normalize_evidence_verification_status(
+                raw_ev_status,
+                has_verified_proof=bool(data_conf_flag and input_present),
+            )
+        elif not data_conf_flag or is_empty:
+            ev_status = "unverified"
+        else:
+            # Eski data_confidence=True, açık doğrulama kanıtı olmadan verified sayılmaz.
+            ev_status = "unknown"
+
         if raw_llm_confidence is not None and not confidence_valid and data_conf_flag:
             return UncertaintyReport(
                 is_suspicious=True,
@@ -288,6 +325,8 @@ class UncertaintyEngine:
                 reason="Model confidence alanı geçersiz veya [0,1] dışında; çıktı karar-grade sayılmadı.",
                 data_score=data_score,
                 breakdown=breakdown,
+                input_data_present=input_present,
+                evidence_verification_status="unverified",
             )
 
         # Calculate combined confidence
@@ -340,7 +379,9 @@ class UncertaintyEngine:
                         f"ölçülen benzerlik {comp_score:.2f}, güven uydurulmadı."
                     ),
                     data_score=data_score,
-                    breakdown=breakdown
+                    breakdown=breakdown,
+                    input_data_present=input_present,
+                    evidence_verification_status=ev_status,
                 )
             # An unavailable/fallback source is never safe evidence.
             return UncertaintyReport(
@@ -348,7 +389,9 @@ class UncertaintyEngine:
                 confidence=0.0,
                 reason="Kaynak verisi kullanılamıyor; fallback sonuç kabul edilmedi.",
                 data_score=data_score,
-                breakdown=breakdown
+                breakdown=breakdown,
+                input_data_present=input_present,
+                evidence_verification_status=ev_status,
             )
 
         if is_empty:
@@ -357,7 +400,9 @@ class UncertaintyEngine:
                 confidence=0.1, 
                 reason="Eksik kanıt (Tüm alanlar boş veya veri yetersiz).",
                 data_score=data_score,
-                breakdown=breakdown
+                breakdown=breakdown,
+                input_data_present=False,
+                evidence_verification_status="unverified",
             )
 
         if combined_confidence > 0.95 and has_absolutes:
@@ -366,7 +411,9 @@ class UncertaintyEngine:
                 confidence=0.9, 
                 reason="Aşırı kesinlik + yüksek confidence = Halüsinasyon şüphesi",
                 data_score=data_score,
-                breakdown=breakdown
+                breakdown=breakdown,
+                input_data_present=input_present,
+                evidence_verification_status=ev_status,
             )
 
         if combined_confidence < agent_config.min_llm_confidence:
@@ -375,7 +422,9 @@ class UncertaintyEngine:
                 confidence=combined_confidence,
                 reason=f"Düşük güven ({combined_confidence:.2f} < {agent_config.min_llm_confidence}).",
                 data_score=data_score,
-                breakdown=breakdown
+                breakdown=breakdown,
+                input_data_present=input_present,
+                evidence_verification_status=ev_status,
             )
 
         return UncertaintyReport(
@@ -383,5 +432,7 @@ class UncertaintyEngine:
             confidence=combined_confidence, 
             reason="Güvenli",
             data_score=data_score,
-            breakdown=breakdown
+            breakdown=breakdown,
+            input_data_present=input_present,
+            evidence_verification_status=ev_status,
         )

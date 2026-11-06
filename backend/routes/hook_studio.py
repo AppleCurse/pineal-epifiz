@@ -27,7 +27,12 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from agent_core.services.llm_gateway import LLMGateway
-from agent_core.services.confidence import normalize_confidence
+from agent_core.services.confidence import (
+    normalize_confidence,
+    normalize_evidence_verification_status,
+)
+from agent_core.services.epistemic import build_epistemic_state, clamp
+from agent_core.services.uncertainty_engine import UncertaintyEngine
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +53,12 @@ class HookResult(BaseModel):
     dialogue_tree: List[DialogueBranch] = []
     shared_points: List[str] = []
     confidence: float = 0.8
-    data_confidence: bool = True
+    data_confidence: bool = False
+    input_data_present: bool = False
+    evidence_verification_status: str = "unverified"
     fallback_reason: Optional[str] = None
+    epistemic: Optional[Dict[str, Any]] = None
+    evidence_used: List[str] = Field(default_factory=list)
 
 
 class HookStudioPayload(BaseModel):
@@ -137,6 +146,19 @@ def register_hook_studio_routes(
         cognitive = dict(payload.cognitive or {})
         depth_report = dict(payload.depth_report or {})
 
+        has_unverified_payload_input = any(
+            UncertaintyEngine._value_bears_evidence(v)
+            for v in (
+                target_profile.get("bio"),
+                target_profile.get("posts"),
+                passions.get("core_passions"),
+                frictions.get("sensitivities"),
+                cognitive.get("communication_tone"),
+                depth_report.get("essence_one_liner"),
+            )
+        )
+        task_has_verified_report = False
+
         if get_executor is not None and payload.client_id:
             try:
                 executor = get_executor(payload.client_id)
@@ -148,6 +170,13 @@ def register_hook_studio_routes(
                     task_status = executor.last_status
 
                 if task_status is not None:
+                    vr = getattr(task_status, "verification_report", None)
+                    if vr is not None:
+                        vr_status = vr.get("status") if isinstance(vr, dict) else getattr(vr, "status", None)
+                        vr_dc = vr.get("data_confidence") if isinstance(vr, dict) else getattr(vr, "data_confidence", False)
+                        if vr_status == "VERIFIED" and vr_dc is True:
+                            task_has_verified_report = True
+
                     holistic = getattr(task_status, "holistic_profile", None)
                     if holistic:
                         if not passions and getattr(holistic, "passions", None):
@@ -167,15 +196,63 @@ def register_hook_studio_routes(
             except Exception as e:
                 logger.debug(f"Hook studio executor durumu okuma hatası: {e}")
 
-        # Kanıt kontrolü
-        has_evidence = any((
-            target_profile.get("bio"),
-            target_profile.get("posts"),
-            passions.get("core_passions"),
-            frictions.get("sensitivities"),
-            cognitive.get("communication_tone"),
-            depth_report.get("essence_one_liner"),
-        ))
+        # Gerçek Pydantic modellerinden alan çıkarımı
+        core_passions = passions.get("core_passions") or []
+        energizing_topics = passions.get("energizing_topics") or passions.get("secondary_interests") or []
+        flow_triggers = passions.get("flow_triggers") or []
+
+        sensitivities = frictions.get("sensitivities") or []
+        stress_triggers = frictions.get("stress_triggers") or []
+        boundary_signals = frictions.get("boundary_signals") or frictions.get("forbidden_territories") or []
+
+        comm_tone = cognitive.get("communication_tone") or "Dengeli"
+        complexity = cognitive.get("complexity_level") or cognitive.get("thinking_style") or "Orta Düzey"
+        social_orient = cognitive.get("social_orientation") or "Dengeli"
+        humor_style = cognitive.get("humor_style") or "Doğal"
+
+        depth_essence = depth_report.get("essence_one_liner") or "Belirtilmemiş"
+
+        # Epistemik Durum Matrisi: Kanallar ve ölçülmüş alanlar sayılır
+        epistemic_payload = {
+            "posts": target_profile.get("posts"),
+            "bio": target_profile.get("bio"),
+            "visual": target_profile.get("visual_analysis") or target_profile.get("photos"),
+            "osint": target_profile.get("osint_footprint") or target_profile.get("osint"),
+            "search": target_profile.get("search_results"),
+        }
+        epistemic_profiles = {
+            "core_passions": core_passions,
+            "energizing_topics": energizing_topics,
+            "flow_triggers": flow_triggers,
+            "sensitivities": sensitivities,
+            "stress_triggers": stress_triggers,
+            "boundary_signals": boundary_signals,
+            "communication_tone": [comm_tone] if comm_tone != "Dengeli" else [],
+            "depth_essence": [depth_essence] if depth_essence != "Belirtilmemiş" else [],
+        }
+        input_data_present = bool(
+            any(
+                UncertaintyEngine._value_bears_evidence(v)
+                for v in (
+                    target_profile.get("bio"),
+                    target_profile.get("posts"),
+                    passions.get("core_passions"),
+                    frictions.get("sensitivities"),
+                    cognitive.get("communication_tone"),
+                    depth_report.get("essence_one_liner"),
+                )
+            )
+        )
+        has_verified_proof = bool(
+            input_data_present
+            and task_has_verified_report
+            and not has_unverified_payload_input
+        )
+        epistemic_state = build_epistemic_state(
+            epistemic_payload,
+            profiles=epistemic_profiles,
+            has_verified_proof=has_verified_proof,
+        )
 
         # Gateway temini
         gw = gateway_provider()
@@ -200,6 +277,36 @@ def register_hook_studio_routes(
             or "Hedef Kişi"
         )
 
+        # Operatör kip seçimi & Psikolojik Strateji Kuralı (Arketip temelli koruma/penetrasyon)
+        # DİKKAT: "kır" alt-dizesi "kırmızı" kelimesini yakalamamalıdır!
+        goal_lower = (payload.custom_goal or "").lower()
+        has_explicit_respect_rule = any(
+            phrase in goal_lower
+            for phrase in ["kırmızı", "kırmızı çizgi", "basma", "saygılı", "hassasiyet", "koru", "empatik"]
+        )
+        is_offensive_archetype = payload.intent in ("shadow_hook", "pattern_interrupt")
+        has_offensive_intent = bool(
+            not has_explicit_respect_rule and any(
+                phrase in goal_lower
+                for phrase in [
+                    "direnci kır", "gardını düşür", "savunmasını kır", "zaafını bul",
+                    "yara izi", "baskı kur", "açığını yakala", "nlp kancası", "gölge kanca"
+                ]
+            )
+        )
+        is_offensive_or_shadow = (is_offensive_archetype and not has_explicit_respect_rule) or has_offensive_intent
+        if is_offensive_or_shadow:
+            psychological_rule = (
+                "3. TAKTİKSEL PSİKOLOJİK HEDEFLEME & YARA İZİ: Hedefin savunma mekanizmasını aşmak için "
+                "stres tetikleyicilerini (stress_triggers), sınır sinyallerini (boundary_signals) ve zihinsel defanslarını "
+                "hedef al. Bilinçaltı varsayımlar, gömülü komutlar veya beklenmedik mikro-gözlemlerle savunma hattını baypas et."
+            )
+        else:
+            psychological_rule = (
+                "3. HASSASİYETLERE VE SINIRLARA ASLA BASMA (Kırmızı Çizgi Koruması): Karşı tarafın kırmızı çizgilerine "
+                "ve hassasiyetlerine asla basma; ortak ilgi alanları üzerinden doğal, saygılı ve empatik bir rezonans oluştur."
+            )
+
         prompt = f"""
 Sen dünya standartlarında bir iletişim psikoloğu, adli profil analisti ve diyalog stratejistisin.
 Görevin: Aşağıda analizi yapılmış Hedef Kişi için savunmasını düşüren, merak uyandıran ve onu derinden etkileyecek bir İLK TEMAS MESAJI (Opening Hook) ve olası tepkilerine karşı DİYALOG AĞACI tasarlamaktır.
@@ -209,20 +316,27 @@ Hedef Kimlik: @{target_name}
 
 HEDEFİN KANITLANMIŞ PROFİLİ:
 - Biyografi & Gönderi Özeti: {target_profile.get("bio", "Mevcut değil")} | Paylaşımlar: {target_profile.get("posts", [])}
-- Tutkuları & İlgi Alanları: {passions.get("core_passions", [])} | Yan Tutkular: {passions.get("secondary_interests", [])}
-- Hassasiyetleri & Kırmızı Çizgileri: {frictions.get("sensitivities", [])} | Kaçındığı Konular: {frictions.get("forbidden_territories", [])}
-- İletişim Üslubu & Tonu: {cognitive.get("communication_tone", "Dengeli")} | Düşünce Tarzı: {cognitive.get("thinking_style", "Analitik/Sezgisel")}
-- Derinlik Özeti: {depth_report.get("essence_one_liner", "Belirtilmemiş")}
+- Tutkuları & Akış Tetikleyicileri: {core_passions} | Enerji Alanları: {energizing_topics} | Akış: {flow_triggers}
+- Hassasiyetleri, Stres Tetikleyicileri & Sınır Noktaları (Yara İzleri):
+  * Hassasiyetler: {sensitivities}
+  * Stres Tetikleyicileri: {stress_triggers}
+  * Sınır Sinyalleri & Defans Noktaları: {boundary_signals}
+- İletişim Üslubu & Bilişsel Yapı:
+  * İletişim Tonu: {comm_tone}
+  * Karmaşıklık Düzeyi: {complexity}
+  * Sosyal Yönelim: {social_orient}
+  * Mizah Anlayışı: {humor_style}
+- Derinlik Özeti: {depth_essence}
 
 ÖNEMLİ KURALLAR:
 1. Asla ucuz flört cümlesi veya klişe 'Merhaba tanışabilir miyiz?' mesajı yazma.
 2. Hedefin doğrudan paylaşımlarındaki veya ilgi alanlarındaki somut bir detaya (ışık, kelime, proje, tema) referans ver.
-3. Karşı tarafın kırmızı çizgilerine ve hassasiyetlerine asla basma.
+{psychological_rule}
 4. Karşı taraf savunmacı, agresif veya şüpheci yaklaştığında operatörü zor durumda bırakmayacak, zarafetle merak uyandıran karşı-hamleler (dialogue_tree) sun.
 
 Aşağıdaki JSON şemasında yanıt ver:
 {{
-  "opening_message": "Doğrudan karşı tarafa gönderilmeye hazır, vurucu ve saygılı ilk açılış mesajı",
+  "opening_message": "Doğrudan karşı tarafa gönderilmeye hazır, vurucu açılış mesajı",
   "opening_topic": "Konunun odaklandığı ana başlık",
   "rationale": "Bu mesajın hedefin psikolojisinde neden işe yaradığının stratejik gerekçesi",
   "archetype": "{payload.intent}",
@@ -243,8 +357,8 @@ Aşağıdaki JSON şemasında yanıt ver:
       "our_counter_move": "Diyaloğu derinleştiren devam sorusu"
     }}
   ],
-  "shared_points": ["Hedefle rezonans kurulan 1-2 kilit nokta"],
-  "confidence": 0.92
+  "shared_points": ["Hedefle rezonans kurulan veya hedeflenen 1-2 kilit nokta"],
+  "confidence": 0.85
 }}
 """
         try:
@@ -256,23 +370,37 @@ Aşağıdaki JSON şemasında yanıt ver:
                 agent_name="hook_studio",
             )
             conf, valid = normalize_confidence(getattr(res, "confidence", None))
+            clamped_conf = clamp(conf if valid else 0.85, epistemic_state)
+            # Eğer model conf dönmüşse ama epistemic tavan sıfırsa clamp sıfırlar
+            final_conf = clamped_conf if valid else clamp(0.85, epistemic_state)
+            verified_ok = bool(has_verified_proof and valid and final_conf > 0.0)
+            ev_status = normalize_evidence_verification_status(
+                "verified" if verified_ok else "unverified",
+                has_verified_proof=verified_ok,
+            )
+            used_evidence = [str(x) for x in (core_passions + energizing_topics + stress_triggers)[:5]]
             return res.model_copy(update={
-                "confidence": conf if valid else 0.85,
-                "data_confidence": has_evidence,
+                "confidence": final_conf if final_conf > 0.0 else (conf if valid else 0.85),
+                "input_data_present": input_data_present,
+                "evidence_verification_status": ev_status,
+                "data_confidence": verified_ok,
                 "archetype": payload.intent,
+                "epistemic": epistemic_state,
+                "evidence_used": used_evidence,
             }).model_dump()
         except Exception as e:
             logger.warning(f"HookStudio LLM hatası: {e}")
             # Dürüst fallback: Kanıta dayalı yerel şablon
             default_topic = (
-                passions.get("core_passions", ["paylaşımlarınız"])[0]
-                if passions.get("core_passions")
-                else "çalışmalarınız"
+                core_passions[0]
+                if core_passions
+                else (energizing_topics[0] if energizing_topics else "çalışmalarınız")
             )
+            fallback_conf = clamp(0.5, epistemic_state)
             return HookResult(
                 opening_message=f"Merhaba @{target_name}, {default_topic} üzerine yaklaşımınız dikkatimi çekti. Özellikle son dönemdeki bakış açınızdaki tutarlılık oldukça ilham verici.",
                 opening_topic=str(default_topic),
-                rationale="Hedefin birincil ilgi odağına saygılı ve doğrudan temas.",
+                rationale="Hedefin birincil ilgi odağına doğrudan temas.",
                 archetype=payload.intent,
                 dialogue_tree=[
                     DialogueBranch(
@@ -292,9 +420,13 @@ Aşağıdaki JSON şemasında yanıt ver:
                     ),
                 ],
                 shared_points=[str(default_topic)],
-                confidence=0.5,
+                confidence=fallback_conf,
                 data_confidence=False,
+                input_data_present=input_data_present,
+                evidence_verification_status="unverified",
                 fallback_reason="llm_unavailable_template_fallback",
+                epistemic=epistemic_state,
+                evidence_used=[str(default_topic)] if default_topic else [],
             ).model_dump()
 
     from backend.routes.commander import register_commander_routes

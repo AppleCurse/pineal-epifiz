@@ -13,6 +13,8 @@ ve testlerle kilitlenir (``extra="forbid"`` kullanılan yerlerde sessiz alan
 Tüketici: neredeyse tüm ajanlar, ``task_executor``, ``backend/api.py``.
 """
 
+from __future__ import annotations
+
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime, timezone
@@ -54,7 +56,9 @@ class AgentRun(BaseModel):
 class PassionProfile(BaseModel):
     """Kişinin neşe, yaratıcılık, entelektüel merak ve tutku duyduğu alanlar."""
     core_passions: List[str] = []
+    passion_anchors: List[str] = Field(default_factory=list)
     energizing_topics: List[str] = []
+    secondary_interests: List[str] = Field(default_factory=list)
     flow_triggers: List[str] = []
     sentiment_polarity: float = 0.0  # -1.0 (karamsar) ile +1.0 (coşkulu) arası
     evidence_quotes: List[str] = []
@@ -64,11 +68,32 @@ class PassionProfile(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
+    def model_post_init(self, __context: Any) -> None:
+        self._sync_aliases()
+
+    def _sync_aliases(self) -> None:
+        # Tek yönlü koruyucu yedekleme: Sadece boş olanı doldur, doluysa asla ezme!
+        if not self.core_passions and self.passion_anchors:
+            self.core_passions = list(self.passion_anchors)
+        elif not self.passion_anchors and self.core_passions:
+            self.passion_anchors = list(self.core_passions)
+
+        if not self.energizing_topics and self.secondary_interests:
+            self.energizing_topics = list(self.secondary_interests)
+        elif not self.secondary_interests and self.energizing_topics:
+            self.secondary_interests = list(self.energizing_topics)
+
+    def model_copy(self, *, update: Optional[Dict[str, Any]] = None, deep: bool = False) -> PassionProfile:
+        cp = super().model_copy(update=update, deep=deep)
+        cp._sync_aliases()
+        return cp
+
 class FrictionProfile(BaseModel):
     """Kişinin sınırları, hassasiyetleri, yorulma/tükenme ve şikayet noktaları."""
     sensitivities: List[str] = []
     stress_triggers: List[str] = []
     boundary_signals: List[str] = []
+    forbidden_territories: List[str] = Field(default_factory=list)
     evidence_quotes: List[str] = []
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     data_confidence: bool = False
@@ -76,10 +101,25 @@ class FrictionProfile(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
+    def model_post_init(self, __context: Any) -> None:
+        self._sync_aliases()
+
+    def _sync_aliases(self) -> None:
+        if not self.forbidden_territories and (self.boundary_signals or self.stress_triggers):
+            self.forbidden_territories = list(self.boundary_signals or self.stress_triggers)
+        elif self.forbidden_territories and not self.boundary_signals:
+            self.boundary_signals = list(self.forbidden_territories)
+
+    def model_copy(self, *, update: Optional[Dict[str, Any]] = None, deep: bool = False) -> FrictionProfile:
+        cp = super().model_copy(update=update, deep=deep)
+        cp._sync_aliases()
+        return cp
+
 class CognitiveStyle(BaseModel):
     """Kişinin düşünce kalıbı, iletişim üslubu ve sosyal ritmi."""
     communication_tone: str = "unknown"  # doğrudan, analitik, metaforik, samimi, mesafeli
     complexity_level: str = "unknown"  # sade, teknik, kavramsal
+    thinking_style: str = "unknown"  # alias for complexity_level / cognitive style
     humor_style: Optional[str] = None  # hiciv, ironi, kuru mizah, yok
     social_orientation: str = "unknown"  # toplulukçu, bağımsız, gözlemci
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -87,6 +127,20 @@ class CognitiveStyle(BaseModel):
     fallback_reason: Optional[str] = "unavailable"
 
     model_config = ConfigDict(extra="allow")
+
+    def model_post_init(self, __context: Any) -> None:
+        self._sync_aliases()
+
+    def _sync_aliases(self) -> None:
+        if self.thinking_style == "unknown" and self.complexity_level != "unknown":
+            self.thinking_style = self.complexity_level
+        elif self.complexity_level == "unknown" and self.thinking_style != "unknown":
+            self.complexity_level = self.thinking_style
+
+    def model_copy(self, *, update: Optional[Dict[str, Any]] = None, deep: bool = False) -> CognitiveStyle:
+        cp = super().model_copy(update=update, deep=deep)
+        cp._sync_aliases()
+        return cp
 
 class AuthenticBridge(BaseModel):
     """Kullanıcı ile hedef arasındaki sahici ortak değerler ve yapıcı iletişim köprüsü."""
