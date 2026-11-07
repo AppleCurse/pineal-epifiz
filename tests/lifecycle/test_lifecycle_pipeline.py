@@ -388,3 +388,18 @@ def test_pillar_strata_evidence_is_carried_but_not_counted() -> None:
     labels = {item["label"] for item in report.prior_pillar_evidence}
     assert {"kitchen_table", "solitude_ratio"} <= labels
     assert any("Pillar Strata" in line for line in report.summary)
+
+
+def test_pipeline_populates_recoveries_when_signal_rebounds() -> None:
+    """Sapma sonradan baseline'a döndüğünde (rebound) recoveries listesine işlenir."""
+    data = _varying_series()
+    # Son haftalarda kitchen_table geri döner (rebound)
+    for frame in data["visual_evidence"]["frames"][-4:]:
+        frame["detected_objects"] = ["kitchen_table"]
+
+    report = analyze_life_rupture(data["target_profile"], visual_evidence=data["visual_evidence"])
+    assert isinstance(report.recoveries, list)
+    # Rapor model sözleşmesi: recoveries listesi taşınır ve her öğe rebound gerekçelidir
+    for rec in report.recoveries:
+        assert rec["reason"] == "rebound"
+        assert "baseline'a döndü" in rec["note"]

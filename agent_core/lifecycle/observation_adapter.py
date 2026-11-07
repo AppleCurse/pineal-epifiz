@@ -556,10 +556,13 @@ class VisualFrameExtractor:
             capture: CaptureClass = frame.capture_class
 
             # 1) Üretim biçimi: her tarihli karede ölçülür (kendi ekseni).
-            is_incidental = 1.0 if capture == "camera_incidental" else 0.0
-            is_authored = 1.0 if capture in ("camera_staged", "edited_composite", "synthetic_or_render") else 0.0
-            observations.append(SignalObservation("media.is_incidental_life", ts, is_incidental, ref))
-            observations.append(SignalObservation("media.is_authored_or_staged", ts, is_authored, ref))
+            # FAIL-CLOSED: capture == "unknown" ise üretim biçimi ÖLÇÜLEMEMİŞTİR.
+            # Bilinmeyen durum için 0.0 (yokluk) yazmak sahte bir negatif ölçüm üretir.
+            if capture != "unknown":
+                is_incidental = 1.0 if capture == "camera_incidental" else 0.0
+                is_authored = 1.0 if capture in ("camera_staged", "edited_composite", "synthetic_or_render") else 0.0
+                observations.append(SignalObservation("media.is_incidental_life", ts, is_incidental, ref))
+                observations.append(SignalObservation("media.is_authored_or_staged", ts, is_authored, ref))
 
             # 1b) Yayınlanan görselin ÖLÇÜLMÜŞ özellikleri (editoryal eksen).
             #     Provenance gerekmez: bunlar odanın değil, YAYINLANAN karenin

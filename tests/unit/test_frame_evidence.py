@@ -329,3 +329,23 @@ def test_visual_stats_feed_media_axis_only() -> None:
     assert not [signal_id for signal_id in signal_ids if signal_id.startswith("gaze.")]
     # Ritüel sözlüğü de boş: nesne etiketi ölçülmedi.
     assert not [signal_id for signal_id in signal_ids if signal_id.startswith("ritual.")]
+
+
+def test_authored_caption_sets_capture_class_to_edited_composite() -> None:
+    """Caption'da kurgu/tasarım etiketi varsa classify_media ile edited_composite belirlenir."""
+    profile = {
+        "posts": ["yeni tasarım #digitalart"],
+        "post_times": [T0.isoformat()],
+        "images": ["https://example.com/art.jpg"],
+    }
+    mapping = {
+        "https://example.com/art.jpg": {
+            "status": "downloaded",
+            "b64": _png_b64(_solid((200, 200, 200))),
+            "sha256": "art123",
+            "bytes": 100,
+        }
+    }
+    collection = asyncio.run(collect_frames(profile, fetch=_fetch_from(mapping), now=NOW))
+    assert len(collection.frames) == 1
+    assert collection.frames[0]["capture_class"] == "edited_composite"
