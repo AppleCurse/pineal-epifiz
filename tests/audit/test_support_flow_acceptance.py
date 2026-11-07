@@ -84,7 +84,7 @@ async def test_a_primary_tool_fails_alternative_serves():
     # Ücretsiz omurga: SearXNG birincil → DuckDuckGo izinli alternatif.
     # (Anahtarla çalışan Tavily grubu 'if not tasks' dışında: alternatif
     # omurganın kendi içinde, asyncio.gather ile denenir.)
-    engine = SearchEngine(tavily_key="", serpapi_key="", exa_key="")
+    engine = SearchEngine()
     engine.set_policy({"vault_locked": False})
     engine._searxng_enabled = lambda: True
     calls = {"searxng": 0, "duckduckgo": 0}

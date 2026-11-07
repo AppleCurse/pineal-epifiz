@@ -57,33 +57,15 @@ class CommanderPhoneProbePayload(BaseModel):
 @contextmanager
 def locked_learnings(path: str):
     """Advisory cross-process lock; all writers must use the same shared path."""
-    dirname = os.path.dirname(path)
-    if dirname:
-        os.makedirs(dirname, exist_ok=True)
-    lock_file = os.path.join(dirname or ".", ".learnings.lock")
-    try:
-        import fcntl
+    import fcntl
 
-        with open(lock_file, "a") as lock:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
-    except ImportError:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(os.path.join(os.path.dirname(path), ".learnings.lock"), "a") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
         try:
-            import msvcrt
-
-            with open(lock_file, "a+") as lock:
-                lock.seek(0)
-                msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
-                try:
-                    yield
-                finally:
-                    lock.seek(0)
-                    msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
-        except Exception:
             yield
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
 
 class EvidenceIdempotencyConflict(ValueError):
