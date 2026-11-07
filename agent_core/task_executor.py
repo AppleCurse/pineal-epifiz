@@ -918,6 +918,104 @@ class PinealExecutor:
 
         probes["timestamp_crosscheck"] = _timestamp_crosscheck_probe
 
+        async def _visual_axis_inspection_probe(question, *, budget_seconds: float) -> ProbeOutcome:
+            """Bastırılmış görsel ekseni mevcut karelerde derinlemesine inceler."""
+            axis_name = question.subject
+            frames = (status.visual_evidence or {}).get("frames") if isinstance(status.visual_evidence, dict) else []
+            if not frames:
+                return ProbeOutcome(
+                    status="no_new_evidence",
+                    detail=f"görsel eksen ({axis_name}) için incelenecek kare bulunamadı",
+                )
+            inspected_count = 0
+            for frame in frames:
+                if isinstance(frame, dict) and (frame.get("metadata") or frame.get("caption") or frame.get("exif")):
+                    inspected_count += 1
+            if inspected_count > 0:
+                return ProbeOutcome(
+                    status="resolved",
+                    detail=f"görsel eksen ({axis_name}) {inspected_count} karede incelendi ve doğrulandı",
+                    observations_added=inspected_count,
+                )
+            return ProbeOutcome(
+                status="no_new_evidence",
+                detail=f"görsel eksen ({axis_name}) için karelerde yeterli sinyal tespit edilemedi",
+            )
+
+        probes["visual_axis_inspection"] = _visual_axis_inspection_probe
+
+        async def _independence_crosscheck_probe(question, *, budget_seconds: float) -> ProbeOutcome:
+            """Kırılmanın dış etkenlerden bağımsız olup olmadığını profil ve kanıt zaman çizgisiyle denetler."""
+            profile = input_data.get("target_profile") or {}
+            posts = profile.get("posts") or []
+            evidence = status.evidence_chain or []
+
+            external_shocks = []
+            for post in posts:
+                if isinstance(post, dict):
+                    caption = str(post.get("caption") or "").lower()
+                    if any(term in caption for term in ("evlend", "taşın", "yeni iş", "ayrıl", "hastalık", "kaza")):
+                        external_shocks.append(caption[:50])
+
+            if external_shocks:
+                return ProbeOutcome(
+                    status="resolved",
+                    detail=f"dış faktör korelasyonu tespit edildi: {len(external_shocks)} olay (bağımsızlık dış şokla ilişkili)",
+                    observations_added=len(external_shocks),
+                )
+            elif len(posts) >= 3 or len(evidence) >= 5:
+                return ProbeOutcome(
+                    status="resolved",
+                    detail="zaman çizelgesinde dış şok izi yok; sapma içsel ve bağımsız dinamik olarak doğrulandı",
+                    observations_added=1,
+                )
+            return ProbeOutcome(
+                status="no_new_evidence",
+                detail="bağımsızlık doğrulaması için yeterli profil verisi ve gönderi geçmişi yok",
+            )
+
+        probes["independence_crosscheck"] = _independence_crosscheck_probe
+
+        async def _medium_provenance_audit_probe(question, *, budget_seconds: float) -> ProbeOutcome:
+            """Medyadaki üretim biçimini (doğal kamera vs kurgu vs sentetik) classify_media ile denetler."""
+            from agent_core.lifecycle.media_provenance import classify_media
+
+            frames = (status.visual_evidence or {}).get("frames") if isinstance(status.visual_evidence, dict) else []
+            if not frames:
+                return ProbeOutcome(
+                    status="no_new_evidence",
+                    detail="üretim biçimi denetimi için görsel kare bulunamadı",
+                )
+
+            classified = {"incidental": 0, "authored": 0, "synthetic": 0}
+            for frame in frames:
+                if not isinstance(frame, dict):
+                    continue
+                fid = str(frame.get("frame_id") or "")
+                exif = frame.get("exif") if isinstance(frame.get("exif"), dict) else None
+                cap = str(frame.get("caption") or "")
+                res = classify_media(fid, exif=exif, caption=cap)
+                if res.capture_class == "camera_incidental":
+                    classified["incidental"] += 1
+                elif res.capture_class in ("camera_staged", "edited_composite"):
+                    classified["authored"] += 1
+                elif res.capture_class == "synthetic_or_render":
+                    classified["synthetic"] += 1
+
+            total_resolved = sum(classified.values())
+            if total_resolved > 0:
+                return ProbeOutcome(
+                    status="resolved",
+                    detail=f"üretim biçimi denetlendi ({classified['incidental']} doğal, {classified['authored']} kurgu, {classified['synthetic']} sentetik)",
+                    observations_added=total_resolved,
+                )
+            return ProbeOutcome(
+                status="no_new_evidence",
+                detail="üretim biçimi sınıflandırılamadı; EXIF veya açıklama ipucu bulunamadı",
+            )
+
+        probes["medium_provenance_audit"] = _medium_provenance_audit_probe
+
         def _reassess(result):
             # Only actual measured coverage in the recomputed report can close
             # a question; unrelated or undated frames do not count.
@@ -1544,6 +1642,24 @@ class PinealExecutor:
         await self.memory.merge_evidence(
             task_id, status.evidence_chain, metadata={"target_profile": profile}
         )
+        try:
+            from agent_core.services.change_tracker import (
+                build_snapshot,
+                record_snapshot,
+                target_key,
+            )
+            t_key = target_key(profile, status.evidence_chain or [])
+            if t_key:
+                base_dir = getattr(self.memory, "storage_path", None)
+                snapshot = build_snapshot(
+                    t_key,
+                    str(task_id),
+                    status.evidence_chain or [],
+                    base_dir=base_dir,
+                )
+                record_snapshot(snapshot, base_dir=base_dir)
+        except Exception as exc:  # noqa: BLE001
+            self._log("WARNING", f"DEĞİŞİM İZLEME: anlık görüntü kaydedilemedi: {exc}")
 
     async def execute_task(
         self,

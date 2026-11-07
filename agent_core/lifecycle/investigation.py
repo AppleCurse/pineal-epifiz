@@ -63,9 +63,9 @@ PROBE_FOR_KIND: dict[str, Optional[str]] = {
     "frame_coverage_gap": "frame_window",
     "frame_baseline_sparse": "frame_window",
     "timestamp_conflict": "timestamp_crosscheck",
-    "visual_axis_suppressed": None,
-    "independence_unresolved": None,
-    "medium_change_unknown": None,
+    "visual_axis_suppressed": "visual_axis_inspection",
+    "independence_unresolved": "independence_crosscheck",
+    "medium_change_unknown": "medium_provenance_audit",
 }
 
 ProbeCallable = Callable[..., Awaitable["ProbeOutcome"]]

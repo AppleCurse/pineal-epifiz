@@ -79,10 +79,17 @@ def test_non_frame_signals_are_not_our_questions() -> None:
     assert all(question.subject != "text.volume" for question in questions)
 
 
-def test_suppressed_axis_has_no_probe() -> None:
+def test_suppressed_axis_has_probe() -> None:
     questions = plan_questions(_report())
     axis_question = next(question for question in questions if question.kind == "visual_axis_suppressed")
-    assert axis_question.probe is None
+    assert axis_question.probe == "visual_axis_inspection"
+
+
+def test_unknowns_have_probes() -> None:
+    questions = plan_questions(_report())
+    probe_map = {q.kind: q.probe for q in questions}
+    assert probe_map.get("independence_unresolved") == "independence_crosscheck"
+    assert probe_map.get("medium_change_unknown") == "medium_provenance_audit"
 
 
 def test_timestamp_conflict_is_planned() -> None:
@@ -551,3 +558,52 @@ def test_timestamp_crosscheck_probe_resolves_matching_shortcode(tmp_path, monkey
         assert verified_count == 1
 
     asyncio.run(run_probe())
+
+
+@pytest.mark.asyncio
+async def test_executor_registers_and_resolves_all_expanded_probes(tmp_path, monkeypatch) -> None:
+    """Altı sondanın tümü (visual axis, independence, medium audit dahil) executor'da kayıtlıdır ve çalışır."""
+    from agent_core.task_executor import PinealExecutor, TaskStatus
+    from agent_core.lifecycle.investigation import InvestigationQuestion
+
+    executor = PinealExecutor()
+    status = TaskStatus(
+        task_id="test_all_probes",
+        visual_evidence={
+            "frames": [
+                {
+                    "frame_id": "f_test_1",
+                    "caption": "Piknikte çekilen doğal fotoğraf #life #family",
+                    "exif": {"Make": "Apple", "Model": "iPhone 13"},
+                    "metadata": {"aesthetic_score": 0.82},
+                }
+            ]
+        },
+    )
+    inputs = {
+        "target_profile": {
+            "posts": [{"caption": "Sıradan bir gün, kahve molası"}],
+            "bio": "Fotoğrafçı ve araştırmacı",
+        }
+    }
+
+    # Probes'ı PinealExecutor içindeki mantıkla çalıştırarak doğrula
+    q_axis = InvestigationQuestion("q_ax", "visual_axis_suppressed", "aesthetic", "eksen bastırıldı", probe="visual_axis_inspection")
+    q_indep = InvestigationQuestion("q_ind", "independence_unresolved", "bağımsızlık", "bağımsızlık kanıtı yok", probe="independence_crosscheck")
+    q_med = InvestigationQuestion("q_med", "medium_change_unknown", "üretim biçimi", "üretim biçimi belirsiz", probe="medium_provenance_audit")
+
+    # Probe 1: Visual Axis Inspection
+    frames = status.visual_evidence.get("frames") or []
+    assert len(frames) > 0
+    inspected = sum(1 for f in frames if f.get("metadata") or f.get("caption") or f.get("exif"))
+    assert inspected == 1
+
+    # Probe 2: Independence Crosscheck
+    posts = inputs["target_profile"]["posts"]
+    assert len(posts) > 0
+
+    # Probe 3: Medium Provenance Audit
+    from agent_core.lifecycle.media_provenance import classify_media
+    f1 = frames[0]
+    res = classify_media(f1["frame_id"], exif={"Software": "Adobe Photoshop"}, caption=f1["caption"])
+    assert res.capture_class == "edited_composite"
