@@ -252,7 +252,49 @@ describe('gölge analizi ve hafıza kristali sözleşmesi', () => {
       expect(call).toBeTruthy();
     });
   });
+
+  it('gerçek kanıt grafını /api/tasks/{id}/graph ucundan çeker', async () => {
+    const calls = installFetch((path) => {
+      if (path.startsWith('/api/initiate')) {
+        return jsonResponse({ task_id: 'task_graph_99' }, 202);
+      }
+      if (path.startsWith('/api/tasks/task_graph_99/graph')) {
+        return jsonResponse({
+          available: true,
+          nodes: [
+            { id: 'target:test', label: 'test', kind: 'target', weight: 1, evidence_count: 3 },
+            { id: 'host:instagram.com', label: 'instagram.com', kind: 'host', weight: 2, evidence_count: 2 },
+          ],
+          edges: [
+            { source: 'target:test', target: 'host:instagram.com', weight: 2, relation: 'co_occurrence' },
+          ],
+          node_count: 2,
+          edge_count: 1,
+          machine_note: 'ok',
+        });
+      }
+      return undefined;
+    });
+
+    render(SpiderFootCockpit);
+    await launchMission();
+
+    const refreshBtn = screen.getByRole('button', { name: /Gerçek Kanıt Grafını Yenile/i });
+    expect(refreshBtn).toBeTruthy();
+    await fireEvent.click(refreshBtn);
+
+    await waitFor(() => {
+      const call = calls.find((c) => c.path.startsWith('/api/tasks/task_graph_99/graph'));
+      expect(call).toBeTruthy();
+      expect(call!.method).toBe('GET');
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/2 düğüm, 1 bağ/i)).toBeTruthy();
+    });
+  });
 });
+
 
 function isProcessingSubscription(): boolean {
   let value = false;

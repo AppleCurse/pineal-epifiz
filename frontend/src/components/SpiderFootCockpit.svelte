@@ -26,7 +26,7 @@
   interface GraphNode {
     id: string;
     label: string;
-    type: 'root' | 'platform' | 'url' | 'entity' | 'risk';
+    type: 'root' | 'platform' | 'url' | 'entity' | 'risk' | 'target' | 'engine' | 'host' | 'day';
     status: 'claimed' | 'absent' | 'unknown' | 'active';
     x: number;
     y: number;
@@ -185,6 +185,147 @@
 
   $: isTargetValid = targetInput.trim().length > 1;
 
+  $: if (activeTab === 'graph' && activeTaskId && !realGraphInfo.loaded && !isGraphLoading) {
+    void loadRealGraph(activeTaskId);
+  }
+
+  // --- GERÇEK KANIT GRAFI ENTEGRASYONU (/api/tasks/{task_id}/graph) ---
+  let isGraphLoading: boolean = false;
+  let lastLoadedGraphTaskId: string | null = null;
+  let realGraphInfo: {
+    loaded: boolean;
+    available: boolean;
+    nodeCount: number;
+    edgeCount: number;
+    machineNote: string;
+    reason?: string;
+  } = {
+    loaded: false,
+    available: false,
+    nodeCount: 0,
+    edgeCount: 0,
+    machineNote: '',
+  };
+
+  async function loadRealGraph(taskId?: string | null) {
+    const tid = taskId || activeTaskId || ($taskStatus && ($taskStatus.task_id || $taskStatus.id));
+    if (!tid) return;
+    const cid = get(clientId) || 'default';
+    isGraphLoading = true;
+    lastLoadedGraphTaskId = String(tid);
+    try {
+      const res = await apiFetch(`/api/tasks/${encodeURIComponent(String(tid))}/graph?client_id=${encodeURIComponent(cid)}`);
+      if (!res.ok) {
+        realGraphInfo = {
+          loaded: true,
+          available: false,
+          nodeCount: 0,
+          edgeCount: 0,
+          machineNote: `HTTP ${res.status}`,
+          reason: 'Graf API çağrısı başarısız'
+        };
+        return;
+      }
+      const data = await res.json();
+      applyRealGraph(data);
+    } catch (e: any) {
+      console.warn('Graf yükleme hatası:', e);
+      realGraphInfo = {
+        loaded: true,
+        available: false,
+        nodeCount: 0,
+        edgeCount: 0,
+        machineNote: 'Ağ hatası',
+        reason: e?.message || 'Ağ hatası'
+      };
+    } finally {
+      isGraphLoading = false;
+    }
+  }
+
+  function applyRealGraph(g: any) {
+    if (!g || !g.available || !Array.isArray(g.nodes) || g.nodes.length === 0) {
+      realGraphInfo = {
+        loaded: true,
+        available: false,
+        nodeCount: 0,
+        edgeCount: 0,
+        machineNote: g?.machine_note || g?.reason || 'Kanıt verisi henüz yetersiz',
+        reason: g?.reason
+      };
+      return;
+    }
+
+    const width = canvas ? canvas.width : 800;
+    const height = canvas ? canvas.height : 500;
+    const cx = width / 2;
+    const cy = height / 2;
+
+    const RADIUS_BY_KIND: Record<string, number> = {
+      target: 0,
+      engine: Math.min(width, height) * 0.22,
+      day: Math.min(width, height) * 0.32,
+      host: Math.min(width, height) * 0.42,
+    };
+    const KIND_ORDER: Record<string, number> = { target: 0, engine: 1, day: 2, host: 3 };
+
+    const totals = new Map<string, number>();
+    const seen = new Map<string, number>();
+    for (const n of g.nodes) {
+      const k = n.kind || 'host';
+      totals.set(k, (totals.get(k) || 0) + 1);
+    }
+
+    const newNodes: GraphNode[] = [];
+    const byId = new Map<string, GraphNode>();
+
+    for (const n of g.nodes) {
+      const kind = n.kind || 'host';
+      const i = seen.get(kind) || 0;
+      seen.set(kind, i + 1);
+      const total = totals.get(kind) || 1;
+      const angle = (i / total) * Math.PI * 2 + (KIND_ORDER[kind] || 2) * 0.35;
+      const dist = RADIUS_BY_KIND[kind] !== undefined ? RADIUS_BY_KIND[kind] : 140;
+
+      const nodeRadius = kind === 'target' ? 24 : Math.max(12, Math.min(22, 12 + (n.evidence_count || 1) * 2));
+      const gn: GraphNode = {
+        id: String(n.id),
+        label: String(n.label || n.id),
+        type: (kind === 'target' ? 'root' : kind) as any,
+        status: 'active',
+        x: cx + Math.cos(angle) * dist,
+        y: cy + Math.sin(angle) * dist,
+        vx: 0,
+        vy: 0,
+        radius: nodeRadius,
+        data: { ...n }
+      };
+      newNodes.push(gn);
+      byId.set(gn.id, gn);
+    }
+
+    const newLinks: GraphLink[] = [];
+    for (const e of (g.edges || [])) {
+      if (byId.has(String(e.source)) && byId.has(String(e.target))) {
+        newLinks.push({
+          source: String(e.source),
+          target: String(e.target),
+          label: e.relation === 'co_occurrence' ? (e.weight > 1 ? `×${e.weight}` : '') : (e.relation || '')
+        });
+      }
+    }
+
+    nodes = newNodes;
+    links = newLinks;
+    realGraphInfo = {
+      loaded: true,
+      available: true,
+      nodeCount: g.node_count || newNodes.length,
+      edgeCount: g.edge_count || newLinks.length,
+      machineNote: g.machine_note || ''
+    };
+  }
+
   // --- İNTERAKTİF DÜĞÜM HARİTASI KURULUMU ---
   function resetGraph(rootLabel: string = 'HEDEF') {
     const width = canvas ? canvas.width : 800;
@@ -217,8 +358,8 @@
       return;
     }
 
-    const angle = Math.random() * Math.PI * 2;
-    const dist = 140 + Math.random() * 40;
+    const angle = (nodes.length * 137.5 * Math.PI) / 180;
+    const dist = 140;
     const root = nodes.find(n => n.id === 'root') || { x: 400, y: 250 };
 
     const newNode: GraphNode = {
@@ -228,8 +369,8 @@
       status,
       x: root.x + Math.cos(angle) * dist,
       y: root.y + Math.sin(angle) * dist,
-      vx: (Math.random() - 0.5) * 2,
-      vy: (Math.random() - 0.5) * 2,
+      vx: 0,
+      vy: 0,
       radius: 18,
       data: { platform, url, status }
     };
@@ -245,8 +386,8 @@
     if (nodes.find(n => n.id === id)) return;
 
     const parentNode = nodes.find(n => n.id === `plat_${parentPlatform}`) || nodes[0];
-    const angle = Math.random() * Math.PI * 2;
-    const dist = 90 + Math.random() * 30;
+    const angle = (nodes.length * 137.5 * Math.PI) / 180;
+    const dist = 90;
 
     const newNode: GraphNode = {
       id,
@@ -255,8 +396,8 @@
       status: 'active',
       x: parentNode.x + Math.cos(angle) * dist,
       y: parentNode.y + Math.sin(angle) * dist,
-      vx: (Math.random() - 0.5) * 1.5,
-      vy: (Math.random() - 0.5) * 1.5,
+      vx: 0,
+      vy: 0,
       radius: 14,
       data: { fullUrl: url, parent: parentPlatform }
     };
@@ -359,9 +500,18 @@
       let fillColor = '#0f172a';
       let strokeColor = '#38ef7d';
 
-      if (node.type === 'root') {
+      if (node.type === 'root' || node.type === 'target') {
         fillColor = '#dc2626';
         strokeColor = '#f59e0b';
+      } else if (node.type === 'engine') {
+        fillColor = '#78350f';
+        strokeColor = '#d4af37';
+      } else if (node.type === 'host') {
+        fillColor = '#064e3b';
+        strokeColor = '#38ef7d';
+      } else if (node.type === 'day') {
+        fillColor = '#0c4a6e';
+        strokeColor = '#38bdf8';
       } else if (node.type === 'platform') {
         if (node.status === 'claimed') {
           fillColor = '#065f46';
@@ -708,7 +858,7 @@
         addUrlNode('Instagram', u, u.replace(/^https?:\/\/(www\.)?/, ''));
         if (!evidenceItems.some(item => item.value === u && item.type === 'Biyografi Bağlantısı')) {
           evidenceItems.push({
-            id: `ev_${Math.random().toString(36).substring(2, 6)}`,
+            id: `ev_${evidenceItems.length + 1}`,
             type: 'Biyografi Bağlantısı',
             value: u,
             source: 'Profil verisi',
@@ -729,6 +879,8 @@
       pipelineSteps.forEach(s => { if (s.status === 'running') s.status = 'idle'; });
       pipelineSteps = [...pipelineSteps];
       if (timerInterval) clearInterval(timerInterval);
+      const tid = activeTaskId || ts.task_id || ts.id;
+      if (tid) void loadRealGraph(tid);
     }
   });
 
@@ -1280,6 +1432,23 @@
       <!-- TAB 1: GRAFİK ÇİZİM ALANI -->
       {#if activeTab === 'graph'}
         <div class="canvas-container">
+          <div class="graph-toolbar">
+            <button
+              class="graph-refresh-btn"
+              disabled={isGraphLoading}
+              on:click={() => loadRealGraph(activeTaskId)}
+            >
+              {isGraphLoading ? '⏳ Kanıt Grafı Alınıyor...' : '🔄 Gerçek Kanıt Grafını Yenile'}
+            </button>
+            {#if realGraphInfo.loaded}
+              <span class="graph-status-badge" class:available={realGraphInfo.available}>
+                {realGraphInfo.available
+                  ? `✓ Gerçek Kanıt Grafı (${realGraphInfo.nodeCount} düğüm, ${realGraphInfo.edgeCount} bağ)`
+                  : `⚠️ ${realGraphInfo.machineNote || 'Kanıt verisi henüz yetersiz'}`}
+              </span>
+            {/if}
+          </div>
+
           <canvas
             bind:this={canvas}
             on:mousedown={onCanvasMouseDown}
@@ -1291,8 +1460,10 @@
           <!-- Grafik Yardım İpuçları -->
           <div class="graph-legend">
             <span class="legend-item"><span class="dot root"></span> Hedef</span>
+            <span class="legend-item"><span class="dot engine"></span> Motor</span>
+            <span class="legend-item"><span class="dot host"></span> Kaynak Sunucu</span>
+            <span class="legend-item"><span class="dot day"></span> Gözlem Günü</span>
             <span class="legend-item"><span class="dot claimed"></span> Bulunan Profil</span>
-            <span class="legend-item"><span class="dot absent"></span> Yok</span>
             <span class="legend-item"><span class="dot url"></span> Bio/Dış Link</span>
             <span class="zoom-text">Yakınlaştır: Fare Tekerleği · Kaydır: Sürükle</span>
           </div>
@@ -1852,6 +2023,12 @@
             <div class="meta-row"><span class="k">Etiket:</span> <span class="v">{selectedNode.label}</span></div>
             <div class="meta-row"><span class="k">Tip:</span> <span class="v">{selectedNode.type.toUpperCase()}</span></div>
             <div class="meta-row"><span class="k">Durum:</span> <span class="v">{selectedNode.status}</span></div>
+            {#if selectedNode.data?.evidence_count !== undefined}
+              <div class="meta-row"><span class="k">Kanıt Sayısı:</span> <span class="v">{selectedNode.data.evidence_count}</span></div>
+            {/if}
+            {#if selectedNode.data?.weight !== undefined}
+              <div class="meta-row"><span class="k">Ağırlık:</span> <span class="v">{selectedNode.data.weight}</span></div>
+            {/if}
             {#if selectedNode.data?.fullUrl}
               <div class="meta-row"><span class="k">URL:</span> <a href={selectedNode.data.fullUrl} target="_blank" class="v link">{selectedNode.data.fullUrl}</a></div>
             {/if}
@@ -2278,9 +2455,54 @@
   }
 
   .dot.root { background: #dc2626; }
+  .dot.engine { background: #d4af37; }
+  .dot.host { background: #38ef7d; }
+  .dot.day { background: #38bdf8; }
   .dot.claimed { background: #10b981; }
   .dot.absent { background: #64748b; }
   .dot.url { background: #818cf8; }
+
+  .graph-toolbar {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .graph-refresh-btn {
+    background: rgba(15, 23, 42, 0.9);
+    border: 1px solid #38ef7d;
+    color: #38ef7d;
+    font-size: 10px;
+    padding: 5px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-weight: 600;
+    transition: all 0.2s ease;
+  }
+  .graph-refresh-btn:hover:not(:disabled) {
+    background: #38ef7d;
+    color: #0f172a;
+  }
+  .graph-refresh-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .graph-status-badge {
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid #475569;
+    color: #94a3b8;
+    font-size: 10px;
+    padding: 4px 8px;
+    border-radius: 4px;
+  }
+  .graph-status-badge.available {
+    border-color: #10b981;
+    color: #34d399;
+  }
   .zoom-text { color: #64748b; margin-left: 8px; border-left: 1px solid #334155; padding-left: 8px; }
 
   /* OSINT & SHADOW TAB BUTTONS */

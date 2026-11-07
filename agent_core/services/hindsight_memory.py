@@ -322,7 +322,7 @@ def build_memory_from_env() -> CanonicalMemory:
     Varsayılan 'canonical'dır (güvenli); 'hindsight' için HindsightMemory.
     """
     engine = os.getenv("PINEAL_MEMORY_ENGINE", "canonical").strip().lower()
-    if engine == "hindsight":
+    if engine in ("hindsight", "auto"):
         storage_path = os.getenv("PINEAL_MEMORY_PATH", "./memory/")
         db_path = os.getenv("PINEAL_MEMORY_DB", os.path.join(storage_path, "hindsight.db"))
         embedding_model = os.getenv("PINEAL_EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL)
