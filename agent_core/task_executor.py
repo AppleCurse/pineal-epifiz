@@ -872,6 +872,52 @@ class PinealExecutor:
 
             probes["frame_window"] = _frame_window_probe
 
+        async def _timestamp_crosscheck_probe(question, *, budget_seconds: float) -> ProbeOutcome:
+            """Shortcode ile matematiksel zaman doğrulaması (Snowflake ID)."""
+            from agent_core.lifecycle.ig_time import shortcode_from_url, shortcode_time_drift_hours
+            from agent_core.engines.frequency_engine import parse_timestamp
+
+            profile = input_data.get("target_profile") or {}
+            images = profile.get("images") or []
+            posts = profile.get("posts") or []
+            post_times = profile.get("post_times") or []
+
+            verified_count = 0
+            drift_errors = []
+
+            for index, (time_val, url) in enumerate(zip(post_times, images)):
+                parsed_ts = parse_timestamp(time_val)
+                if parsed_ts is None:
+                    continue
+                sc = shortcode_from_url(str(url)) if isinstance(url, str) else None
+                if not sc and index < len(posts) and isinstance(posts[index], dict):
+                    sc = shortcode_from_url(str(posts[index].get("url") or ""))
+                if not sc:
+                    continue
+                drift = shortcode_time_drift_hours(parsed_ts, sc)
+                if drift is not None and drift <= 48.0:
+                    verified_count += 1
+                elif drift is not None:
+                    drift_errors.append(f"drift={drift:.1f}h")
+
+            if verified_count > 0 and not drift_errors:
+                return ProbeOutcome(
+                    status="resolved",
+                    detail=f"shortcode çapraz kontrolü doğrulandı ({verified_count} kayıt)",
+                    observations_added=verified_count,
+                )
+            if drift_errors:
+                return ProbeOutcome(
+                    status="no_new_evidence",
+                    detail=f"shortcode zaman sapması doğrulandı: {', '.join(drift_errors[:3])}",
+                )
+            return ProbeOutcome(
+                status="not_applicable",
+                detail="shortcode çapraz kontrolü için uygun URL bulunamadı",
+            )
+
+        probes["timestamp_crosscheck"] = _timestamp_crosscheck_probe
+
         def _reassess(result):
             # Only actual measured coverage in the recomputed report can close
             # a question; unrelated or undated frames do not count.

@@ -194,6 +194,22 @@ def test_incidental_frame_feeds_habitat() -> None:
     assert "habitat.is_solitary" in signal_ids
 
 
+def test_unknown_capture_class_produces_no_media_provenance_signals() -> None:
+    """FAIL-CLOSED: capture_class 'unknown' iken sahte 0.0 (yokluk) gözlemi üretilmez."""
+    adapter = ObservationAdapter()
+    frame = _frame(
+        "unknown_frame",
+        T0,
+        capture_class="unknown",
+        has_measurable_background=True,
+    )
+    observations = adapter.transform(None, visual_evidence={"frames": [frame]})
+    signal_ids = {obs.signal_id for obs in observations}
+    assert "media.is_incidental_life" not in signal_ids
+    assert "media.is_authored_or_staged" not in signal_ids
+    assert not any(signal_id.startswith("habitat.") for signal_id in signal_ids)
+
+
 # --- 6) Ritüel sözlüğü ve yokluk kaydı --------------------------------------
 
 

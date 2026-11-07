@@ -80,6 +80,7 @@ class FrameCandidate:
     post_ref: str
     observed_at: datetime
     image_url: str
+    caption: Optional[str] = None
 
     def to_payload(self) -> dict:
         return {
@@ -192,12 +193,17 @@ def select_frame_candidates(
             problems.append(f"future_timestamp[{index}]")
             continue
         post_ref = f"post_{index:04d}"
+        raw_post = posts[index]
+        caption = raw_post if isinstance(raw_post, str) else (
+            raw_post.get("text") if isinstance(raw_post, Mapping) else None
+        )
         candidates.append(
             FrameCandidate(
                 frame_id=_frame_id(post_ref, observed_at, url),
                 post_ref=post_ref,
                 observed_at=observed_at,
                 image_url=url,
+                caption=caption,
             )
         )
 
@@ -334,21 +340,36 @@ def change_point_indices(features: Sequence[FrameFeatures], threshold: float = C
 # ---------------------------------------------------------------------------
 
 
-def _decode_and_measure(record: Mapping[str, Any]) -> tuple[Optional[FrameFeatures], Optional[str]]:
+def extract_exif(image: Any) -> dict[str, Any]:
+    """PIL görüntüsünden EXIF verilerini çıkarır (varsa)."""
+    if not hasattr(image, "getexif"):
+        return {}
+    try:
+        from PIL.ExifTags import TAGS
+        raw = image.getexif()
+        if not raw:
+            return {}
+        return {TAGS.get(k, str(k)): v for k, v in raw.items()}
+    except Exception:
+        return {}
+
+
+def _decode_and_measure(record: Mapping[str, Any]) -> tuple[Optional[FrameFeatures], dict[str, Any], Optional[str]]:
     encoded = record.get("b64")
     if not isinstance(encoded, str) or not encoded:
-        return None, "no_payload"
+        return None, {}, "no_payload"
     try:
         data = base64.b64decode(encoded)
     except Exception:
-        return None, "base64_decode_error"
+        return None, {}, "base64_decode_error"
     image = decode_image(data)
     if image is None:
-        return None, "image_decode_error"
+        return None, {}, "image_decode_error"
     features = measure_frame_features(image)
     if features is None:
-        return None, "feature_measurement_failed"
-    return features, None
+        return None, {}, "feature_measurement_failed"
+    exif = extract_exif(image)
+    return features, exif, None
 
 
 def frame_change_point_ids(frames: Sequence[Mapping[str, Any]]) -> list[str]:
@@ -431,15 +452,22 @@ async def collect_frames(
             collection.problems.append(f"download_failed:{candidate.frame_id}:{reason}")
             return {}
         collection.diagnostics["downloaded_count"] += 1
-        features, reason = _decode_and_measure(record)
+        features, exif, reason = _decode_and_measure(record)
         if features is None:
             collection.problems.append(f"measurement_failed:{candidate.frame_id}:{reason}")
             return {}
+        from agent_core.lifecycle.media_provenance import classify_media
+
+        provenance = classify_media(
+            candidate.frame_id,
+            exif=exif or None,
+            caption=candidate.caption,
+            background=None,
+        )
         return {
             "frame_id": candidate.frame_id,
             "observed_at": candidate.observed_at.isoformat(),
-            # Kanıt YOK: gerçek çekim/kurgu ayrımı bu kademede yapılmaz.
-            "capture_class": "unknown",
+            "capture_class": provenance.capture_class,
             "has_measurable_background": features.has_background_structure,
             "detected_objects": [],
             "environment_and_places": [],
