@@ -93,6 +93,8 @@ def _isolate_response_cache(tmp_path, monkeypatch):
     monkeypatch.setenv("PINEAL_ENV", "development")
     monkeypatch.setenv("PINEAL_REQUIRE_AUTH", "false")
     monkeypatch.delenv("PINEAL_TOKEN", raising=False)
+    monkeypatch.delenv("EXA_API_KEY", raising=False)
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
     monkeypatch.delenv("LIVE_LLM_E2E", raising=False)
     monkeypatch.delenv("PINEAL_ROUTER_LIVE", raising=False)
     monkeypatch.delenv("OPENROUTER_MAX_SPEND_USD", raising=False)

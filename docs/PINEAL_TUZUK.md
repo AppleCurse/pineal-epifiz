@@ -131,20 +131,25 @@ Bu yüzden tüzük yeniden yazıldı:
 4. İkinci bir platform karar katmanı, ikinci bir orkestrasyon katmanı, ikinci bir kanıt deposu **yoktur.**
 5. Güvenlik yamaları hiçbir aracın sürüm pinine rehin değildir (CVE-2026-48710 dersi).
 
-## Madde 8 · Yasaklar (tüzük dışı kullanım)
+## Madde 8 · Yetenek Kaydı ve Çıktı Denetimi ("Yetenek kısıtlanmaz, çıktı denetlenir")
 
-Bunlar ürüne girmez; karar belgesi §5'te gerekçeleriyle kayıtlıdır:
+> **2026-10-08 İlke Güncellemesi (v2):** Keyfi ve yapay "yasak araç" listeleri
+> kaldırılmıştır. Bir aracın adını yasaklamak yerine **yetenek kaydı ve çıktı
+> denetimi** esastır. Sistemde yetenek kısıtlanmaz; her yetenek çalıştırılabilir,
+> ancak elde edilen çıktının epistemik statüsü mutlak biçimde denetlenir.
 
-| Yasak | Örnekler |
-|---|---|
-| Karanlık ağ tarama & saldırı arsenali | TorBot, darkfox, robin, exploitarium, PayloadsAllTheThings |
-| İhlal/şifre verisi ve gizli içerik | WhatBreach, pwnedOrNot, GHunt, InstagramPrivSniffer |
-| Ses/yüz klonlama ve kimlik taklidi | RVC, GPT-SoVITS, facefusion, Deep-Live-Cam |
-| Jailbreak & sızdırılmış prompt külliyatı | L1B3RT4S, CL4R1T4S, G0DM0D3, heretic, system_prompts_leaks |
-| Filtresiz üretim | locally-uncensored, Open-Generative-AI |
-| Otomatik mesaj gönderimi | postiz-app (ADR: Pineal taslak üretir, **göndermez**) |
-| Konum/canlı izleme | phoneinfoga, osint-X, RuView |
-| Platform güvenlik mekanizmasını kırma | tiktok-web-reverse-engineering, webmssdk_patch |
+1. **Yasak liste yerine yetenek kaydı:**
+   `GHunt`, `phoneinfoga` vb. araçlar üzerindeki kategorik yasak kaldırılmıştır. Sistemdeki tüm yetenekler `agent_core/capabilities/` altındaki Yetenek Kayıt Defteri'ne (`CapabilityRegistry`) kayıtlıdır: ne yapar, hangi kapıları gerektirir, hangi bağımlılıklara ihtiyaç duyar şeffafça ilan edilir.
+2. **Yetenek açık, çıktı etiketli (3 Epistemik Mühür):**
+   Hangi yetenek çalışırsa çalışsın, toplanan veri 3 epistemik mühürden birini almak zorundadır:
+   - `measured` (Ölçülmüş / Doğrulanmış): Çapraz teyitli, somut kaynak kanıtı vardır. Ana adli rapora doğrudan girer.
+   - `partial` (Kısmi / Doğrulanmamış): Tekil sinyal, kırıntı veya tam kanıtlanmamış veri. Ana rapora değil, ek rapora girer; üzerinde açıkça "YARIM" etiketi taşır.
+   - `unmeasured` (Ölçülmemiş / Ham): Kanıtsız iddia veya teyitsiz ham telemetri. Rapora kesinlikle giremez; yalnızca denetim logunda tutulur.
+   *Kural kesindir:* Yetenek tam kapasiteyle çalışır, ancak sistem asla yalan söyleyemez ve uyduramaz.
+3. **Değişmez denetim kütüğü (İzlenebilirlik):**
+   Kim, ne zaman, hangi yeteneği, hangi hedef için çalıştırdı — hepsi `memory/ledger/` altında değiştirilemez ve silinemez biçimde kayıt altına alınır. Yasaklamaktan daha güçlü olan kontrol, tam ve eksiksiz izlenebilirliktir.
+4. **Dokunulmaz Kırmızı Çizgi:**
+   Bu maddedeki serbestlik Madde 4/A'yı kapsamaz. 18 yaş altı (çocuk) kilidi mutlaktır ve asla esnetilemez.
 
 ## Madde 9 · Sahalar (kullanım alanları)
 
