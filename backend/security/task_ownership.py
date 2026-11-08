@@ -149,7 +149,7 @@ def adopt(task_id: str, principal: Optional[str]) -> None:
 
 
 def task_access(task_id: str, principal: Optional[str]) -> Optional[str]:
-    """Görev erişim kararı — fail-closed mimarisi.
+    """Görev erişim kararı — fail-closed mimarisi (atomik sahiplenme).
 
     Dönüş:
       * ``None``        -> erişim SERBEST (kayıt yazıldı/taşındı ya da kimlik
@@ -164,19 +164,25 @@ def task_access(task_id: str, principal: Optional[str]) -> Optional[str]:
     if connection is None:
         return FORBIDDEN
     try:
-        row = connection.execute(
-            "SELECT principal FROM task_owners WHERE task_id = ?", (task_id,)
-        ).fetchone()
-        existing = row[0] if row else None
-    except sqlite3.Error as exc:
+        with _lock:
+            row = connection.execute(
+                "SELECT principal FROM task_owners WHERE task_id = ?", (task_id,)
+            ).fetchone()
+            existing = row[0] if row else None
+            if existing is None:
+                if task_id and principal:
+                    connection.execute(
+                        "INSERT OR IGNORE INTO task_owners (task_id, principal) VALUES (?, ?)",
+                        (task_id, principal),
+                    )
+                    connection.commit()
+                return None
+    except sqlite3.Error as exc:  # pragma: no cover - bozuk DB
         logger.warning("TASK_ACCESS_DB_ERROR: %s", str(exc)[:160])
         return FORBIDDEN
     finally:
         connection.close()
 
-    if existing is None:
-        record_owner(task_id, principal)
-        return None
     if existing != principal:
         logger.warning(
             "TASK_FORBIDDEN: principal=%s başka bir operatöre kayıtlı göreve "

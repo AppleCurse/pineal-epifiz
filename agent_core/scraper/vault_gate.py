@@ -57,7 +57,13 @@ DEFAULT_VAULT_FILE = ".pineal_vault.json"
 
 #: Yer tutucu değerler anahtar DEĞİLDİR (backend/_vault_bears_key_material
 #: ile aynı sözleşme): "sk-or-v1-YOUR..." satırı mandalı açamaz.
-_PLACEHOLDER_MARKERS = ("your", "changeme", "placeholder", "xxx", "<", "ornek", "örnek")
+_PLACEHOLDER_MARKERS = (
+    "YOUR_", "YOUR-", "YOUR ", "_YOUR",
+    "PLACEHOLDER", "EXAMPLE", "CHANGE_ME", "CHANGEME",
+    "REPLACE_ME", "REPLACEME", "INSERT_", "SAMPLE_KEY",
+    "ORNEK", "ÖRNEK",
+)
+_PLACEHOLDER_PREFIXES = ("sk-or-v1-YOUR", "sk-ant-YOUR", "AIzaSyYOUR")
 
 #: Düz seviyede aranacak anahtar alanları (odada ``or_key`` gibi).
 _KEY_FIELDS = ("or_key", "ig_sessionid", "x_cookie", "api_key", "openrouter_api_key")
@@ -78,8 +84,13 @@ def _is_real_key(value: object) -> bool:
     raw = value.strip()
     if len(raw) < 8:
         return False
-    lowered = raw.lower()
-    return not any(marker in lowered for marker in _PLACEHOLDER_MARKERS)
+    if raw.startswith("<") and raw.endswith(">"):
+        return False
+    for prefix in _PLACEHOLDER_PREFIXES:
+        if raw.startswith(prefix):
+            return False
+    upper = raw.upper()
+    return not any(marker in upper for marker in _PLACEHOLDER_MARKERS)
 
 
 def _walk_key_material(node: object) -> bool:

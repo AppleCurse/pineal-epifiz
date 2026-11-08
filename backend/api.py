@@ -244,6 +244,10 @@ async def lifespan(application: FastAPI):
         else:
             application.state.redis_bus = None
 
+        # Yetenek omurgası (Capability Spine) başlatma
+        from agent_core.capabilities import bootstrap as _caps_bootstrap
+        _caps_bootstrap()
+
     except (StartupDependencyError, SecurityConfigurationError) as exc:
         application.state.startup_health = exc.as_dict()
         logger.critical("Startup security/dependency gate failed: %s", exc.error_code)
@@ -1215,8 +1219,7 @@ def get_room(client_id: str) -> dict:
             if dialogue_manager is not None:
                 dialogue_manager.llm.set_key(api_key)
             vault["or_key"] = True
-        if os.getenv("PINEAL_ROUTER_LIVE") == "1":
-            vault["or_key"] = True
+        # PINEAL_ROUTER_LIVE tek başına kasayı açmaz; anahtar şarttır
 
         # Export direct keys to environment for underlying SDKs
         # [FORENSIC VAULT-INTERLOCK] Placeholder ortama YAZILMAZ (env kirliliği yok).
@@ -3581,8 +3584,7 @@ def _check_vault_interlock(client_id: str) -> bool:
         room = get_room(client_id)
         if room.get("vault_manually_locked"):
             return False
-        if os.getenv("PINEAL_ROUTER_LIVE") == "1":
-            return True
+        # PINEAL_ROUTER_LIVE tek başına mandalı açamaz (anahtar malzemesi aranır)
         vault = room["vault"]
         unlocked = bool(
             vault.get("or_key") or vault.get("ig_sessionid") or vault.get("x_cookie")
@@ -3970,17 +3972,11 @@ async def api_minor_case_register(req: MinorCasePayload):
             },
             status_code=503,
         )
-    from agent_core.safety import MinorCaseContext, MinorGate
+    from agent_core.safety import MinorCaseContext, MinorGate, coerce_minor_case
 
-    case = MinorCaseContext(
-        subject_is_minor=bool(req.subject_is_minor),
-        case_type=req.case_type,
-        family_notified=bool(req.family_notified),
-        reason=req.reason,
-        verified=bool(req.verified),
-        council_approvals=tuple(req.council_approvals),
-        case_id=req.case_id,
-    )
+    case = coerce_minor_case(req.model_dump())
+    if case is None:
+        case = MinorCaseContext(subject_is_minor=bool(req.subject_is_minor))
     app.state.minor_cases[req.client_id] = case
     decision = MinorGate().evaluate(case)
     _minor_ledger_record(case, decision, client_id=req.client_id)
