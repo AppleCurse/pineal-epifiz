@@ -48,7 +48,17 @@
   let targetInput = '';
   let selectedMode: 'full' | 'quick' | 'probe' = 'full';
   let isTargetValid = false;
-  let activeTab: 'graph' | 'matrix' | 'opening_hook' | 'osint_radar' | 'psychology_shadow' | 'correlations' | 'evidence' | 'agents' | 'control' = 'graph';
+  let activeTab: 'graph' | 'matrix' | 'opening_hook' | 'osint_radar' | 'psychology_shadow' | 'correlations' | 'evidence' | 'agents' | 'control' | 'logs' = 'graph';
+  // --- KARA KUTU LOG FILTRE STATE ---
+  let logFilterLevel: 'ALL' | 'INFO' | 'WARN' | 'ERROR' = 'ALL';
+  let logSearchQuery = '';
+
+  $: filteredLogs = $logs.filter((l) => {
+    if (logFilterLevel !== 'ALL' && l.level?.toUpperCase() !== logFilterLevel) return false;
+    if (logSearchQuery.trim() && !l.msg?.toLowerCase().includes(logSearchQuery.toLowerCase())) return false;
+    return true;
+  });
+
   // --- CANLI KONTROL & ŞEFFAFLIK STATE (Live Control Panel Entegrasyonu) ---
   let liveState: Record<string, any> = {};
   let liveStateError: string | null = null;
@@ -1565,6 +1575,45 @@
     {/each}
   </section>
 
+  <!-- 2.5 CANLI DURUM & "NE OLUYOR?" REHBER ŞERİDİ (HERKESİN ANLAYACAĞI DİLDE) -->
+  <section class="live-hero-status-strip">
+    <div class="hero-status-content">
+      {#if $isProcessing}
+        <div class="hero-pulse-badge running">
+          <span class="pulse-ring"></span>
+          <span class="badge-text">CANLI ANALİZ SÜRÜYOR</span>
+        </div>
+        <div class="hero-explanation">
+          <strong>🔍 Sistem şu anda hedefi inceliyor:</strong>
+          <span>Açık kaynak sayfaları taranıyor, 10 sosyal platformda varlık yoklanıyor ve 7 bilişsel motor matematiksel ölçümler yapıyor. Sayfa yenilenmesine gerek yoktur; bulgular anlık olarak aşağıdaki sekmelere ve ilişki grafiğine dökülmektedir.</span>
+        </div>
+      {:else if $taskStatus?.target_profile?.username}
+        {@const tp = $taskStatus.target_profile}
+        {@const isPrivate = tp.is_private || tp.sensor_note?.includes('gizli') || tp.sensor_note?.includes('Private') || (tp.posts_count === 0 && tp.followers_count > 0)}
+        <div class="hero-pulse-badge {isPrivate ? 'warning' : 'success'}">
+          <span class="badge-text">{isPrivate ? 'GİZLİ HESAP TESPİTİ' : 'GÖREV TAMAMLANDI'}</span>
+        </div>
+        <div class="hero-explanation">
+          {#if isPrivate}
+            <strong>⚠️ Hedef Instagram hesabı GİZLİ (Private):</strong>
+            <span>İçerideki gönderiler ve fotoğraflar kilitli olduğu için sistem yalan veya yapay tahmin üretmeden durdu. Ancak sistem durmadı; <strong>Facebook, TikTok ve Pinterest</strong> üzerinde aynı kişiye ait açık profilleri anında yakaladı! Bulguları görmek için aşağıdaki <em>10 Platform Radarı</em> veya <em>İlişki Ağı Grafiği</em> sekmelerine tıklayın.</span>
+          {:else}
+            <strong>✓ İnceleme başarıyla tamamlandı:</strong>
+            <span>Kişinin herkese açık biyografisi, dijital ayak izleri ve sosyal platform bağlantıları mühürlendi. Sağ paneldeki <em>Aspasia</em> alanından Türkçe analiz özetini okuyabilir veya <em>İlk Temas</em> sekmesinden kişiye özel tanışma mesajı alabilirsiniz.</span>
+          {/if}
+        </div>
+      {:else}
+        <div class="hero-pulse-badge idle">
+          <span class="badge-text">SİSTEM HAZIR · BEKLİYOR</span>
+        </div>
+        <div class="hero-explanation">
+          <strong>💡 Nasıl Kullanılır? (3 Kolay Adım):</strong>
+          <span><strong>1.</strong> Yukarıdaki kutuya kişinin Instagram veya X kullanıcı adını yazın (Örn: <code>@kullanici</code>). <strong>2.</strong> Yeşil <code>GÖREVİ BAŞLAT</code> düğmesine basın. <strong>3.</strong> Sistem kişinin internetteki diğer hesaplarını bulur, kanıtlarını toplar ve Aspasia sizinle Türkçe konuşarak özetler.</span>
+        </div>
+      {/if}
+    </div>
+  </section>
+
   <!-- 3. ANA ÇALIŞMA ALANI: GRAFİK + SEKMELER -->
   <div class="workspace-body">
     <!-- Sol/Orta Ana Bölüm -->
@@ -1618,10 +1667,23 @@
           class:active={activeTab === 'control'}
           on:click={() => activeTab = 'control'}
         >⚡ CANLI DENETİM & ÇAĞRI İZİ</button>
+
+        <button
+          class="tab-btn logs-tab-btn"
+          class:active={activeTab === 'logs'}
+          on:click={() => activeTab = 'logs'}
+        >📜 SİSTEM LOGLARI & KARA KUTU ({$logs.length})</button>
       </div>
 
       <!-- TAB 1: GRAFİK ÇİZİM ALANI -->
       {#if activeTab === 'graph'}
+        <div class="tab-explainer-banner">
+          <span class="explainer-icon">🕸️</span>
+          <div>
+            <strong>BU EKRAN NE İŞE YARAR? (İlişki Ağı Haritası)</strong>
+            <p>Bu interaktif harita, kişinin internette tespit edilen tüm hesaplarının ve bulgularının birbirine nasıl bağlandığını gösterir. Ortadaki ana hedef, etrafındaki renkli halkalar ise Facebook, TikTok, Pinterest gibi bulunan diğer hesapları temsil eder. Düğümlere tıklayarak sağ panelde detaylarını inceleyebilirsiniz.</p>
+          </div>
+        </div>
         <div class="canvas-container">
           <div class="graph-toolbar">
             <button
@@ -1662,6 +1724,13 @@
 
       <!-- TAB 2.5: İLK TEMAS & ETKİLEME KANCASI STÜDYOSU -->
       {:else if activeTab === 'opening_hook'}
+        <div class="tab-explainer-banner">
+          <span class="explainer-icon">🎯</span>
+          <div>
+            <strong>BU EKRAN NE İŞE YARAR? (İlk Temas & Mesaj Stüdyosu)</strong>
+            <p>Bu kişiye DM, e-posta veya mesaj atmak istediğinizde ne yazacağınızı bilemiyorsanız bu stüdyo devreye girer. Kişinin ilgi alanlarına ve psikolojisine göre; sıradan "Merhaba" yerine onun dikkatini kesinlikle çekecek profesyonel, entelektüel veya kalıp kırıcı ilk cümleler üretir.</p>
+          </div>
+        </div>
         <div class="hook-studio-container">
           <!-- 1. Hedef Bilişsel Sentez Başlığı -->
           <div class="target-intel-bar">
@@ -2147,6 +2216,13 @@
 
       <!-- TAB 2: 10 PLATFORM MATRİSİ -->
       {:else if activeTab === 'matrix'}
+        <div class="tab-explainer-banner">
+          <span class="explainer-icon">📊</span>
+          <div>
+            <strong>BU EKRAN NE İŞE YARAR? (10 Platform Sosyal Radarı)</strong>
+            <p>Aynı kullanıcı adının Instagram, X, Facebook, Threads, TikTok, GitHub, Reddit, Telegram, YouTube ve Pinterest üzerinde bulunup bulunmadığını canlı kontrol eder. <strong>BULUNDU</strong> etiketli kartlara tıklayarak doğrudan kişinin diğer profillerini açabilirsiniz.</p>
+          </div>
+        </div>
         <div class="matrix-grid">
           {#each socialMatrix as item}
             <div class="matrix-card" class:claimed={item.status === 'claimed'} class:absent={item.status === 'absent'}>
@@ -2169,6 +2245,13 @@
 
       <!-- TAB 3: KANIT DOSYASI -->
       {:else if activeTab === 'evidence'}
+        <div class="tab-explainer-banner">
+          <span class="explainer-icon">📁</span>
+          <div>
+            <strong>BU EKRAN NE İŞE YARAR? (Adli Kanıt Dosyası)</strong>
+            <p>Pineal Epifiz asla asılsız tahmin üretmez. Burada sistemin kişi hakkında bulduğu her bir bilginin (biyografi, takipçi sayısı, dış web sitesi bağlantıları) nereden alındığı, zaman damgası ve doğruluk mührüyle tek tek listelenir.</p>
+          </div>
+        </div>
         <div class="evidence-list">
           {#if evidenceItems.length === 0}
             <div class="empty-state">Henüz bağlantı kaydı yok. Görevi başlatın.</div>
@@ -2187,6 +2270,13 @@
 
       <!-- TAB 4: 12 AJAN YUVASI -->
       {:else if activeTab === 'agents'}
+        <div class="tab-explainer-banner">
+          <span class="explainer-icon">🤖</span>
+          <div>
+            <strong>BU EKRAN NE İŞE YARAR? (13 Uzman Bilişsel Ajan Masası)</strong>
+            <p>Sistemde tek bir yapay zeka değil, her biri farklı bir konuda uzmanlaşmış 13 ayrı görev ajanı çalışır. Biri kişinin dil tonunu, diğeri sürtünme ve hassasiyet noktalarını, diğeri tutkularını inceler. Burada her bir ajanın canlı durumunu görürsünüz.</p>
+          </div>
+        </div>
         <div class="agents-grid">
           {#each Object.entries($agentStatuses) as [id, info]}
             <div class="agent-card">
@@ -2201,6 +2291,13 @@
 
       <!-- TAB 5: CANLI DENETİM & ŞEFFAFLIK (LIVE CONTROL PANEL) -->
       {:else if activeTab === 'control'}
+        <div class="tab-explainer-banner">
+          <span class="explainer-icon">⚡</span>
+          <div>
+            <strong>BU EKRAN NE İŞE YARAR? (Canlı Denetim & Şeffaflık)</strong>
+            <p>Sistem şu an ne yapıyor, arka planda hangi web adresini kazıyor, ajanlar satır satır ne düşündü ve ne kadar yapay zeka maliyeti ($) harcandı? Tüm teknik ayrıntıları kuruşu kuruşuna burada canlı izleyebilirsiniz.</p>
+          </div>
+        </div>
         <div class="live-control-dashboard">
           <div class="control-grid-top">
             <!-- 1. Blok: Anlık Kanal & Kazınan URL -->
@@ -2341,6 +2438,46 @@
                   </tbody>
                 </table>
               </div>
+            {/if}
+          </div>
+        </div>
+
+      <!-- TAB 6: KARA KUTU SİSTEM LOGLARI (TACTICAL WAR ROOM ENTEGRASYONU) -->
+      {:else if activeTab === 'logs'}
+        <div class="tab-explainer-banner">
+          <span class="explainer-icon">📜</span>
+          <div>
+            <strong>BU EKRAN NE İŞE YARAR? (Kara Kutu Canlı Sistem Günlüğü)</strong>
+            <p>Sistemin arka planında saniye saniye gerçekleşen tüm ağ bağlantıları, API çağrıları ve uyarı mesajlarının ham adli dökümüdür. Tıpkı bir uçağın kara kutusu gibi her şey anlık ve değiştirilemez olarak buraya akar.</p>
+          </div>
+        </div>
+        <div class="blackbox-logs-container">
+          <div class="logs-toolbar">
+            <div class="level-filters">
+              <button class="log-filter-btn" class:active={logFilterLevel === 'ALL'} on:click={() => logFilterLevel = 'ALL'}>TÜMÜ ({$logs.length})</button>
+              <button class="log-filter-btn info" class:active={logFilterLevel === 'INFO'} on:click={() => logFilterLevel = 'INFO'}>BİLGİ</button>
+              <button class="log-filter-btn warn" class:active={logFilterLevel === 'WARN'} on:click={() => logFilterLevel = 'WARN'}>UYARI</button>
+              <button class="log-filter-btn err" class:active={logFilterLevel === 'ERROR'} on:click={() => logFilterLevel = 'ERROR'}>HATA</button>
+            </div>
+            <input
+              type="text"
+              class="log-search-input"
+              placeholder="Loglarda ara..."
+              bind:value={logSearchQuery}
+            />
+          </div>
+
+          <div class="log-lines-terminal">
+            {#if filteredLogs.length === 0}
+              <div class="empty-state">Henüz görüntülenen log kaydı yok. Görev başladığında buraya anlık akacaktır.</div>
+            {:else}
+              {#each filteredLogs as logItem}
+                <div class="log-line-row {logItem.level?.toLowerCase()}">
+                  <span class="log-ts">{logItem.ts || new Date().toLocaleTimeString()}</span>
+                  <span class="log-level-badge">{logItem.level || 'INFO'}</span>
+                  <span class="log-msg-text">{logItem.msg}</span>
+                </div>
+              {/each}
             {/if}
           </div>
         </div>
@@ -4613,5 +4750,148 @@
   .cmd-feedback { font-size: 9px; margin-top: 4px; }
   .cmd-feedback.green { color: #38ef7d; }
   .cmd-feedback.red { color: #ef4444; }
+
+
+
+  /* HERO STATUS & GUIDE STRIP */
+  .live-hero-status-strip {
+    background: #090e1a;
+    border-bottom: 1px solid #1e293b;
+    padding: 10px 18px;
+  }
+  .hero-status-content {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: rgba(15, 23, 42, 0.7);
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 8px 14px;
+  }
+  .hero-pulse-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 4px 10px;
+    border-radius: 4px;
+    white-space: nowrap;
+    letter-spacing: 0.5px;
+  }
+  .hero-pulse-badge.idle { background: rgba(100, 116, 139, 0.2); color: #94a3b8; border: 1px solid #334155; }
+  .hero-pulse-badge.running { background: rgba(56, 239, 125, 0.2); color: #38ef7d; border: 1px solid #38ef7d; }
+  .hero-pulse-badge.warning { background: rgba(234, 179, 8, 0.2); color: #eab308; border: 1px solid #eab308; }
+  .hero-pulse-badge.success { background: rgba(5, 150, 105, 0.2); color: #10b981; border: 1px solid #10b981; }
+
+  .hero-explanation {
+    font-size: 11px;
+    line-height: 1.5;
+    color: #cbd5e1;
+  }
+  .hero-explanation strong { color: #f8fafc; margin-right: 6px; }
+  .hero-explanation code { background: #1e293b; padding: 2px 5px; border-radius: 3px; color: #38ef7d; }
+
+  /* TAB EXPLAINER BANNERS ("BU EKRAN NE İŞE YARAR?") */
+  .tab-explainer-banner {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    background: rgba(3, 7, 18, 0.85);
+    border: 1px solid rgba(56, 239, 125, 0.25);
+    border-left: 4px solid #38ef7d;
+    border-radius: 4px;
+    padding: 8px 12px;
+    margin: 8px 12px 10px 12px;
+  }
+  .explainer-icon { font-size: 18px; line-height: 1; margin-top: 2px; }
+  .tab-explainer-banner strong {
+    display: block;
+    font-size: 11px;
+    font-weight: 800;
+    color: #38ef7d;
+    margin-bottom: 2px;
+    letter-spacing: 0.5px;
+  }
+  .tab-explainer-banner p {
+    margin: 0;
+    font-size: 10px;
+    line-height: 1.4;
+    color: #94a3b8;
+  }
+
+  /* BLACKBOX LOGS TERMINAL */
+  .blackbox-logs-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 10px 14px;
+    gap: 10px;
+    overflow: hidden;
+  }
+  .logs-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    background: #0f172a;
+    padding: 8px 12px;
+    border: 1px solid #1e293b;
+    border-radius: 4px;
+  }
+  .level-filters { display: flex; gap: 6px; }
+  .log-filter-btn {
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #94a3b8;
+    font-family: inherit;
+    font-size: 10px;
+    padding: 4px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .log-filter-btn.active { background: #334155; color: #f8fafc; font-weight: bold; border-color: #64748b; }
+  .log-filter-btn.info.active { color: #38ef7d; border-color: #38ef7d; }
+  .log-filter-btn.warn.active { color: #eab308; border-color: #eab308; }
+  .log-filter-btn.err.active { color: #ef4444; border-color: #ef4444; }
+  .log-search-input {
+    background: #030712;
+    border: 1px solid #334155;
+    color: #f8fafc;
+    font-family: inherit;
+    font-size: 10px;
+    padding: 5px 8px;
+    border-radius: 3px;
+    width: 220px;
+  }
+
+  .log-lines-terminal {
+    flex: 1;
+    background: #030712;
+    border: 1px solid #1e293b;
+    border-radius: 4px;
+    padding: 8px;
+    overflow-y: auto;
+    font-family: monospace;
+    font-size: 10px;
+  }
+  .log-line-row {
+    display: flex;
+    gap: 10px;
+    padding: 3px 0;
+    border-bottom: 1px solid rgba(30, 41, 59, 0.4);
+    line-height: 1.4;
+  }
+  .log-ts { color: #64748b; white-space: nowrap; }
+  .log-level-badge {
+    font-weight: bold;
+    padding: 0 4px;
+    border-radius: 2px;
+    font-size: 9px;
+  }
+  .log-line-row.info .log-level-badge { background: rgba(56, 239, 125, 0.2); color: #38ef7d; }
+  .log-line-row.warn .log-level-badge { background: rgba(234, 179, 8, 0.2); color: #eab308; }
+  .log-line-row.error .log-level-badge { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+  .log-msg-text { color: #cbd5e1; word-break: break-all; }
 
 </style>
