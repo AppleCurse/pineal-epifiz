@@ -3,8 +3,10 @@
   import { get } from 'svelte/store';
   import {
     apiFetch, clientId, isProcessing, taskStatus, logs, agentStatuses,
-    vaultLocked, supportRequests, refreshSupport, activeViewMode
+    vaultLocked, supportRequests, refreshSupport, activeViewMode,
+    powerEngaged, armEngaged, sigintEngaged, inspectedAgentId
   } from '../store';
+  import { taskRuns, taskRunLabel, rackAvailability } from '../lib/taskRunStatus';
 
   // --- MODEL TANIMLARI ---
   interface PipelineStep {
@@ -46,7 +48,153 @@
   let targetInput = '';
   let selectedMode: 'full' | 'quick' | 'probe' = 'full';
   let isTargetValid = false;
-  let activeTab: 'graph' | 'matrix' | 'opening_hook' | 'osint_radar' | 'psychology_shadow' | 'correlations' | 'evidence' | 'agents' = 'graph';
+  let activeTab: 'graph' | 'matrix' | 'opening_hook' | 'osint_radar' | 'psychology_shadow' | 'correlations' | 'evidence' | 'agents' | 'control' = 'graph';
+  // --- CANLI KONTROL & ŞEFFAFLIK STATE (Live Control Panel Entegrasyonu) ---
+  let liveState: Record<string, any> = {};
+  let liveStateError: string | null = null;
+  let liveCallOffset = 0;
+  let selectedLiveAgentName: string | null = null;
+  let livePoller: any = null;
+
+  $: liveRuns = taskRuns($taskStatus) as Record<string, any>;
+  $: livePlanned = ($taskStatus?.planned_agents || []) as string[];
+  $: liveCurrentAgent = ($taskStatus?.current_agent || null) as string | null;
+  $: liveChannels = ($taskStatus?.channel_status || []) as any[];
+  $: liveEvidenceChain = ($taskStatus?.evidence_chain || []) as any[];
+  $: liveCalls = (liveState?.calls || []) as any[];
+  $: liveBudget = (liveState?.budget || {}) as Record<string, any>;
+  $: liveAnomalies = (liveState?.anomalies || {}) as Record<string, any[]>;
+  $: liveCallWindow = (liveState?.call_window || {}) as Record<string, any>;
+  $: liveTotalCalls = Number(liveCallWindow?.total ?? liveCalls.length);
+
+  $: activeLiveAgent = selectedLiveAgentName || liveCurrentAgent || (livePlanned[0] ?? null);
+  $: activeLiveRun = activeLiveAgent ? liveRuns[activeLiveAgent] : undefined;
+
+  async function refreshLiveState(): Promise<void> {
+    try {
+      const cid = get(clientId) || 'default';
+      const res = await apiFetch(`/api/aspasia/state?client_id=${encodeURIComponent(cid)}&offset=${liveCallOffset}&limit=25`);
+      if (res.ok) {
+        liveState = await res.json();
+        liveStateError = null;
+      } else {
+        liveStateError = `HTTP ${res.status}`;
+      }
+    } catch (e: any) {
+      liveStateError = e?.message || 'Ağ hatası';
+    }
+  }
+
+  async function pageLiveCalls(delta: number): Promise<void> {
+    liveCallOffset = Math.max(0, liveCallOffset + delta);
+    await refreshLiveState();
+  }
+
+  function fmtCostLive(val?: number | null): string {
+    if (typeof val !== 'number') return 'YETERSİZ KANIT';
+    return `$${val.toFixed(6)}`;
+  }
+
+  function fmtDurationLive(ms?: number | null): string {
+    if (ms === null || ms === undefined) return 'YETERSİZ KANIT';
+    if (ms < 1000) return `${ms} ms`;
+    const s = ms / 1000;
+    if (s < 60) return `${s.toFixed(1)} sn`;
+    const m = Math.floor(s / 60);
+    return `${m} dk ${Math.round(s - m * 60)} sn`;
+  }
+
+  function humanizeVal(value: any): string {
+    if (value === null || value === undefined) return '—';
+    if (typeof value === 'string') return value.length > 200 ? value.slice(0, 197) + '...' : value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    if (Array.isArray(value)) return `[${value.length} öğe]`;
+    if (typeof value === 'object') return `{${Object.keys(value).slice(0, 3).join(', ')}...}`;
+    return String(value);
+  }
+
+  // --- HÜKÜMDARLAR KONSEYİ (ASPASIA & LILITH) & KOMUTAN MÜDAHALESİ ---
+  let activeCouncilMode: 'aspasia' | 'lilith' | 'commander' = 'aspasia';
+  let commanderInjectType = 'twin_url';
+  let commanderInjectValue = '';
+  let commanderInjectNote = '';
+  let isCommanderInjecting = false;
+  let commanderInjectFeedback = '';
+
+  let commanderPhoneInput = '';
+  let isCommanderProbingPhone = false;
+  let commanderPhoneResult: any = null;
+  let commanderPhoneError = '';
+
+  const ASPASIA_PRESETS = [
+    'Hedefle olan uyumu ve rezonansı stratejik olarak özetle',
+    'Hedefin kalkanını kırmadan sahici bir temas stratejisi kur',
+    'Kullanıcının frekansına ayna tutarak zayıf/güçlü yönleri değerlendir'
+  ];
+
+  const LILITH_PRESETS = [
+    'Dopaminerjik ödül tahmin hatasıyla beklenti kırıcı viral kanca kurgula',
+    'Hedefin vitrindeki duruşu ile bastırılmış narsistik dürtülerini analiz et',
+    'Amigdala uyarımı ve kayıptan kaçınma açısıyla hipnotik bir ilk temas yaz'
+  ];
+
+  async function submitCommanderInject() {
+    if (!commanderInjectValue.trim()) return;
+    isCommanderInjecting = true;
+    commanderInjectFeedback = '';
+    try {
+      const res = await apiFetch('/api/commander/inject', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: get(clientId) || 'default',
+          type: commanderInjectType,
+          value: commanderInjectValue.trim(),
+          note: commanderInjectNote.trim()
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        commanderInjectFeedback = '✓ Kanıt başarıyla kaydedildi [TWIN_URL]; ajana veya göreve aktarım henüz bağlı değil.';
+        commanderInjectValue = '';
+        commanderInjectNote = '';
+      } else {
+        commanderInjectFeedback = `⚠️ Hata: ${data?.error?.message || res.status}`;
+      }
+    } catch (e: any) {
+      commanderInjectFeedback = `⚠️ Ağ hatası: ${e?.message || 'bağlantı kurulamadı'}`;
+    } finally {
+      isCommanderInjecting = false;
+    }
+  }
+
+  async function submitCommanderPhoneProbe() {
+    if (!commanderPhoneInput.trim()) return;
+    isCommanderProbingPhone = true;
+    commanderPhoneError = '';
+    commanderPhoneResult = null;
+    try {
+      const res = await apiFetch('/api/commander/phone-probe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: get(clientId) || 'default',
+          phone_number: commanderPhoneInput.trim()
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        commanderPhoneResult = data;
+      } else {
+        commanderPhoneError = data?.error?.message || `HTTP ${res.status}`;
+      }
+    } catch (e: any) {
+      commanderPhoneError = e?.message || 'Ağ hatası';
+    } finally {
+      isCommanderProbingPhone = false;
+    }
+  }
+
 
   // --- DERİN KİMLİK RADARI STATE ---
   let osintSubTool: 'maigret' | 'holehe' | 'socid' | 'crawl' = 'maigret';
@@ -1274,11 +1422,14 @@
       resetGraph('HEDEF');
       runPhysicsStep();
     }
+    void refreshLiveState();
+    livePoller = setInterval(() => void refreshLiveState(), 4000);
   });
 
   onDestroy(() => {
     if (animationFrameId) cancelAnimationFrame(animationFrameId);
     if (timerInterval) clearInterval(timerInterval);
+    if (livePoller) clearInterval(livePoller);
     unsubTask();
   });
 </script>
@@ -1337,8 +1488,42 @@
       {/if}
     </div>
 
-    <!-- Güvenlik Anahtarları -->
+    <!-- Güvenlik & Analog Konsol Anahtarları -->
     <div class="flight-controls">
+      <button
+        class="switch-btn"
+        class:is-active={$powerEngaged}
+        on:click={() => powerEngaged.update(v => !v)}
+        title="Uplink (WebSocket) Şalteri"
+      >
+        <span class="status-dot"></span>
+        POWER: {$powerEngaged ? 'ON' : 'OFF'}
+      </button>
+
+      <button
+        class="switch-btn"
+        class:is-armed={$armEngaged}
+        on:click={() => armEngaged.update(v => !v)}
+        title="Görev Kilitleme Emniyeti"
+      >
+        <span class="status-dot"></span>
+        ARM: {$armEngaged ? 'ARMED' : 'SAFE'}
+      </button>
+
+      <button
+        class="switch-btn sigint-btn"
+        class:is-active={$sigintEngaged}
+        on:click={() => {
+          if ($isProcessing) abortMission();
+          sigintEngaged.set(true);
+          setTimeout(() => sigintEngaged.set(false), 1000);
+        }}
+        title="Acil Durdurma Kesmesi"
+      >
+        <span class="status-dot"></span>
+        SIGINT
+      </button>
+
       <button
         class="switch-btn"
         class:is-unlocked={!$vaultLocked}
@@ -1427,6 +1612,12 @@
           class:active={activeTab === 'agents'}
           on:click={() => activeTab = 'agents'}
         >🤖 12 AJAN YUVASI</button>
+
+        <button
+          class="tab-btn control-tab-btn"
+          class:active={activeTab === 'control'}
+          on:click={() => activeTab = 'control'}
+        >⚡ CANLI DENETİM & ÇAĞRI İZİ</button>
       </div>
 
       <!-- TAB 1: GRAFİK ÇİZİM ALANI -->
@@ -2007,10 +2198,156 @@
             </div>
           {/each}
         </div>
+
+      <!-- TAB 5: CANLI DENETİM & ŞEFFAFLIK (LIVE CONTROL PANEL) -->
+      {:else if activeTab === 'control'}
+        <div class="live-control-dashboard">
+          <div class="control-grid-top">
+            <!-- 1. Blok: Anlık Kanal & Kazınan URL -->
+            <div class="control-card channel-card">
+              <div class="card-head">📡 KANAL DURUMU & ANLIK KAZIMA HEDEFİ</div>
+              <div class="channel-pills-wrap">
+                {#if liveChannels.length === 0}
+                  <span class="muted-info">Henüz kanal telemetrisi yok</span>
+                {:else}
+                  {#each liveChannels as ch}
+                    <div class="channel-pill">
+                      <span class="ch-name">{ch.channel}</span>
+                      <span class="ch-status {ch.status?.toLowerCase()}">{ch.status}</span>
+                      {#if ch.detail}<span class="ch-detail">{ch.detail}</span>{/if}
+                    </div>
+                  {/each}
+                {/if}
+              </div>
+              {#if $taskStatus?.target_profile?.detected_urls?.length}
+                <div class="scraping-url-bar">
+                  <span class="lbl">Taranan URL:</span>
+                  <span class="url">{$taskStatus.target_profile.detected_urls[0]}</span>
+                </div>
+              {/if}
+            </div>
+
+            <!-- 2. Blok: LLM Bütçe & Kota Özeti -->
+            <div class="control-card budget-card">
+              <div class="card-head">💰 LLM HARCAMA & ANOMALİLER</div>
+              <div class="budget-metrics">
+                <div class="b-metric">
+                  <span class="k">TOPLAM MALİYET</span>
+                  <span class="v gold">{fmtCostLive(liveBudget?.total_usd)}</span>
+                </div>
+                <div class="b-metric">
+                  <span class="k">TOPLAM ÇAĞRI</span>
+                  <span class="v">{liveTotalCalls}</span>
+                </div>
+                <div class="b-metric">
+                  <span class="k">ANOMALİ</span>
+                  <span class="v {((liveAnomalies?.fallbacks || []).length > 0) ? 'red' : 'green'}">
+                    {(liveAnomalies?.fallbacks || []).length} Fallback
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. Blok: Ajan Hattı & Kuyruk Durumu -->
+          <div class="control-card agent-lane-card">
+            <div class="card-head">⚡ AJAN KOŞU HATTI ({livePlanned.length} Planlı Ajan)</div>
+            <div class="lane-chips-row">
+              {#each livePlanned as pAgent, idx}
+                {@const run = liveRuns[pAgent]}
+                {@const rStat = run?.status || ($taskStatus?.task_id ? 'pending' : 'idle')}
+                <button
+                  class="lane-chip"
+                  class:selected={activeLiveAgent === pAgent}
+                  class:running={rStat === 'running'}
+                  class:done={rStat === 'completed'}
+                  on:click={() => selectedLiveAgentName = pAgent}
+                >
+                  <span class="chip-idx">{idx + 1}</span>
+                  <span class="chip-name">{pAgent}</span>
+                  <span class="chip-status">{rStat.toUpperCase()}</span>
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          <!-- 4. Blok: Seçili Ajan Muhakemesi & Satır Satır Çıktı -->
+          {#if activeLiveAgent}
+            <div class="control-card reasoning-card">
+              <div class="card-head">
+                <span>🧠 {activeLiveAgent.toUpperCase()} MUHAKEME & ÇIKTI RÖNTGENİ</span>
+                {#if activeLiveRun?.confidence !== undefined}
+                  <span class="conf-pill">Güven: %{Math.round((activeLiveRun.confidence || 0) * 100)}</span>
+                {/if}
+              </div>
+              <div class="reasoning-meta-grid">
+                <div><span class="k">Model:</span> <span class="v">{activeLiveRun?.model || '—'}</span></div>
+                <div><span class="k">Süre:</span> <span class="v">{fmtDurationLive(activeLiveRun?.duration_ms)}</span></div>
+                <div><span class="k">Kanıt Sayısı:</span> <span class="v">{(activeLiveRun?.evidence_ids || []).length}</span></div>
+                <div><span class="k">Çağrı Sayısı:</span> <span class="v">{(activeLiveRun?.call_ids || []).length}</span></div>
+              </div>
+
+              {#if activeLiveRun?.output_summary}
+                <div class="output-keyvalues">
+                  <div class="sub-head">SATIR SATIR ÇIKTI VERİSİ:</div>
+                  {#each Object.entries(activeLiveRun.output_summary) as [k, val]}
+                    <div class="kv-row">
+                      <span class="kv-key">{k}:</span>
+                      <span class="kv-val">{humanizeVal(val)}</span>
+                    </div>
+                  {/each}
+                </div>
+              {:else}
+                <div class="empty-state">Bu ajan henüz çıktı üretmedi veya sırasını bekliyor.</div>
+              {/if}
+            </div>
+          {/if}
+
+          <!-- 5. Blok: LLM Çağrı İzi Tablosu -->
+          <div class="control-card call-trace-card">
+            <div class="card-head-between">
+              <span>📜 LLM ÇAĞRI İZİ & DENETİM KAYDI (Son {liveCalls.length} Çağrı)</span>
+              <div class="pager-btns">
+                <button class="pager-btn" disabled={liveCallOffset <= 0} on:click={() => pageLiveCalls(-25)}>◀ Önceki</button>
+                <button class="pager-btn" on:click={() => pageLiveCalls(25)}>Sonraki ▶</button>
+              </div>
+            </div>
+            {#if liveCalls.length === 0}
+              <div class="empty-state">Henüz kaydedilmiş LLM çağrısı yok.</div>
+            {:else}
+              <div class="call-table-wrap">
+                <table class="call-table">
+                  <thead>
+                    <tr>
+                      <th>ÇAĞRI ID</th>
+                      <th>AJAN</th>
+                      <th>MODEL</th>
+                      <th>SÜRE</th>
+                      <th>MALİYET</th>
+                      <th>DURUM</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each liveCalls as c}
+                      <tr>
+                        <td class="mono">{c.call_id?.slice(0, 12) || '—'}</td>
+                        <td>{c.agent_id || '—'}</td>
+                        <td class="mono">{c.model || c.actual_model || '—'}</td>
+                        <td>{fmtDurationLive(c.duration_ms)}</td>
+                        <td class="gold">{fmtCostLive(c.cost_usd)}</td>
+                        <td class="{c.error ? 'red' : 'green'}">{c.error ? 'HATA' : '200 OK'}</td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
+            {/if}
+          </div>
+        </div>
       {/if}
     </div>
 
-    <!-- Sağ Panel: Düğüm Denetçisi + Canlı Aspasia Asistanı -->
+    <!-- Sağ Panel: Düğüm Denetçisi + Hükümdarlar Konseyi (Aspasia / Lilith / Komutan) -->
     <aside class="side-inspector">
       <!-- Seçilen Düğüm Detayı -->
       {#if selectedNode}
@@ -2036,8 +2373,126 @@
         </div>
       {/if}
 
-      <!-- Aspasia Canlı İstihbarat Danışmanı -->
-      <div class="aspasia-chat-card">
+      <!-- Hükümdarlar Konseyi Şeridi -->
+      <div class="council-switcher">
+        <button
+          class="council-btn"
+          class:active={activeCouncilMode === 'aspasia'}
+          on:click={() => activeCouncilMode = 'aspasia'}
+        >
+          👑 ASPASIA
+        </button>
+        <button
+          class="council-btn btn-lilith"
+          class:active={activeCouncilMode === 'lilith'}
+          on:click={() => activeCouncilMode = 'lilith'}
+        >
+          🔥 LILITH
+        </button>
+        <button
+          class="council-btn btn-cmd"
+          class:active={activeCouncilMode === 'commander'}
+          on:click={() => activeCouncilMode = 'commander'}
+        >
+          🛠️ KOMUTAN
+        </button>
+      </div>
+
+      {#if activeCouncilMode === 'lilith'}
+        <!-- LILITH GROWTH İSTASYONU -->
+        <div class="aspasia-chat-card lilith-card">
+          <div class="chat-header lilith-head">
+            <span class="chat-dot pink-dot"></span>
+            <span>LILITH GROWTH · GÖLGE & NÖROBİLİŞ</span>
+          </div>
+          <div class="lilith-body">
+            <p class="lilith-intro">Dopamin Kancası, Amigdala Uyarımı, Maske Yırtıcı ve Viralite Stratejisi</p>
+            <div class="lilith-neuro-meters" aria-label="Lilith ölçümleri">
+              <p>Canlı nörokimya veya viralite ölçümü mevcut değil.</p>
+            </div>
+            <div class="preset-title">LILITH HIZLI DİREKTİFLERİ:</div>
+            <div class="preset-list">
+              {#each LILITH_PRESETS as lp}
+                <button
+                  class="preset-btn btn-pink"
+                  on:click={() => { aspasiaPrompt = lp; activeCouncilMode = 'aspasia'; }}
+                >
+                  🔥 {lp.slice(0, 42)}...
+                </button>
+              {/each}
+            </div>
+          </div>
+        </div>
+      {:else if activeCouncilMode === 'commander'}
+        <!-- KOMUTAN MÜDAHALESİ İSTASYONU -->
+        <div class="aspasia-chat-card cmd-card">
+          <div class="chat-header cmd-head">
+            <span class="chat-dot gold-dot"></span>
+            <span>KOMUTAN MÜDAHALESİ & EK OSINT</span>
+          </div>
+          <div class="cmd-body">
+            <div class="cmd-section">
+              <div class="sub-head">1. KANIT / İKİZ HESAP ENJEKSİYONU:</div>
+              <input
+                type="text"
+                class="cmd-input"
+                placeholder="https://... veya kanıt verisi"
+                bind:value={commanderInjectValue}
+              />
+              <button
+                class="cmd-submit-btn"
+                disabled={isCommanderInjecting || !commanderInjectValue.trim()}
+                on:click={submitCommanderInject}
+              >
+                {isCommanderInjecting ? 'Enjekte Ediliyor...' : 'KANITI ENJEKTE ET'}
+              </button>
+              {#if commanderInjectFeedback}
+                <div class="cmd-feedback">{commanderInjectFeedback}</div>
+              {/if}
+            </div>
+
+            <div class="cmd-section">
+              <div class="sub-head">2. DOĞRUDAN TELEFON OSINT:</div>
+              <input
+                type="text"
+                class="cmd-input"
+                placeholder="+905..."
+                bind:value={commanderPhoneInput}
+              />
+              <button
+                class="cmd-submit-btn"
+                disabled={isCommanderProbingPhone || !commanderPhoneInput.trim()}
+                on:click={submitCommanderPhoneProbe}
+              >
+                {isCommanderProbingPhone ? 'Sorgulanıyor...' : 'TELEFON SORGULA'}
+              </button>
+              {#if commanderPhoneError}
+                <div class="cmd-feedback red">{commanderPhoneError}</div>
+              {/if}
+              {#if commanderPhoneResult}
+                <div class="cmd-feedback green">
+                  ✓ {commanderPhoneResult.valid ? 'GEÇERLİ' : 'GEÇERSİZ'} · {commanderPhoneResult.carrier || 'Bilinmeyen Şebeke'} · {commanderPhoneResult.line_type || 'Hat'}
+                </div>
+              {/if}
+            </div>
+          </div>
+        </div>
+      {:else}
+        <!-- ASPASIA PRIME İSTİHBARAT DANIŞMANI -->
+        <div class="aspasia-chat-card">
+          <div class="chat-header">
+            <span class="chat-dot"></span>
+            <span>ASPASIA CANLI ANALİZ DANIŞMANI</span>
+          </div>
+
+          <!-- Aspasia Direktif Önerileri -->
+          <div class="aspasia-quick-presets">
+            {#each ASPASIA_PRESETS as ap}
+              <button class="quick-p-btn" on:click={() => { aspasiaPrompt = ap; }}>
+                ⚡ {ap.slice(0, 32)}...
+              </button>
+            {/each}
+          </div>
         <div class="chat-header">
           <span class="chat-dot"></span>
           <span>ASPASIA CANLI ANALİZ DANIŞMANI</span>
@@ -2055,7 +2510,7 @@
         <div class="chat-input-bar">
           <input
             type="text"
-            placeholder="Aspasia'ya soru sor..."
+            placeholder="Aspasia'ya soru sor veya görev ver..."
             bind:value={aspasiaPrompt}
             on:keydown={(e) => e.key === 'Enter' && askAspasia()}
             disabled={isAskingAspasia}
@@ -2065,6 +2520,7 @@
           </button>
         </div>
       </div>
+      {/if}
     </aside>
   </div>
 </div>
@@ -3847,4 +4303,315 @@
     font-size: 11px;
     padding: 40px 0;
   }
+
+
+
+  /* MASTER COCKPIT ANALOG & CONTROL STYLES */
+  .switch-btn.is-active {
+    background: rgba(56, 239, 125, 0.2);
+    border-color: #38ef7d;
+    color: #38ef7d;
+  }
+  .switch-btn.is-armed {
+    background: rgba(234, 179, 8, 0.2);
+    border-color: #eab308;
+    color: #eab308;
+  }
+  .switch-btn.sigint-btn {
+    border-color: rgba(239, 68, 68, 0.5);
+    color: #ef4444;
+  }
+  .switch-btn.sigint-btn:hover {
+    background: #ef4444;
+    color: #fff;
+  }
+
+  .control-tab-btn {
+    border-color: rgba(212, 175, 55, 0.5) !important;
+    color: #d4af37 !important;
+  }
+
+  /* Live Control Dashboard Grid */
+  .live-control-dashboard {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 14px;
+    height: 100%;
+    overflow-y: auto;
+  }
+  .control-grid-top {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 12px;
+  }
+  .control-card {
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 12px;
+  }
+  .control-card .card-head {
+    font-size: 11px;
+    font-weight: 700;
+    color: #38ef7d;
+    margin-bottom: 8px;
+    letter-spacing: 0.5px;
+  }
+  .card-head-between {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: #38ef7d;
+    margin-bottom: 8px;
+  }
+  .channel-pills-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .channel-pill {
+    background: #1e293b;
+    border: 1px solid #334155;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .channel-pill .ch-status.ready { color: #38ef7d; font-weight: bold; }
+  .channel-pill .ch-status.active { color: #38ef7d; font-weight: bold; }
+  .channel-pill .ch-detail { color: #94a3b8; font-size: 9px; }
+  .scraping-url-bar {
+    margin-top: 8px;
+    font-size: 10px;
+    background: #030712;
+    padding: 6px 10px;
+    border-radius: 4px;
+    border: 1px solid #334155;
+    color: #38ef7d;
+    word-break: break-all;
+  }
+
+  .budget-metrics {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .b-metric {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+  }
+  .b-metric .k { color: #94a3b8; }
+  .b-metric .v { font-weight: bold; color: #f8fafc; }
+  .b-metric .v.gold { color: #d4af37; }
+  .b-metric .v.green { color: #38ef7d; }
+  .b-metric .v.red { color: #ef4444; }
+
+  /* Lane Chips */
+  .lane-chips-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .lane-chip {
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #f8fafc;
+    border-radius: 4px;
+    padding: 6px 10px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 10px;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .lane-chip.selected { border-color: #38ef7d; background: rgba(56, 239, 125, 0.15); }
+  .lane-chip.running { border-color: #eab308; animation: pulse 1.5s infinite; }
+  .lane-chip.done { border-color: #059669; }
+  .lane-chip .chip-idx { color: #64748b; }
+  .lane-chip .chip-status { font-size: 8px; opacity: 0.8; }
+
+  .reasoning-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    font-size: 10px;
+    background: #030712;
+    padding: 8px;
+    border-radius: 4px;
+    margin-bottom: 8px;
+  }
+  .reasoning-meta-grid .k { color: #94a3b8; }
+  .reasoning-meta-grid .v { color: #f8fafc; font-weight: bold; }
+  .output-keyvalues {
+    background: #030712;
+    border: 1px solid #1e293b;
+    border-radius: 4px;
+    padding: 8px;
+    max-height: 160px;
+    overflow-y: auto;
+  }
+  .sub-head { font-size: 9px; color: #d4af37; font-weight: bold; margin-bottom: 6px; }
+  .kv-row { font-size: 10px; margin-bottom: 4px; }
+  .kv-key { color: #38ef7d; font-weight: bold; margin-right: 6px; }
+  .kv-val { color: #cbd5e1; }
+
+  .call-table-wrap {
+    max-height: 180px;
+    overflow-y: auto;
+  }
+  .call-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10px;
+  }
+  .call-table th {
+    text-align: left;
+    color: #64748b;
+    padding: 4px 6px;
+    border-bottom: 1px solid #334155;
+  }
+  .call-table td {
+    padding: 4px 6px;
+    border-bottom: 1px solid #1e293b;
+  }
+  .call-table .mono { font-family: monospace; }
+  .call-table .gold { color: #d4af37; font-weight: bold; }
+  .call-table .green { color: #38ef7d; }
+  .call-table .red { color: #ef4444; }
+  .pager-btns { display: flex; gap: 6px; }
+  .pager-btn {
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #94a3b8;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 9px;
+    cursor: pointer;
+  }
+
+  /* Sovereign Council & Commander Styles */
+  .council-switcher {
+    display: flex;
+    gap: 4px;
+    background: #090d16;
+    padding: 4px;
+    border-bottom: 1px solid #1e293b;
+  }
+  .council-btn {
+    flex: 1;
+    background: transparent;
+    border: 1px solid transparent;
+    color: #94a3b8;
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 6px 4px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: 0.15s;
+  }
+  .council-btn.active {
+    background: rgba(16, 185, 129, 0.15);
+    border-color: #10b981;
+    color: #10b981;
+  }
+  .council-btn.btn-lilith.active {
+    background: rgba(236, 72, 153, 0.15);
+    border-color: #ec4899;
+    color: #ec4899;
+  }
+  .council-btn.btn-cmd.active {
+    background: rgba(212, 175, 55, 0.15);
+    border-color: #d4af37;
+    color: #d4af37;
+  }
+
+  .lilith-head { border-bottom-color: rgba(236, 72, 153, 0.3) !important; color: #ec4899 !important; }
+  .pink-dot { background: #ec4899 !important; box-shadow: 0 0 8px #ec4899 !important; }
+  .gold-dot { background: #d4af37 !important; box-shadow: 0 0 8px #d4af37 !important; }
+  .lilith-body, .cmd-body {
+    padding: 10px;
+    font-size: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+    height: 100%;
+  }
+  .lilith-intro { color: #f472b6; margin: 0; font-size: 10px; }
+  .lilith-neuro-meters {
+    background: #030712;
+    padding: 6px 10px;
+    border-radius: 4px;
+    border: 1px dashed rgba(236, 72, 153, 0.3);
+    color: #94a3b8;
+  }
+  .preset-title { font-size: 9px; color: #64748b; font-weight: 700; margin-top: 6px; }
+  .preset-list { display: flex; flex-direction: column; gap: 4px; }
+  .preset-btn.btn-pink {
+    background: #1e1124;
+    border: 1px solid rgba(236, 72, 153, 0.4);
+    color: #f472b6;
+    text-align: left;
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 9px;
+    cursor: pointer;
+  }
+  .aspasia-quick-presets {
+    display: flex;
+    gap: 4px;
+    padding: 4px 8px;
+    background: #030712;
+    overflow-x: auto;
+  }
+  .quick-p-btn {
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    color: #38ef7d;
+    padding: 3px 6px;
+    border-radius: 3px;
+    font-size: 9px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .cmd-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: #030712;
+    padding: 8px;
+    border-radius: 4px;
+    border: 1px solid #1e293b;
+  }
+  .cmd-input {
+    background: #0f172a;
+    border: 1px solid #334155;
+    color: #f8fafc;
+    padding: 5px 8px;
+    font-size: 10px;
+    border-radius: 3px;
+    font-family: inherit;
+  }
+  .cmd-submit-btn {
+    background: #d4af37;
+    color: #000;
+    border: none;
+    padding: 5px 10px;
+    font-size: 9px;
+    font-weight: 700;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .cmd-feedback { font-size: 9px; margin-top: 4px; }
+  .cmd-feedback.green { color: #38ef7d; }
+  .cmd-feedback.red { color: #ef4444; }
+
 </style>
