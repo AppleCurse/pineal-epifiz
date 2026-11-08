@@ -4,7 +4,8 @@
   import {
     apiFetch, clientId, isProcessing, taskStatus, logs, agentStatuses,
     vaultLocked, supportRequests, refreshSupport, activeViewMode,
-    powerEngaged, armEngaged, sigintEngaged, inspectedAgentId
+    powerEngaged, armEngaged, sigintEngaged, inspectedAgentId,
+    apiToken, setApiToken, currentApiToken
   } from '../store';
   import { taskRuns, taskRunLabel, rackAvailability } from '../lib/taskRunStatus';
 
@@ -46,6 +47,72 @@
 
   // --- STATE ---
   let targetInput = '';
+
+  // --- ⚙️ AYARLAR & API KASASI (VAULT) STATE ---
+  let showSettingsModal = false;
+  let vaultApiKey = '';
+  let vaultProvider = 'groq';
+  let vaultProviderKey = '';
+  let vaultUseLocal = false;
+  let vaultLocalUrl = 'http://localhost:11434/v1';
+  let vaultLocalModel = 'llama3';
+  let vaultTavilyKey = '';
+  let vaultSerpapiKey = '';
+  let vaultAppToken = currentApiToken();
+  let vaultSaveMessage = '';
+  let isSavingVault = false;
+
+  async function saveVaultSettings() {
+    isSavingVault = true;
+    vaultSaveMessage = '';
+    const cid = get(clientId) || 'default';
+
+    if (vaultAppToken !== undefined && vaultAppToken.trim()) {
+      setApiToken(vaultAppToken.trim());
+    }
+
+    const payload: any = {
+      client_id: cid,
+      api_key: vaultApiKey.trim(),
+      tavily_key: vaultTavilyKey.trim(),
+      serpapi_key: vaultSerpapiKey.trim(),
+      use_local: vaultUseLocal,
+      local_url: vaultLocalUrl.trim(),
+      local_model: vaultLocalModel.trim()
+    };
+
+    if (vaultProvider && vaultProviderKey.trim()) {
+      payload.provider_keys = {
+        [vaultProvider]: vaultProviderKey.trim()
+      };
+    }
+
+    try {
+      const res = await apiFetch('/api/vault', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        vaultSaveMessage = `❌ Hata: ${data?.error?.message || data?.detail || 'Kayıt başarısız'}`;
+        pushOperator(vaultSaveMessage);
+        return;
+      }
+      vaultSaveMessage = '✅ Ayarlar ve API Anahtarları Kasaya Mühürlendi! Canlı LLM Kilidi Açıldı.';
+      pushOperator('🔐 KASA GÜNCELLENDİ: API anahtarları mühürlendi ve canlı LLM kilidi açıldı.');
+      vaultLocked.set(false);
+      setTimeout(() => {
+        showSettingsModal = false;
+        vaultSaveMessage = '';
+      }, 1500);
+    } catch (e: any) {
+      vaultSaveMessage = `❌ İstek hatası: ${e?.message || 'Ağ hatası'}`;
+    } finally {
+      isSavingVault = false;
+    }
+  }
+
   let selectedMode: 'full' | 'quick' | 'probe' = 'full';
   let isTargetValid = false;
   let activeTab: 'graph' | 'matrix' | 'opening_hook' | 'osint_radar' | 'psychology_shadow' | 'correlations' | 'evidence' | 'agents' | 'control' | 'logs' = 'graph';
@@ -965,10 +1032,12 @@
         pushOperator(
           `⚠️ Kasa ${wasLocked ? 'açılamadı' : 'kilitlenemedi'} (HTTP ${res.status}): ${detail}`
         );
+        if (res.status === 423) {
+          showSettingsModal = true;
+        }
         return;
       }
 
-      // Durum, tahminle değil YANITLA yazılır.
       if (body?.status === 'unlocked') vaultLocked.set(false);
       else if (body?.status === 'locked') vaultLocked.set(true);
       else {
@@ -1542,6 +1611,16 @@
       >
         <span class="status-dot"></span>
         KASA: {!$vaultLocked ? 'AÇIK' : 'KİLİTLİ'}
+      </button>
+
+      <!-- ⚙️ AYARLAR VE API GİRİŞİ DÜĞMESİ -->
+      <button
+        class="switch-btn settings-btn"
+        on:click={() => (showSettingsModal = true)}
+        title="Yapay zekâ anahtarları, arama motorları ve sistem ayarları penceresini açar"
+      >
+        <span class="status-dot"></span>
+        ⚙️ AYARLAR & API
       </button>
 
       <div class="telemetry-pill">
@@ -2660,6 +2739,157 @@
       {/if}
     </aside>
   </div>
+
+  <!-- ⚙️ AYARLAR & API KASASI (VAULT) MODALI -->
+  {#if showSettingsModal}
+    <div class="settings-modal-backdrop" on:click|self={() => (showSettingsModal = false)}>
+      <div class="settings-modal-card">
+        <div class="settings-modal-header">
+          <div class="modal-title-wrap">
+            <span class="modal-icon">⚙️</span>
+            <div>
+              <h3>PİNEAL SİSTEM AYARLARI & API KASASI</h3>
+              <p class="modal-subtitle">Yapay zekâ modellerini, arama motorlarını ve güvenlik anahtarlarını yapılandırın</p>
+            </div>
+          </div>
+          <button class="modal-close-btn" on:click={() => (showSettingsModal = false)}>✕</button>
+        </div>
+
+        <div class="settings-modal-body">
+          <!-- BÖLÜM 1: LLM ANAHTARI (OPENROUTER) -->
+          <div class="settings-section">
+            <div class="section-title">
+              <span class="section-badge">1</span>
+              <h4>🤖 BÜYÜK DİL MODELİ (LLM) ANAHTARI</h4>
+            </div>
+            <p class="section-desc">
+              Tüm yapay zekâ analizleri, Aspasia, Lilith ve muhakeme motorları için OpenRouter veya uyumlu gateway anahtarı.
+            </p>
+            <div class="form-group">
+              <label for="vault-api-key">OpenRouter API Key (Önerilen - Tek Anahtarla Tüm Modeller):</label>
+              <input
+                id="vault-api-key"
+                type="password"
+                placeholder="sk-or-v1-..."
+                bind:value={vaultApiKey}
+              />
+              <span class="input-hint">openrouter.ai üzerinden aldığınız anahtar. Doğrudan belleğe şifreli aktarılır.</span>
+            </div>
+
+            <!-- Doğrudan Sağlayıcı -->
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label for="vault-provider">Doğrudan Sağlayıcı:</label>
+                <select id="vault-provider" bind:value={vaultProvider}>
+                  <option value="groq">Groq (Hızlı Çıkarım / Llama 3)</option>
+                  <option value="deepseek">DeepSeek (V3 / R1 Muhakeme)</option>
+                  <option value="openai">OpenAI (GPT-4o)</option>
+                  <option value="anthropic">Anthropic (Claude 3.5 Sonnet)</option>
+                  <option value="google">Google Gemini</option>
+                  <option value="mistral">Mistral AI</option>
+                </select>
+              </div>
+              <div class="form-group flex-2">
+                <label for="vault-provider-key">Sağlayıcı API Anahtarı (Opsiyonel):</label>
+                <input
+                  id="vault-provider-key"
+                  type="password"
+                  placeholder="Seçili sağlayıcının anahtarı..."
+                  bind:value={vaultProviderKey}
+                />
+              </div>
+            </div>
+          </div>
+
+          <!-- BÖLÜM 2: YEREL YAPAY ZEKÂ (OLLAMA / LM STUDIO) -->
+          <div class="settings-section">
+            <div class="section-title">
+              <span class="section-badge">2</span>
+              <h4>💻 YEREL YAPAY ZEKÂ (LOCAL LLM - İNTERNETSİZ & ÜCRETSİZ)</h4>
+            </div>
+            <p class="section-desc">
+              Kendi bilgisayarınızda çalışan Ollama veya LM Studio gibi yerel sunucuları bağlayın.
+            </p>
+            <div class="checkbox-group">
+              <label class="switch-label">
+                <input type="checkbox" bind:checked={vaultUseLocal} />
+                <span class="switch-custom"></span>
+                <span>Yerel Modeli Aktif Et (Bulut yerine yerel modeli tercih et)</span>
+              </label>
+            </div>
+            {#if vaultUseLocal}
+              <div class="form-row">
+                <div class="form-group flex-1">
+                  <label for="vault-local-url">Yerel Sunucu URL:</label>
+                  <input id="vault-local-url" type="text" placeholder="http://localhost:11434/v1" bind:value={vaultLocalUrl} />
+                </div>
+                <div class="form-group flex-1">
+                  <label for="vault-local-model">Model Adı:</label>
+                  <input id="vault-local-model" type="text" placeholder="llama3 / dolphin-llama3" bind:value={vaultLocalModel} />
+                </div>
+              </div>
+            {/if}
+          </div>
+
+          <!-- BÖLÜM 3: ARAMA MOTORLARI (OSINT / WEB) -->
+          <div class="settings-section">
+            <div class="section-title">
+              <span class="section-badge">3</span>
+              <h4>🔍 WEB & OSINT ARAMA MOTORU ANAHTARLARI</h4>
+            </div>
+            <p class="section-desc">
+              Derin web taraması ve kişi doğrulamalarında kullanılan arama API'leri.
+            </p>
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label for="vault-tavily">Tavily Search API Key:</label>
+                <input id="vault-tavily" type="password" placeholder="tvly-..." bind:value={vaultTavilyKey} />
+              </div>
+              <div class="form-group flex-1">
+                <label for="vault-serpapi">SerpApi Key (Google OSINT):</label>
+                <input id="vault-serpapi" type="password" placeholder="SerpApi anahtarı..." bind:value={vaultSerpapiKey} />
+              </div>
+            </div>
+          </div>
+
+          <!-- BÖLÜM 4: SİSTEM ERİŞİM TOKENİ -->
+          <div class="settings-section">
+            <div class="section-title">
+              <span class="section-badge">4</span>
+              <h4>🛡️ PİNEAL SİSTEM ERİŞİM TOKENİ (AUTH TOKEN)</h4>
+            </div>
+            <p class="section-desc">
+              Arayüzün backend ile haberleşirken kullandığı güvenlik anahtarı (`X-API-Key`).
+            </p>
+            <div class="form-group">
+              <label for="vault-app-token">Sistem Erişim Tokeni:</label>
+              <input id="vault-app-token" type="password" placeholder="Varsayılan: boş (korumasız mod) veya PINEAL_TOKEN" bind:value={vaultAppToken} />
+            </div>
+          </div>
+
+          <!-- BİLGİ NOTU -->
+          <div class="settings-info-box">
+            <strong>📁 Kalıcı Yapılandırma Notu:</strong>
+            <p>
+              Buraya girdiğiniz anahtarlar oturum süresince güvenli bellek kasasında (Vault) saklanır. Sunucu her yeniden başlatıldığında anahtarların otomatik yüklenmesini istiyorsanız, proje ana dizinindeki <code>.env</code> dosyasını (ör. <code>OPENROUTER_API_KEY=...</code>) doldurabilirsiniz.
+            </p>
+          </div>
+
+          {#if vaultSaveMessage}
+            <div class="save-status-msg">{vaultSaveMessage}</div>
+          {/if}
+        </div>
+
+        <div class="settings-modal-footer">
+          <button class="btn-cancel" on:click={() => (showSettingsModal = false)}>Kapat</button>
+          <button class="btn-save-vault" on:click={saveVaultSettings} disabled={isSavingVault}>
+            {isSavingVault ? 'Mühürleniyor...' : '💾 KASAYA MÜHÜRLE & KİLİDİ AÇ'}
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
 </div>
 
 <style>
@@ -4893,5 +5123,291 @@
   .log-line-row.warn .log-level-badge { background: rgba(234, 179, 8, 0.2); color: #eab308; }
   .log-line-row.error .log-level-badge { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
   .log-msg-text { color: #cbd5e1; word-break: break-all; }
+
+
+  /* --- ⚙️ AYARLAR VE API KASASI (VAULT) STİLLERİ --- */
+  .switch-btn.settings-btn {
+    border-color: #38bdf8;
+    color: #38bdf8;
+  }
+  .switch-btn.settings-btn:hover {
+    background: rgba(56, 189, 248, 0.15);
+  }
+  .switch-btn.settings-btn .status-dot {
+    background: #38bdf8;
+    box-shadow: 0 0 8px #38bdf8;
+  }
+
+  .settings-modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(3, 7, 18, 0.85);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    padding: 20px;
+  }
+
+  .settings-modal-card {
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    width: 100%;
+    max-width: 680px;
+    max-height: 88vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.75), 0 0 30px rgba(56, 189, 248, 0.15);
+    overflow: hidden;
+  }
+
+  .settings-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    background: #1e293b;
+    border-bottom: 1px solid #334155;
+  }
+
+  .modal-title-wrap {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .modal-icon {
+    font-size: 24px;
+  }
+
+  .settings-modal-header h3 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: #f8fafc;
+  }
+
+  .modal-subtitle {
+    margin: 2px 0 0;
+    font-size: 11px;
+    color: #94a3b8;
+  }
+
+  .modal-close-btn {
+    background: transparent;
+    border: 1px solid #475569;
+    color: #94a3b8;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+  }
+
+  .modal-close-btn:hover {
+    background: #ef4444;
+    border-color: #ef4444;
+    color: #fff;
+  }
+
+  .settings-modal-body {
+    padding: 20px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .settings-section {
+    background: #131d31;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+
+  .section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+
+  .section-badge {
+    background: #38bdf8;
+    color: #0f172a;
+    font-size: 10px;
+    font-weight: 800;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .section-title h4 {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 700;
+    color: #38bdf8;
+    letter-spacing: 0.05em;
+  }
+
+  .section-desc {
+    margin: 0 0 12px;
+    font-size: 11px;
+    color: #94a3b8;
+    line-height: 1.4;
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-bottom: 10px;
+  }
+
+  .form-group:last-child {
+    margin-bottom: 0;
+  }
+
+  .form-group label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #cbd5e1;
+  }
+
+  .form-group input,
+  .form-group select {
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    color: #f8fafc;
+    padding: 8px 12px;
+    font-size: 12px;
+    font-family: inherit;
+    transition: border-color 0.15s;
+  }
+
+  .form-group input:focus,
+  .form-group select:focus {
+    outline: none;
+    border-color: #38bdf8;
+  }
+
+  .input-hint {
+    font-size: 10px;
+    color: #64748b;
+  }
+
+  .form-row {
+    display: flex;
+    gap: 12px;
+  }
+
+  .flex-1 { flex: 1; }
+  .flex-2 { flex: 2; }
+
+  .checkbox-group {
+    margin: 10px 0;
+  }
+
+  .switch-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+    color: #cbd5e1;
+    cursor: pointer;
+  }
+
+  .switch-label input {
+    cursor: pointer;
+  }
+
+  .settings-info-box {
+    background: rgba(30, 41, 59, 0.7);
+    border-left: 3px solid #f59e0b;
+    padding: 10px 12px;
+    border-radius: 0 6px 6px 0;
+    font-size: 11px;
+    color: #cbd5e1;
+    line-height: 1.4;
+  }
+
+  .settings-info-box code {
+    background: #0f172a;
+    color: #38ef7d;
+    padding: 2px 4px;
+    border-radius: 4px;
+  }
+
+  .save-status-msg {
+    padding: 10px;
+    border-radius: 6px;
+    background: #1e293b;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+    color: #38ef7d;
+  }
+
+  .settings-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 20px;
+    background: #1e293b;
+    border-top: 1px solid #334155;
+  }
+
+  .btn-cancel {
+    background: transparent;
+    border: 1px solid #475569;
+    color: #94a3b8;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .btn-cancel:hover {
+    background: #334155;
+    color: #fff;
+  }
+
+  .btn-save-vault {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    border: none;
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 12px;
+    padding: 8px 18px;
+    border-radius: 6px;
+    cursor: pointer;
+    box-shadow: 0 0 15px rgba(16, 185, 129, 0.4);
+    transition: all 0.15s;
+  }
+
+  .btn-save-vault:hover {
+    filter: brightness(1.1);
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.6);
+  }
+
+  .btn-save-vault:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
 
 </style>
