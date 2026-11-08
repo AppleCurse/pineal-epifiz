@@ -146,8 +146,8 @@ Bu yüzden tüzük yeniden yazıldı:
    - `partial` (Kısmi / Doğrulanmamış): Tekil sinyal, kırıntı veya tam kanıtlanmamış veri. Ana rapora değil, ek rapora girer; üzerinde açıkça "YARIM" etiketi taşır.
    - `unmeasured` (Ölçülmemiş / Ham): Kanıtsız iddia veya teyitsiz ham telemetri. Rapora kesinlikle giremez; yalnızca denetim logunda tutulur.
    *Kural kesindir:* Yetenek tam kapasiteyle çalışır, ancak sistem asla yalan söyleyemez ve uyduramaz.
-3. **Değişmez denetim kütüğü (İzlenebilirlik):**
-   Kim, ne zaman, hangi yeteneği, hangi hedef için çalıştırdı — hepsi `memory/ledger/` altında değiştirilemez ve silinemez biçimde kayıt altına alınır. Yasaklamaktan daha güçlü olan kontrol, tam ve eksiksiz izlenebilirliktir.
+3. **Eklemeli denetim kütüğü (Append-only İzlenebilirlik):**
+   Kim, ne zaman, hangi yeteneği, hangi hedef için çalıştırdı — hepsi `memory/ledger/` altında eklemeli (append-only) formatta kayıt altına alınır. Arayüzden veya API üzerinden geçmişi silme düğmesi bulunmaz; her işlem kalıcı olarak kütüğe eklenir. Yasaklamaktan daha güçlü olan kontrol, tam ve eksiksiz izlenebilirliktir.
 4. **Dokunulmaz Kırmızı Çizgi:**
    Bu maddedeki serbestlik Madde 4/A'yı kapsamaz. 18 yaş altı (çocuk) kilidi mutlaktır ve asla esnetilemez.
 
