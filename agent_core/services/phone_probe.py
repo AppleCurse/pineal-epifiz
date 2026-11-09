@@ -135,6 +135,9 @@ def parse_phone_metadata(raw_phone: str, default_region: str = "TR") -> PhoneMet
             is_valid=valid,
             is_possible=possible,
         )
+    except ModuleNotFoundError:
+        logger.warning("phonenumbers paketi yüklü değil — telefon doğrulaması yapılamıyor (geçersiz damgası vurulmuyor)")
+        raise
     except Exception as e:
         logger.warning("phonenumbers parse failed: %s", type(e).__name__)
         return PhoneMetadata(

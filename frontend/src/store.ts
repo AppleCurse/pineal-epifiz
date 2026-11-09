@@ -127,8 +127,11 @@ if (typeof localStorage !== 'undefined') {
 // kontrol paneli). 'warroom' | 'cockpit' | 'control'.
 export type ViewMode = 'warroom' | 'cockpit' | 'control' | 'spiderfoot';
 export const activeViewMode = writable<ViewMode>(
-  (typeof localStorage !== 'undefined' && (localStorage.getItem('pineal_view_mode') as ViewMode)) || 'spiderfoot'
+  (typeof localStorage !== 'undefined' && (localStorage.getItem('pineal_view_mode') as ViewMode)) || 'cockpit'
 );
+if (typeof localStorage !== 'undefined') {
+  activeViewMode.subscribe((v) => { try { localStorage.setItem('pineal_view_mode', v); } catch {} });
+}
 export const inspectedAgentId = writable<string | null>(null);
 export const activeTargetUrl = writable<string>('');
 export const missionElapsed = writable<string>('00:00');

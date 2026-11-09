@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent_core.capabilities.adapters_osint import _flag
+from agent_core.capabilities.adapters_osint import _flag, _module_available
 from agent_core.domain.pillar_models import EvidenceStatus
 
 from agent_core.capabilities.base import (
@@ -133,6 +133,8 @@ class PhoneProbeCapability(BaseCapability):
     )
 
     def availability(self) -> Availability:
+        if not _module_available("phonenumbers"):
+            return Availability.unavailable("dependency_missing:phonenumbers")
         return Availability.ok()
 
     async def run(self, ctx: CapabilityContext) -> CapabilityResult:

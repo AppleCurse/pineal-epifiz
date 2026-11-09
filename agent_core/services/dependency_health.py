@@ -55,6 +55,7 @@ REQUIRED_DEPENDENCIES = (
     DependencyRequirement("python-dotenv", "dotenv"),
     DependencyRequirement("PyYAML", "yaml"),
     DependencyRequirement("aiofiles", "aiofiles"),
+    DependencyRequirement("phonenumbers", "phonenumbers"),
     DependencyRequirement("task_executor", "agent_core.task_executor"),
     DependencyRequirement("canonical_memory", "agent_core.services.canonical_memory"),
 )

@@ -126,6 +126,17 @@
   let telemetryVisible = true;
   let tauriUnlisteners: (() => void)[] = [];
 
+  // [ATLAS EPIFIZ 2026-11-09] Intro / Karşılama katmanı + ambient fon
+  // İlk açılışta gösterilir (localStorage ile hatırlanır), içeride ambient olarak kalır.
+  let showIntro = true;
+  function enterAtlas() {
+    showIntro = false;
+    try { localStorage.setItem('pineal_atlas_intro_seen', '1'); } catch {}
+  }
+  function reopenIntro() {
+    showIntro = true;
+  }
+
   async function fetchTelemetry() {
     // [RÖNTGEN 2026-09-23] Başarısız okumada telemetryData ESKİ değeriyle
     // kalıyordu: pano "canlı" görünen BAYAT veriyi basmaya devam ediyordu.
@@ -360,6 +371,9 @@
   }
 
   onMount(() => {
+    try {
+      if (localStorage.getItem('pineal_atlas_intro_seen') === '1') showIntro = false;
+    } catch {}
     telemetryVisible = false;
     connect();
     setupTauriListeners();
@@ -456,10 +470,48 @@
   });
 </script>
 
+{#if showIntro}
+  <!-- ATLAS EPIFIZ INTRO — ilk açılışta şık karşılama -->
+  <div class="atlas-intro-overlay" role="dialog" aria-modal="true" aria-label="Atlas Epifiz Karşılama">
+    <div class="atlas-intro-bg" style="background-image: url('/atlas_epifiz_observatory.jpg')"></div>
+    <div class="atlas-intro-veil"></div>
+    <div class="atlas-intro-vignette"></div>
+    <div class="atlas-intro-content">
+      <div class="atlas-intro-kicker">PINEAL CORE • OBSERVE — ANALYZE — CORRELATE</div>
+      <div class="atlas-intro-badge">PINEAL OBSERVATORY</div>
+      <h1 class="atlas-intro-title">ATLAS<br/><span>EPİFİZ</span></h1>
+      <div class="atlas-intro-divider"></div>
+      <p class="atlas-intro-quote">“Göz görür. Pineal ayırır.<br/>Atlas ilişkilendirir.” <em>— SG</em></p>
+      <div class="atlas-intro-meta">
+        <span>Salim Gümüş • Operator PINEAL</span>
+        <span class="dot">●</span>
+        <span>14/14 Aktif Ajan</span>
+        <span class="dot">●</span>
+        <span>KAYNAK — BAĞLAM — KORELASYON — ANALİZ — DOĞRULAMA</span>
+      </div>
+      <button class="atlas-intro-enter" on:click={enterAtlas}>
+        <span class="enter-glow"></span>
+        <span class="enter-label">◉ GÖZLEME BAŞLA</span>
+        <span class="enter-sub">Atlas Epifiz Kokpitine Gir</span>
+      </button>
+      <div class="atlas-intro-hint">GETA Güvenli Erişim Terminali • Pineal Token Authorized</div>
+    </div>
+  </div>
+{/if}
+
 <main class="fullscreen-cockpit-viewport">
+  <!-- Ambient / silik fon — uygulama içinde hafif arka plan -->
+  <div class="atlas-ambient-bg" aria-hidden="true"></div>
+  <div class="atlas-ambient-veil" aria-hidden="true"></div>
+
   <nav class="view-switcher" aria-label="Görünüm seçimi">
-    <button class:is-active={$activeViewMode === 'cockpit'} on:click={() => activeViewMode.set('cockpit')}>Kokpit</button>
-    <button class:is-active={$activeViewMode === 'warroom'} on:click={() => activeViewMode.set('warroom')}>Muharebe masası</button>
+    <div class="view-switcher-label">
+      <button class="view-switcher-atlas" on:click={reopenIntro} title="Atlas Epifiz karşılama ekranını tekrar göster" aria-label="Atlas Intro">
+        <span class="atlas-eye">◉</span> ATLAS
+      </button>
+    </div>
+    <button class:is-active={$activeViewMode === 'cockpit'} on:click={() => activeViewMode.set('cockpit')} class="primary-tab">ATLAS EPİFİZ</button>
+    <button class:is-active={$activeViewMode === 'warroom'} on:click={() => activeViewMode.set('warroom')}>Muharebe</button>
     <button class:is-active={$activeViewMode === 'control'} on:click={() => activeViewMode.set('control')}>Canlı kontrol</button>
     <button class:is-active={$activeViewMode === 'spiderfoot'} on:click={() => activeViewMode.set('spiderfoot')}>Araştırma</button>
   </nav>
@@ -578,5 +630,240 @@
 
   .telemetry-toggle:hover {
     border-color: rgba(212, 175, 55, 0.75);
+  }
+
+  /* =========================================================
+     ATLAS EPIFIZ — Ambient (dimmed) + Intro
+     ========================================================= */
+  .atlas-ambient-bg {
+    position: fixed;
+    inset: 0;
+    background-image: url('/atlas_epifiz_observatory.jpg');
+    background-size: cover;
+    background-position: center 35%;
+    opacity: 0.09;
+    filter: brightness(0.55) saturate(0.85) blur(0.8px);
+    pointer-events: none;
+    z-index: 0;
+  }
+  .atlas-ambient-veil {
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse at 50% 18%, rgba(8, 17, 36, 0.55) 0%, transparent 58%),
+      linear-gradient(to bottom, rgba(2, 6, 15, 0.25) 0%, rgba(2, 6, 15, 0.78) 100%);
+    pointer-events: none;
+    z-index: 1;
+  }
+  .fullscreen-cockpit-viewport > :not(.atlas-ambient-bg):not(.atlas-ambient-veil) {
+    position: relative;
+    z-index: 2;
+  }
+
+  /* View switcher — Atlas primary */
+  .view-switcher {
+    align-items: center;
+  }
+  .view-switcher-label {
+    display: flex;
+    align-items: center;
+    margin-right: 4px;
+  }
+  .view-switcher-atlas {
+    background: rgba(212, 175, 55, 0.12) !important;
+    border-color: rgba(212, 175, 55, 0.65) !important;
+    color: #fde68a !important;
+    font-weight: 800 !important;
+    font-size: 9px !important;
+    padding: 4px 7px !important;
+    letter-spacing: 1.2px !important;
+  }
+  .atlas-eye {
+    color: #38ef7d;
+    text-shadow: 0 0 8px rgba(56, 239, 125, 0.85);
+    margin-right: 2px;
+  }
+  .primary-tab.is-active {
+    background: rgba(212, 175, 55, 0.22) !important;
+    border-color: #d4af37 !important;
+    color: #fde68a !important;
+    box-shadow: 0 0 10px rgba(212, 175, 55, 0.28);
+  }
+
+  /* ── INTRO OVERLAY ── */
+  .atlas-intro-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: #02060f;
+  }
+  .atlas-intro-bg {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center 32%;
+    filter: brightness(0.72) saturate(1.05) contrast(1.06);
+    transform: scale(1.02);
+  }
+  .atlas-intro-veil {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse at 50% 44% , transparent 42%, rgba(2, 6, 15, 0.55) 78%, rgba(2, 6, 15, 0.88) 100%),
+      linear-gradient(to bottom, rgba(2, 6, 15, 0.18) 0%, rgba(2, 6, 15, 0.45) 55%, rgba(2, 6, 15, 0.86) 100%);
+  }
+  .atlas-intro-vignette {
+    position: absolute;
+    inset: 0;
+    box-shadow: inset 0 0 140px rgba(0,0,0,0.85), inset 0 0 35px rgba(0,0,0,0.7);
+    pointer-events: none;
+  }
+  .atlas-intro-content {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 10px;
+    padding: 32px 24px;
+    max-width: 680px;
+    width: 92%;
+    background: rgba(3, 7, 18, 0.58);
+    border: 1px solid rgba(212, 175, 55, 0.38);
+    border-radius: 10px;
+    backdrop-filter: blur(10px) saturate(1.1);
+    box-shadow:
+      0 16px 48px rgba(0,0,0,0.7),
+      0 0 0 1px rgba(212,175,55,0.12) inset,
+      0 0 28px rgba(212,175,55,0.10);
+  }
+  .atlas-intro-kicker {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    color: #38ef7d;
+    opacity: 0.95;
+    text-shadow: 0 0 10px rgba(56,239,125,0.5);
+  }
+  .atlas-intro-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.32em;
+    color: #d4af37;
+    border: 1px solid rgba(212,175,55,0.4);
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: rgba(212,175,55,0.08);
+  }
+  .atlas-intro-title {
+    margin: 6px 0 0;
+    font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+    font-weight: 800;
+    font-size: clamp(38px, 7vw, 56px);
+    line-height: 0.95;
+    letter-spacing: 0.14em;
+    color: #fde68a;
+    text-shadow:
+      0 2px 0 rgba(120,90,12,0.45),
+      0 0 18px rgba(212,175,55,0.35),
+      0 0 36px rgba(212,175,55,0.16);
+  }
+  .atlas-intro-title span {
+    display: block;
+    font-size: 0.92em;
+    letter-spacing: 0.18em;
+    color: #e8d9a3;
+    margin-top: 2px;
+  }
+  .atlas-intro-divider {
+    width: 120px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, #d4af37 50%, transparent);
+    margin: 4px 0;
+    opacity: 0.9;
+  }
+  .atlas-intro-quote {
+    margin: 0;
+    font-family: 'Georgia', serif;
+    font-size: 15px;
+    font-style: italic;
+    color: #cbd5e1;
+    line-height: 1.45;
+  }
+  .atlas-intro-quote em {
+    font-style: normal;
+    color: #d4af37;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+  }
+  .atlas-intro-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    align-items: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    color: #94a3b8;
+    margin-top: 2px;
+  }
+  .atlas-intro-meta .dot { color: #d4af37; opacity: 0.9; }
+  .atlas-intro-enter {
+    position: relative;
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 12px 28px;
+    background: linear-gradient(135deg, #d4af37 0%, #b8931f 100%);
+    border: 1px solid #fde68a;
+    border-radius: 999px;
+    cursor: pointer;
+    color: #0b0f14;
+    box-shadow: 0 0 18px rgba(212,175,55,0.45), 0 6px 18px rgba(0,0,0,0.5);
+    transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+    overflow: hidden;
+  }
+  .atlas-intro-enter:hover {
+    transform: translateY(-1px) scale(1.015);
+    box-shadow: 0 0 26px rgba(212,175,55,0.62), 0 10px 22px rgba(0,0,0,0.55);
+    filter: brightness(1.06);
+  }
+  .atlas-intro-enter:active { transform: scale(0.99); }
+  .enter-glow {
+    position: absolute;
+    inset: -40%;
+    background: radial-gradient(ellipse at 50% 30%, rgba(255,255,255,0.22), transparent 60%);
+    pointer-events: none;
+  }
+  .enter-label {
+    position: relative;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 900;
+    letter-spacing: 0.14em;
+  }
+  .enter-sub {
+    position: relative;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    opacity: 0.82;
+    font-weight: 600;
+  }
+  .atlas-intro-hint {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8px;
+    letter-spacing: 0.1em;
+    color: #64748b;
+    margin-top: 4px;
   }
 </style>

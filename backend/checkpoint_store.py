@@ -132,20 +132,28 @@ def _atomic_write(task_id: str, data: Dict[str, Any]) -> None:
         fh.flush()
     try:
         os.replace(tmp, path)
-    except PermissionError:
+    except PermissionError as exc1:
         # Windows / OneDrive kilit gecikmesi (WinError 5): 50ms bekle ve tekrar dene
         import time
         time.sleep(0.05)
         try:
             os.replace(tmp, path)
-        except Exception:
-            # Doğrudan yazma fallback
-            with open(path, "w", encoding="utf-8") as f_dest:
-                f_dest.write(payload)
+        except Exception as exc2:
+            # Fallback KORUNAN VERİYİ KESMEZ: eski checkpoint korunur, temp temizlenir
+            # ve açık hata fırlatılır (truncate eden "w" fallback kaldırıldı).
             try:
                 os.remove(tmp)
             except Exception:
                 pass
+            raise CheckpointError(
+                f"checkpoint atomik yazım başarısız (os.replace iki denemede de hata): {task_id} — {exc2}"
+            ) from exc2
+    except OSError as exc:
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
+        raise CheckpointError(f"checkpoint atomik yazım başarısız: {task_id}: {exc}") from exc
 
 
 def set_input(
