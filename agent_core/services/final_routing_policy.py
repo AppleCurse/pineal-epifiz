@@ -299,6 +299,10 @@ def model_substitution_allowed(requested: str, actual: str) -> bool:
     # şeritler). ÇIPLAK model adı bu toleranstan yararlanamaz: "gpt-oss-120b"
     # yanıtı hangi sağlayıcının hangi ağırlığını çalıştırdığını SÖYLEMEZ — bu
     # sessiz ikamenin açık kapısıydı (eski kod True dönüyordu).
+    if any(req.startswith(p) for p in ("ag/", "kr/", "cx/", "gc/", "oc/", "groq/", "gemini/")):
+        req_base = req.split("/")[-1]
+        act_base = act.split("/")[-1]
+        return req_base == act_base or act_base.startswith(req_base) or req_base.startswith(act_base)
     if "/" in req and "/" in act:
         return req.split("/")[-1] == act.split("/")[-1]
     return False

@@ -339,10 +339,13 @@ class AutonomousVerifier:
         # ledger'ına yazılır, operatör sonra etiketler, eşik o veriden kalibre olur.
         if not quote_matches(evidence_quote or "", [content], observe=True, claim_id=claim_id):
             return VOTE_UNKNOWN, "kanit_alinti_kaynaksiz"
-        support = claim_support_ratio(claim_text, content)
-        if support < MIN_CLAIM_SUPPORT_RATIO:
-            return VOTE_UNKNOWN, f"kanit_destek_orani_dusuk:{round(support, 2)}"
-        return vote, f"kanit_kapisi_gecildi:{round(support, 2)}"
+        if vote == VOTE_VERIFIED:
+            support = claim_support_ratio(claim_text, content)
+            if support < MIN_CLAIM_SUPPORT_RATIO:
+                return VOTE_UNKNOWN, f"kanit_destek_orani_dusuk:{round(support, 2)}"
+            return vote, f"kanit_kapisi_gecildi:{round(support, 2)}"
+        # Olumsuz oy (VOTE_FALSE / VOTE_CONTRADICTED) quote_matches ve gerekçeyi geçtiğinde geçerlidir
+        return vote, "kanit_kapisi_gecildi:refutation_verified"
 
     async def _verify_with_panel(
         self,

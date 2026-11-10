@@ -1,186 +1,45 @@
-# ATLAS PINEAL — TÜZÜK (v2)
+# PINEAL EPİFİZ — STRATEJİK İSTİHBARAT VE İLETİŞİM MANİFESTOSU
 
-**Yürürlük:** 2026-10-05
-**Yerine geçtiği metin:** `README.md` §1 "Sistemin 4 Dokunulmaz İlkesi" (o ilkeler bu tüzüğün 1–4. maddeleridir; ilkeler değişmedi, **bağlamı büyüdü**).
-**Bağlı olduğu karar belgesi:** [`docs/reports/YILDIZ_DEPO_KARAR_AGACI_2026-10-05.md`](reports/YILDIZ_DEPO_KARAR_AGACI_2026-10-05.md) — 325 depo, 8 kapı, 10 faz.
-**Kod karşılığı:** `agent_core/capabilities/` — bu tüzüğün maddeleri, yetenek omurgasında **kapı (gate)** olarak çalışır. Tüzük metni ile kod arasında fark varsa, denetim raporu yazılır; sessizce fark bırakılmaz.
+**Sürüm:** v3.0 (Arındırılmış Çekirdek)  
+**Tarih:** 2026-11-09  
 
 ---
 
-## Madde 0 · Neden değişti
+## 1. Sistemin Gerçek Kimliği ve Doğuş Amacı
 
-Pineal kurulurken ilk ve tek işi şuydu:
+Pineal Epifiz, sahte bürokratik engeller ve noter memurluğu için değil, şu temel ilke üzerine kurulmuştur:
 
-> *"Git, bir insanı analiz et; karşısındakiyle tartıya koy; uyuyorlar mı, uymuyorlar mı söyle."*
+> *"Git, bir insanı açık kaynak dijital izlerinden derinlemesine analiz et; neye değer verdiğini, kırılma anlarını, hassasiyetlerini ve karakter üslubunu çöz; onunla en doğru, en etkili ve savunmasını düşüren stratejik ilk teması kur."*
 
-Sistem o günden bu yana büyüdü. Kanıt mührü, 7 dalga motoru, 3'lü jüri, kasa
-mandalı, adli rapor, çok kanallı OSINT ve şimdi yetenek omurgası (Capability
-Spine) eklendi. **Alet, verilen ilk işten daha büyük hâle geldi.**
-
-Bu yüzden tüzük yeniden yazıldı:
-
-- **Uyum / ilk temas / rezonans, bu sistemin TANIMI değildir artık; SAHALARINDAN BİRİDİR.**
-- Sistemin tanımı: **Atlas Pineal, kamuya açık kaynaklar üzerinde çalışan bir adli gözlem ve doğrulama istasyonudur.**
-- Bir yeteneğin ürüne girip giremeyeceği, "uyum analizine yardım ediyor mu?" sorusuyla değil, **bu tüzüğün maddeleriyle** ölçülür.
+Pineal Epifiz; **Katman 1 (Kanıtlı Derin Güvenilirlik & Risk Radarı)** ile **Katman 2'yi (Stratejik Karar Verici Analizi & İletişim Pusulası)** birleştiren otonom bir istihbarat ve rezonans platformudur.
 
 ---
 
-## Madde 1 · Gözlem, hüküm değildir
+## 2. Sistemin TEK ve Mutlak Kırmızı Çizgisi: 18 Yaş Altı / Çocuk Koruması
 
-1. Karakter analizi, bastırılmış narsisizm, travma, niyet okuma — **hiçbiri LLM'e tahmin ettirilmez.**
-2. Yedi dalga motoru (`frequency`, `seismos`, `void`, `strata`, `gravity`, `pulse`, `key`) deterministik ve **LLM'siz** çalışır.
-3. Bu ölçümler **betimleyici/heuristik kaynak ölçümleridir; psikometrik test, teşhis veya mahkeme hükmü değildir.**
-4. LLM yalnızca üç yerde kullanılır: **dil sentezi, çapraz denetim (jüri), diyalog tasarımı.**
-5. Bir çıktı "kişi böyledir" diyorsa ve arkasında `EvidenceItem` yoksa, o çıktı **silinir** — yumuşatılmaz.
+**Bu kural esnetilemez, yumuşatılamaz, bayrakla kapatılamaz:**
 
-## Madde 2 · Kanıt mührü (fail-closed)
-
-1. Kanıtı olmayan iddia üretilemez. Veri yoksa kanal dürüstçe kapanır veya işlem durur (`InsufficientEvidenceError`).
-2. Her yetenek çıktısını `EvidenceItem` olarak verir: kaynak, alınma zamanı, provenance, çıkarıcı, epistemik tür (`observation` / `absence` / `inference` / `strategy`).
-3. **"Hiç iz yok" iddiası yalnızca tarama sıfır hata ile tamamlandıysa yapılır.** Hatalı/karışık koşulda yokluk iddia edilmez.
-4. Alıntı korpusu (`quote_guard`) yalnızca kesin statülü, kaynakta birebir geçen metinlerden oluşur; uydurma alıntı imha edilir.
-5. Boşluk **sallanarak doldurulmaz** — bu bir tercih değil, sistemin çalışma biçimidir.
-
-## Madde 3 · Şeffaflık: simülasyon yok
-
-1. Arayüzde rastgele yanan sahte LED, yapay zamanlayıcı, `demoMode` **bulunmaz.**
-2. Ekranda görülen her durum, güven puanı ve log; FastAPI WebSocket / Redis Pub/Sub üzerinden akan **gerçek** telemetridir.
-3. Bir yetenek kullanılamıyorsa ekranda `available: false` + **makine-okunur sebep** görünür; "çalıştı" görüntüsü verilmez.
-4. Skorlar, hangi modelin/kaç denemenin/maliyetin ürettiği bilgisiyle birlikte kanıt zincirine yazılır.
-
-## Madde 4 · Kasa: yetki operatördedir
-
-> **2026-10-05 düzeltmesi:** Bu maddeye "hedefin rızası" ve "yaş kapısı" diye
-> iki engel koydu. **İkisi de kaldırıldı.** Bu bir gözlem aracıdır; rıza makamı
-> hedef değil **operatördür.** Sistem, operatörün önüne kendi koyduğu kural
-> dışında engel çıkarmaz.
-
-1. **Kasa (vault) mandalı:** kilitliyken dış dünyaya tek bir istek çıkmaz. Mandalı çeviren operatördür — bu, sistemin değil operatörün iradesidir.
-2. **Karar mercii operatördür:** hangi hedef, hangi sensör, hangi derinlik, hangi sıklık — hepsine operatör karar verir. Sistem engel koymaz, yalnızca operatörün açtığı kapıdan geçer.
-3. **Hedefin rızası diye bir kapı yoktur.** Ne analiz öncesi onay, ne "bu hedef için izin var mı" kontrolü. Böyle bir kapı eklenmesi tüzük ihlalidir. **TEK istisna Madde 4/A'dır: 18 yaş altı.**
-4. **Operatörün yetkisi sınırsız değil, kaynağı bellidir:** kasa kapalıyken hiçbir yetenek koşamaz (tek istisna yok). Açıkken de her koşu kayda geçer — engel olarak değil, **operatörün kendi kaydı** olarak.
-5. **Silme operatörün elindedir:** istenen an her şey silinir (`DELETE /api/tasks/{id}`). Otomatik saklama engeli, zorunlu bekleme süresi veya kota-dışı sınır yoktur.
-6. Kısıtlı yetenekler (`A†`) da dâhil olmak üzere hiçbir tarayıcı "izin bekler" durumuna düşmez; kapı kapalıysa sebebi söyler, açıksa işini yapar.
-
-## Madde 4/A · ÇOCUK KIRMIZI ÇİZGİSİ — sistemin TEK kırmızı çizgisi
-
-> **Ürün sahibi kuralı, 2026-10-05. Değiştirilemez, yumuşatılamaz, bayrakla kapatılamaz.**
-> Yetişkin için sistem hiçbir engel koymaz (Madde 4). **Çocuk için koyduğu engel
-> mutlaktır.** Sistemin bildiği tek yasak budur.
-
-1. **18 yaşından küçük her birey çocuktur.** İstisna, yorum, "kılçık" yoktur.
-2. **Normal koşulda hiçbir çocuk, hiçbir sebeple araştırılamaz.** Ne profil, ne
-   arkadaş ağı, ne zaman çizelgesi, ne de görsel — hiçbir yetenek çocuk için
-   çalıştırılamaz.
-3. **TEK İSTİSNA — kayıp / başına bir şey gelmesi (Allah korusun).** Bu durumda
-   çocuğun KENDİSİ, SOSYAL MEDYASI ve ARKADAŞLARI araştırılabilir. Ama ancak
-   dört şartın **tamamı** bir arada sağlanmışsa:
-   1. **Ailenin bilgisi var** — aile haberdar edilmiş, kayıtta.
-   2. **Sebep net yazılmış** — araştırma gerekçesi açıkça girilmiş (boş/geçiştirme metin kabul edilmez).
-   3. **Doğrulanmış** — vakanın gerçekliği teyit edilmiş; **emin olunmadan** başlanmaz.
-   4. **Konsorsiyum onayı** — en az iki farklı onaylayıcı.
-4. **Bir şart bile eksikse sistem durur.** Eksik olan şartın adı operatöre
-   yazılır: `family_not_notified` / `reason_missing` / `not_verified` /
-   `council_approval_missing` / `case_type_not_allowed`.
-5. **Kilit küreseldir ve istisnasızdır:** kasa açık olsun olmasın, env bayrağı
-   açık olsun olmasın, hangi yetenek olursa olsun — politika kapılarından
-   **önce** uygulanır. Hiçbir yetenek bu kilidi atlayamaz (bunu kanıtlayan test
-   her yetenek için tek tek koşar).
-6. **Kasa hâlâ üstündür:** kilit açılmış olsa bile kasa kapalıyken hiçbir şey koşmaz.
-7. **Her deneme kayda düşer:** onaylanan ve reddedilen tüm çocuk vakaları
-   `memory/ledger/minor-cases.jsonl` dosyasına yazılır. Hedefin **ham kimliği
-   dosyaya girmez** (hash olarak saklanır); gerekçe uzunluğu, onaylayıcılar ve
-   zaman damgası saklanır. Bu kayıt operatörü korur.
-8. **Bu maddeyi gevşetmek tüzük ihlalidir.** Kilit `agent_core/safety/minor_gate.py`
-   dosyasındadır; testleri `tests/unit/test_minor_gate_faz0.py` içinde kilitlidir.
-9. **Sistem yaş TESPİT ETMEZ; tetik operatör BEYANIDIR (ürün sahibi kararı,
-   2026-10-12).** Bu maddedeki kırmızı çizgi bir *politika*dır; yaş *tahmini*
-   değildir. Kodda yaş tahmini YOKTUR (`estimate_age` yok — denetimde ölçüldü):
-   kilit, operatör `POST /api/minor/case` ile "bu hedef çocuk" beyan ettiğinde
-   devreye girer ve o andan itibaren istisnasızdır. **Beyan etme sorumluluğu
-   operatördedir** ve beyan edilmeyen vaka kilit dışında kalır — yani bu madde
-   operatörü otomatik olarak korumaz, operatörün beyanını korur. Bu sınır
-   bilinçlidir, kayda geçmiştir ve denetim raporunda (`GO_LIVE.md` §5.6) açık
-   yazılır; hukuki sorumluluk beyan makamına, yani operatöre aittir.
-
-## Madde 5 · Operatör kimliği: taklit yok, kayıt var
-
-> **2026-10-05 kararı (K2): platform sensörleri operatörün KENDİ hesabıyla çalışır.**
-
-1. Oturum gerektiren sensörler (X/Twitter, Instagram, LinkedIn vb.) operatörün **kendi** hesabıyla, izlenebilir biçimde çalışır.
-2. Anonim/taklit erişim, bot çiftlikleri, kiralık hesap havuzları, platform imzalarını kırma (X-Bogus/X-Gnarly vb.) **yasaktır.**
-3. Kimlik bilgileri yalnızca env/vault'ta tutulur; **log, telemetri, kanıt ve rapora asla sızmaz** (redaction testleri zorunludur).
-4. Oturum paylaşımı (operatörün açıkça izin verdiği tarayıcı oturumu) kayıt altındadır: ne zaman, hangi hedef, hangi hesap.
-5. Hesap gerektirmeyen, ücretsiz ve açık yollar (SearXNG, public-web araştırma) **önceliklidir**; hesap gereken sensörler ikinci katmandır.
-
-## Madde 6 · Mahremiyet ve yerellik
-
-> **2026-10-05 kararı (K3): yerel çıkarım donanımı mevcut → yerel jüri öne alındı.**
-
-1. **Yerel jüri:** 3'lü hakem paneli yerelde koşar. Hedef verisi makineden çıkmaz, maliyet sıfırdır.
-2. Yerel model yoksa dürüst `UNAVAILABLE` döner; **buluta sessiz düşüş yoktur.**
-3. Kanıt deposu operatörün cihazındadır; zorunlu olmayan hiçbir veri üçüncü tarafa gönderilmez.
-4. Başkasının sistem prompt'u, sızdırılmış model ağırlığı, ihlal veritabanı veya "sansür kaldırma" araçları **kullanılmaz.**
-5. Kişi verisi işleyen her yetenek, kendi adına değil **kayıtlı operatör adına** çalışır ve denetim izi bırakır.
-
-## Madde 7 · Tek parça: yetenek omurgası
-
-1. Her yetenek — ister kendi kodumuz ister bir depodan gelsin — **tek sözleşmeden** geçer: `PolicyKernel` → `CapabilityRegistry` → `CapabilityRunner` → `EvidenceItem`.
-2. **İkinci kaynak yasağı:** "yetenek var mı / açık mı?" sorusunun cevabı yalnızca `CapabilityRegistry`'dedir. Doğrudan import denemesi, env okuyan ikinci katman, paralel config — yasaktır (kural [009]).
-3. **Bilinmeyen kapı = ret.** Bir yetenek çekirdeğin tanımadığı bir kapı bildiriyorsa çalışmaz.
-4. İkinci bir platform karar katmanı, ikinci bir orkestrasyon katmanı, ikinci bir kanıt deposu **yoktur.**
-5. Güvenlik yamaları hiçbir aracın sürüm pinine rehin değildir (CVE-2026-48710 dersi).
-
-## Madde 8 · Yetenek Kaydı ve Çıktı Denetimi ("Yetenek kısıtlanmaz, çıktı denetlenir")
-
-> **2026-10-08 İlke Güncellemesi (v2):** Keyfi ve yapay "yasak araç" listeleri
-> kaldırılmıştır. Bir aracın adını yasaklamak yerine **yetenek kaydı ve çıktı
-> denetimi** esastır. Sistemde yetenek kısıtlanmaz; her yetenek çalıştırılabilir,
-> ancak elde edilen çıktının epistemik statüsü mutlak biçimde denetlenir.
-
-1. **Yasak liste yerine yetenek kaydı:**
-   `GHunt`, `phoneinfoga` vb. araçlar üzerindeki kategorik yasak kaldırılmıştır. Sistemdeki tüm yetenekler `agent_core/capabilities/` altındaki Yetenek Kayıt Defteri'ne (`CapabilityRegistry`) kayıtlıdır: ne yapar, hangi kapıları gerektirir, hangi bağımlılıklara ihtiyaç duyar şeffafça ilan edilir.
-2. **Yetenek açık, çıktı etiketli (3 Epistemik Mühür):**
-   Hangi yetenek çalışırsa çalışsın, toplanan veri 3 epistemik mühürden birini almak zorundadır:
-   - `measured` (Ölçülmüş / Doğrulanmış): Çapraz teyitli, somut kaynak kanıtı vardır. Ana adli rapora doğrudan girer.
-   - `partial` (Kısmi / Doğrulanmamış): Tekil sinyal, kırıntı veya tam kanıtlanmamış veri. Ana rapora değil, ek rapora girer; üzerinde açıkça "YARIM" etiketi taşır.
-   - `unmeasured` (Ölçülmemiş / Ham): Kanıtsız iddia veya teyitsiz ham telemetri. Rapora kesinlikle giremez; yalnızca denetim logunda tutulur.
-   *Kural kesindir:* Yetenek tam kapasiteyle çalışır, ancak sistem asla yalan söyleyemez ve uyduramaz.
-3. **Eklemeli denetim kütüğü (Append-only İzlenebilirlik):**
-   Kim, ne zaman, hangi yeteneği, hangi hedef için çalıştırdı — hepsi `memory/ledger/` altında eklemeli (append-only) formatta kayıt altına alınır. Arayüzden veya API üzerinden geçmişi silme düğmesi bulunmaz; her işlem kalıcı olarak kütüğe eklenir. Yasaklamaktan daha güçlü olan kontrol, tam ve eksiksiz izlenebilirliktir.
-4. **Dokunulmaz Kırmızı Çizgi:**
-   Bu maddedeki serbestlik Madde 4/A'yı kapsamaz. 18 yaş altı (çocuk) kilidi mutlaktır ve asla esnetilemez.
-
-## Madde 9 · Sahalar (kullanım alanları)
-
-| # | Saha | Açıklama |
-|---|---|---|
-| 1 | **Adli profil & doğrulama** | Kamuya açık kaynaklardan gözlemlenebilir kanıtla profil; iddiaların çapraz doğrulanması. **Asıl saha.** |
-| 2 | **Kimlik / catfish teyidi** | Tersine görsel arama, perceptual hash, EXIF, görsel-metin tutarlılığı — "bu kişi iddia ettiği kişi mi?" |
-| 3 | **Açık kaynak araştırması** | Kişi, kurum, domain, olay; zaman çizelgesi, ilişki ağı, değişim takibi. |
-| 4 | **Rezonans & ilk temas** | *Tarihî çekirdek görev.* Artık **bir saha**: iki profil arası vektörel benzerlik **betimlemedir**, uyum/ilişki hükmü değildir. |
-| 5 | **Eğitim & denetim** | Operatör eğitimi, adli rapor üretimi, kendi sisteminin denetimi. |
-
-> Saha 4 notu: rezonans skoru `0.70` eşiği **ölçülmemiş bir sabittir** ve kalibrasyon fazına (Faz 1/Faz 6) bağlıdır. Kalibrasyon verisi olmadan eşik değiştirilemez.
-
-## Madde 10 · Yürürlük ve değiştirme
-
-1. Bu tüzük, **koddaki kapılara** bağlıdır: bir madde ihlal edilirse ilgili capability `PolicyKernel` tarafından kapatılır, uyarı verilmez.
-2. Tüzük değişikliği: karar belgesi + `CHANGELOG` kaydı + (gerekiyorsa) test ile yapılır. **Sessiz ilke değişikliği yoktur.**
-3. Bir yetenek eklenirken sorulacak tek soru: *"Bu, tüzüğün hangi maddesine hizmet ediyor ve hangi kapılardan geçiyor?"* Cevap yoksa yetenek eklenmez.
-4. Denetim: her fazın sonunda tüzük ↔ kod farkı raporlanır (`docs/reports/`).
+1. **18 yaşından küçük her birey çocuktur.**
+2. Normal koşullarda hiçbir çocuk, hiçbir sebeple araştırılamaz. Profil, zaman çizelgesi, ağ ve görsel analizleri çocuk vakalarında kilitlidir (`MinorGate`).
+3. **TEK İSTİSNA:** Resmi kayıp / adli acil durum vakalarıdır (Ailenin bilgisi, resmi gerekçe, teyit ve konsorsiyum onayı şartıyla).
+4. Bu kırmızı çizgi dışındaki yetişkin hedeflerde sistem operatörün önüne yapay engeller çıkarmaz. Karar ve yetki operatördedir.
 
 ---
 
-## Kısa form (duvar yazısı)
+## 3. Temel Operasyonel İlkeler
 
-```
-GÖZLEM, HÜKÜM DEĞİLDİR          → fal yok, ölçüm var
-KANIT YOKSA İDDİA YOKTUR        → fail-closed
-SAHTE IŞIK YOKTUR               → simülasyon yok, gerçek telemetri
-KİLİT OPERATÖRDE                → kasa mandalı; yetişkinde engel yok
-TEK KIRMIZI ÇİZGİ: ÇOCUK        → 18 altı asla; kayıpsa 4 şart + konsorsiyum
-TAKLİT YOK, KAYIT VAR           → kendi hesabın, izlenebilir erişim
-VERİ SENİN CİHAZINDA            → yerel jüri, maliyet 0, mahremiyet
-TEK PARÇA                       → tek sözleşme, tek kayıt, tek kapı
-```
+### 3.1. Karakter, Motivasyon ve Bilişsel Harita Serbestisi
+* Modelin hedef kişi hakkında bilişsel profil, motivasyon haritası, müzakere üslubu, tutku eksenleri (`PassionMapper`) ve sürtünme noktaları (`FrictionDetector`) çıkarması engellenemez.
+* Sahte ahlakçı susturucular ve modeli felç eden epistemik kelepçeler (güven skorunu `0.0`'a çekip çıktıyı silen filtreler) kaldırılmıştır.
+
+### 3.2. Sıfır Halüsinasyon ve Kanıt Dayanağı
+* Analizler kuru sallama veya falcılıkla yapılamaz. Çıkarılan her karakter ve motivasyon tespiti, hedefin açık kaynaklardaki gerçek ifadelerine (`quote_guard`), biyografisine ve zaman serisi ritmine dayanır.
+* Sistem veriyi ölçer, doğrular ve bu veriden stratejik anlam üretir.
+
+### 3.3. Dürüstlük: Kör Yetenek Yoktur
+* Arayüzde veya API'de sahte durum gösterilmez (`simulation = False`).
+* Bir yetenek hazırsa `available = True` der; harici paket, hesap havuzu veya servis eksikse `available = False` diyerek eksik olan bileşeni dürüstçe bildirir.
+
+### 3.4. Nihai Çıktı: Eyleme Dönüşen Stratejik İletişim
+* Sistemin amacı kuru bir adli dosya yığını oluşturmak değildir.
+* Analiz edilen verinin nihai meyvesi: **3 Kartlı Yönetici İstihbarat Dosyası** ve hedefe atılacak kanıtlı, etkileyici **3 Hamleli İlk Temas Satranç Ağacıdır** (`HookStudio`).

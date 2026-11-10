@@ -383,7 +383,7 @@ Aşağıdaki JSON şemasında yanıt ver:
             )
             used_evidence = [str(x) for x in (core_passions + energizing_topics + stress_triggers)[:5]]
             return res.model_copy(update={
-                "confidence": final_conf if final_conf > 0.0 else (conf if valid else 0.85),
+                "confidence": round(final_conf, 2) if final_conf > 0.0 else round(conf if valid else 0.85, 2),
                 "input_data_present": input_data_present,
                 "evidence_verification_status": ev_status,
                 "data_confidence": epistemic_dc,
