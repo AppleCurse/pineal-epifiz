@@ -258,3 +258,9 @@
   color: #38ef7d;
   background: rgba(56, 239, 125, 0.08);
 }
+
+.atlas-status { font: 11px/1.45 monospace; color: #a89474; margin: 8px 0; word-break: break-word; }
+.atlas-status[data-kind="err"] { color: #fca5a5; }
+.atlas-status[data-kind="warn"] { color: #fbbf24; }
+.atlas-status[data-kind="ok"] { color: #38ef7d; }
+.atlas-muted { color: #7a6a52; }

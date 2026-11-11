@@ -3,7 +3,7 @@
   import {
     apiFetch, clientId, isAuthFailure, logs, taskStatus, isProcessing,
     apiToken, agentStatuses, vaultLocked, activeViewMode, inspectedAgentId,
-    speechState, lastSpeech, voiceEnabled, activeTargetUrl, missionElapsed
+    speechState, lastSpeech, voiceEnabled, activeTargetUrl, missionElapsed, armEngaged
   } from '../store';
   import { playClick, playHalt, playRunning } from '../lib/consoleAudio';
   import { taskRuns, taskRunLabel, rackAvailability } from '../lib/taskRunStatus';
@@ -203,6 +203,10 @@
   async function launchAnalysis() {
     const url = targetUrl.trim();
     if (!url || $isProcessing) return;
+    if (!$armEngaged) {
+      chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: 'Mösyö, operasyon başlatılamaz: ARM şalteri kapalı. Lütfen üst konsoldan ARM anahtarını açın.' }];
+      return;
+    }
     isProcessing.set(true);
     activeTargetUrl.set(url);
     missionStartTime = Date.now();

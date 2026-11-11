@@ -254,9 +254,17 @@ async def lifespan(application: FastAPI):
         raise
 
     speech_cache_task = asyncio.create_task(_speech_cache_sweeper())
+    email_dossier_task = None
+    try:
+        from backend.email_dossier_service import start_email_dossier
+        email_dossier_task = start_email_dossier()
+    except Exception as exc:
+        logger.warning(f"email_dossier_service baslatilamadi: {exc}")
     yield
     speech_cache_task.cancel()
-    await asyncio.gather(speech_cache_task, return_exceptions=True)
+    if email_dossier_task is not None:
+        email_dossier_task.cancel()
+    await asyncio.gather(*[t for t in (speech_cache_task, email_dossier_task) if t is not None], return_exceptions=True)
     # Kapanista odalari TEK bir yoldan kapat
     for client_id in list(application.state.rooms):
         room = application.state.rooms.get(client_id)
