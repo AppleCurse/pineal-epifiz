@@ -325,6 +325,16 @@
   // `mis_<rastgele>` uyduruluyor ve hiçbir yere gönderilmiyordu: durdurma
   // düğmesi backend'de var olmayan bir görevi durdurmaya çalışıyordu.
   let activeTaskId: string | null = null;
+  // [SMOKE 2026-11-11] Görev kimliği YALNIZ bu bileşenin kendi "GÖREVİ BAŞLAT"
+  // düğmesinden geliyordu. Operatör varsayılan ATLAS yüzeyinden görev
+  // başlattığında `/api/tasks/{id}/graph` hiç çağrılmıyor, gerçek kanıt grafı
+  // (5 düğüm) ekrana ulaşmıyordu — tarayıcıda ölçüldü. Artık WS anlık
+  // görüntüsü de kimlik kaynağıdır: graf, hangi yüzeyden başlatılırsa
+  // başlatılsın aynı görevi izler.
+  $: if (!activeTaskId && $taskStatus) {
+    const snapshotId = $taskStatus.task_id || $taskStatus.id;
+    if (snapshotId) activeTaskId = String(snapshotId);
+  }
   let missionStartTime: number | null = null;
   let elapsedTime = '00:00';
   let timerInterval: any = null;
@@ -412,6 +422,13 @@
 
   $: if (activeTab === 'graph' && activeTaskId && !realGraphInfo.loaded && !isGraphLoading) {
     void loadRealGraph(activeTaskId);
+  }
+
+  // [SMOKE 2026-11-11] Görev kimliği değişince (ATLAS yüzeyinden başlatılan yeni
+  // görev dâhil) önceki görevin grafı ekranda kalmasın: bayat kanıt gösterilmez.
+  $: if (activeTaskId && lastLoadedGraphTaskId && lastLoadedGraphTaskId !== String(activeTaskId)) {
+    realGraphInfo = { loaded: false, available: false, nodeCount: 0, edgeCount: 0, machineNote: '' };
+    if (activeTab === 'graph' && !isGraphLoading) void loadRealGraph(activeTaskId);
   }
 
   // --- GERÇEK KANIT GRAFI ENTEGRASYONU (/api/tasks/{task_id}/graph) ---

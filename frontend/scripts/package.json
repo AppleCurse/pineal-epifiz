@@ -1,0 +1,13 @@
+{
+  "name": "pineal-browser-smoke",
+  "private": true,
+  "type": "module",
+  "description": "Gerçek Chromium ile PINEAL arayüz smoke testi (browser-smoke.mjs)",
+  "scripts": {
+    "smoke": "node browser-smoke.mjs"
+  },
+  "dependencies": {
+    "@sparticuz/chromium": "^153.0.0",
+    "playwright-core": "^1.65.0"
+  }
+}

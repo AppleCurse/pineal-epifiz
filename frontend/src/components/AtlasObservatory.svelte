@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { get } from 'svelte/store';
   import {
     apiFetch, apiToken, currentApiToken, setApiToken, clientId,
     taskStatus, isProcessing, agentStatuses, vaultLocked,
@@ -8,6 +9,117 @@
   import { playClick, playHalt } from '../lib/consoleAudio';
 
   export let onOpenDossier: () => void = () => {};
+
+  // ==========================================================================
+  // [DÜRÜSTLÜK 2026-11-11] Bu yüzey eskiden TAMAMEN sabit değerlerle doluydu:
+  // "TOPLAM VERİ: 448.721", "Instagram 842K", "RİSK %42/%37/%21",
+  // "CASE #AT-2025-0918 TAMAMLANDI" gibi rakamlar kaynak kodda yazılıydı ve
+  // hiçbir API'ye dayanmıyordu — ürün "VERİ YOKSA UYDURMAZ" rozeti taşırken
+  // varsayılan açılış ekranı uydurma rakam gösteriyordu.
+  //
+  // Aşağıdaki değerlerin TAMAMI gerçek uçlardan türetilir; veri yoksa "—"
+  // basılır, sıfır uydurulmaz:
+  //   GET /api/telemetry        → bağlantı, kasa, ajan durumları, LLM harcaması
+  //   GET /api/tasks?client_id= → gerçek görevler, kanıt sayıları
+  //   GET /api/tasks/{id}/graph → gerçek kanıt grafı (düğüm/bağ sayısı)
+  // ==========================================================================
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let telemetry: any = null;
+  let telemetryError = '';
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let taskList: any = null;
+  let tasksError = '';
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let graphInfo: any = null;
+
+  const EMPTY = '—';
+  const num = (v: unknown): string =>
+    typeof v === 'number' && Number.isFinite(v)
+      ? new Intl.NumberFormat('tr-TR').format(v)
+      : EMPTY;
+
+  async function loadTelemetry() {
+    try {
+      const res = await apiFetch('/api/telemetry');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      telemetry = await res.json();
+      telemetryError = '';
+    } catch (e: unknown) {
+      telemetry = null;
+      telemetryError = e instanceof Error ? e.message : 'bağlantı hatası';
+    }
+  }
+
+  async function loadTasks() {
+    const room = get(clientId) || 'default';
+    try {
+      const res = await apiFetch(`/api/tasks?client_id=${encodeURIComponent(room)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      taskList = await res.json();
+      tasksError = '';
+    } catch (e: unknown) {
+      taskList = null;
+      tasksError = e instanceof Error ? e.message : 'bağlantı hatası';
+    }
+  }
+
+  // En güncel GERÇEK görevin kanıt grafı (düğüm/bağ sayısı).
+  async function loadLatestGraph() {
+    const latest = realTasks[0];
+    if (!latest) { graphInfo = null; return; }
+    const room = get(clientId) || 'default';
+    try {
+      const res = await apiFetch(
+        `/api/tasks/${encodeURIComponent(latest.task_id)}/graph?client_id=${encodeURIComponent(room)}`,
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      graphInfo = await res.json();
+    } catch {
+      graphInfo = null;
+    }
+  }
+
+  async function refreshAll() {
+    await Promise.all([loadTelemetry(), loadTasks()]);
+    await loadLatestGraph();
+  }
+
+  // --- Türetilmiş gerçek metrikler (hepsi null-güvenli) ---
+  // En yeni görev başta: "SON GÖREV" kartı listenin ilk elemanını gösterir,
+  // API ise eskiden yeniye döndürür — sıralama olmadan eski görev "son"
+  // görünüyordu (tarayıcıda ölçüldü).
+  $: realTasks = Array.isArray(taskList?.tasks)
+    ? [...taskList.tasks].sort((a: any, b: any) =>
+        String(b?.last_updated || '').localeCompare(String(a?.last_updated || '')),
+      )
+    : [];
+  $: evidenceTotal = realTasks.length
+    ? realTasks.reduce((sum: number, t: any) => sum + (Number(t?.evidence_count) || 0), 0)
+    : null;
+  $: graphNodes = graphInfo?.available ? graphInfo.node_count : null;
+  $: graphEdges = graphInfo?.available ? graphInfo.edge_count : null;
+  // Ajan yuvası: gerçek agent_statuses kaydı varsa sayılır, yoksa "—".
+  $: agentRows = telemetry?.agent_statuses && typeof telemetry.agent_statuses === 'object'
+    ? Object.values(telemetry.agent_statuses)
+    : [];
+  $: agentTotal = agentRows.length || null;
+  $: agentActive = agentRows.length
+    ? agentRows.filter((a: any) => String(a?.status || '').toLowerCase() === 'active').length
+    : null;
+  $: canli = telemetry ?? null;
+  // Kasa ve sensör durumları doğrudan telemetriden okunur (yeşil/amber/kırmızı
+  // renkler artık SABİT DEĞİL: gerçek `true/false` değerine bağlı).
+  $: sensorRows = canli
+    ? [
+        { label: 'Web Kanalları', on: !!canli.scraper },
+        { label: 'Sosyal Medya Sensörleri', on: !!(canli.x_scraper || canli.instagram_scraper) },
+        { label: 'Derin Arşiv (Wayback)', on: !!canli.search_engine },
+        { label: 'Veri Tabanı Kristali', on: !!canli.core },
+        { label: 'Tarayıcı Oturumu', on: !!canli.browser_installed },
+      ]
+    : [];
+  $: spend = typeof canli?.llm_spend_usd === 'number' ? canli.llm_spend_usd : null;
+  $: spendCap = typeof canli?.llm_spend_cap_usd === 'number' ? canli.llm_spend_cap_usd : null;
 
   // Göz animasyonu için canvas referansı
   let eyeCanvas: HTMLCanvasElement;
@@ -63,20 +175,35 @@
     try { playClick(); } catch {}
     isProcessing.set(true);
     try {
-      const res = await apiFetch('/api/tasks', {
+      // [SMOKE 2026-11-11] Eskiden `POST /api/tasks` çağrılıyordu — bu uç
+      // backend'de YOK (405 Method Not Allowed). Yani varsayılan yüzeyin ana
+      // düğmesi hiçbir koşulda görev başlatamıyordu; hata `alert` ile
+      // "görev başlatma uyarısı" olarak geçiştiriliyordu. Gerçek akış
+      // `/api/initiate`tir (SpiderFootCockpit ve Komuta yüzeyleriyle aynı).
+      const res = await apiFetch('/api/initiate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          target: targetInput.trim(),
-          mode: 'dossier',
-          parameters: { observer: 'Salim Gümüş', cockpit: 'Atlas Observatory' }
-        })
+          client_id: get(clientId) || 'default',
+          url: targetInput.trim(),
+          rituals: '',
+          playlist: '',
+          envies: '',
+        }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      taskStatus.set(data);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body?.task_id) {
+        // Kasa kilitli (423) dâhil: sunucunun kodu ve mesajı AYNEN gösterilir.
+        const detail = body?.error?.message || body?.detail || `HTTP ${res.status}`;
+        isProcessing.set(false);
+        alert(`Görev başlatılamadı: ${detail}`);
+        await loadTelemetry();
+        return;
+      }
+      taskStatus.set({ ...body, task_id: String(body.task_id) });
+      await refreshAll();
     } catch (e: any) {
-      alert(`Görev başlatma uyarısı: ${e.message}`);
+      alert(`Görev başlatma hatası: ${e?.message || 'bilinmeyen hata'}`);
       isProcessing.set(false);
     }
   }
@@ -204,7 +331,12 @@
 
     renderLoop();
 
+    // [DÜRÜSTLÜK 2026-11-11] Gerçek veri ilk yükleme + periyodik tazeleme.
+    void refreshAll();
+    const poll = setInterval(() => { void refreshAll(); }, 15000);
+
     return () => {
+      clearInterval(poll);
       if (animFrameId) cancelAnimationFrame(animFrameId);
     };
   });
@@ -294,31 +426,43 @@
               <span class="dial-needle"></span>
             </div>
             <div class="dial-stats">
-              <div><strong>127</strong> Aktif</div>
-              <div><strong>14</strong> Arşiv</div>
-              <div><strong>03</strong> Çelişkili</div>
-              <div><strong>07</strong> Karartılmış</div>
+              <div><strong>{num(evidenceTotal)}</strong> Kanıt</div>
+              <div><strong>{num(realTasks.length || null)}</strong> Görev</div>
+              <div><strong>{num(graphNodes)}</strong> Düğüm</div>
+              <div><strong>{num(graphEdges)}</strong> Bağ</div>
             </div>
           </div>
-          <ul class="source-status-list">
-            <li><span class="led green"></span> Web Kanalları</li>
-            <li><span class="led green"></span> Sosyal Medya Sensörleri</li>
-            <li><span class="led amber"></span> Derin Arşiv (Wayback)</li>
-            <li><span class="led green"></span> Veri Tabanı Kristali</li>
-            <li><span class="led red"></span> Karanlık Ağ / Dark Web</li>
-          </ul>
+          {#if telemetryError}
+            <ul class="source-status-list">
+              <li><span class="led red"></span> Telemetri okunamadı ({telemetryError})</li>
+            </ul>
+          {:else}
+            <ul class="source-status-list">
+              {#each sensorRows as row}
+                <li><span class="led {row.on ? 'green' : 'red'}"></span> {row.label}</li>
+              {/each}
+            </ul>
+          {/if}
         </div>
       </section>
 
       <!-- 3. Zaman Çizelgesi -->
       <section class="card timeline-card">
-        <div class="card-title">ZAMAN ÇİZELGESİ (1987 ➔ 2026)</div>
+        <!-- [DÜRÜSTLÜK] "1987 ➔ 2026" aralığı ve olay sayıları sabitti; gerçek
+             zaman çizelgesi verisi olmadığı için aralık artık iddia edilmiyor. -->
+        <div class="card-title">ZAMAN ÇİZELGESİ</div>
         <div class="timeline-row">
           <div class="pocket-watch-icon">⏱️</div>
-          <div class="timeline-data">
-            <div><strong>14</strong> Tespit Edilen Olay</div>
-            <div><strong>03</strong> Kronolojik Anomali</div>
-          </div>
+          {#if realTasks.length}
+            <div class="timeline-data">
+              <div><strong>{num(realTasks.length)}</strong> Kayıtlı Görev</div>
+              <div><strong>{num(evidenceTotal)}</strong> Kanıt Kaydı</div>
+            </div>
+          {:else}
+            <div class="timeline-data">
+              <div class="empty-value">Zaman serisi yok — henüz görev kaydı üretilmedi.</div>
+            </div>
+          {/if}
         </div>
       </section>
 
@@ -405,19 +549,31 @@
       <!-- Küresel İz & Dünya Haritası -->
       <section class="card global-trace-card">
         <div class="card-title">GLOBAL İZ & TELEMETRİ</div>
+        <!-- [DÜRÜSTLÜK] Buradaki ülke dağılımı (TR 184 / EU 97 / …) ve
+             "448.721 toplam veri" rakamları sabitti. Backend'de coğrafi
+             dağılım ucu YOK; uydurmak yerine gerçek olan gösterilir:
+             bağlantı durumu, görev/kanıt sayısı ve LLM harcaması. -->
         <div class="global-trace-content">
           <div class="geo-tags">
-            <span><strong>TR</strong> 184</span>
-            <span><strong>EU</strong> 97</span>
-            <span><strong>US</strong> 66</span>
-            <span><strong>RU</strong> 32</span>
-            <span><strong>CN</strong> 28</span>
-            <span><strong>Other</strong> 41</span>
+            {#if canli}
+              <span><strong>CORE</strong> {canli.core ? 'AÇIK' : 'KAPALI'}</span>
+              <span><strong>GATEWAY</strong> {canli.gateway ? 'AÇIK' : 'KAPALI'}</span>
+              <span><strong>SCRAPER</strong> {canli.scraper ? 'AÇIK' : 'KAPALI'}</span>
+              <span><strong>KASA</strong> {canli.vault_locked ? 'KİLİTLİ' : 'AÇIK'}</span>
+              <span><strong>AJAN</strong> {num(agentActive)}/{num(agentTotal)}</span>
+            {:else}
+              <span><strong class="empty-value">Telemetri yok</strong></span>
+            {/if}
           </div>
           <div class="data-flow-meters">
-            <div class="meter-col">TOPLAM VERİ: <strong>448.721</strong></div>
-            <div class="meter-col">İŞLENEN: <strong>97.346</strong></div>
-            <div class="meter-col">DOĞRULANAN: <strong>61.208</strong></div>
+            <div class="meter-col">GÖREV: <strong>{num(realTasks.length || null)}</strong></div>
+            <div class="meter-col">KANIT KAYDI: <strong>{num(evidenceTotal)}</strong></div>
+            <div class="meter-col">GRAF: <strong>{graphNodes === null ? EMPTY : `${graphNodes} düğüm / ${graphEdges} bağ`}</strong></div>
+          </div>
+          <div class="data-flow-meters">
+            <div class="meter-col">LLM HARCAMASI: <strong>{spend === null ? EMPTY : `$${spend.toFixed(4)}`}</strong></div>
+            <div class="meter-col">TAVAN: <strong>{spendCap === null ? EMPTY : `$${spendCap.toFixed(2)}`}</strong></div>
+            <div class="meter-col">CEVAPLANMAMIŞ: <strong>{num(canli?.llm_unpriced_calls ?? null)}</strong></div>
           </div>
         </div>
       </section>
@@ -427,14 +583,24 @@
     <aside class="col-right">
       <!-- 1. Aktif 14 Ajan Yuvası -->
       <section class="card agents-rack-card">
-        <div class="card-title">AKTİF AJANLAR (14/14)</div>
+        <!-- [DÜRÜSTLÜK] Başlık "(14/14)" ve her satırdaki YEŞİL led sabitti:
+             hiçbir ajan çalışmıyorken bile 14/14 yeşil görünüyordu. Artık
+             gerçek `agent_statuses` durumu okunur (Ready/Active/Wait). -->
+        <div class="card-title">
+          AJAN YUVASI {telemetry ? `(${agentActive ?? 0}/${agentTotal ?? 0})` : '(—)'}
+        </div>
         <div class="agents-scroll-box">
           {#each AGENT_MANIFEST as agent}
+            {@const live = telemetry?.agent_statuses?.[agent.id]}
+            {@const status = String(live?.status || '').toLowerCase()}
             <div class="agent-row">
               <span class="ag-code">{agent.code}</span>
               <span class="ag-name">{agent.name}</span>
               <span class="ag-desc">{agent.desc}</span>
-              <span class="ag-status-dot led green"></span>
+              <span
+                class="ag-status-dot led {status === 'active' ? 'green' : status === 'ready' ? 'amber' : 'off'}"
+                title={live ? String(live.status) : 'durum yok'}
+              ></span>
             </div>
           {/each}
         </div>
@@ -442,15 +608,20 @@
 
       <!-- 2. Sosyal Medya Ayak İzi -->
       <section class="card social-reach-card">
-        <div class="card-title">SOSYAL MEDYA İZİ</div>
+        <!-- [DÜRÜSTLÜK] "1.2M / 842K / …" erişim rakamları sabitti; hiçbir
+             uçtan gelmiyordu. Gerçek olan sensör var/yok durumu gösterilir. -->
+        <div class="card-title">SOSYAL MEDYA SENSÖRLERİ</div>
         <div class="social-reach-grid">
-          <div class="social-item"><span>𝕏 (Twitter)</span> <strong>1.2M</strong></div>
-          <div class="social-item"><span>Instagram</span> <strong>842K</strong></div>
-          <div class="social-item"><span>YouTube</span> <strong>421K</strong></div>
-          <div class="social-item"><span>LinkedIn</span> <strong>318K</strong></div>
-          <div class="social-item"><span>TikTok</span> <strong>275K</strong></div>
-          <div class="social-item"><span>Facebook</span> <strong>193K</strong></div>
+          <div class="social-item"><span>𝕏 (Twitter)</span> <strong>{canli ? (canli.x_scraper ? 'AKTİF' : 'YOK') : EMPTY}</strong></div>
+          <div class="social-item"><span>Instagram</span> <strong>{canli ? (canli.instagram_scraper ? 'AKTİF' : 'YOK') : EMPTY}</strong></div>
+          <div class="social-item"><span>IG Oturumu</span> <strong>{canli ? (canli.instagram_session ? 'AÇIK' : 'KAPALI') : EMPTY}</strong></div>
+          <div class="social-item"><span>Arama Motoru</span> <strong>{canli ? (canli.search_engine ? 'AKTİF' : 'YOK') : EMPTY}</strong></div>
+          <div class="social-item"><span>Tarayıcı</span> <strong>{canli ? (canli.browser_installed ? 'KURULU' : 'YOK') : EMPTY}</strong></div>
+          <div class="social-item"><span>Kasa</span> <strong>{canli ? (canli.vault_locked ? 'KİLİTLİ' : 'AÇIK') : EMPTY}</strong></div>
         </div>
+        {#if canli?.x_scraper_reason}
+          <p class="empty-value">X sensörü: {canli.x_scraper_reason}</p>
+        {/if}
       </section>
 
       <!-- 3. Aspasia Prime Strateji Zekâsı -->
@@ -475,39 +646,64 @@
         <div class="card-title">İZ ALANI & RADAR</div>
         <div class="radar-box">
           <canvas bind:this={radarCanvas} width="120" height="120"></canvas>
+          <!-- [DÜRÜSTLÜK] 842/61/07/02 sabitti. Gerçek graf topolojisi. -->
           <div class="radar-telemetry">
-            <div><strong>842</strong> Sinyal</div>
-            <div><strong>61</strong> Korelasyon</div>
-            <div><strong>07</strong> Çözülmemiş</div>
-            <div><strong>02</strong> Yüksek Risk</div>
+            <div><strong>{num(graphNodes)}</strong> Düğüm</div>
+            <div><strong>{num(graphEdges)}</strong> Bağ</div>
+            <div><strong>{num(evidenceTotal)}</strong> Kanıt</div>
+            <div><strong>{num(realTasks.length || null)}</strong> Görev</div>
           </div>
         </div>
       </section>
 
       <!-- 5. Risk Analizi -->
       <section class="card risk-card">
-        <div class="card-title">RİSK ANALİZİ</div>
-        <div class="risk-distribution">
-          <div class="risk-col">Düşük <strong>%42</strong></div>
-          <div class="risk-col">Orta <strong>%37</strong></div>
-          <div class="risk-col highlight">Yüksek <strong>%21</strong></div>
-        </div>
+        <!-- [DÜRÜSTLÜK] "%42 / %37 / %21" risk dağılımı ve dört kırmızı tehdit
+             etiketi sabitti: hiçbir risk motoru çalışmadan "yüksek risk" ilan
+             ediliyordu. Gerçek risk skoru görev kaydında yoksa dağılım
+             GÖSTERİLMEZ; yalnız ölçülebilen güven skoru raporlanır. -->
+        <div class="card-title">RİSK & GÜVEN</div>
+        {#if realTasks.length}
+          <div class="risk-distribution">
+            <div class="risk-col">Görev <strong>{num(realTasks.length)}</strong></div>
+            <div class="risk-col">Ort. Güven <strong>{(() => {
+              const vals = realTasks.map((t: any) => Number(t?.confidence)).filter((v: number) => Number.isFinite(v) && v > 0);
+              return vals.length ? `${Math.round((vals.reduce((a: number, b: number) => a + b, 0) / vals.length) * 100)}%` : EMPTY;
+            })()}</strong></div>
+            <div class="risk-col highlight">Bellek <strong>{[...new Set(realTasks.map((t: any) => t?.memory_state).filter(Boolean))].join('/') || EMPTY}</strong></div>
+          </div>
+        {:else}
+          <p class="empty-value">Risk dağılımı yok — görev kaydı bulunmuyor.</p>
+        {/if}
         <div class="risk-threat-tags">
-          <span class="threat-tag"><span class="led red"></span> TEHDİT</span>
-          <span class="threat-tag"><span class="led red"></span> SAHTECİLİK</span>
-          <span class="threat-tag"><span class="led red"></span> MALWARE</span>
-          <span class="threat-tag"><span class="led red"></span> DEZENFORMASYON</span>
+          <span class="threat-tag"><span class="led {canli?.vault_locked ? 'red' : 'green'}"></span> KASA {canli ? (canli.vault_locked ? 'KİLİTLİ' : 'AÇIK') : EMPTY}</span>
+          <span class="threat-tag"><span class="led {tasksError ? 'red' : 'green'}"></span> GÖREV UCU {tasksError ? 'HATA' : 'AÇIK'}</span>
+          <span class="threat-tag"><span class="led {telemetryError ? 'red' : 'green'}"></span> TELEMETRİ {telemetryError ? 'HATA' : 'AÇIK'}</span>
         </div>
       </section>
 
       <!-- 6. Son Rapor & Detay -->
       <section class="card last-case-card">
-        <div class="card-title">SON RAPOR</div>
+        <!-- [DÜRÜSTLÜK] "CASE #AT-2025-0918 — TAMAMLANDI / 37 Doğrulanmış Kayıt"
+             tamamen sabitti. Artık gerçek görev kimliği, gerçek kanıt sayısı ve
+             gerçek bellek durumu gösterilir; kayıt yoksa "yok" denir. -->
+        <div class="card-title">SON GÖREV</div>
         <div class="case-brief">
-          <div class="case-title">CASE #AT-2025-0918 <span class="tag-done">TAMAMLANDI</span></div>
-          <p>Konu: Dijital İz & İlk Temas Kancası</p>
-          <p>Kaynak: 37 Doğrulanmış Kayıt</p>
-          <button class="view-dossier-btn" on:click={onOpenDossier}>DETAY GÖR</button>
+          {#if realTasks.length}
+            {@const latest = realTasks[0]}
+            <div class="case-title">
+              {latest.task_id}
+              <span class="tag-done">{latest.memory_state || 'DURUM BİLİNMİYOR'}</span>
+            </div>
+            <p>Kanıt kaydı: {num(latest.evidence_count)}</p>
+            <p>Son güncelleme: {latest.last_updated ? new Date(latest.last_updated).toLocaleString('tr-TR') : EMPTY}</p>
+            {#if latest.memory_error_code}<p class="empty-value">Bellek hatası: {latest.memory_error_code}</p>{/if}
+            <button class="view-dossier-btn" on:click={onOpenDossier}>DETAY GÖR</button>
+          {:else}
+            <p class="empty-value">
+              {tasksError ? `Görev listesi okunamadı (${tasksError}).` : 'Henüz görev kaydı yok.'}
+            </p>
+          {/if}
         </div>
       </section>
     </aside>
@@ -954,6 +1150,10 @@
   .led.green { background: #10b981; box-shadow: 0 0 6px #10b981; }
   .led.amber { background: #f59e0b; box-shadow: 0 0 6px #f59e0b; }
   .led.red { background: #ef4444; box-shadow: 0 0 6px #ef4444; }
+  /* [DÜRÜSTLÜK 2026-11-11] Gerçek veri olmadığında yeşil yanmak yerine
+     nötr kalır: "ölçülmedi" ile "ölçüldü ve olumlu" ayrı görünür. */
+  .led.off { background: #475569; box-shadow: none; }
+  .empty-value { color: #94a3b8; font-size: 9px; font-style: italic; }
 
   /* ---------------- Orta Sütun (Ocular Sanctum) ---------------- */
   .col-center {

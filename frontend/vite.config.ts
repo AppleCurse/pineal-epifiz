@@ -23,6 +23,15 @@ export default defineConfig({
         }
       : undefined,
     proxy: {
+      // [SMOKE 2026-11-11] `/health` kökte yaşıyor (backend/routes altında değil)
+      // ama SPA `apiFetch('/health')` ile göreli çağırıyor. Proxy'de yalnız
+      // `/api` ve `/ws` varken bu istek Vite'a düşüp 404 alıyordu: telemetri
+      // paneli geliştirme modunda HER ZAMAN "offline" görünüyordu (gerçek
+      // tarayıcıda ölçüldü). Kök sağlık ucu da backend'e taşınır.
+      '/health': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
       '/api': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,

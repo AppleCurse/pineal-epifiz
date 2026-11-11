@@ -20,6 +20,9 @@ const ctxStub = {
   fillText: noop,
   measureText: () => ({ width: 10 }),
   createLinearGradient: () => ({ addColorStop: noop }),
+  // AtlasObservatory göz/iris çiziminde radyal gradyan kullanır; stub'da
+  // olmadığında bileşen monte edilemiyordu (testin konusu çizim değil).
+  createRadialGradient: () => ({ addColorStop: noop }),
   setTransform: noop,
   translate: noop,
   scale: noop,

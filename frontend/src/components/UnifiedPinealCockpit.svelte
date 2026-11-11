@@ -100,25 +100,32 @@
 </section>
 
 <style>
-  .unified-shell { min-height: 100vh; background: #050914; color: #e5edf8; }
-  .shell-header { display: flex; justify-content: space-between; gap: 1.5rem; align-items: center; padding: 1.25rem 1.5rem 1rem; border-bottom: 1px solid #1e293b; background: linear-gradient(120deg, #08111f, #0b1220 55%, #101827); }
-  .eyebrow { margin: 0 0 .35rem; color: #67e8f9; font: 700 .7rem/1 monospace; letter-spacing: .16em; }
-  h1 { margin: 0; font-size: clamp(1.25rem, 2vw, 1.8rem); letter-spacing: .06em; }
+  .unified-shell { position: relative; min-height: 100vh; background: radial-gradient(circle at 50% 0%, #241a08 0, #090b10 32%, #030407 100%); color: #efe7d0; overflow: hidden; }
+  .shell-header { position: relative; z-index: 1; display: flex; justify-content: space-between; gap: 1.5rem; align-items: center; padding: 1.25rem 1.5rem 1rem; border-bottom: 1px solid #1e293b; background: linear-gradient(120deg, #08111f, #0b1220 55%, #101827); }
+  .eyebrow { margin: 0 0 .35rem; color: #d7a83f; font: 700 .7rem/1 monospace; letter-spacing: .16em; }
+  h1 { margin: 0; font-size: clamp(1.25rem, 2vw, 1.8rem); letter-spacing: .06em; color: #f5eedc; }
   .shell-subtitle { margin: .45rem 0 0; color: #94a3b8; font-size: .82rem; }
 
-  .console-controls { display: flex; align-items: center; gap: .35rem; margin-left: auto; }
-  .console-controls button { font: 700 .66rem monospace; letter-spacing: .1em; padding: .45rem .55rem; background: #0c1423; color: #64748b; border: 1px solid #1e293b; border-radius: .3rem; cursor: pointer; }
-  .console-controls button.on { color: #052e16; background: #4ade80; border-color: #22c55e; }
-  .console-controls button.stop { color: #fca5a5; background: #2a0d0d; border-color: #b91c1c; }
+  .console-controls { display: flex; align-items: center; gap: .4rem; margin-left: auto; }
+  .console-controls button { font: 700 .68rem monospace; letter-spacing: .1em; padding: .45rem .65rem; background: #0c1423; color: #94a3b8; border: 1px solid #334155; border-radius: .3rem; cursor: pointer; transition: all .2s; }
+  .console-controls button:hover { border-color: #d7a83f; color: #fef08a; }
+  .console-controls button.on { color: #052e16; background: #4ade80; border-color: #22c55e; font-weight: 800; box-shadow: 0 0 10px rgba(74, 222, 128, 0.35); }
+  .console-controls button.stop { color: #fee2e2; background: #7f1d1d; border-color: #ef4444; font-weight: 800; box-shadow: 0 0 10px rgba(239, 68, 68, 0.35); }
   .console-controls button:disabled { opacity: .5; cursor: default; }
-  .stop-note { font: .62rem monospace; color: #94a3b8; }
+  .stop-note { font: .65rem monospace; color: #cbd5e1; }
 
-  .truth-badge { padding: .35rem .75rem; border: 1px solid #0284c7; background: #082f49; color: #38bdf8; font: 700 .72rem/1 monospace; letter-spacing: .08em; border-radius: 999px; }
-  .surface-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .5rem; padding: .75rem 1.5rem; background: #020617; border-bottom: 1px solid #0f172a; position: sticky; top: 0; z-index: 10; }
-  .surface-tabs button { display: flex; flex-direction: column; align-items: flex-start; gap: .25rem; padding: .7rem .9rem; border: 1px solid #1e293b; background: #070d1d; color: #94a3b8; border-radius: .5rem; text-align: left; cursor: pointer; }
-  .surface-tabs button:hover { border-color: #38bdf8; color: #f8fafc; }
-  .surface-tabs button.active { border-color: #38bdf8; background: #0c1933; color: #f8fafc; }
-  .surface-tabs button span { font: 700 .84rem monospace; letter-spacing: .08em; }
-  .surface-tabs button small { font-size: .72rem; color: #64748b; line-height: 1.25; }
-  .surface-stage { padding: 1.25rem 1.5rem; }
+  .truth-badge { border: 1px solid #0e7490; color: #d7a83f; background: rgba(14, 116, 144, 0.15); padding: .55rem .75rem; border-radius: .35rem; font: 700 .68rem monospace; white-space: nowrap; }
+  
+  .surface-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .5rem; padding: .75rem 1.5rem; background: #080e1a; border-bottom: 1px solid #1e293b; position: sticky; top: 0; z-index: 10; }
+  .surface-tabs button { min-height: 3.25rem; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: .25rem; text-align: left; padding: .6rem .8rem; color: #94a3b8; background: #0c1423; border: 1px solid #1e293b; border-radius: .35rem; cursor: pointer; transition: all .2s; }
+  .surface-tabs button:hover, .surface-tabs button.active { color: #fef08a; border-color: #b88a35; background: #4b310e; }
+  .surface-tabs span { display: block; font: 700 .74rem monospace; letter-spacing: .08em; }
+  .surface-tabs small { display: block; font-size: .68rem; color: #64748b; line-height: 1.25; }
+  .surface-tabs .active small { color: #fde047; }
+  
+  .surface-stage { min-height: calc(100vh - 9rem); }
+  @media (max-width: 800px) {
+    .shell-header { align-items: flex-start; flex-direction: column; }
+    .surface-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: .65rem; }
+  }
 </style>
