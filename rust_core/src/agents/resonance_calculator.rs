@@ -9,15 +9,15 @@
 //! gerçek eşiklerden yaklaşım -> gerçek uyumsuzluk bayrakları -> SHA-256 +
 //! gerçek süre + türetilmiş güven.
 
+use crate::agent_pipeline::{AgentNode, AnalysisResult, HaltReason};
+use crate::event_bus::{AgentEvent, EventBus, Severity};
+use crate::uncertainty::{ConfidenceLevel, UncertaintyEngine};
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use crate::agent_pipeline::{AgentNode, HaltReason, AnalysisResult};
-use crate::event_bus::{AgentEvent, EventBus, Severity};
-use crate::uncertainty::{UncertaintyEngine, ConfidenceLevel};
-use async_trait::async_trait;
-use uuid::Uuid;
 use std::collections::HashMap;
 use std::sync::Arc;
+use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ResonanceProfile {
@@ -134,9 +134,8 @@ impl AgentNode for ResonanceCalculator {
             input_summary: "Matematiksel rezonans başlatıldı (gerçek vektörler)".to_string(),
         });
 
-        let input_data: Value = serde_json::from_str(input).map_err(|e| {
-            HaltReason::LlmParseError(format!("Invalid input JSON: {}", e))
-        })?;
+        let input_data: Value = serde_json::from_str(input)
+            .map_err(|e| HaltReason::LlmParseError(format!("Invalid input JSON: {}", e)))?;
 
         let required_fields = vec![
             "user_authentic_vector".to_string(),
@@ -174,9 +173,10 @@ impl AgentNode for ResonanceCalculator {
         let user_vec = match Self::extract_vector(&input_data["user_authentic_vector"]) {
             Some(v) => v,
             None => {
-                let reason = "Kullanıcı authentic vector'u geçersiz (boş/boyut eksik/aralık dışı); \
+                let reason =
+                    "Kullanıcı authentic vector'u geçersiz (boş/boyut eksik/aralık dışı); \
                               sabit vektör ÜRETİLMEZ"
-                    .to_string();
+                        .to_string();
                 let _ = self.event_bus.publish(AgentEvent::ErrorHalt {
                     task_id,
                     agent_name: self.name().to_string(),
@@ -208,8 +208,8 @@ impl AgentNode for ResonanceCalculator {
         let similarity = match Self::cosine_similarity(&user_vec, &target_vec) {
             Some(s) => s as f32,
             None => {
-                let reason = "Vektörlerde ortak boyut yok veya magnitude sıfır; hesap YAPILAMAZ"
-                    .to_string();
+                let reason =
+                    "Vektörlerde ortak boyut yok veya magnitude sıfır; hesap YAPILAMAZ".to_string();
                 let _ = self.event_bus.publish(AgentEvent::ErrorHalt {
                     task_id,
                     agent_name: self.name().to_string(),
@@ -282,7 +282,12 @@ mod tests {
     use crate::event_bus::EventBus;
     use std::sync::Arc;
 
-    fn input_json(user_depth: f64, user_energy: f64, target_depth: f64, target_energy: f64) -> String {
+    fn input_json(
+        user_depth: f64,
+        user_energy: f64,
+        target_depth: f64,
+        target_energy: f64,
+    ) -> String {
         serde_json::json!({
             "user_authentic_vector": { "depth": user_depth, "energy": user_energy },
             "target_analysis_vector": { "depth": target_depth, "energy": target_energy }
@@ -297,8 +302,14 @@ mod tests {
     #[tokio::test]
     async fn test_similarity_depends_on_real_input() {
         // [003] sözleşme: aynı kod, farklı girdi -> FARKLI sonuç.
-        let near = calc().execute(&input_json(0.9, 0.5, 0.9, 0.5)).await.unwrap();
-        let far = calc().execute(&input_json(0.1, 0.9, 0.9, 0.1)).await.unwrap();
+        let near = calc()
+            .execute(&input_json(0.9, 0.5, 0.9, 0.5))
+            .await
+            .unwrap();
+        let far = calc()
+            .execute(&input_json(0.1, 0.9, 0.9, 0.1))
+            .await
+            .unwrap();
 
         let near_profile: ResonanceProfile = serde_json::from_str(&near.payload).unwrap();
         let far_profile: ResonanceProfile = serde_json::from_str(&far.payload).unwrap();
@@ -307,16 +318,25 @@ mod tests {
         assert!(near_profile.compatibility_score > 0.99); // özdeş vektörler
         assert!(far_profile.compatibility_score < 0.5);
         // [004]: yaklaşım literal değil, eşikten türetiliyor
-        assert!(near_profile.recommended_approach.contains("ATOMIK_REZONANS"));
-        assert!(far_profile.recommended_approach.contains("FREKANS_UYUSMAZLIGI"));
+        assert!(near_profile
+            .recommended_approach
+            .contains("ATOMIK_REZONANS"));
+        assert!(far_profile
+            .recommended_approach
+            .contains("FREKANS_UYUSMAZLIGI"));
     }
 
     #[tokio::test]
     async fn test_depth_mismatch_red_flag_produced() {
         // [033 eşitleme]: derinlik bayrağı gerçek farktan üretilir.
-        let result = calc().execute(&input_json(0.9, 0.5, 0.2, 0.5)).await.unwrap();
+        let result = calc()
+            .execute(&input_json(0.9, 0.5, 0.2, 0.5))
+            .await
+            .unwrap();
         let profile: ResonanceProfile = serde_json::from_str(&result.payload).unwrap();
-        assert!(profile.red_flags.contains(&"DERINLIK_UYUSMAZLIGI".to_string()));
+        assert!(profile
+            .red_flags
+            .contains(&"DERINLIK_UYUSMAZLIGI".to_string()));
     }
 
     #[tokio::test]
@@ -338,7 +358,10 @@ mod tests {
     #[tokio::test]
     async fn test_confidence_is_derived_not_literal_one() {
         // Yalnızca 2 zorunlu boyut: güven 0.5 (literal 1.0 değil).
-        let result = calc().execute(&input_json(0.6, 0.5, 0.7, 0.5)).await.unwrap();
+        let result = calc()
+            .execute(&input_json(0.6, 0.5, 0.7, 0.5))
+            .await
+            .unwrap();
         assert!((result.confidence - 0.5).abs() < 1e-6);
     }
 }

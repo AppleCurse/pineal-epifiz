@@ -16,15 +16,15 @@
 //! - Telemetri hash'i stdout'un SHA-256'sıdır; StepCompleted/TaskCompleted
 //!   AYNI hash'i paylaşır ([048]: MD5 + çift-kaynak tutarsızlığı kaldırıldı).
 
-use uuid::Uuid;
+use crate::event_bus::{AgentEvent, EventBus, Severity};
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
-use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
-use crate::event_bus::{EventBus, AgentEvent, Severity};
+use uuid::Uuid;
 
 /// Alt süreç için üst sınır: uzun bir gerçek analiz (playwright + ajan zinciri)
 /// için cömert, sonsuz bekleme değil.
@@ -47,7 +47,11 @@ fn default_python() -> String {
     if let Ok(py) = std::env::var("PINEAL_PYTHON") {
         return py;
     }
-    if cfg!(windows) { "python".to_string() } else { "python3".to_string() }
+    if cfg!(windows) {
+        "python".to_string()
+    } else {
+        "python3".to_string()
+    }
 }
 
 fn project_root() -> String {
@@ -88,7 +92,10 @@ impl TaskManager {
 
     pub fn create_task(&self) -> Uuid {
         let task_id = Uuid::new_v4();
-        let ctx = TaskContext { task_id, state: HashMap::new() };
+        let ctx = TaskContext {
+            task_id,
+            state: HashMap::new(),
+        };
         self.tasks.lock().unwrap().insert(task_id, ctx);
         task_id
     }
@@ -117,7 +124,15 @@ impl TaskManager {
         user_envies: Vec<String>,
     ) -> Result<String, String> {
         let task_id = self.create_task();
-        let result = self.run_pipeline(task_id, target_url, user_rituals, user_playlist, user_envies).await;
+        let result = self
+            .run_pipeline(
+                task_id,
+                target_url,
+                user_rituals,
+                user_playlist,
+                user_envies,
+            )
+            .await;
         self.finish_task(&task_id);
         result
     }
@@ -158,12 +173,20 @@ impl TaskManager {
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true) // timeout iptalinde süreci öldür ([049])
             .spawn()
-            .map_err(|e| format!("run_task.py süreci başlatılamadı ({}): {}", self.task_script, e))?;
+            .map_err(|e| {
+                format!(
+                    "run_task.py süreci başlatılamadı ({}): {}",
+                    self.task_script, e
+                )
+            })?;
 
         if let Some(mut stdin) = child.stdin.take() {
             let bytes = serde_json::to_vec(&payload)
                 .map_err(|e| format!("stdin JSON oluşturulamadı: {}", e))?;
-            stdin.write_all(&bytes).await.map_err(|e| format!("stdin yazılamadı: {}", e))?;
+            stdin
+                .write_all(&bytes)
+                .await
+                .map_err(|e| format!("stdin yazılamadı: {}", e))?;
             // EOF gönder; betik okumayı bitirir.
             drop(stdin);
         }
@@ -197,20 +220,34 @@ impl TaskManager {
         let exit_ok = output.status.success();
 
         // stdout her durumda JSON olmalı (run_task.py sözleşmesi); önce onu çöz.
-        let json_result: Value = serde_json::from_str(stdout.trim())
-            .map_err(|e| format!("run_task.py çıktısı JSON değil: {} | stdout: {} | stderr: {}",
-                e, head(&stdout, 300), head(&stderr, 300)))?;
+        let json_result: Value = serde_json::from_str(stdout.trim()).map_err(|e| {
+            format!(
+                "run_task.py çıktısı JSON değil: {} | stdout: {} | stderr: {}",
+                e,
+                head(&stdout, 300),
+                head(&stderr, 300)
+            )
+        })?;
 
         if !exit_ok {
             // 2/3/4: dürüst, açıklayalı durumlar — status alanını hata kodu yap.
-            let status = json_result.get("status").and_then(|v| v.as_str()).unwrap_or("failed");
+            let status = json_result
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("failed");
             let note = json_result
-                .get("note").or_else(|| json_result.get("error"))
+                .get("note")
+                .or_else(|| json_result.get("error"))
                 .or_else(|| json_result.get("reason"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("Bilinmeyen neden")
                 .to_string();
-            let message = format!("Görev durdu ({}): {} | stderr: {}", status, note, head(&stderr, 200));
+            let message = format!(
+                "Görev durdu ({}): {} | stderr: {}",
+                status,
+                note,
+                head(&stderr, 200)
+            );
             let _ = self.event_bus.publish(AgentEvent::ErrorHalt {
                 task_id,
                 agent_name: "TaskManager(run_task)".to_string(),
@@ -222,9 +259,16 @@ impl TaskManager {
         }
 
         // Pipeline koştu — status alanı TaskStatus.status ([048] artık tek kaynak).
-        let status = json_result.get("status").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
+        let status = json_result
+            .get("status")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string();
         if status == "failed" {
-            let error_msg = json_result.get("error").and_then(|v| v.as_str()).unwrap_or("Bilinmeyen hata");
+            let error_msg = json_result
+                .get("error")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Bilinmeyen hata");
             let _ = self.event_bus.publish(AgentEvent::ErrorHalt {
                 task_id,
                 agent_name: "TaskManager(run_task)".to_string(),
@@ -236,9 +280,20 @@ impl TaskManager {
         }
 
         if let Some(analysis) = json_result.get("mirror_analysis") {
-            let alignment_score = analysis.get("alignment_score").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-            let anchor_count = analysis.get("authentic_anchors").and_then(|v| v.as_array()).map(|v| v.len() as u32).unwrap_or(0);
-            let overall_frequency = analysis.get("user_core_frequency").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
+            let alignment_score = analysis
+                .get("alignment_score")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0) as f32;
+            let anchor_count = analysis
+                .get("authentic_anchors")
+                .and_then(|v| v.as_array())
+                .map(|v| v.len() as u32)
+                .unwrap_or(0);
+            let overall_frequency = analysis
+                .get("user_core_frequency")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string();
             let _ = self.event_bus.publish(AgentEvent::FrequencyUpdate {
                 task_id,
                 alignment_score,

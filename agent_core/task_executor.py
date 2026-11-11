@@ -1745,6 +1745,10 @@ class PinealExecutor:
             status.channel_status = [c for c in _inherited_channels if isinstance(c, dict)]
         _task_wall_start = datetime.now(timezone.utc)
 
+        # Reject caller-supplied verification state before restoring a trusted checkpoint.
+        input_data.pop("verifications", None)
+        input_data.pop("claim_gate", None)
+
         # [RESUME · DESTEKLE DEVAM] Önceki koşudan devralma: tamamlanan
         # ajanlar & kanıtlar & yutulan çıktılar taşınır; destek talepleri
         # çözümlenir. Durum makinesi DEĞİŞMEZ (processing → ... aynı akış).
@@ -1848,10 +1852,6 @@ class PinealExecutor:
         # caller-supplied raw list as a typed source or prompt context.
         input_data["_upstream_findings"] = []
         input_data.pop("message_evidence_context", None)
-        # Verification outputs and their downstream gate are executor-owned;
-        # never accept a caller-injected claim verdict as a message veto.
-        input_data.pop("verifications", None)
-        input_data.pop("claim_gate", None)
         input_data["forensic_evidence"] = []
         input_data["forensic_evidence_status"] = "unavailable"
         input_data["evidence_timeline"] = EvidenceTimeline().model_dump(mode="json")

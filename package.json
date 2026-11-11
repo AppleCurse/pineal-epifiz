@@ -4,6 +4,8 @@
   "private": true,
   "description": "PINEAL EPIFIZ — kök derleme kabuğu (Cloudflare Workers Builds / Pages burada `npm run build` çalıştırır).",
   "scripts": {
+    "dev": "npm run dev --prefix frontend",
+    "preview": "npm run preview --prefix frontend",
     "build": "npm ci --include=dev --prefix frontend && npm run build --prefix frontend",
     "check": "npm run check --prefix frontend"
   },

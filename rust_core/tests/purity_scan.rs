@@ -76,8 +76,8 @@ fn extract_fn_body(source: &str, signature: &str) -> Option<String> {
 
 #[test]
 fn token_compressor_has_no_forbidden_deps() {
-    let source = fs::read_to_string("src/token_compressor.rs")
-        .expect("token_compressor.rs okunamadı");
+    let source =
+        fs::read_to_string("src/token_compressor.rs").expect("token_compressor.rs okunamadı");
 
     // (1) #[cfg(test)] başlangıcından itibaren her şeyi at: orası yalnızca
     // test kodudur (ürün kodu değildir) ve kendi `use std::fs;`'ini taşır.

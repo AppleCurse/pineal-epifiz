@@ -1,11 +1,11 @@
+use crate::agent_pipeline::{AgentNode, AnalysisResult, HaltReason};
+use crate::event_bus::{AgentEvent, EventBus, Severity};
+use crate::uncertainty::{ConfidenceLevel, UncertaintyEngine};
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use crate::agent_pipeline::{AgentNode, HaltReason, AnalysisResult};
-use crate::event_bus::{AgentEvent, EventBus, Severity};
-use crate::uncertainty::{UncertaintyEngine, ConfidenceLevel};
-use async_trait::async_trait;
-use uuid::Uuid;
 use std::sync::Arc;
+use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claim {
@@ -41,6 +41,19 @@ pub struct VerifierReport {
 /// Deterministik otantiklik skoru: yalnız DOĞRULANMIŞ iddialar sayılır.
 /// `total == 0` -> 0.0 (kanıt yoksa skor da yok). Çekilen kaynak SAYISI skoru
 /// asla yükseltmez.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TruthStatus {
+    Verified,
+    Unverified,
+}
+
+fn normalize_truth_status(value: &str) -> TruthStatus {
+    match value.trim().to_ascii_uppercase().as_str() {
+        "VERIFIED" | "DOĞRULANDI" => TruthStatus::Verified,
+        _ => TruthStatus::Unverified,
+    }
+}
+
 pub fn authenticity_score(confirmed: usize, total: usize) -> f32 {
     if total == 0 {
         0.0
@@ -64,7 +77,10 @@ fn sha256_hex(text: &str) -> String {
 
 impl AutonomousVerifier {
     pub fn new(event_bus: Arc<EventBus>, tavily_key: Option<String>) -> Self {
-        Self { event_bus, tavily_key }
+        Self {
+            event_bus,
+            tavily_key,
+        }
     }
 }
 
@@ -96,12 +112,12 @@ impl AgentNode for AutonomousVerifier {
             return Err(HaltReason::InsufficientEvidence(error_msg));
         }
 
-        let input_data: Value = serde_json::from_str(input).map_err(|e| {
-            HaltReason::LlmParseError(format!("Invalid input JSON: {}", e))
-        })?;
+        let input_data: Value = serde_json::from_str(input)
+            .map_err(|e| HaltReason::LlmParseError(format!("Invalid input JSON: {}", e)))?;
 
         let tavily_api_key = self.tavily_key.as_ref().unwrap();
-        let target_bio = input_data.get("target_profile")
+        let target_bio = input_data
+            .get("target_profile")
             .and_then(|p| p.get("bio"))
             .and_then(|b| b.as_str())
             .unwrap_or("");
@@ -118,7 +134,8 @@ impl AgentNode for AutonomousVerifier {
         let mut failure_reason: Option<String> = None;
 
         if target_bio.is_empty() {
-            failure_reason = Some("Hedef bio kanıtı yok; teyit edilecek iddia bulunamadı".to_string());
+            failure_reason =
+                Some("Hedef bio kanıtı yok; teyit edilecek iddia bulunamadı".to_string());
         } else {
             let client = reqwest::Client::new();
             let search_body = serde_json::json!({
@@ -127,14 +144,32 @@ impl AgentNode for AutonomousVerifier {
                 "max_results": 3
             });
 
-            match client.post("https://api.tavily.com/search").json(&search_body).send().await {
+            match client
+                .post("https://api.tavily.com/search")
+                .json(&search_body)
+                .send()
+                .await
+            {
                 Ok(res) => match res.json::<Value>().await {
                     Ok(search_json) => {
-                        if let Some(results) = search_json.get("results").and_then(|r| r.as_array()) {
+                        if let Some(results) = search_json.get("results").and_then(|r| r.as_array())
+                        {
                             for item in results {
-                                let title = item.get("title").and_then(|t| t.as_str()).unwrap_or("Bilinmeyen").to_string();
-                                let url = item.get("url").and_then(|u| u.as_str()).unwrap_or("").to_string();
-                                let snippet = item.get("content").and_then(|s| s.as_str()).unwrap_or("").to_string();
+                                let title = item
+                                    .get("title")
+                                    .and_then(|t| t.as_str())
+                                    .unwrap_or("Bilinmeyen")
+                                    .to_string();
+                                let url = item
+                                    .get("url")
+                                    .and_then(|u| u.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                let snippet = item
+                                    .get("content")
+                                    .and_then(|s| s.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
                                 verifications.push(VerificationResult {
                                     claim_text: title,
                                     truth_status: "UNVERIFIED".to_string(),
@@ -146,7 +181,8 @@ impl AgentNode for AutonomousVerifier {
                                 failure_reason = Some("Arama sonuç döndürmedi".to_string());
                             }
                         } else {
-                            failure_reason = Some("Arama yanıtı 'results' alanı içermiyor".to_string());
+                            failure_reason =
+                                Some("Arama yanıtı 'results' alanı içermiyor".to_string());
                         }
                     }
                     Err(e) => failure_reason = Some(format!("Arama yanıtı parse edilemedi: {}", e)),
@@ -167,7 +203,7 @@ impl AgentNode for AutonomousVerifier {
         let source_count = verifications.len();
         let confirmed = verifications
             .iter()
-            .filter(|v| v.truth_status == "DOĞRULANDI")
+            .filter(|v| normalize_truth_status(&v.truth_status) == TruthStatus::Verified)
             .count();
         let overall_score = authenticity_score(confirmed, verifications.len());
         let evidence_coverage = (verifications.len() as f32 / 3.0).min(1.0);
@@ -211,12 +247,11 @@ impl AgentNode for AutonomousVerifier {
             "evidence_coverage".to_string(),
             "status".to_string(),
         ];
-        
+
         let engine = UncertaintyEngine::new(task_id, required_fields);
-        
-        let llm_data: Value = serde_json::from_str(&llm_json_str).map_err(|e| {
-            HaltReason::LlmParseError(format!("LLM dönen JSON hatalı: {}", e))
-        })?;
+
+        let llm_data: Value = serde_json::from_str(&llm_json_str)
+            .map_err(|e| HaltReason::LlmParseError(format!("LLM dönen JSON hatalı: {}", e)))?;
 
         match engine.evaluate(&llm_data) {
             Ok(ConfidenceLevel::Halt(evidence)) => {
@@ -289,5 +324,15 @@ mod tests {
         assert_eq!(report.overall_authenticity_score, 0.0);
         // Teminat ile otantiklik skoru ayrı alanlardır (karıştırılamaz).
         assert!(report.evidence_coverage > report.overall_authenticity_score);
+    }
+
+    #[test]
+    fn truth_status_normalization_does_not_promote_unverified_sources() {
+        assert_eq!(
+            normalize_truth_status("UNVERIFIED"),
+            TruthStatus::Unverified
+        );
+        assert_eq!(normalize_truth_status("VERIFIED"), TruthStatus::Verified);
+        assert_eq!(normalize_truth_status("DOĞRULANDI"), TruthStatus::Verified);
     }
 }

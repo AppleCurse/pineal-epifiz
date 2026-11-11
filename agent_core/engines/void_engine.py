@@ -25,8 +25,9 @@ def _presence(corpus, cues):
     # `cues` bir küme: yineleme sırası hash tohumuna bağlıdır. Sıralı liste
     # deterministik çıktı garantisi verir (7 motor deterministik diye beyan
     # ediliyor; [RÖNTGEN 2026-09-23]).
-    hits = sorted(c for c in cues if c in corpus)
-    n = sum(corpus.count(c) for c in hits)
+    counts = {c: len(re.findall(rf"(?<!\w){re.escape(c)}(?!\w)", corpus, flags=re.IGNORECASE)) for c in cues}
+    hits = sorted(c for c, count in counts.items() if count)
+    n = sum(counts[c] for c in hits)
     return float(1 - np.exp(-0.45 * n)), n, hits[:8]
 
 

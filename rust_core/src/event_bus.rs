@@ -69,12 +69,22 @@ pub struct EventBus {
 impl EventBus {
     pub fn new(buffer_size: usize) -> Self {
         let (sender, _) = broadcast::channel(buffer_size);
-        Self { sender, _receiver_count: 0 }
+        Self {
+            sender,
+            _receiver_count: 0,
+        }
     }
 
     #[allow(clippy::result_large_err)]
-    pub fn publish(&self, event: AgentEvent) -> Result<(), broadcast::error::SendError<TelemetryEvent>> {
-        let telemetry = TelemetryEvent { timestamp: Utc::now(), event, correlation_id: None };
+    pub fn publish(
+        &self,
+        event: AgentEvent,
+    ) -> Result<(), broadcast::error::SendError<TelemetryEvent>> {
+        let telemetry = TelemetryEvent {
+            timestamp: Utc::now(),
+            event,
+            correlation_id: None,
+        };
         self.sender.send(telemetry)?;
         Ok(())
     }
@@ -107,19 +117,30 @@ pub struct EventBusBuilder {
 
 impl Default for EventBusBuilder {
     fn default() -> Self {
-        Self { buffer_size: 1000, log_to_file: false, log_path: None }
+        Self {
+            buffer_size: 1000,
+            log_to_file: false,
+            log_path: None,
+        }
     }
 }
 
 impl EventBusBuilder {
-    pub fn new() -> Self { Self::default() }
-    pub fn with_buffer_size(mut self, size: usize) -> Self { self.buffer_size = size; self }
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn with_buffer_size(mut self, size: usize) -> Self {
+        self.buffer_size = size;
+        self
+    }
     pub fn with_file_logging(mut self, path: &str) -> Self {
         self.log_to_file = true;
         self.log_path = Some(path.to_string());
         self
     }
-    pub fn build(self) -> EventBus { EventBus::new(self.buffer_size) }
+    pub fn build(self) -> EventBus {
+        EventBus::new(self.buffer_size)
+    }
 }
 
 #[cfg(test)]
@@ -136,8 +157,12 @@ mod tests {
             task_id,
             agent_name: "MirrorOfTruth".to_string(),
             input_summary: "Hedef profil analizi başlatıldı".to_string(),
-        }).unwrap();
-        let received = tokio::time::timeout(Duration::from_millis(100), rx.recv()).await.expect("Timeout").expect("Channel kapandı");
+        })
+        .unwrap();
+        let received = tokio::time::timeout(Duration::from_millis(100), rx.recv())
+            .await
+            .expect("Timeout")
+            .expect("Channel kapandı");
         match received.event {
             AgentEvent::TaskStarted { agent_name, .. } => assert_eq!(agent_name, "MirrorOfTruth"),
             _ => panic!("Yanlış event tipi"),
@@ -154,7 +179,8 @@ mod tests {
             agent_name: "ShadowExecutor".to_string(),
             step_name: "JSON_Generation".to_string(),
             output_hash: "abc123".to_string(),
-        }).unwrap();
+        })
+        .unwrap();
         let r1 = rx1.recv().await.unwrap();
         let r2 = rx2.recv().await.unwrap();
         assert_eq!(r1.timestamp, r2.timestamp);

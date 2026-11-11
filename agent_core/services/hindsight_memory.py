@@ -191,9 +191,11 @@ class HindsightMemory(CanonicalMemory):
         return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
     # ------------------------------------------------------------------ CanonicalMemory genişletmesi
-    async def merge_evidence(self, task_id: str, evidence_chain: List[Dict]):
-        """Canonical davranışı korur + anlamsal indekse ekler."""
-        await super().merge_evidence(task_id, evidence_chain)
+    async def merge_evidence(
+        self, task_id: str, evidence_chain: List[Dict], metadata: Optional[Dict] = None
+    ):
+        """Preserve CanonicalMemory's drop-in merge_evidence signature."""
+        await super().merge_evidence(task_id, evidence_chain, metadata=metadata)
         # Anlamsal indekse de yaz (en iyi çaba — hata kanıt akışını bozmaz)
         def _index_all_evidence():
             records = []

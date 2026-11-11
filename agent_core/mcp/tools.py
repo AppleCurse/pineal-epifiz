@@ -72,14 +72,20 @@ def tool_name_for(cap_id: str) -> str:
 
 
 def default_input_schema() -> dict[str, Any]:
-    """Beyan edilmemiş yetenekler için sözleşme şeması: yalnız ``subject``."""
-    return {
-        "type": "object",
-        "properties": {"subject": {"type": "string", "description": _SUBJECT_DESCRIPTION}},
-        "required": ["subject"],
-        "additionalProperties": False,
-    }
-
+    """Schema for undeclared capabilities with the shared MCP parameters."""
+    properties = {"subject": {"type": "string", "description": _SUBJECT_DESCRIPTION}}
+    properties.update({
+        "evidence": {"type": "array"}, "sources": {"type": "string"},
+        "channels": {"type": "array"}, "auto_bridge": {"type": "boolean"},
+        "limit": {"type": "integer"}, "max_pages": {"type": "integer"},
+        "max_chars": {"type": "integer"}, "sample_every": {"type": "integer"},
+        "top_k": {"type": "integer"}, "rate": {"type": "number"},
+    })
+    for name in ("text", "report", "claim", "target", "path", "audio",
+                 "audio_base64", "suffix", "language", "voice", "title"):
+        properties[name] = {"type": "string"}
+    return {"type": "object", "properties": properties, "required": ["subject"],
+            "additionalProperties": False}
 
 def input_schema_for(cap: Capability) -> dict[str, Any]:
     """Yeteneğin girdi şeması: kendi beyanı ya da sözleşme varsayılanı.

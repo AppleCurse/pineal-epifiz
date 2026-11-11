@@ -154,7 +154,9 @@ impl StealthVault {
 
     pub fn load(vault_path: &Path, password: &str) -> Result<Self, VaultError> {
         if !vault_path.exists() {
-            return Err(VaultError::FileError("Vault dosyası bulunamadı".to_string()));
+            return Err(VaultError::FileError(
+                "Vault dosyası bulunamadı".to_string(),
+            ));
         }
 
         let identity_data = fs::read(vault_path)
@@ -187,7 +189,11 @@ impl StealthVault {
         //    taşıyordu. Böyle bir dosya "açılıp kullanılabilir" sayılmaz:
         //    fail-closed reddedilir (güvenli kasa iddiası geriye dönük olarak
         //    da geçerli olmak zorunda).
-        if vault_value.get("identity").and_then(|v| v.as_str()).is_some() {
+        if vault_value
+            .get("identity")
+            .and_then(|v| v.as_str())
+            .is_some()
+        {
             return Err(VaultError::InsecureVaultFile(
                 "Kasa dosyası age GİZLİ anahtarını düz metin içeriyor (şema <5.1). \
                  Bu dosya açılamaz; kasayı yeniden oluşturun ve anahtarları tekrar mühürleyin."
@@ -248,8 +254,8 @@ impl StealthVault {
     pub fn store<T: Serialize>(&self, label: &str, data: &T) -> Result<(), VaultError> {
         self.ensure_unlocked()?;
 
-        let plaintext = serde_json::to_vec(data)
-            .map_err(|e| VaultError::EncryptionError(e.to_string()))?;
+        let plaintext =
+            serde_json::to_vec(data).map_err(|e| VaultError::EncryptionError(e.to_string()))?;
 
         let encrypted_data = self.encrypt_data(&plaintext)?;
 
@@ -259,8 +265,8 @@ impl StealthVault {
         };
 
         let cipher_path = self.cipher_path(label);
-        let cipher_json = serde_json::to_vec(&payload)
-            .map_err(|e| VaultError::EncryptionError(e.to_string()))?;
+        let cipher_json =
+            serde_json::to_vec(&payload).map_err(|e| VaultError::EncryptionError(e.to_string()))?;
 
         // [VAULT_PERSISTENCE_FIX] Atomik yazım: yarım kalmış `.cipher` dosyası
         // bir sonraki açılışta "kesik age dosyası" olarak geri dönmesin.
@@ -327,7 +333,9 @@ impl StealthVault {
             // [VAULT_PERSISTENCE_FIX] `.expect(...)` YOK: kasa arızası panik
             // değil `VaultError` döndürür (sessiz çökme / süreci düşürme yok).
             let encryptor = Encryptor::with_recipients(recipients).ok_or_else(|| {
-                VaultError::EncryptionError("age alıcı listesi boş; şifreleme başlatılamadı".to_string())
+                VaultError::EncryptionError(
+                    "age alıcı listesi boş; şifreleme başlatılamadı".to_string(),
+                )
             })?;
             let mut writer = encryptor.wrap_output(&mut encrypted).map_err(|e| {
                 VaultError::EncryptionError(format!("age wrap_output hatası: {}", e))
@@ -392,13 +400,13 @@ impl StealthVault {
         let mut writer = encryptor.wrap_output(&mut encrypted).map_err(|e| {
             VaultError::EncryptionError(format!("age wrap_output (parola) hatası: {}", e))
         })?;
-        writer
-            .write_all(identity_secret.as_bytes())
-            .map_err(|e| VaultError::EncryptionError(format!("age write (parola) hatası: {}", e)))?;
+        writer.write_all(identity_secret.as_bytes()).map_err(|e| {
+            VaultError::EncryptionError(format!("age write (parola) hatası: {}", e))
+        })?;
         // finish() zorunlu — bkz. encrypt_data'daki kök neden notu.
-        writer
-            .finish()
-            .map_err(|e| VaultError::EncryptionError(format!("age finish (parola) hatası: {}", e)))?;
+        writer.finish().map_err(|e| {
+            VaultError::EncryptionError(format!("age finish (parola) hatası: {}", e))
+        })?;
 
         Ok(encrypted)
     }
@@ -412,22 +420,26 @@ impl StealthVault {
             VaultError::DecryptionError(format!("age decryptor (parola) hatası: {}", e))
         })?;
 
-        let passphrase_decryptor = match decryptor {
-            Decryptor::Passphrase(d) => d,
-            _ => {
-                return Err(VaultError::DecryptionError(
+        let passphrase_decryptor =
+            match decryptor {
+                Decryptor::Passphrase(d) => d,
+                _ => return Err(VaultError::DecryptionError(
                     "Kasa kimliği parola-şifreli bir age dosyası değil (dosya bozuk/kurcalanmış)"
                         .to_string(),
-                ))
-            }
-        };
+                )),
+            };
 
         let passphrase: SecretString = Secret::new(password.to_owned());
-        let mut reader = passphrase_decryptor.decrypt(&passphrase, None).map_err(|e| {
-            // age, yanlış parolayı MAC hatası olarak bildirir. Operatöre
-            // dürüst cevap: parola uyuşmadı.
-            VaultError::PasswordError(format!("Kasa kimliği çözülemedi (yanlış parola?): {}", e))
-        })?;
+        let mut reader = passphrase_decryptor
+            .decrypt(&passphrase, None)
+            .map_err(|e| {
+                // age, yanlış parolayı MAC hatası olarak bildirir. Operatöre
+                // dürüst cevap: parola uyuşmadı.
+                VaultError::PasswordError(format!(
+                    "Kasa kimliği çözülemedi (yanlış parola?): {}",
+                    e
+                ))
+            })?;
 
         let mut plaintext = Vec::new();
         reader
@@ -436,9 +448,8 @@ impl StealthVault {
 
         // `String::from_utf8` tamponu TAŞIYARAK devralır: arkada kopya kalmaz,
         // gizli anahtar bundan sonra `Secret` içinde yaşar ve `Drop`'ta sıfırlanır.
-        let identity_string = String::from_utf8(plaintext).map_err(|e| {
-            VaultError::DecryptionError(format!("Kasa kimliği UTF-8 değil: {}", e))
-        })?;
+        let identity_string = String::from_utf8(plaintext)
+            .map_err(|e| VaultError::DecryptionError(format!("Kasa kimliği UTF-8 değil: {}", e)))?;
         Ok(Secret::new(identity_string))
     }
 
@@ -453,13 +464,15 @@ impl StealthVault {
             )?,
             recipient: self.recipient.to_string(),
             password_hash: self.password_hash.clone().ok_or_else(|| {
-                VaultError::KeyGenerationError("Parola hash'i yok; kasa diske yazılamaz".to_string())
+                VaultError::KeyGenerationError(
+                    "Parola hash'i yok; kasa diske yazılamaz".to_string(),
+                )
             })?,
             version: VAULT_SCHEMA_VERSION.to_string(),
         };
 
-        let vault_bytes = serde_json::to_vec(&vault_file)
-            .map_err(|e| VaultError::FileError(e.to_string()))?;
+        let vault_bytes =
+            serde_json::to_vec(&vault_file).map_err(|e| VaultError::FileError(e.to_string()))?;
 
         Self::write_atomic(&self.vault_path, &vault_bytes)?;
 
@@ -595,12 +608,23 @@ mod tests {
         {
             let vault = StealthVault::new(&vault_path, "parola").unwrap();
             #[derive(Serialize)]
-            struct Credential { value: String }
-            vault.store("OPENROUTER_API_KEY", &Credential { value: "sk-or-v1-x".to_string() }).unwrap();
+            struct Credential {
+                value: String,
+            }
+            vault
+                .store(
+                    "OPENROUTER_API_KEY",
+                    &Credential {
+                        value: "sk-or-v1-x".to_string(),
+                    },
+                )
+                .unwrap();
         }
         let reloaded = StealthVault::load(&vault_path, "parola").unwrap();
         #[derive(Deserialize, Debug)]
-        struct Credential { value: String }
+        struct Credential {
+            value: String,
+        }
         let cred: Credential = reloaded.retrieve("OPENROUTER_API_KEY").unwrap();
         assert_eq!(cred.value, "sk-or-v1-x");
     }
@@ -615,9 +639,16 @@ mod tests {
         let vault = StealthVault::new(&vault_path, "parola").unwrap();
 
         #[derive(Serialize, Deserialize, Debug)]
-        struct Credential { value: String }
+        struct Credential {
+            value: String,
+        }
         vault
-            .store("TOKEN", &Credential { value: "sk-or-v1-tam-akis".to_string() })
+            .store(
+                "TOKEN",
+                &Credential {
+                    value: "sk-or-v1-tam-akis".to_string(),
+                },
+            )
             .unwrap();
 
         let cipher_path = dir.path().join("TOKEN.cipher");
@@ -697,7 +728,11 @@ mod tests {
         );
         // Yanlış parola hâlâ parola hatasıdır (biçim bilgisi sızmaz).
         let err = StealthVault::load(&vault_path, "yanlis").unwrap_err();
-        assert!(matches!(err, VaultError::PasswordError(_)), "gelen: {:?}", err);
+        assert!(
+            matches!(err, VaultError::PasswordError(_)),
+            "gelen: {:?}",
+            err
+        );
     }
 
     /// Kasa kurcalanırsa (açık alıcı ≠ kimliğin alıcısı) sessizce açılmaz.
@@ -730,9 +765,16 @@ mod tests {
         let mut vault = StealthVault::new(&vault_path, "parola").unwrap();
 
         #[derive(Serialize, Deserialize, Debug)]
-        struct Credential { value: String }
+        struct Credential {
+            value: String,
+        }
         vault
-            .store("K", &Credential { value: "v".to_string() })
+            .store(
+                "K",
+                &Credential {
+                    value: "v".to_string(),
+                },
+            )
             .unwrap();
         assert!(vault.is_unlocked());
 
@@ -745,7 +787,12 @@ mod tests {
         assert!(!vault.is_unlocked());
 
         let store_err = vault
-            .store("K", &Credential { value: "v2".to_string() })
+            .store(
+                "K",
+                &Credential {
+                    value: "v2".to_string(),
+                },
+            )
             .unwrap_err();
         assert!(
             matches!(store_err, VaultError::VaultLocked(_)),
@@ -785,7 +832,12 @@ mod tests {
         // Parmak izi de aynı: master key artık GÖZLEMLENEBİLİR bir değer
         // taşıyor, süs eşyası değil.
         let created_fp = created.fingerprint().unwrap();
-        assert_eq!(created_fp.len(), 16, "iz 8 baytın hex'i olmalı: {:?}", created_fp);
+        assert_eq!(
+            created_fp.len(),
+            16,
+            "iz 8 baytın hex'i olmalı: {:?}",
+            created_fp
+        );
         assert_eq!(created_fp, reloaded.fingerprint().unwrap());
 
         // Başka bir kasa (aynı parola bile olsa) BAŞKA iz verir: tuz farklı.
@@ -810,7 +862,10 @@ mod tests {
     fn test_default_vault_path_single_source() {
         // [W4.3] env önceliği + varsayılan ev dizini altı (asla /tmp değil)
         std::env::set_var("PINEAL_VAULT_DIR", "/tmp/ozel_kasa");
-        assert_eq!(default_vault_path(), std::path::PathBuf::from("/tmp/ozel_kasa/vault.json"));
+        assert_eq!(
+            default_vault_path(),
+            std::path::PathBuf::from("/tmp/ozel_kasa/vault.json")
+        );
         std::env::remove_var("PINEAL_VAULT_DIR");
         let path = default_vault_path();
         assert!(path.to_string_lossy().contains(".pineal_vault"));
@@ -825,7 +880,7 @@ mod tests {
         let result = StealthVault::load(&vault_path, "wrong_password");
         assert!(result.is_err());
         match result {
-            Err(VaultError::PasswordError(_)) => {},
+            Err(VaultError::PasswordError(_)) => {}
             _ => panic!("Beklenen PasswordError gelmedi"),
         }
     }

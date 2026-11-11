@@ -1,5 +1,5 @@
 //! PINEAL-HERETIC v4.0 - Uncertainty Engine
-//! 
+//!
 //! Tip-güvenli belirsizlik yönetimi ve Fail-Fast mekanizması.
 //! LLM halüsinasyonlarını ve eksik veri durumlarını derleme zamanında yakalar.
 
@@ -48,10 +48,10 @@ pub struct Evidence {
 pub enum UncertaintyError {
     #[error("Veri eksik: {0}")]
     MissingData(String),
-    
+
     #[error("Doğrulama başarısız: {0}")]
     ValidationFailed(String),
-    
+
     #[error("LLM yanıtı format hatası: {0}")]
     LLMFormatError(String),
 }
@@ -64,7 +64,10 @@ pub struct UncertaintyEngine {
 
 impl UncertaintyEngine {
     pub fn new(task_id: uuid::Uuid, required_fields: Vec<String>) -> Self {
-        Self { _task_id: task_id, required_fields }
+        Self {
+            _task_id: task_id,
+            required_fields,
+        }
     }
 
     /// Veriyi doğrula ve ConfidenceLevel döndür.
@@ -83,7 +86,8 @@ impl UncertaintyEngine {
         let json_value = serde_json::to_value(data)
             .map_err(|e| UncertaintyError::ValidationFailed(e.to_string()))?;
 
-        let obj = json_value.as_object()
+        let obj = json_value
+            .as_object()
             .ok_or_else(|| UncertaintyError::ValidationFailed("Veri obje değil".to_string()))?;
 
         // Eksik/kanıtsız alanları tespit et
@@ -130,15 +134,37 @@ impl UncertaintyEngine {
     /// duvar saati alanları). Bunlar KANIT DEĞİLDİR: model adı, sağlayıcı,
     /// süre, token, ajan adı, iz kimliği, zaman damgası, sürüm.
     pub const RUNTIME_METADATA_FIELDS: &[&str] = &[
-        "confidence", "data_confidence", "fallback_reason",
-        "model", "model_name", "provider", "source_provider",
-        "usage", "tokens", "token_usage", "metrics",
-        "duration_ms", "elapsed_ms", "latency_ms", "elapsed",
-        "agent", "agent_name", "request_id", "task_id", "trace_id",
+        "confidence",
+        "data_confidence",
+        "fallback_reason",
+        "model",
+        "model_name",
+        "provider",
+        "source_provider",
+        "usage",
+        "tokens",
+        "token_usage",
+        "metrics",
+        "duration_ms",
+        "elapsed_ms",
+        "latency_ms",
+        "elapsed",
+        "agent",
+        "agent_name",
+        "request_id",
+        "task_id",
+        "trace_id",
         "version",
         // duvar saati: mühür/skor girdisi olamaz (§8.7)
-        "created_at", "timestamp", "ts", "computed_at", "updated_at",
-        "generated_at", "measured_at", "observed_at", "started_at",
+        "created_at",
+        "timestamp",
+        "ts",
+        "computed_at",
+        "updated_at",
+        "generated_at",
+        "measured_at",
+        "observed_at",
+        "started_at",
         "completed_at",
     ];
 
@@ -184,11 +210,23 @@ impl UncertaintyEngine {
                 }
                 !matches!(
                     t.as_str(),
-                    "unknown" | "n/a" | "na" | "-" | "yok" | "yok." | "bilinmiyor"
-                        | "veri yok" | "belirsiz" | "not found" | "no data" | "no results"
+                    "unknown"
+                        | "n/a"
+                        | "na"
+                        | "-"
+                        | "yok"
+                        | "yok."
+                        | "bilinmiyor"
+                        | "veri yok"
+                        | "belirsiz"
+                        | "not found"
+                        | "no data"
+                        | "no results"
                 )
             }
-            Value::Array(items) => !items.is_empty() && items.iter().any(Self::value_bears_evidence),
+            Value::Array(items) => {
+                !items.is_empty() && items.iter().any(Self::value_bears_evidence)
+            }
             Value::Object(map) => !map.is_empty() && map.values().any(Self::value_bears_evidence),
         }
     }
@@ -219,7 +257,11 @@ mod tests {
     fn test_fail_fast_on_missing_field() {
         let engine = UncertaintyEngine::new(
             uuid::Uuid::new_v4(),
-            vec!["username".to_string(), "posts".to_string(), "bio".to_string()],
+            vec![
+                "username".to_string(),
+                "posts".to_string(),
+                "bio".to_string(),
+            ],
         );
 
         let profile = MockProfile {
@@ -228,12 +270,12 @@ mod tests {
         };
 
         let result = engine.evaluate(&profile).unwrap();
-        
+
         match result {
             ConfidenceLevel::Halt(evidence) => {
                 assert_eq!(evidence.missing_fields, vec!["bio"]);
                 assert_eq!(evidence.severity, Severity::Critical);
-            },
+            }
             ConfidenceLevel::Pass(_) => panic!("Beklenen HALT durumu gelmedi!"),
         }
     }
@@ -257,10 +299,7 @@ mod tests {
         // [006]: {"depth": "x"} -> obje dolu ama değer kanıt değil; vektör
         // ajanları tip kontrolünü kendi parse'ında yapar, motor string'e izin
         // verir ANCAK placeholder ise HALT eder:
-        let engine = UncertaintyEngine::new(
-            uuid::Uuid::new_v4(),
-            vec!["vec".to_string()],
-        );
+        let engine = UncertaintyEngine::new(uuid::Uuid::new_v4(), vec!["vec".to_string()]);
         let data = serde_json::json!({ "vec": { "depth": "unknown" } });
         match engine.evaluate(&data).unwrap() {
             ConfidenceLevel::Halt(e) => assert_eq!(e.missing_fields, vec!["vec"]),
@@ -301,17 +340,14 @@ mod tests {
             ConfidenceLevel::Pass(e) => {
                 assert_eq!(e.score, 67);
                 assert!(e.score < 100, "placeholder alan skoru 100 yapamaz");
-            },
+            }
             ConfidenceLevel::Halt(_) => panic!("zorunlu alanlar kanıt taşıyor"),
         }
     }
 
     #[test]
     fn metadata_fields_cannot_inflate_score() {
-        let engine = UncertaintyEngine::new(
-            uuid::Uuid::new_v4(),
-            vec!["vec".to_string()],
-        );
+        let engine = UncertaintyEngine::new(uuid::Uuid::new_v4(), vec!["vec".to_string()]);
         // Metadata + duvar saati alanları ADAY kümesine girmez: skor yalnız
         // gerçek kanıt alanından ölçülür (1/1 -> 100), metadata şişirmez.
         let data = serde_json::json!({

@@ -22,6 +22,7 @@ metin parmak izi, kaç bayt, kaç ms) — sonra "bunu söyledik" iddiası izlene
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import ipaddress
 import json
@@ -329,6 +330,8 @@ class LocalTTSCapability(BaseCapability):
         return "", reason
 
     def availability(self) -> Availability:
+        if not _flag("ENABLE_LOCAL_TTS"):
+            return Availability.unavailable("gate_disabled")
         engine, reason = self.backend()
         if not engine:
             return Availability.unavailable(reason)
@@ -589,6 +592,8 @@ class LocalSTTCapability(BaseCapability):
         return "", reason
 
     def availability(self) -> Availability:
+        if not _flag("ENABLE_LOCAL_STT"):
+            return Availability.unavailable("gate_disabled")
         engine, reason = self.backend()
         if not engine:
             return Availability.unavailable(reason)

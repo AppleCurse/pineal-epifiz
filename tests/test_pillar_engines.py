@@ -12,6 +12,12 @@ from agent_core.engines.gravity_engine import GravityEngine
 from agent_core.engines.pulse_engine import PulseEngine
 from agent_core.engines.pillar_orchestrator import PillarOrchestrator
 
+def test_presence_requires_token_boundaries():
+    from agent_core.engines.void_engine import _presence
+    _, count, hits = _presence("aileler aile aile!", {"aile"})
+    assert count == 2 and hits == ["aile"]
+
+
 def data(n=24, gap=12):
     t = datetime(2025, 1, 1, 20, tzinfo=timezone.utc)
     ts = []

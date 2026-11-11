@@ -2047,6 +2047,18 @@
         </div>
 
       <!-- TAB 2.6: HEDEF PSİKOLOJİSİ & GÖLGE (DARK TRIAD / DEPTH / MEMORY) -->
+      {:else if activeTab === 'osint_radar'}
+        <div class="osint-radar-container">
+          <div class="tab-explainer-banner"><strong>GERÇEK GÖREV KANIT RADARI</strong><p>Yalnızca görev belleği ve graph API kanıtı gösterilir; veri yoksa skor uydurulmaz.</p></div>
+          <div class="radar-status-grid">
+            <div class="metric-card"><span class="metric-name">GRAF API</span><strong>{realGraphInfo.loaded ? (realGraphInfo.available ? 'GERÇEK VERİ' : 'KANIT YOK') : 'YÜKLENMEDİ'}</strong><small>{realGraphInfo.machineNote || 'Görev seçilmedi'}</small></div>
+            <div class="metric-card"><span class="metric-name">DÜĞÜM</span><strong>{realGraphInfo.nodeCount}</strong></div>
+            <div class="metric-card"><span class="metric-name">BAĞ</span><strong>{realGraphInfo.edgeCount}</strong></div>
+            <div class="metric-card"><span class="metric-name">KANIT KAYDI</span><strong>{evidenceItems.length}</strong></div>
+          </div>
+          {#if !realGraphInfo.available}<div class="osint-error-box">Gerçek kanıt grafı mevcut değil: {realGraphInfo.reason || realGraphInfo.machineNote || 'henüz veri yok'}</div>{:else}<div class="evidence-section"><div class="section-title"><span>GERÇEK GRAF DÜĞÜMLERİ</span></div><div class="evidence-list">{#each nodes as node}<div class="evidence-row"><span class="evidence-type">{node.type || 'unknown'}</span><span class="evidence-value">{node.label || node.id}</span><span class="evidence-source">{'task graph'}</span></div>{/each}</div></div>{/if}
+          <div class="evidence-section"><div class="section-title"><span>GÖREV KANIT KAYITLARI</span></div>{#if evidenceItems.length === 0}<div class="empty-state">Bu görev için kanıt kaydı yok.</div>{:else}<div class="evidence-list">{#each evidenceItems as item}<div class="evidence-row"><span class="evidence-type">{item.type}</span><span class="evidence-value">{item.value}</span><span class="evidence-source">{item.source} · {item.verified ? 'doğrulandı' : 'doğrulanmadı'}</span></div>{/each}</div>{/if}</div>
+        </div>
       {:else if activeTab === 'psychology_shadow'}
         <div class="shadow-container">
           <!-- 1. Karanlık Üçlü & Zaafiyet Matrisi -->
@@ -2742,7 +2754,7 @@
 
   <!-- ⚙️ AYARLAR & API KASASI (VAULT) MODALI -->
   {#if showSettingsModal}
-    <div class="settings-modal-backdrop" on:click|self={() => (showSettingsModal = false)}>
+    <div class="settings-modal-backdrop" role="presentation" on:click|self={() => (showSettingsModal = false)} on:keydown|self={(e) => e.key === 'Escape' && (showSettingsModal = false)}>
       <div class="settings-modal-card">
         <div class="settings-modal-header">
           <div class="modal-title-wrap">
@@ -3435,7 +3447,7 @@
     margin-right: 8px;
   }
 
-  .action-input-wrap input {
+  :global(.action-input-wrap input) {
     width: 100%;
     background: transparent;
     border: none;
@@ -3454,7 +3466,7 @@
     color: #94a3b8;
   }
 
-  .limit-selector select {
+  :global(.limit-selector select) {
     background: #0f172a;
     border: 1px solid #334155;
     color: #f8fafc;

@@ -88,26 +88,34 @@ async def test_osint_llm_failure_graceful_fallback(monkeypatch):
 
 
 @pytest.mark.asyncio
-@patch("aiohttp.ClientSession.get")
-async def test_osint_with_api_key_simulation(mock_get, monkeypatch):
-    """OSINT_INDUSTRIES_KEY mevcutken canlı bağlantı simülasyonu çalışmalıdır."""
+async def test_osint_with_api_key_simulation(monkeypatch):
+    """OSINT_INDUSTRIES_KEY mevcutken canli baglanti simulasyonu open_client ile calismalidir."""
+    from contextlib import asynccontextmanager
+    import agent_core.capabilities.egress as egress_mod
+
     monkeypatch.setenv("OSINT_INDUSTRIES_KEY", "sk-osint-valid-test-key")
 
-    # Configure the mock
-    mock_resp = AsyncMock()
-    mock_resp.status = 200
-    mock_resp.json = AsyncMock(return_value={
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.text = ""
+    mock_resp.json = MagicMock(return_value={
         "emails": ["test@example.com"],
         "phones": [],
         "platforms": ["X"]
     })
 
-    # Set __aenter__ to return the mock response object
-    mock_get.return_value.__aenter__.return_value = mock_resp
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=mock_resp)
+
+    @asynccontextmanager
+    async def _mock_open_client(*args, **kwargs):
+        yield mock_client
+
+    monkeypatch.setattr(egress_mod, "open_client", _mock_open_client)
 
     agent = OsintInvestigatorAgent()
     payload = {"target_profile": {"username": "cyber_agent"}}
-    
+
     res = await agent.execute(payload)
     assert isinstance(res, OsintProfile)
     assert res.confidence == round(2 / 3, 3)

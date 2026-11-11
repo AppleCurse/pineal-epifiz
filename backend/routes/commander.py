@@ -20,6 +20,7 @@ import re
 from contextlib import contextmanager
 import os
 import tempfile
+import threading
 from datetime import datetime
 from typing import Any, Callable, Dict, Optional
 from fastapi import Request
@@ -27,6 +28,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+_WINDOWS_LOCKS = {}
+_WINDOWS_LOCKS_GUARD = threading.Lock()
 
 __all__ = ["CommanderDispatchPayload", "CommanderInjectPayload", "CommanderPhoneProbePayload", "register_commander_routes"]
 
@@ -57,10 +60,29 @@ class CommanderPhoneProbePayload(BaseModel):
 @contextmanager
 def locked_learnings(path: str):
     """Advisory cross-process lock; all writers must use the same shared path."""
-    import fcntl
-
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(os.path.join(os.path.dirname(path), ".learnings.lock"), "a") as lock:
+    lock_path = os.path.join(os.path.dirname(path), ".learnings.lock")
+    if os.name == "nt":
+        import msvcrt
+        with _WINDOWS_LOCKS_GUARD:
+            process_lock = _WINDOWS_LOCKS.setdefault(os.path.abspath(lock_path), threading.RLock())
+        with process_lock:
+            with open(lock_path, "a+b") as lock:
+                lock.seek(0)
+                if not lock.read(1):
+                    lock.seek(0)
+                    lock.write(b"0")
+                    lock.flush()
+                lock.seek(0)
+                msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+                try:
+                    yield
+                finally:
+                    lock.seek(0)
+                    msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+        return
+    import fcntl
+    with open(lock_path, "a") as lock:
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
         try:
             yield
@@ -95,11 +117,10 @@ def _store_evidence(entry: dict, key: str) -> None:
                     # directory sync; re-sync before acknowledging the retry.
                     with open(mem_path, "rb") as current:
                         os.fsync(current.fileno())
-                    directory_fd = os.open(os.path.dirname(mem_path), os.O_RDONLY)
-                    try:
-                        os.fsync(directory_fd)
-                    finally:
-                        os.close(directory_fd)
+                    if os.name != "nt":
+                        directory_fd = os.open(os.path.dirname(mem_path), os.O_RDONLY)
+                        try: os.fsync(directory_fd)
+                        finally: os.close(directory_fd)
                     return
             entry["idempotency_key_hash"] = key_hash
             entry["idempotency_signature"] = signature
@@ -114,11 +135,10 @@ def _store_evidence(entry: dict, key: str) -> None:
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp_path, mem_path)
-            directory_fd = os.open(os.path.dirname(mem_path), os.O_RDONLY)
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
+            if os.name != "nt":
+                directory_fd = os.open(os.path.dirname(mem_path), os.O_RDONLY)
+                try: os.fsync(directory_fd)
+                finally: os.close(directory_fd)
         finally:
             if tmp_path and os.path.exists(tmp_path):
                 os.unlink(tmp_path)

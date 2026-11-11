@@ -142,8 +142,7 @@ fn try_minify_json_lines(input: &str) -> String {
 
             if looks_like_json {
                 match serde_json::from_str::<serde_json::Value>(trimmed) {
-                    Ok(value) => serde_json::to_string(&value)
-                        .unwrap_or_else(|_| line.to_string()),
+                    Ok(value) => serde_json::to_string(&value).unwrap_or_else(|_| line.to_string()),
                     Err(_) => line.to_string(),
                 }
             } else {
@@ -192,7 +191,10 @@ mod tests {
     use std::fs;
 
     fn load_fixture() -> Vec<Value> {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/compression_cases.json");
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/compression_cases.json"
+        );
         let raw = fs::read_to_string(path).expect("fixture dosyası okunamadı");
         let parsed: Value = serde_json::from_str(&raw).expect("fixture JSON geçersiz");
         parsed["cases"]
@@ -221,14 +223,12 @@ mod tests {
 
             if let Some(expected) = case.get("expected").and_then(|v| v.as_str()) {
                 if output != expected {
-                    failures.push(format!(
-                        "[{}] expected={:?} got={:?}",
-                        id, expected, output
-                    ));
+                    failures.push(format!("[{}] expected={:?} got={:?}", id, expected, output));
                 }
             }
 
-            if let Some(expected_contains) = case.get("expected_contains").and_then(|v| v.as_str()) {
+            if let Some(expected_contains) = case.get("expected_contains").and_then(|v| v.as_str())
+            {
                 if !output.contains(expected_contains) {
                     failures.push(format!(
                         "[{}] expected_contains={:?} got={:?}",
@@ -241,7 +241,9 @@ mod tests {
                 if output.trim() != expected_trimmed {
                     failures.push(format!(
                         "[{}] expected_trimmed={:?} got={:?}",
-                        id, expected_trimmed, output.trim()
+                        id,
+                        expected_trimmed,
+                        output.trim()
                     ));
                 }
             }
@@ -278,6 +280,9 @@ mod tests {
     #[test]
     fn fixture_file_is_not_empty() {
         let cases = load_fixture();
-        assert!(!cases.is_empty(), "fixture dosyası boş olamaz — testler anlamsızlaşır");
+        assert!(
+            !cases.is_empty(),
+            "fixture dosyası boş olamaz — testler anlamsızlaşır"
+        );
     }
 }

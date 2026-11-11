@@ -64,6 +64,7 @@ def test_tts_capability_is_registered_on_the_spine():
 
 # ------------------------------------------------- 2 · ses makineden çıkmaz
 def test_remote_endpoint_is_refused(monkeypatch):
+    monkeypatch.setenv("ENABLE_LOCAL_TTS", "true")
     monkeypatch.setenv("PINEAL_TTS_URL", "https://tts.example.com/speak")
     capability = LocalTTSCapability()
     engine, reason = capability.backend()
@@ -157,6 +158,7 @@ def test_speech_cache_expires_private_files_and_enforces_byte_limit(monkeypatch,
 
 
 def test_no_engine_means_no_fake_voice(monkeypatch):
+    monkeypatch.setenv("ENABLE_LOCAL_TTS", "true")
     monkeypatch.delenv("PINEAL_TTS_URL", raising=False)
     monkeypatch.delenv("PINEAL_PIPER_MODEL", raising=False)
     availability = LocalTTSCapability().availability()
@@ -395,6 +397,7 @@ def test_stt_capability_is_registered_on_the_spine():
 
 
 def test_stt_refuses_remote_endpoint(monkeypatch):
+    monkeypatch.setenv("ENABLE_LOCAL_STT", "true")
     monkeypatch.setenv("PINEAL_STT_URL", "https://stt.example.com/transcribe")
     availability = LocalSTTCapability().availability()
     assert availability.available is False

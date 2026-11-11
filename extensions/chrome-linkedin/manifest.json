@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "Atlas Epifiz — LinkedIn İstihbarat Radarı",
+  "version": "1.0.0",
+  "description": "LinkedIn profillerinde tek tıkla derin dijital iz, psikolojik harita ve ilk temas kancalarını açan Atlas Epifiz radarı.",
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://*.linkedin.com/*",
+    "http://127.0.0.1:8000/*",
+    "http://localhost:8000/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Atlas Epifiz Radarı"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.linkedin.com/in/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

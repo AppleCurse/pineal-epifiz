@@ -135,7 +135,7 @@ def test_scroll_harvest_creates_verified_posts(monkeypatch):
     assert len(extra) == 5, f"kaydırma sonrası postlar alınmadı: {extra}"
     assert {p.shortcode for p in extra} == set(codes)
     assert all(p.display_url.startswith("https://") for p in extra)
-    assert len(page.visited) == 5
+    assert page.visited == [value for code in codes for value in (code, "hedef")]
 
 
 def test_pagination_is_bounded_by_max_posts(monkeypatch):

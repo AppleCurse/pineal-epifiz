@@ -1,15 +1,15 @@
-use pineal_heretic_core::{
-    ChiefEngine, AspasiaEngine, EventBus, TaskManager, StealthVault,
-};
-use pineal_heretic_core::vault::default_vault_path;
-use pineal_heretic_core::tauri_bridge::{CoreState, setup_telemetry_bridge, setup_agent_status_bridge_local};
-#[cfg(feature = "redis")]
-use pineal_heretic_core::tauri_bridge::setup_agent_status_bridge;
 #[cfg(feature = "redis")]
 use pineal_heretic_core::redis_bridge::live::RedisBridge;
+#[cfg(feature = "redis")]
+use pineal_heretic_core::tauri_bridge::setup_agent_status_bridge;
+use pineal_heretic_core::tauri_bridge::{
+    setup_agent_status_bridge_local, setup_telemetry_bridge, CoreState,
+};
+use pineal_heretic_core::vault::default_vault_path;
+use pineal_heretic_core::{AspasiaEngine, ChiefEngine, EventBus, StealthVault, TaskManager};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use serde::{Deserialize, Serialize};
 
 // ─── FAZ 1-A: Vault Komutlari ─────────────────────────────────────────
 
@@ -40,27 +40,33 @@ async fn open_vault(
     }
     let vault = StealthVault::load(&vault_path, &password)
         .map_err(|e| format!("Vault acilamadi (yanlis parola?): {}", e))?;
+    // Vault açılır açılmaz Aspasia'ya yalnız bellekte anahtarı aktar.
+    // Anahtar yoksa vault yine açılır; LLM güvenli fallback'e düşer.
+    #[derive(Deserialize)]
+    struct Credential {
+        value: String,
+    }
+    if let Ok(cred) = vault.retrieve::<Credential>("OPENROUTER_API_KEY") {
+        state.aspasia.lock().await.set_api_key(cred.value);
+    }
     let mut vault_state = state.vault.lock().await;
     *vault_state = Some(vault);
     Ok("Kasa acildi. Kimlik bilgileri kullanima hazir.".to_string())
 }
 
 #[tauri::command]
-async fn check_vault_status(
-    state: tauri::State<'_, CoreState>,
-) -> Result<bool, String> {
+async fn check_vault_status(state: tauri::State<'_, CoreState>) -> Result<bool, String> {
     let vault_state = state.vault.lock().await;
     Ok(vault_state.is_some())
 }
 
 #[tauri::command]
-async fn lock_vault(
-    state: tauri::State<'_, CoreState>,
-) -> Result<String, String> {
+async fn lock_vault(state: tauri::State<'_, CoreState>) -> Result<String, String> {
     let mut vault_state = state.vault.lock().await;
     if let Some(mut v) = vault_state.take() {
         v.secure_wipe();
     }
+    state.aspasia.lock().await.set_api_key(String::new());
     Ok("Kasa kilitlendi. Dis dunya erisimi durduruldu.".to_string())
 }
 
@@ -81,13 +87,21 @@ async fn set_vault_credentials(
     match vault_state.as_ref() {
         Some(vault) => {
             #[derive(Serialize)]
-            struct Credential { value: String }
+            struct Credential {
+                value: String,
+            }
             let cred = Credential { value };
-            vault.store(&key, &cred)
+            vault
+                .store(&key, &cred)
                 .map_err(|e| format!("Kasaya yazilamadi: {}", e))?;
+            if key.eq_ignore_ascii_case("OPENROUTER_API_KEY") {
+                state.aspasia.lock().await.set_api_key(cred.value.clone());
+            }
             Ok(format!("{} basariyla kasaya muhurlediniz.", key))
         }
-        None => Err("Kasa acik degil. Once 'Kasa Ac' veya 'Kasa Olustur' butonuna basin.".to_string()),
+        None => {
+            Err("Kasa acik degil. Once 'Kasa Ac' veya 'Kasa Olustur' butonuna basin.".to_string())
+        }
     }
 }
 
@@ -100,12 +114,17 @@ async fn get_vault_credentials(
     match vault_state.as_ref() {
         Some(vault) => {
             #[derive(Deserialize)]
-            struct Credential { value: String }
-            let cred: Credential = vault.retrieve(&key)
+            struct Credential {
+                value: String,
+            }
+            let cred: Credential = vault
+                .retrieve(&key)
                 .map_err(|e| format!("Kasadan okunamadi: {}", e))?;
             Ok(cred.value)
         }
-        None => Err("Kasa acik degil. Once 'Kasa Ac' veya 'Kasa Olustur' butonuna basin.".to_string()),
+        None => {
+            Err("Kasa acik degil. Once 'Kasa Ac' veya 'Kasa Olustur' butonuna basin.".to_string())
+        }
     }
 }
 
@@ -174,12 +193,15 @@ async fn start_analysis(
             return Err("VAULT KILITLI: Operator anahtari cevirmeden dis dunyaya OSINT/Scraper istegi cikamaz. Once kasayi acin.".to_string());
         }
     }
-    let result = state.task_manager.execute_isolated_task(
-        target_url,
-        _user_rituals.unwrap_or_default(),
-        _user_playlist.unwrap_or_default(),
-        _user_envies.unwrap_or_default(),
-    ).await;
+    let result = state
+        .task_manager
+        .execute_isolated_task(
+            target_url,
+            _user_rituals.unwrap_or_default(),
+            _user_playlist.unwrap_or_default(),
+            _user_envies.unwrap_or_default(),
+        )
+        .await;
     result.map_err(|e| format!("Analiz baslatilamadi: {}", e))
 }
 
@@ -294,7 +316,8 @@ pub fn run() {
             // REDIS_URL varsa gerçek canlı köprü; yoksa fallback zaten çalışıyor
             #[cfg(feature = "redis")]
             {
-                let redis_url = std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6379/0".to_string());
+                let redis_url = std::env::var("REDIS_URL")
+                    .unwrap_or_else(|_| "redis://localhost:6379/0".to_string());
                 match RedisBridge::new(&redis_url) {
                     Ok(bridge) => {
                         let rx = bridge.subscribe();

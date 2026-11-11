@@ -37,7 +37,16 @@ export const onRequest = async (context: any) => {
     return new Response("Bu uç yalnızca WebSocket upgrade kabul eder.", { status: 426 });
   }
 
+  const requestOrigin = context.request.headers.get("origin");
+  const allowedOrigins = String(context.env.WS_ALLOWED_ORIGINS || "").split(",").map((value: string) => value.trim()).filter(Boolean);
+  if (!requestOrigin || allowedOrigins.length === 0 || !allowedOrigins.includes(requestOrigin)) {
+    return new Response("WebSocket origin reddedildi.", { status: 403 });
+  }
+
   const subpath: string[] = context.params.path || [];
+  if (subpath.length !== 1 || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(subpath[0])) {
+    return new Response("Geçersiz WebSocket client_id.", { status: 400 });
+  }
   const url = new URL(context.request.url);
   const bare = origin.replace(/\/+$/, "");
   let wsTarget: string;

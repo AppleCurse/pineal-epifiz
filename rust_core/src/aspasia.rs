@@ -58,51 +58,75 @@ impl AspasiaEngine {
         Self { chief, api_key }
     }
 
+    pub fn set_api_key(&mut self, api_key: String) {
+        self.api_key = api_key;
+    }
+
     /// Python llm_gateway.py'yi çağrarak gerçek LLM yanıtı alır
-    async fn call_llm_for_natural_language(&self, summary: &ExecutiveSummary) -> Result<String, String> {
+    async fn call_llm_for_natural_language(
+        &self,
+        summary: &ExecutiveSummary,
+    ) -> Result<String, String> {
         // API key boş ise fallback mesaj dön
         if self.api_key.is_empty() {
-            return Ok(format!("Mösyö, LLM API anahtarı yapılandırılmamış. Sistem sağlığı %{}. Durum: '{}'.", 
-                summary.system_health, summary.status_message));
+            return Ok(format!(
+                "Mösyö, LLM API anahtarı yapılandırılmamış. Sistem sağlığı %{}. Durum: '{}'.",
+                summary.system_health, summary.status_message
+            ));
         }
 
-        // Python betiğini hazırla
-        let python_script = format!(
-            r#"
-import sys
-sys.path.insert(0, '/workspace/agent_core')
+        // Kullanıcı verisini Python kaynak koduna gömmeyin; yalnızca JSON argümanı aktarın.
+        let python_script = r#"
 import asyncio
-from llm_gateway import LLMGateway
+import json
 import os
-
+import sys
+from pathlib import Path
+agent_core = os.environ.get("PINEAL_AGENT_CORE_PATH", "")
+if agent_core:
+    path = Path(agent_core).expanduser().resolve()
+    if not path.is_dir():
+        raise RuntimeError("PINEAL_AGENT_CORE_PATH is not a directory")
+    sys.path.insert(0, str(path))
+from llm_gateway import LLMGateway
 async def main():
-    # API key'i ortam değişkenine koy
-    os.environ['OPENROUTER_API_KEY'] = '{}'
-    
-    gateway = LLMGateway()
-    prompt = """Sistem durumu analizi:
-    Sistem Sağlığı: {}%
-    Durum Mesajı: {}
-    
-    Mösyö'ya bu durumu açıklayacak kısa, zarif ve bilgilendirici bir rapor yaz.""".strip()
-    
+    data = json.loads(sys.stdin.read())
+    prompt = ("Sistem durumu analizi:\n"
+              f"Sistem Sağlığı: {data['system_health']}%\n"
+              f"Durum Mesajı: {data['status_message']}\n\n"
+              "Mösyö'ya kısa, zarif ve bilgilendirici bir rapor yaz.").strip()
     try:
-        response = await gateway.query(prompt, temperature=0.7, tier=1)
-        print(response)
-    except Exception as e:
-        print(f"ERROR:{{e}}")
-
+        print(await LLMGateway().query(prompt, temperature=0.7, tier=1))
+    except Exception as exc:
+        print(f"ERROR:{exc}")
 asyncio.run(main())
-"#,
-            self.api_key, summary.system_health, summary.status_message
-        );
-
-        let output = Command::new("python3")
+"#;
+        let input = serde_json::json!({"system_health": summary.system_health, "status_message": summary.status_message}).to_string();
+        let python_bin = if cfg!(windows) { "python" } else { "python3" };
+        let mut child = Command::new(python_bin)
             .arg("-c")
             .arg(python_script)
-            .output()
-            .await
+            .env("OPENROUTER_API_KEY", &self.api_key)
+            .env(
+                "PINEAL_AGENT_CORE_PATH",
+                std::env::var("PINEAL_AGENT_CORE_PATH").unwrap_or_default(),
+            )
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
             .map_err(|e| format!("Python süreci başlatılamadı: {}", e))?;
+        if let Some(mut stdin) = child.stdin.take() {
+            use tokio::io::AsyncWriteExt;
+            stdin
+                .write_all(input.as_bytes())
+                .await
+                .map_err(|e| format!("Python girdisi yazılamadı: {}", e))?;
+        }
+        let output = child
+            .wait_with_output()
+            .await
+            .map_err(|e| format!("Python süreci beklenemedi: {}", e))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -110,21 +134,26 @@ asyncio.run(main())
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        
+
         if stdout.starts_with("ERROR:") {
             return Err(stdout.strip_prefix("ERROR:").unwrap().to_string());
         }
 
         if stdout.is_empty() {
-            return Ok(format!("Mösyö, sistem sağlığı %{}. Durum: '{}'.", 
-                summary.system_health, summary.status_message));
+            return Ok(format!(
+                "Mösyö, sistem sağlığı %{}. Durum: '{}'.",
+                summary.system_health, summary.status_message
+            ));
         }
 
         Ok(stdout)
     }
 
     /// Yeni bir event'i işler ve insani bir rapor döndürür (eğer özetlemeye değer bir şey varsa)
-    pub async fn process_and_report(&mut self, telemetry: crate::event_bus::TelemetryEvent) -> Option<String> {
+    pub async fn process_and_report(
+        &mut self,
+        telemetry: crate::event_bus::TelemetryEvent,
+    ) -> Option<String> {
         if let Some(summary) = self.chief.process_event(telemetry) {
             match self.call_llm_for_natural_language(&summary).await {
                 Ok(natural_text) => Some(natural_text),
@@ -148,16 +177,16 @@ asyncio.run(main())
 mod tests {
     use super::*;
     use crate::event_bus::{AgentEvent, TelemetryEvent};
-    use uuid::Uuid;
     use tokio;
+    use uuid::Uuid;
 
     #[tokio::test]
     async fn test_aspasia_with_missing_key() {
         let chief = ChiefEngine::new(100);
         let mut aspasia = AspasiaEngine::new(chief, "".to_string());
-        
+
         let task_id = Uuid::new_v4();
-        
+
         let telemetry = TelemetryEvent {
             timestamp: chrono::Utc::now(),
             event: AgentEvent::TaskStarted {
@@ -169,6 +198,8 @@ mod tests {
         };
 
         let response = aspasia.process_and_report(telemetry).await.unwrap();
-        assert!(response.contains("API anahtarı yapılandırılmamış") || response.contains("kusursuz"));
+        assert!(
+            response.contains("API anahtarı yapılandırılmamış") || response.contains("kusursuz")
+        );
     }
 }

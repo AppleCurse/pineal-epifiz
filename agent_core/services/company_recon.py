@@ -40,6 +40,7 @@ import shlex
 import shutil
 import tempfile
 import time
+import urllib.parse
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
@@ -436,7 +437,7 @@ async def seo_snapshot(
     clean = normalize_domain(domain)
     if not clean:
         return SeoSnapshot(available=False, reason="invalid_domain")
-    if not base_url and _is_private_target(clean):
+    if _is_private_target(clean):
         return SeoSnapshot(available=False, reason="private_address_rejected")
 
     try:
@@ -446,7 +447,7 @@ async def seo_snapshot(
 
     checks: list[SeoCheck] = []
     scheme = ""
-    async with open_client(purpose="osint", timeout=timeout, follow_redirects=True) as client:
+    async with open_client(purpose="osint", timeout=timeout, follow_redirects=False) as client:
         base = (base_url or "").rstrip("/")
         if base:
             candidates = [base]
@@ -489,6 +490,8 @@ async def seo_snapshot(
         if robots_detail.get("sitemaps"):
             sitemap_url = str(robots_detail["sitemaps"][0])
         sitemap_url = sitemap_url or (base + "/sitemap.xml")
+        parsed = urllib.parse.urlparse(sitemap_url)
+        if parsed.hostname and not (parsed.hostname == clean or parsed.hostname.endswith("." + clean)): sitemap_url = base + "/sitemap.xml"
         status, text, _headers, error = await _fetch(client, sitemap_url)
         if status == 200:
             checks.append(SeoCheck("sitemap", sitemap_url, status, True, _parse_sitemap(text)))
@@ -616,7 +619,7 @@ async def people_scan(
     clean = normalize_domain(domain)
     if not clean:
         return PeopleScan(available=False, reason="invalid_domain")
-    if not base_url and _is_private_target(clean):
+    if _is_private_target(clean):
         return PeopleScan(available=False, reason="private_address_rejected")
 
     try:
@@ -633,7 +636,7 @@ async def people_scan(
     for check in snapshot.checks:
         if check.name == "sitemap" and check.present:
             for location in check.detail.get("locations", []):
-                if _TEAM_PAGE_RE.search(str(location)) and location not in candidates:
+                if _TEAM_PAGE_RE.search(str(location)) and (str(location).startswith(base) or str(location).startswith(base+"/")) and location not in candidates:
                     candidates.append(str(location))
     if len(candidates) == 1:
         for suffix in ("/team", "/about", "/contact", "/ekip", "/hakkimizda"):
@@ -645,7 +648,7 @@ async def people_scan(
     errors: list[str] = []
     checked: list[str] = []
 
-    async with open_client(purpose="osint", timeout=timeout, follow_redirects=True) as client:
+    async with open_client(purpose="osint", timeout=timeout, follow_redirects=False) as client:
         for page in pages:
             status, text, _headers, error = await _fetch(client, page)
             if status and 200 <= status < 400:

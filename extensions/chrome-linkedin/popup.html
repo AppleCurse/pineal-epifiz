@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>Atlas Epifiz Radarı</title>
+  <style>
+    body {
+      width: 300px;
+      margin: 0;
+      padding: 16px;
+      background: #0d0b08;
+      color: #e6dfd5;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    h2 {
+      margin: 0 0 10px 0;
+      font-size: 15px;
+      color: #d4af37;
+      letter-spacing: 1px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    p {
+      font-size: 11px;
+      color: #a89474;
+      line-height: 1.4;
+      margin-bottom: 14px;
+    }
+    label {
+      font-size: 11px;
+      display: block;
+      margin-bottom: 4px;
+      color: #bfa886;
+    }
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 8px;
+      background: #19140d;
+      border: 1px solid #4a3412;
+      border-radius: 4px;
+      color: #38ef7d;
+      font-family: monospace;
+      font-size: 11px;
+      margin-bottom: 12px;
+    }
+    button {
+      width: 100%;
+      padding: 9px;
+      background: linear-gradient(180deg, #b8860b 0%, #7a5405 100%);
+      border: 1px solid #ffd700;
+      color: #fff;
+      font-weight: 700;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .status {
+      font-size: 11px;
+      margin-top: 10px;
+      text-align: center;
+      color: #38ef7d;
+    }
+  </style>
+</head>
+<body>
+  <h2>👁️ ATLAS EPİFİZ RADARI</h2>
+  <p>LinkedIn profillerinde otomatik olarak beliren sağ kanca butonunu aktifleştirir.</p>
+
+  <label for="pineal_token">Pineal API Token (Opsiyonel):</label>
+  <input type="password" id="pineal_token" placeholder="Geliştirme için boş bırakılabilir">
+
+  <button id="save-btn">AYARLARI KAYDET</button>
+  <div id="status" class="status"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

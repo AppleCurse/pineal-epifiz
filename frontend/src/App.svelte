@@ -16,6 +16,7 @@
   import AgentRack from './components/AgentRack.svelte';
   import HolographicResonanceMesh from './components/HolographicResonanceMesh.svelte';
   import SpiderFootCockpit from './components/SpiderFootCockpit.svelte';
+  import UnifiedPinealCockpit from './components/UnifiedPinealCockpit.svelte';
   import NeuralTelemetryBoard from './components/visualizers/NeuralTelemetryBoard.svelte';
   import SupportPanel from './components/SupportPanel.svelte';
 
@@ -457,6 +458,9 @@
 </script>
 
 <main class="fullscreen-cockpit-viewport">
+  <UnifiedPinealCockpit />
+  <!-- Legacy surface switcher retained below as a rollback path during live validation. -->
+  {#if false}
   <nav class="view-switcher" aria-label="Görünüm seçimi">
     <button class:is-active={$activeViewMode === 'cockpit'} on:click={() => activeViewMode.set('cockpit')}>Kokpit</button>
     <button class:is-active={$activeViewMode === 'warroom'} on:click={() => activeViewMode.set('warroom')}>Muharebe masası</button>
@@ -479,6 +483,7 @@
     <SpiderFootCockpit />
   {:else}
     <AtlasPinealCockpit />
+  {/if}
   {/if}
 
   <!--

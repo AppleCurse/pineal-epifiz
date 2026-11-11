@@ -985,6 +985,17 @@ class InstagramGhostScraper:
                 except Exception:
                     pass
                 post = await self._post_from_detail_page(playwright_page, code)
+                # Detail navigation uses the grid page itself. Restore the
+                # profile before the next scroll so pagination keeps reading
+                # grid anchors rather than the detail document.
+                try:
+                    await playwright_page.goto(
+                        f"{self.base_url}/{username}/",
+                        wait_until="domcontentloaded", timeout=15000,
+                    )
+                except Exception as exc:
+                    logging.warning("Sayfalama: profil sayfası geri yüklenemedi (%s): %s", username, type(exc).__name__)
+                    break
                 if post is not None:
                     collected.append(post)
         if collected:

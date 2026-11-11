@@ -15,7 +15,8 @@ Test: ``tests/unit/test_osint_*.py``, ``tests/unit/test_maigret_scanner.py``,
 
 import logging
 import asyncio
-import aiohttp
+import re
+from urllib.parse import quote
 import os
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, ConfigDict, Field
@@ -440,6 +441,7 @@ class OsintInvestigatorAgent:
             )
 
         clean_username = username.lstrip("@")
+        if not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", clean_username): return OsintProfile(fallback_reason="invalid_username", error_code="INVALID_USERNAME")
         candidate_emails = self._extract_candidate_emails(target, payload)
 
         # [011] Gerçek API anahtarı yoksa MOCK veri dönülmez: dürüst boş
@@ -493,54 +495,56 @@ class OsintInvestigatorAgent:
                     error_code="VAULT_LOCKED",
                 )
             try:
-                async with aiohttp.ClientSession() as session:
-                    headers = self._get_alf_headers()
-                    async with session.get(f"https://api.osint.industries/v1/user/{clean_username}", headers=headers, timeout=15) as resp:
-                        if resp.status == 200:
-                            data = await resp.json()
-                            emails = data.get("emails", [])
-                            phones = data.get("phones", [])
-                            platforms = data.get("platforms", [])
-                            observed_fields = sum(bool(value) for value in (emails, phones, platforms))
-                            # [PR #136] Sağlayıcı çıktısı kaynaklardan biridir,
-                            # pipeline'ın SONU değildir: başarılı API yanıtı
-                            # Maigret/Holehe'yi sessizce devre dışı bırakmaz.
-                            profile = OsintProfile(
-                                connected_emails=emails,
-                                connected_phones=phones,
-                                associated_platforms=platforms,
-                                # Coverage, not an invented provider-trust score.
-                                confidence=round(observed_fields / 3, 3),
-                                # Sağlayıcı 200 + BOŞ gözlem "veri güveni" DEĞİLDİR:
-                                # tarama kapsamı bilinmediği için güvenilir yokluk
-                                # iddia edilemez (bkz. `_apply_*` güvenilir yokluk
-                                # ölçütü: tamamlanmış + hatasız tarama).
-                                data_confidence=bool(observed_fields),
-                                fallback_reason=None if observed_fields else "provider_returned_no_observations",
-                            )
-                            return await self._continue_independent_sensors(
-                                profile, clean_username, payload, candidate_emails
-                            )
-                        logger.warning(f"[OSINT] Canlı API hatası: HTTP {resp.status} - {await resp.text()}")
-                        error_code = "AUTH_FAILED" if resp.status in (401, 403) else "RATE_LIMITED" if resp.status == 429 else "PROVIDER_ERROR"
-                        # [PR #136] HTTP hata yolu da sensörleri ATLAZ: erken
-                        # return, yapılandırılmış anahtarı olan her görevde
-                        # Maigret/Holehe'yi görünmez kılardı. Sağlayıcı hatası
-                        # `fallback_reason="api_error"` + `error_code` ile AÇIK
-                        # kalır; bağımsız sensörler yine koşar (koşullu ve
-                        # güvenli: kapı/kasa/çocuk kilidi omurgadan uygulanır).
-                        return await self._continue_independent_sensors(
-                            OsintProfile(
-                                connected_emails=candidate_emails,
-                                confidence=0.0,
-                                data_confidence=False,
-                                fallback_reason="api_error",
-                                error_code=error_code,
-                            ),
-                            clean_username,
-                            payload,
-                            candidate_emails,
+                from agent_core.capabilities.egress import open_client
+
+                headers = self._get_alf_headers()
+                async with open_client(purpose="osint", target="api.osint.industries", timeout=15, follow_redirects=False) as client:
+                    resp = await client.get(f"https://api.osint.industries/v1/user/{clean_username}", headers=headers)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        emails = data.get("emails", [])
+                        phones = data.get("phones", [])
+                        platforms = data.get("platforms", [])
+                        observed_fields = sum(bool(value) for value in (emails, phones, platforms))
+                        # [PR #136] Sağlayıcı çıktısı kaynaklardan biridir,
+                        # pipeline'ın SONU değildir: başarılı API yanıtı
+                        # Maigret/Holehe'yi sessizce devre dışı bırakmaz.
+                        profile = OsintProfile(
+                            connected_emails=emails,
+                            connected_phones=phones,
+                            associated_platforms=platforms,
+                            # Coverage, not an invented provider-trust score.
+                            confidence=round(observed_fields / 3, 3),
+                            # Sağlayıcı 200 + BOŞ gözlem "veri güveni" DEĞİLDİR:
+                            # tarama kapsamı bilinmediği için güvenilir yokluk
+                            # iddia edilemez (bkz. `_apply_*` güvenilir yokluk
+                            # ölçütü: tamamlanmış + hatasız tarama).
+                            data_confidence=bool(observed_fields),
+                            fallback_reason=None if observed_fields else "provider_returned_no_observations",
                         )
+                        return await self._continue_independent_sensors(
+                            profile, clean_username, payload, candidate_emails
+                        )
+                    logger.warning(f"[OSINT] Canlı API hatası: HTTP {resp.status_code} - {resp.text}")
+                    error_code = "AUTH_FAILED" if resp.status_code in (401, 403) else "RATE_LIMITED" if resp.status_code == 429 else "PROVIDER_ERROR"
+                    # [PR #136] HTTP hata yolu da sensörleri ATLAZ: erken
+                    # return, yapılandırılmış anahtarı olan her görevde
+                    # Maigret/Holehe'yi görünmez kılardı. Sağlayıcı hatası
+                    # `fallback_reason="api_error"` + `error_code` ile AÇIK
+                    # kalır; bağımsız sensörler yine koşar (koşullu ve
+                    # güvenli: kapı/kasa/çocuk kilidi omurgadan uygulanır).
+                    return await self._continue_independent_sensors(
+                        OsintProfile(
+                            connected_emails=candidate_emails,
+                            confidence=0.0,
+                            data_confidence=False,
+                            fallback_reason="api_error",
+                            error_code=error_code,
+                        ),
+                        clean_username,
+                        payload,
+                        candidate_emails,
+                    )
             except asyncio.TimeoutError as e:
                 logger.warning(f"[OSINT] Canlı API timeout: {e}")
                 return await self._continue_independent_sensors(

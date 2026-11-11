@@ -11,15 +11,15 @@
 //! - setup_agent_status_bridge: Redis -> Svelte Agent Rack hattı
 
 use serde::Serialize;
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex;
-use std::sync::Arc;
 
 use crate::aspasia::AspasiaEngine;
 use crate::event_bus::{EventBus, TelemetryEvent};
+use crate::redis_bridge::AgentStatusPayload;
 use crate::task_isolation::TaskManager;
 use crate::vault::StealthVault;
-use crate::redis_bridge::AgentStatusPayload;
 
 /// State wrapper to hold our core engines for Tauri
 pub struct CoreState {
@@ -55,7 +55,10 @@ impl From<AgentStatusPayload> for AgentStatusTauriPayload {
 }
 
 /// Canlı Telemetri Köprüsü (EventBus -> Tauri Emit)
-pub fn setup_telemetry_bridge(app_handle: AppHandle, mut rx: tokio::sync::broadcast::Receiver<TelemetryEvent>) {
+pub fn setup_telemetry_bridge(
+    app_handle: AppHandle,
+    mut rx: tokio::sync::broadcast::Receiver<TelemetryEvent>,
+) {
     tauri::async_runtime::spawn(async move {
         while let Ok(event) = rx.recv().await {
             // Event'i JSON'a çevir
@@ -75,7 +78,10 @@ pub fn setup_telemetry_bridge(app_handle: AppHandle, mut rx: tokio::sync::broadc
 /// Agent Rack canlı köprüsü (Redis Pub/Sub -> Tauri Emit)
 /// Python tarafındaki redis_bus ile aynı kanal: pineal:agent_status
 #[cfg(feature = "redis")]
-pub fn setup_agent_status_bridge(app_handle: AppHandle, mut rx: tokio::sync::broadcast::Receiver<AgentStatusPayload>) {
+pub fn setup_agent_status_bridge(
+    app_handle: AppHandle,
+    mut rx: tokio::sync::broadcast::Receiver<AgentStatusPayload>,
+) {
     tauri::async_runtime::spawn(async move {
         while let Ok(status) = rx.recv().await {
             let payload: AgentStatusTauriPayload = status.into();
@@ -85,21 +91,33 @@ pub fn setup_agent_status_bridge(app_handle: AppHandle, mut rx: tokio::sync::bro
 }
 
 #[cfg(not(feature = "redis"))]
-pub fn setup_agent_status_bridge(_app_handle: AppHandle, _rx: tokio::sync::broadcast::Receiver<AgentStatusPayload>) {
+pub fn setup_agent_status_bridge(
+    _app_handle: AppHandle,
+    _rx: tokio::sync::broadcast::Receiver<AgentStatusPayload>,
+) {
     // redis feature kapalıysa no-op
 }
 
 /// Fallback: doğrudan EventBus üzerinden agent_status_update simülasyonu
 /// (Redis yoksa bile local tracker için)
-pub fn setup_agent_status_bridge_local(app_handle: AppHandle, mut rx: tokio::sync::broadcast::Receiver<TelemetryEvent>) {
+pub fn setup_agent_status_bridge_local(
+    app_handle: AppHandle,
+    mut rx: tokio::sync::broadcast::Receiver<TelemetryEvent>,
+) {
     // Sadece AgentEvent::TaskStarted / StepCompleted gibi eventleri
     // Agent Rack durumuna çevirir — basit fallback
     tauri::async_runtime::spawn(async move {
         while let Ok(telemetry) = rx.recv().await {
             let (agent_id, status) = match &telemetry.event {
-                crate::event_bus::AgentEvent::TaskStarted { agent_name, .. } => (agent_name.clone(), "Active"),
-                crate::event_bus::AgentEvent::StepCompleted { agent_name, .. } => (agent_name.clone(), "Ready"),
-                crate::event_bus::AgentEvent::ErrorHalt { agent_name, .. } => (agent_name.clone(), "Wait"),
+                crate::event_bus::AgentEvent::TaskStarted { agent_name, .. } => {
+                    (agent_name.clone(), "Active")
+                }
+                crate::event_bus::AgentEvent::StepCompleted { agent_name, .. } => {
+                    (agent_name.clone(), "Ready")
+                }
+                crate::event_bus::AgentEvent::ErrorHalt { agent_name, .. } => {
+                    (agent_name.clone(), "Wait")
+                }
                 _ => continue,
             };
             let payload = AgentStatusTauriPayload {

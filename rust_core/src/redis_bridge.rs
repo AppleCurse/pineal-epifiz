@@ -1,14 +1,14 @@
 //! Redis Pub/Sub bridge — Agent Rack canlı durum köprüsü
-//! 
+//!
 //! Python tarafındaki `agent_core.services.redis_bus` ve `agent_status_tracker`
 //! ile aynı kanalı kullanır: `pineal:agent_status`.
-//! 
+//!
 //! Tauri tarafında event_bus üzerinden gelen AgentEvent'ler buradan Redis'e
 //! publish edilir; Redis'ten gelen agent_status_update mesajları ise
 //! Tauri event sistemi üzerinden `pineal-agent-status` olarak emit edilir.
 
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentStatusPayload {
@@ -39,7 +39,7 @@ impl AgentStatusPayload {
 pub mod live {
     use super::*;
     use redis::aio::{MultiplexedConnection, PubSub};
-    use redis::{Client, AsyncCommands};
+    use redis::{AsyncCommands, Client};
     use tokio::sync::broadcast;
     use tracing::{info, warn};
 
@@ -62,14 +62,22 @@ pub mod live {
             self.tx.subscribe()
         }
 
-        pub async fn publish_status(&self, payload: &AgentStatusPayload) -> Result<(), redis::RedisError> {
+        pub async fn publish_status(
+            &self,
+            payload: &AgentStatusPayload,
+        ) -> Result<(), redis::RedisError> {
             let mut conn = self.client.get_multiplexed_async_connection().await?;
             let json = serde_json::to_string(payload).unwrap_or_default();
             let _: () = conn.publish(AGENT_STATUS_CHANNEL, json).await?;
             Ok(())
         }
 
-        pub async fn set_agent_status(&self, agent_id: &str, status: &str, metadata: Option<serde_json::Value>) -> Result<(), redis::RedisError> {
+        pub async fn set_agent_status(
+            &self,
+            agent_id: &str,
+            status: &str,
+            metadata: Option<serde_json::Value>,
+        ) -> Result<(), redis::RedisError> {
             let payload = AgentStatusPayload {
                 agent_id: agent_id.to_string(),
                 status: status.to_string(),
@@ -102,7 +110,11 @@ pub mod live {
                             let _ = tx.send(parsed);
                         }
                         Err(e) => {
-                            warn!("AgentStatus JSON parse hatasi: {} | raw={}", e, payload_str.chars().take(120).collect::<String>());
+                            warn!(
+                                "AgentStatus JSON parse hatasi: {} | raw={}",
+                                e,
+                                payload_str.chars().take(120).collect::<String>()
+                            );
                         }
                     }
                 }
@@ -138,10 +150,18 @@ pub mod live {
         pub fn new(_redis_url: &str) -> Result<Self, std::io::Error> {
             Ok(Self)
         }
-        pub async fn publish_status(&self, _payload: &AgentStatusPayload) -> Result<(), std::io::Error> {
+        pub async fn publish_status(
+            &self,
+            _payload: &AgentStatusPayload,
+        ) -> Result<(), std::io::Error> {
             Ok(())
         }
-        pub async fn set_agent_status(&self, _agent_id: &str, _status: &str, _metadata: Option<serde_json::Value>) -> Result<(), std::io::Error> {
+        pub async fn set_agent_status(
+            &self,
+            _agent_id: &str,
+            _status: &str,
+            _metadata: Option<serde_json::Value>,
+        ) -> Result<(), std::io::Error> {
             Ok(())
         }
         pub async fn run_listener(&self) -> Result<(), std::io::Error> {
