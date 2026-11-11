@@ -200,3 +200,88 @@ eklendi (göz çizimi nedeniyle bileşen monte edilemiyordu).
 
 Kanıt: `00-observatory-before.png` (sabit değerler) ↔
 `06-observatory-real-data.png` (gerçek veri).
+
+---
+
+# Üçüncü tur — kasa açma akışı ve SESSİZ RET (aynı gün)
+
+Kasa uçtan uca denendi: `POST /api/vault` → `can_scrape:true` → `POST /api/initiate`.
+Bu tur iki ayrı kusur ortaya çıkardı.
+
+## Doğru çalışan şey: kasa mandalı fail-closed
+
+| Adım | Sonuç |
+| --- | --- |
+| Kasa kapalı + `POST /api/initiate` | **423** `VAULT_LOCKED` + açıklama |
+| `GET /api/vault/status` | `locked:true, can_scrape:false` |
+| `POST /api/vault` (anahtar) | `200 {"status":"secured"}` |
+| `GET /api/vault/status` | `locked:false, can_scrape:true` |
+| `POST /api/initiate` (kasa açık) | `200 {"status":"started"}` |
+
+Yani kasa mekanizması doğru: anahtar yoksa dış dünyaya çıkış yok, anahtar varsa
+izin var. Bu kısımda hata yok.
+
+## Bulunan kusur (P0): SESSİZ RET
+
+Kasa açıkken bile görev **görünmez** biçimde ölüyordu:
+
+```
+POST /api/initiate https://example.com  →  200 {"status":"started","task_id":"op_..."}
+GET  /api/tasks                        →  {"tasks": []}          # görev HİÇ yok
+GET  /api/tasks/{id}/graph             →  {"reason":"no_evidence"} # nedeni yok
+```
+
+Nedeni: `run_mission` bazı dallarda (`unsupported_platform`,
+`cross_platform_disabled`, kazıma altyapısı tükendi) `broadcast_result_error`
+çağırıp `return` ediyordu. O yardımcı yalnız WebSocket + `room["latest_result"]`
+yazıyordu; **kanıt deposuna hiç yazmıyordu**. HTTP istemcisi ise sadece
+"started" görüyordu. Operatör dakikalarca boşuna bekliyordu.
+
+Düzeltme (commit `479ee06`):
+
+| Katman | Değişiklik |
+| --- | --- |
+| `backend/services/task_rejection.py` (yeni) | Ret kaydını depoya yazar: `memory_state=REJECTED`, `status`, `halted_reason`. `api.py` tavanı (5760) nedeniyle MODÜL olarak çıkarıldı; `api.py` 5750'ye indi. |
+| `backend/api.py` | `broadcast_result_error` artık kaydı kalıcılaştırır; graf ucu `memory_state`/`task_status`/`halted_reason` döndürür. |
+| `backend/routes/tasks.py` | Listede sabit `"READY"` yerine depodaki gerçek durum + yeni alanlar. |
+| `agent_core/services/graph_builder.py` | `terminal_reject` kaydı **kanıt değildir** — süzülür. |
+| `AtlasObservatory.svelte` | Durum etiketi koşulsuz `tag-done` (yeşil) değil; REJECTED kırmızı + neden yazılır. |
+
+### İkinci derece hata: ret kaydı "kanıt" sayıldı
+
+İlk denemede ret kaydı depoya yazılınca graf onu kanıt sandı ve **1 düğümlü
+sahte bir örgü** çizdi (`available:true, node_count:1`). Yani düzeltme, kapatmaya
+çalıştığı uydurmayı üretecekti. `graph_builder` süzgeci eklendi; ret tek başına
+`available:false` + **0 düğüm** veriyor, gerçek kanıt ise hâlâ graf kuruyor.
+
+### Doğrulama
+
+| Kontrol | Sonuç |
+| --- | --- |
+| `tests/unit` | **2666 geçti** (taban çizgisi 2664; ortam kaynaklı 57 hata aynen duruyor) |
+| Yeni `test_terminal_reject_visibility` | 6/6 — süzgeç kapatılınca kırmızıya düşüyor (ölçüldü) |
+| `svelte-check` | 0 hata, 0 uyarı |
+| `vitest` | **40/40** |
+| Ratchet (`api.py` ≤ 5760) | **5750** ✓ |
+| Tarayıcı | kartta `REJECTED` kırmızı, "Neden: … ENABLE_CROSS_PLATFORM …", graf `—` |
+
+Kanıt: `07-rejected-task.png`.
+
+## Bulunan kusur (P1, AÇIK): tarayıcı ikilisi yoksa tarama tamamen düşüyor
+
+Kasa açık + desteklenen platform (Instagram) URL'siyle:
+
+```
+HEDEF VERİSİ ALINAMADI: BrowserType.launch: Executable doesn't exist at
+  /home/user/.cache/ms-playwright/chromium_headless_shell-1254/...
+  → task status: failed, kanıt 0
+```
+
+Playwright Python paketi var ama **tarayıcı ikilisi** yok; kazıma yeniden
+denemeleri tükeniyor ve görev hiçbir kanıt üretmiyor. Ürün bunu artık dürüstçe
+raporluyor (ret görünür), ancak kullanıcı için anlamlı bir kurtarma yolu yok.
+
+Öneri: `ENABLE_CROSS_PLATFORM=true` iken kazıma başarısız olursa açık kaynak
+OSINT yoluna düşmek (kodda bu dal VAR ama yalnız `enable_cross` açıkken
+çalışıyor); ayrıca başlangıç sağlık kapısına "tarayıcı ikilisi yok" uyarısı
+eklemek. Bu, gerçek bir taramanın uçtan uca kanıtlanması için gerekli.
