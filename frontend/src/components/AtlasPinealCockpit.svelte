@@ -8,8 +8,6 @@
   import { playClick, playHalt, playRunning } from '../lib/consoleAudio';
   import { taskRuns, taskRunLabel, rackAvailability } from '../lib/taskRunStatus';
 
-  export let telemetryData: any = null;
-
   // --- 1. HÜKÜMDARLAR KONSEYİ (ASPASIA & LILITH) ---
   const SOVEREIGNS = [
     {
@@ -574,7 +572,11 @@
       <!-- ASPASIA PRIME -->
       <div
         class="sovereign-station aspasia-station {selectedAgentId === 'aspasia' ? 'selected' : ''}"
+        role="button"
+        tabindex="0"
+        aria-pressed={selectedAgentId === 'aspasia'}
         on:click={() => selectAgent('aspasia')}
+        on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectAgent('aspasia'); } }}
       >
         <div class="station-header">
           <span class="station-glyph">👑</span>
@@ -597,7 +599,11 @@
       <!-- LILITH GROWTH -->
       <div
         class="sovereign-station lilith-station {selectedAgentId === 'lilith' ? 'selected' : ''}"
+        role="button"
+        tabindex="0"
+        aria-pressed={selectedAgentId === 'lilith'}
         on:click={() => selectAgent('lilith')}
+        on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectAgent('lilith'); } }}
       >
         <div class="station-header">
           <span class="station-glyph">🔥</span>
@@ -688,16 +694,19 @@
       <div class="field-matrix-grid">
         {#each FIELD_AGENTS as ag}
           {@const rStatus = scopedRuns[ag.id] ? taskRunLabel(scopedRuns[ag.id]) : rackAvailability($agentStatuses?.[ag.id]?.status)}
-          <div
+          <button
+            type="button"
             class="agent-matrix-chip {selectedAgentId === ag.id ? 'is-selected' : ''} {rStatus.toLowerCase()}"
             on:click={() => selectAgent(ag.id)}
             title="{ag.name}: {ag.desc}"
+            aria-pressed={selectedAgentId === ag.id}
+            aria-label="{ag.name}: {ag.desc}"
           >
             <span class="agent-pulse-lamp"></span>
             <span class="agent-glyph">{ag.glyph}</span>
             <span class="agent-code">{ag.short}</span>
             <span class="agent-status-tag">{rStatus.toUpperCase()}</span>
-          </div>
+          </button>
         {/each}
       </div>
 
@@ -1527,6 +1536,15 @@
     cursor: pointer;
     transition: all 0.15s ease;
     position: relative;
+    font: inherit;
+    color: inherit;
+    text-align: center;
+  }
+
+  .agent-matrix-chip:focus-visible,
+  .sovereign-station:focus-visible {
+    outline: 2px solid #38ef7d;
+    outline-offset: 2px;
   }
 
   .agent-matrix-chip.is-selected {

@@ -13,7 +13,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import SpiderFootCockpit from '../components/SpiderFootCockpit.svelte';
-import { clientId, vaultLocked, isProcessing } from '../store';
+import { clientId, vaultLocked, isProcessing, taskStatus } from '../store';
 import { get } from 'svelte/store';
 
 type Call = { path: string; method: string; body: unknown };
@@ -292,6 +292,52 @@ describe('gölge analizi ve hafıza kristali sözleşmesi', () => {
     await waitFor(() => {
       expect(screen.getByText(/2 düğüm, 1 bağ/i)).toBeTruthy();
     });
+  });
+
+  // [SMOKE 2026-11-11] Gerçek tarayıcıda ölçülen boşluk: görev kimliği YALNIZ bu
+  // bileşenin kendi "GÖREVİ BAŞLAT" düğmesinden geliyordu. Operatör varsayılan
+  // ATLAS yüzeyinden görev başlattığında `/api/tasks/{id}/graph` hiç
+  // çağrılmıyor, backend'de hazır olan gerçek graf (5 düğüm / 4 bağ) ekrana
+  // ulaşmıyordu. Sözleşme: canlı WS anlık görüntüsündeki görev kimliği de
+  // grafın kimlik kaynağıdır.
+  it('görev kimliği WS anlık görüntüsünden gelirse grafı kendiliğinden çeker', async () => {
+    const calls = installFetch((path) => {
+      if (path.startsWith('/api/tasks/task_from_ws/graph')) {
+        return jsonResponse({
+          available: true,
+          nodes: [
+            { id: 'target:test', label: 'test', kind: 'target', weight: 1, evidence_count: 1 },
+            { id: 'engine:pineal_7pillar', label: 'pineal_7pillar', kind: 'engine', weight: 1, evidence_count: 1 },
+            { id: 'engine:life_rupture', label: 'life_rupture', kind: 'engine', weight: 1, evidence_count: 1 },
+          ],
+          edges: [
+            { source: 'engine:pineal_7pillar', target: 'target:test', weight: 1, relation: 'co_occurrence' },
+            { source: 'engine:life_rupture', target: 'target:test', weight: 1, relation: 'co_occurrence' },
+          ],
+          node_count: 3,
+          edge_count: 2,
+          machine_note: 'ok',
+        });
+      }
+      return undefined;
+    });
+
+    // Bileşen HİÇ görev başlatmıyor: kimlik yalnız WS anlık görüntüsünden gelir.
+    taskStatus.set({ task_id: 'task_from_ws', status: 'processing' });
+    render(SpiderFootCockpit);
+
+    await fireEvent.click(screen.getByRole('button', { name: /İLİŞKİ AĞI GRAFİĞİ/i }));
+
+    await waitFor(() => {
+      const call = calls.find((c) => c.path.startsWith('/api/tasks/task_from_ws/graph'));
+      expect(call, `çağrılar: ${calls.map((c) => c.path).join(', ')}`).toBeTruthy();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/3 düğüm, 2 bağ/i)).toBeTruthy();
+    });
+
+    taskStatus.set(null);
   });
 });
 
