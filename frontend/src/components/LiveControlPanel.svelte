@@ -777,8 +777,13 @@
 
 <style>
   .control-panel {
-    position: fixed;
-    inset: 0;
+    /* [SMOKE 2026-11-11] Eskiden `position: fixed; inset: 0` idi. Panel
+       UnifiedPinealCockpit içinde `.surface-stage` içine monte edildiği için
+       TÜM görünümü kaplıyor, üst başlığı ve yüzey sekme çubuğunu örtüyordu:
+       kullanıcı "CANLI SİSTEM"e girdikten sonra başka sekmeye geçemiyordu
+       (gerçek tarayıcıda ölçüldü). Panel artık normal akışta bir blok. */
+    position: relative;
+    min-height: 100%;
     overflow-y: auto;
     background: var(--bg-main, #020101);
     color: var(--text-phosphor, #38ef7d);

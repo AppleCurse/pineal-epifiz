@@ -76,3 +76,10 @@ tools/
 models/
 # [temizlik] Eski envanter arşivi (4 MB, bayat anlık görüntü): üretilirse izlenmez.
 docs/pineal_envanter.zip
+
+# Browser smoke artifacts (screenshots/reports; not deliverables)
+.smoke/
+
+# Tarayıcı smoke aracının bağımlılıkları (frontend/scripts/browser-smoke.mjs)
+frontend/scripts/node_modules/
+frontend/scripts/package-lock.json
