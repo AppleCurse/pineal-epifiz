@@ -195,9 +195,24 @@ def build_evidence_graph(
     )
 
 
+_NON_EVIDENCE_TYPES = frozenset({"terminal_reject"})
+
+
 def graph_from_task_memory(memory_payload: Any, target_profile: dict | None = None) -> EvidenceGraph:
-    """`CanonicalMemory.get_task_memory` çıktısından graf (API köprüsü)."""
+    """`CanonicalMemory.get_task_memory` çıktısından graf (API köprüsü).
+
+    [SESSİZ RET 2026-11-11] Depoya yazılan TERMİNAL RET kaydı
+    (`type="terminal_reject"`) kanıt DEĞİLDİR: "platform desteklenmiyor" gibi
+    bir reddi tek "düğüm" gibi çizmek, olmayan bir ilişki örgüsü gösterirdi
+    (ölçüldü: 1 düğüm + available=true). Operasyonel kayıt süzülür; graf yine
+    yalnız gerçek kanıttan doğar. Ret nedeni API katmanında AYRICA raporlanır.
+    """
     evidence: Any = memory_payload
     if isinstance(memory_payload, dict):
         evidence = memory_payload.get("evidence") or memory_payload.get("evidence_chain")
-    return build_evidence_graph(evidence, target_profile)
+    items = [
+        item
+        for item in _iter_evidence(evidence)
+        if not (isinstance(item, dict) and str(item.get("type") or "") in _NON_EVIDENCE_TYPES)
+    ]
+    return build_evidence_graph(items, target_profile)
