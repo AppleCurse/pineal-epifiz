@@ -167,3 +167,56 @@ describe('Atlas Observatory dürüstlük sözleşmesi', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// [SESSİZ RET 2026-11-11] Backend'de ölçülen kusur: `/api/initiate` bazı
+// dallarda (platform desteklenmiyor / çapraz OSINT kapalı / kazıma tükendi)
+// 200 "started" dönüp görevi sessizce bırakıyordu; görev geçmişte hiç
+// görünmüyordu. Backend artık ret kaydını `memory_state="REJECTED"` +
+// `status` + `halted_reason` ile depoya yazıyor. Arayüz bu durumu "başarılı"
+// gibi göstermemeli: durum etiketi kırmızı olmalı ve NEDEN yazılmalı.
+// ---------------------------------------------------------------------------
+describe('reddedilen görev dürüst gösterilir', () => {
+  const REJECTED_TASKS = {
+    tasks: [
+      {
+        task_id: 'op_20261111095420_74be7d07',
+        last_updated: '2026-11-11T09:54:20+00:00',
+        evidence_count: 1,
+        confidence: 0,
+        memory_state: 'REJECTED',
+        memory_error_code: null,
+        status: 'unsupported_platform',
+        halted_reason: 'Bu URL doğrudan kazınamaz. ENABLE_CROSS_PLATFORM etkinleştirilmeli.',
+      },
+    ],
+    active_tasks: [],
+  };
+
+  function route(path: string): Response | undefined {
+    if (path === '/api/telemetry') return jsonResponse(TELEMETRY);
+    if (path.startsWith('/api/tasks?')) return jsonResponse(REJECTED_TASKS);
+    if (path.includes('/graph')) return jsonResponse({ available: false, reason: 'no_evidence', nodes: [], edges: [], node_count: 0, edge_count: 0 });
+    return undefined;
+  }
+
+  it('reddedilen görevde durum etiketi kırmızı (tag-done DEĞİL) ve neden görünür', async () => {
+    installFetch(route);
+    render(AtlasObservatory);
+
+    await waitFor(() =>
+      expect(screen.getByText(/op_20261111095420_74be7d07/)).toBeTruthy(),
+    );
+
+    // Kart başlığındaki durum etiketi (risk kartındaki metinle karışmasın).
+    const badge = document.querySelector('.case-title [class*="tag-"]') as HTMLElement;
+    expect(badge.textContent?.trim()).toBe('REJECTED');
+    // "başarılı" stili uygulanmamalı — aksi hâlde ret tamamlanmış gibi okunur.
+    expect(badge.className).not.toContain('tag-done');
+    expect(badge.className).toContain('tag-rejected');
+
+    // Gerçek ret nedeni operatöre gösterilir.
+    expect(document.body.textContent).toContain('ENABLE_CROSS_PLATFORM');
+    expect(document.body.textContent).toContain('unsupported_platform');
+  });
+});

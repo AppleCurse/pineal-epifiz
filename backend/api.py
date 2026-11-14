@@ -59,7 +59,7 @@ import hashlib
 import time
 
 logger = logging.getLogger("backend.api")
-from datetime import datetime
+from datetime import datetime, timezone
 import sys
 
 if sys.platform == 'win32':
@@ -96,6 +96,7 @@ from agent_core.shadow.shadow_executor import ShadowExecutor
 # [API-BÖLME 5 · 2026-10-18] Koşu kaydı serileştiricisi ayrı modüle taşındı
 # (tavan kuralı: satır eklemek yerine MODÜL ÇIKAR). Dış sözleşme bozulmaz —
 # aşağıdaki iki adres `backend.api` üzerinden yeniden ihraç edilir.
+from backend.services.task_rejection import record_terminal_reject
 from backend.services.vault_state import (
     _is_placeholder_key as _is_placeholder_key, _is_real_key, _cookie_pool_has_key, _room_vault_unlocked,
 )
@@ -2908,6 +2909,15 @@ def _finalize_timed_out_mission(client_id: str, task_id: str, budget_seconds: in
 
 def broadcast_result_error(client_id, status, msg, task_id: Optional[str] = None):
     broadcast_log(client_id, "ERROR", msg)
+    # [SESSİZ RET 2026-11-11] Ret KALICI kayda da geçer; aksi hâlde görev
+    # geçmişte hiç görünmüyordu. Yardımcı ayrı modülde
+    # (`backend/services/task_rejection.py`) — api.py tavanı büyümesin.
+    room = app.state.rooms.get(client_id)
+    if room is not None and task_id:
+        record_terminal_reject(
+            (room.get("executor").memory if room.get("executor") else None),
+            task_id, status, msg,
+        )
     # [BOSS-2] Terminal hata bildirimi oda kaydını da kapatır; aksi hâlde
     # snapshot "processing" kalıp odayı kalıcı 503'e kilitliyordu.
     room = app.state.rooms.get(client_id)
@@ -5060,7 +5070,25 @@ async def api_task_graph(
     from agent_core.services.graph_builder import graph_from_task_memory
 
     graph = graph_from_task_memory(memory, (memory or {}).get("target_profile"))
-    return graph.model_dump()
+    payload = graph.model_dump()
+    # [SESSİZ RET 2026-11-11] "Kanıt yok" tek başına yanıltıcıydı: görev hiç
+    # ÇALIŞMAMIŞ olabilir (platform desteklenmiyor, çapraz OSINT kapalı,
+    # kazıma altyapısı tükendi) ya da çalışıp kanıt üretememiş olabilir.
+    # Depoya yazılan terminal durum buraya taşınır; arayüz nedeni gösterebilir.
+    stored_status = (memory or {}).get("status")
+    stored_reason = (memory or {}).get("halted_reason")
+    payload["memory_state"] = (memory or {}).get("memory_state") or (
+        "READY" if memory else "EMPTY"
+    )
+    if stored_status:
+        payload["task_status"] = stored_status
+    if stored_reason:
+        payload["halted_reason"] = stored_reason
+        # Kanıt yoksa ve görev terminal bir retle bittiyse "no_evidence" yerine
+        # gerçek makine-okunur nedeni bildir.
+        if not payload.get("available") and not payload.get("reason"):
+            payload["reason"] = "terminal_reject"
+    return payload
 
 
 class CalibrationObservationPayload(BaseModel):

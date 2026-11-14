@@ -691,12 +691,20 @@
         <div class="case-brief">
           {#if realTasks.length}
             {@const latest = realTasks[0]}
+            <!-- [SESSİZ RET 2026-11-11] Ret durumu "başarılı" görünmemeli: eskiden
+                 durum etiketi KOŞULSUZ `tag-done` (yeşil/başarılı) stiliyle
+                 basılıyordu; reddedilen görev de tamamlanmış gibi okunuyordu. -->
+            {@const rejected = latest.memory_state === 'REJECTED' || latest.status === 'failed'}
             <div class="case-title">
               {latest.task_id}
-              <span class="tag-done">{latest.memory_state || 'DURUM BİLİNMİYOR'}</span>
+              <span class:tag-done={!rejected} class:tag-rejected={rejected}>
+                {latest.memory_state || 'DURUM BİLİNMİYOR'}
+              </span>
             </div>
             <p>Kanıt kaydı: {num(latest.evidence_count)}</p>
             <p>Son güncelleme: {latest.last_updated ? new Date(latest.last_updated).toLocaleString('tr-TR') : EMPTY}</p>
+            {#if latest.status}<p class="empty-value">Görev durumu: {latest.status}</p>{/if}
+            {#if latest.halted_reason}<p class="empty-value">Neden: {latest.halted_reason}</p>{/if}
             {#if latest.memory_error_code}<p class="empty-value">Bellek hatası: {latest.memory_error_code}</p>{/if}
             <button class="view-dossier-btn" on:click={onOpenDossier}>DETAY GÖR</button>
           {:else}
@@ -1404,6 +1412,15 @@
     color: #38ef7d;
     background: rgba(56, 239, 125, 0.1);
     border: 1px solid rgba(56, 239, 125, 0.3);
+    padding: 1px 4px;
+    border-radius: 2px;
+    font-size: 8px;
+  }
+  /* [SESSİZ RET 2026-11-11] Reddedilen görev "başarılı" görünmemeli. */
+  .tag-rejected {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.35);
     padding: 1px 4px;
     border-radius: 2px;
     font-size: 8px;

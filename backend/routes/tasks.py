@@ -68,13 +68,19 @@ def read_tasks_sync(storage: str):
                     data = json.load(f)
                 if not isinstance(data, dict) or not isinstance(data.get("evidence", []), list):
                     raise ValueError("invalid canonical memory schema")
+                # [SESSİZ RET 2026-11-11] Depoda yazan durum KORUNUR. Eskiden
+                # her kayıt koşulsuz "READY" gösteriliyordu; oysa görev redi
+                # (`REJECTED`) veya terminal hata da bu depoya yazılır. Sabit
+                # "READY" bu ayrımı siliyordu.
                 tasks.append({
                     "task_id": data.get("task_id", task_id),
                     "last_updated": data.get("last_updated"),
                     "evidence_count": len(data.get("evidence", [])),
                     "confidence": data.get("confidence"),
-                    "memory_state": "READY",
+                    "memory_state": data.get("memory_state") or "READY",
                     "memory_error_code": None,
+                    "status": data.get("status"),
+                    "halted_reason": data.get("halted_reason"),
                 })
             except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
                 # A malformed task remains visible and is never represented as
