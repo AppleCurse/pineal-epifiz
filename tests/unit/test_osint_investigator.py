@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from agent_core.agents.osint_investigator import OsintInvestigatorAgent, OsintProfile
 from agent_core.services.llm_gateway import LLMGateway
 

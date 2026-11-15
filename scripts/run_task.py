@@ -43,6 +43,8 @@ def _log(level: str, msg: str) -> None:
 
 
 def _emit(payload: dict, exit_code: int) -> None:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     print(json.dumps(payload, ensure_ascii=False, default=str), flush=True)
     raise SystemExit(exit_code)
 

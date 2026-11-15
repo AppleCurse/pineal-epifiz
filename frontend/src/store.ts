@@ -125,7 +125,7 @@ if (typeof localStorage !== 'undefined') {
 }
 // [P6 · CANLI PANEL] Üçüncü görünüm: 'control' → LiveControlPanel (canlı
 // kontrol paneli). 'warroom' | 'cockpit' | 'control'.
-export type ViewMode = 'observatory' | 'warroom' | 'cockpit' | 'control' | 'spiderfoot';
+export type ViewMode = 'observatory' | 'atlas' | 'warroom' | 'cockpit' | 'control' | 'spiderfoot';
 export const activeViewMode = writable<ViewMode>(
   (typeof localStorage !== 'undefined' && (localStorage.getItem('pineal_view_mode') as ViewMode)) || 'observatory'
 );

@@ -302,13 +302,18 @@ async def test_e_locked_vault_no_external_call_and_authority_support(
 
     vault_gate._auth_ctx.set(None)
 
-    class _BoomSession:
-        def __init__(self, *a, **k):
-            raise AssertionError("kilitliyken aiohttp oturumu açıldı")
+    # 2) osint egress yolu: istek HİÇ oluşturulmaz.
+    monkeypatch.setenv("PINEAL_ENV", "production")
+    monkeypatch.setenv("PINEAL_VAULT_FILE", "/nonexistent/vault.json")
+    monkeypatch.setenv("OSINT_INDUSTRIES_KEY", "sk-osint-test-key-123")
+    from agent_core.scraper import vault_gate
 
-    monkeypatch.setattr(
-        "agent_core.agents.osint_investigator.aiohttp.ClientSession", _BoomSession
-    )
+    vault_gate._auth_ctx.set(None)
+
+    async def _boom_client(*a, **k):
+        raise AssertionError("kilitliyken egress istemcisi açıldı")
+
+    monkeypatch.setattr("agent_core.capabilities.egress.open_client", _boom_client)
     caplog.clear()
     with caplog.at_level(logging.WARNING):
         profile = await OsintInvestigatorAgent().execute(
@@ -528,6 +533,8 @@ def _cli_run(payload: dict, tmp_path):
         input=json.dumps(payload),
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=120,
         cwd=str(tmp_path),
     )
@@ -566,3 +573,4 @@ async def test_c_cli_resume_passthrough(tmp_path):
         "timed_out",
         "failed",
     )
+

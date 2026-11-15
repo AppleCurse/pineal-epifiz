@@ -1,3 +1,4 @@
+import os
 """Commander storage must not masquerade as evidence injected into agents."""
 import json
 
@@ -88,7 +89,7 @@ def test_distinct_worker_writes_do_not_lose_acknowledged_entries(tmp_path):
     directory = tmp_path / '.pineal_memory'
     directory.mkdir()
     (directory / 'learnings.json').write_text('[]')
-    ctx = multiprocessing.get_context('fork')
+    ctx = multiprocessing.get_context('fork' if 'fork' in multiprocessing.get_all_start_methods() else 'spawn')
     barrier, results = ctx.Barrier(2), ctx.Queue()
     workers = [ctx.Process(target=_parallel_inject, args=(str(tmp_path), barrier, results, x))
                for x in ('first', 'second')]
@@ -113,6 +114,7 @@ def test_idempotency_key_retries_and_conflicts(client, tmp_path):
     assert len(json.loads((tmp_path / '.pineal_memory/learnings.json').read_text())) == 1
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory fsync not applicable on Windows")
 def test_retry_after_uncertain_directory_sync_is_idempotent(client, tmp_path, monkeypatch):
     import os
     import stat
@@ -133,6 +135,7 @@ def test_retry_after_uncertain_directory_sync_is_idempotent(client, tmp_path, mo
     assert len(json.loads((tmp_path / '.pineal_memory/learnings.json').read_text())) == 1
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory fsync not applicable on Windows")
 def test_retry_does_not_acknowledge_while_sync_still_failing(client, monkeypatch):
     import os
     import stat

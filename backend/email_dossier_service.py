@@ -25,6 +25,7 @@ import smtplib
 from dataclasses import dataclass, field
 from email.message import EmailMessage
 from email import message_from_bytes
+from email import policy as _email_policy
 from email.utils import parseaddr
 from typing import Any
 
@@ -306,7 +307,7 @@ class EmailDossierService:
                 typ, raw = await asyncio.to_thread(conn.fetch, uid, "(RFC822)")
                 if typ != "OK" or not raw or not raw[0]:
                     continue
-                msg = message_from_bytes(raw[0][1])
+                msg = message_from_bytes(raw[0][1], policy=_email_policy.default)
                 sender = parseaddr(msg.get("From", ""))[1].lower()
                 if self.cfg.allowed and sender not in self.cfg.allowed:
                     log.info("gonderen izinli degil: %s", sender)

@@ -125,10 +125,10 @@ def main():
 
     print("\n2. CLOUDFLARE İÇİN GEREKLİ KOMUTLAR:")
     print("   Eğer Cloudflare Pages veya Workers kullanıyorsanız terminalden şunu çalıştırın:")
-    print(f"   npx wrangler secret put BACKEND_ORIGIN")
+    print("   npx wrangler secret put BACKEND_ORIGIN")
     print(f"   (İstendiğinde şu adresi yapıştırın: {backend_origin})")
     print("\n   Veya Pages için:")
-    print(f"   npx wrangler pages secret put BACKEND_ORIGIN")
+    print("   npx wrangler pages secret put BACKEND_ORIGIN")
     print("=" * 60)
 
 

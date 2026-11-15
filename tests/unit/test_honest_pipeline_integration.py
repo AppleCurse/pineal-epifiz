@@ -28,7 +28,8 @@ Ayrıca doküman sözleşmesi korunur: reddedilen tarama mühürlü kanıtta kal
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, patch
+from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -68,11 +69,25 @@ def _hermetic_guard(monkeypatch):
 
 
 def _provider_response(status: int, payload: dict | None = None, text: str = ""):
-    mock_resp = AsyncMock()
-    mock_resp.status = status
-    mock_resp.json = AsyncMock(return_value=payload or {})
-    mock_resp.text = AsyncMock(return_value=text)
+    mock_resp = MagicMock()
+    mock_resp.status_code = status
+    mock_resp.json = MagicMock(return_value=payload or {})
+    mock_resp.text = text
     return mock_resp
+
+
+def _patch_egress(resp=None, *, side_effect=None):
+    fake_client = AsyncMock()
+    if side_effect is not None:
+        fake_client.get = AsyncMock(side_effect=side_effect)
+    else:
+        fake_client.get = AsyncMock(return_value=resp)
+
+    @asynccontextmanager
+    async def _fake_open_client(*args, **kwargs):
+        yield fake_client
+
+    return patch("agent_core.capabilities.egress.open_client", side_effect=_fake_open_client)
 
 
 # ================================================================ 1. SNIPPET ≠ GÖNDERİ
@@ -120,11 +135,10 @@ class TestProviderSensorContinuation:
         monkeypatch.setattr(agent, "_apply_username_scan", spy_username)
         monkeypatch.setattr(agent, "_apply_email_scan", spy_email)
 
-        with patch("aiohttp.ClientSession.get") as mock_get:
-            mock_get.return_value.__aenter__.return_value = _provider_response(
+        with _patch_egress(_provider_response(
                 200,
                 {"emails": ["seen@example.com"], "phones": [], "platforms": ["X"]},
-            )
+            )):
             res = await agent.execute({"target_profile": {"username": "@cyber_agent"}})
 
         spy_username.assert_awaited_once()
@@ -140,10 +154,9 @@ class TestProviderSensorContinuation:
         monkeypatch.setenv("OSINT_INDUSTRIES_KEY", "sk-osint-valid-test-key")
         agent = OsintInvestigatorAgent()
 
-        with patch("aiohttp.ClientSession.get") as mock_get:
-            mock_get.return_value.__aenter__.return_value = _provider_response(
+        with _patch_egress(_provider_response(
                 200, {"emails": ["seen@example.com"], "phones": [], "platforms": ["X"]}
-            )
+            )):
             res = await agent.execute({"target_profile": {"username": "@cyber_agent"}})
 
         assert res.username_scan is not None, "maigret provenance'sı yok — sensör sessizce atlandı"
@@ -159,10 +172,9 @@ class TestProviderSensorContinuation:
         monkeypatch.setenv("OSINT_INDUSTRIES_KEY", "sk-osint-valid-test-key")
         agent = OsintInvestigatorAgent()
 
-        with patch("aiohttp.ClientSession.get") as mock_get:
-            mock_get.return_value.__aenter__.return_value = _provider_response(
+        with _patch_egress(_provider_response(
                 200, {"emails": [], "phones": [], "platforms": []}
-            )
+            )):
             res = await agent.execute({"target_profile": {"username": "@ghost_user"}})
 
         assert res.confidence == 0.0
@@ -177,10 +189,9 @@ class TestProviderSensorContinuation:
         monkeypatch.setenv("OSINT_INDUSTRIES_KEY", "sk-osint-valid-test-key")
         agent = OsintInvestigatorAgent()
 
-        with patch("aiohttp.ClientSession.get") as mock_get:
-            mock_get.return_value.__aenter__.return_value = _provider_response(
+        with _patch_egress(_provider_response(
                 429, text="rate limited"
-            )
+            )):
             res = await agent.execute({
                 "target_profile": {
                     "username": "@rate_limited",
@@ -207,8 +218,7 @@ class TestProviderSensorContinuation:
         monkeypatch.setenv("OSINT_INDUSTRIES_KEY", "sk-osint-valid-test-key")
         agent = OsintInvestigatorAgent()
 
-        with patch("aiohttp.ClientSession.get") as mock_get:
-            mock_get.side_effect = side_effect
+        with _patch_egress(side_effect=side_effect):
             res = await agent.execute({"target_profile": {"username": "@offline_target"}})
 
         assert res.fallback_reason == "api_error"
@@ -226,10 +236,9 @@ class TestProviderSensorContinuation:
         holehe_spy = AsyncMock(side_effect=AssertionError("Holehe e-postasız koştu"))
         monkeypatch.setattr(agent, "_apply_email_scan", holehe_spy)
 
-        with patch("aiohttp.ClientSession.get") as mock_get:
-            mock_get.return_value.__aenter__.return_value = _provider_response(
+        with _patch_egress(_provider_response(
                 200, {"emails": [], "phones": ["+15550001"], "platforms": ["X"]}
-            )
+            )):
             res = await agent.execute({"target_profile": {"username": "@no_email_user"}})
 
         holehe_spy.assert_not_awaited()
@@ -287,12 +296,11 @@ class TestConfidenceMonotoneMerge:
         agent = OsintInvestigatorAgent()
 
         scan = self._maigret_hit(scanned=10, found=1)
-        with patch("aiohttp.ClientSession.get") as mock_get, \
-             patch("agent_core.services.maigret_scanner.scan_username", AsyncMock(return_value=scan)):
-            mock_get.return_value.__aenter__.return_value = _provider_response(
+        with _patch_egress(_provider_response(
                 200,
                 {"emails": ["a@b.co"], "phones": ["+15550001"], "platforms": ["X"]},
-            )
+            )), \
+             patch("agent_core.services.maigret_scanner.scan_username", AsyncMock(return_value=scan)):
             res = await agent.execute({
                 "target_profile": {"username": "@full_profile"},
                 "policy": {"vault_locked": False},
@@ -314,12 +322,11 @@ class TestConfidenceMonotoneMerge:
         agent = OsintInvestigatorAgent()
 
         scan = self._maigret_hit(scanned=8, found=0)
-        with patch("aiohttp.ClientSession.get") as mock_get, \
-             patch("agent_core.services.maigret_scanner.scan_username", AsyncMock(return_value=scan)):
-            mock_get.return_value.__aenter__.return_value = _provider_response(
+        with _patch_egress(_provider_response(
                 200,
                 {"emails": ["a@b.co"], "phones": ["+15550001"], "platforms": ["X"]},
-            )
+            )), \
+             patch("agent_core.services.maigret_scanner.scan_username", AsyncMock(return_value=scan)):
             res = await agent.execute({
                 "target_profile": {"username": "@full_profile"},
                 "policy": {"vault_locked": False},

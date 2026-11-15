@@ -9,6 +9,7 @@
   } from './store';
   import { uplinkState } from './lib/telemetry';
   import AtlasPinealCockpit from './components/AtlasPinealCockpit.svelte';
+  import AtlasObservatory from './components/AtlasObservatory.svelte';
   import TacticalWarRoom from './components/TacticalWarRoom.svelte';
   // [P6 · CANLI PANEL] Canlı kontrol paneli: ajan hattı, anlık kanal, muhakeme,
   // kanıt akışı ve çağrı izi — hepsi MEVCUT SoT'tan (WS + /api/aspasia/state).
@@ -458,16 +459,22 @@
 </script>
 
 <main class="fullscreen-cockpit-viewport">
-  <UnifiedPinealCockpit />
+  <!-- View switcher: UnifiedPinealCockpit default ('observatory') + legacy surfaces -->
   <!-- Legacy surface switcher retained below as a rollback path during live validation. -->
-  {#if false}
+  {#if true}
   <nav class="view-switcher" aria-label="Görünüm seçimi">
-    <button class:is-active={$activeViewMode === 'cockpit'} on:click={() => activeViewMode.set('cockpit')}>Kokpit</button>
+    <button class:is-active={$activeViewMode === 'observatory'} on:click={() => activeViewMode.set('observatory')}>Ana Kokpit</button>
+    <button class:is-active={$activeViewMode === 'atlas'} on:click={() => activeViewMode.set('atlas')}>Atlas Gözlem</button>
+    <button class:is-active={$activeViewMode === 'cockpit'} on:click={() => activeViewMode.set('cockpit')}>Atlas Kokpit</button>
     <button class:is-active={$activeViewMode === 'warroom'} on:click={() => activeViewMode.set('warroom')}>Muharebe masası</button>
     <button class:is-active={$activeViewMode === 'control'} on:click={() => activeViewMode.set('control')}>Canlı kontrol</button>
     <button class:is-active={$activeViewMode === 'spiderfoot'} on:click={() => activeViewMode.set('spiderfoot')}>Araştırma</button>
   </nav>
-  {#if $activeViewMode === 'cockpit'}
+  {#if $activeViewMode === 'observatory'}
+    <UnifiedPinealCockpit />
+  {:else if $activeViewMode === 'atlas'}
+    <AtlasObservatory />
+  {:else if $activeViewMode === 'cockpit'}
     <AtlasPinealCockpit />
   {:else if $activeViewMode === 'warroom'}
     <TacticalWarRoom />

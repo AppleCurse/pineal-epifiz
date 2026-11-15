@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
 
 from backend.services.task_rejection import (
     REJECT_EVIDENCE_TYPE,

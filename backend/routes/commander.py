@@ -69,13 +69,13 @@ def locked_learnings(path: str):
         with process_lock:
             with open(lock_path, "a+b") as lock:
                 lock.seek(0)
-                if not lock.read(1):
-                    lock.seek(0)
-                    lock.write(b"0")
-                    lock.flush()
-                lock.seek(0)
                 msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
                 try:
+                    lock.seek(0)
+                    if not lock.read(1):
+                        lock.seek(0)
+                        lock.write(b"0")
+                        lock.flush()
                     yield
                 finally:
                     lock.seek(0)
@@ -115,7 +115,7 @@ def _store_evidence(entry: dict, key: str) -> None:
                         raise EvidenceIdempotencyConflict("idempotency key conflict")
                     # A previous attempt may have failed after rename but before
                     # directory sync; re-sync before acknowledging the retry.
-                    with open(mem_path, "rb") as current:
+                    with open(mem_path, "r+b") as current:
                         os.fsync(current.fileno())
                     if os.name != "nt":
                         directory_fd = os.open(os.path.dirname(mem_path), os.O_RDONLY)

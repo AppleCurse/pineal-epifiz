@@ -32,8 +32,11 @@ def test_extract_target():
     assert extract_target("hedef yok") is None
 
 
-def test_allowlist_disler_ve_yanit_yazar(monkeypatch):
-    cfg = EmailConfig(allowed=("patron@sirket.com",))
+def test_allowlist_disler_ve_yanit_yazar(monkeypatch, tmp_path):
+    cfg = EmailConfig(
+        allowed=("patron@sirket.com",),
+        seen_path=str(tmp_path / "email_dossier_seen.json"),
+    )
     svc = EmailDossierService(cfg)
     sent = []
     svc._send = lambda m: sent.append(m)

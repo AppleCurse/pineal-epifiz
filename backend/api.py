@@ -59,7 +59,7 @@ import hashlib
 import time
 
 logger = logging.getLogger("backend.api")
-from datetime import datetime, timezone
+from datetime import datetime
 import sys
 
 if sys.platform == 'win32':

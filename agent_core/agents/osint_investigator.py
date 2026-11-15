@@ -16,7 +16,6 @@ Test: ``tests/unit/test_osint_*.py``, ``tests/unit/test_maigret_scanner.py``,
 import logging
 import asyncio
 import re
-from urllib.parse import quote
 import os
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, ConfigDict, Field

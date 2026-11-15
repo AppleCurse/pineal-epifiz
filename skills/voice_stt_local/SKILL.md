@@ -18,8 +18,71 @@ Yerel konuşma tanıma (whisper CLI veya localhost STT ucu).
 {
   "additionalProperties": false,
   "properties": {
+    "audio": {
+      "type": "string"
+    },
+    "audio_base64": {
+      "type": "string"
+    },
+    "auto_bridge": {
+      "type": "boolean"
+    },
+    "channels": {
+      "type": "array"
+    },
+    "claim": {
+      "type": "string"
+    },
+    "evidence": {
+      "type": "array"
+    },
+    "language": {
+      "type": "string"
+    },
+    "limit": {
+      "type": "integer"
+    },
+    "max_chars": {
+      "type": "integer"
+    },
+    "max_pages": {
+      "type": "integer"
+    },
+    "path": {
+      "type": "string"
+    },
+    "rate": {
+      "type": "number"
+    },
+    "report": {
+      "type": "string"
+    },
+    "sample_every": {
+      "type": "integer"
+    },
+    "sources": {
+      "type": "string"
+    },
     "subject": {
       "description": "Hedef: kullanıcı adı, e-posta, URL ya da yeteneğin beklediği metin (CapabilityContext.subject sözleşmesi).",
+      "type": "string"
+    },
+    "suffix": {
+      "type": "string"
+    },
+    "target": {
+      "type": "string"
+    },
+    "text": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "top_k": {
+      "type": "integer"
+    },
+    "voice": {
       "type": "string"
     }
   },
