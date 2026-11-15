@@ -5677,12 +5677,12 @@ async def api_report_build(req: ReportBuildPayload):
             )
             results["markdown"] = {
                 "capability_id": "renderer.report.markdown",
-                "available": True,
+                "available": bool(pkg.available),
                 "denied_by": None,
-                "reason": None,
+                "reason": pkg.reason or None,
                 "artifacts": [
                     {
-                        "format": a.format,
+                        "name": a.name,
                         "path": a.path,
                         "available": a.available,
                         "reason": a.reason,
@@ -5693,17 +5693,10 @@ async def api_report_build(req: ReportBuildPayload):
                 ],
                 "manifest_path": pkg.manifest_path,
                 "manifest_sha256": pkg.manifest_sha256,
-                "evidence_ids": [item.evidence_id for item in pkg.evidence],
-                "rejected_item_count": pkg.rejected_count,
-                "excluded_strategy_count": pkg.excluded_strategy_count,
-                "evidence": [
-                    {
-                        "evidence_id": item.evidence_id,
-                        "content": item.content[:300],
-                        "provenance_refs": list(item.provenance_refs)[:5],
-                    }
-                    for item in pkg.evidence[:10]
-                ],
+                "evidence_ids": list(pkg.evidence_ids),
+                "rejected_item_count": int(pkg.notes.get("rejected_item_count", 0)),
+                "excluded_strategy_count": int(pkg.notes.get("excluded_strategy_count", 0)),
+                "evidence": [],
             }
             broadcast_log(req.client_id, "INFO", f"RAPOR: markdown üretildi ({req.title[:40]})")
 
