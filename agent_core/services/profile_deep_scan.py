@@ -28,7 +28,7 @@ Sözleşme:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Sequence
+from typing import Any, Sequence
 
 from agent_core.capabilities.base import CapabilityContext
 from agent_core.capabilities.runner import CapabilityRunner
@@ -41,7 +41,6 @@ __all__ = [
     "CHANNEL_DEEP_SCAN",
     "DeepScanResult",
     "normalize_profile",
-    "run_detected_profiles",
     "run_plan",
 ]
 
@@ -315,22 +314,3 @@ async def run_plan(
 
     return out
 
-
-async def run_detected_profiles(
-    urls: Iterable[str],
-    *,
-    state: Any = None,
-    limit: int = 3,
-    runner: CapabilityRunner | None = None,
-) -> DeepScanResult:
-    """Bulunan profil URL'lerini sınıflandırır ve **gerçekten** kazıma yollar.
-
-    Boş URL listesi → boş sonuç döner (çağıran bunu "kanal çalışmadı" diye
-    raporlamak zorunda değil; raporlayan yol kendi kanal satırını yazar).
-    """
-    from agent_core.services.profile_router import plan_for_urls
-
-    routes = plan_for_urls(urls, limit=limit)
-    if not routes:
-        return DeepScanResult()
-    return await run_plan(routes, state=state, runner=runner)

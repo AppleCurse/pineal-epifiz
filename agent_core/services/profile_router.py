@@ -30,7 +30,7 @@ Yol tablosu (tasarım kararı):
 
 from __future__ import annotations
 
-from typing import Any, Iterable
+from typing import Any
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict
@@ -50,7 +50,6 @@ __all__ = [
     "REASON_UNSUPPORTED",
     "ProfileRoute",
     "classify_url",
-    "plan_for_urls",
 ]
 
 CAPABILITY_INSTAGRAM = "sensor.ig.instagrapi"
@@ -278,24 +277,3 @@ def classify_url(url: str) -> ProfileRoute:
         return ProfileRoute(url=raw, platform=PLATFORM_UNSUPPORTED, reason=REASON_NOT_A_PROFILE)
     return ProfileRoute(url=raw, platform=PLATFORM_UNSUPPORTED, reason=REASON_UNSUPPORTED)
 
-
-def plan_for_urls(urls: Iterable[str], *, limit: int = 3) -> list[ProfileRoute]:
-    """URL listesini yol planına çevirir (tekrar yok, sıra korunur, ``limit`` uygulanır).
-
-    Boş/tekrar eden/geçersiz adresler **sessizce atılmaz**: her biri için
-    ``runnable=False`` + ``reason`` içeren bir plan satırı üretilir; çağıran
-    bunları kanal defterine "koşmadı + sebep" olarak yazar.
-    """
-    plan: list[ProfileRoute] = []
-    seen: set[str] = set()
-    for raw in urls or ():
-        url = (raw or "").strip()
-        if not url:
-            continue
-        if url in seen:
-            continue
-        seen.add(url)
-        plan.append(classify_url(url))
-        if limit and len(plan) >= int(limit):
-            break
-    return plan

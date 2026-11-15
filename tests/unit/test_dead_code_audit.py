@@ -184,7 +184,7 @@ def test_frontend_test_files_are_not_reported_as_dead(audit):
     """
     dead_paths = {item["path"] for item in audit.dead_frontend()}
     test_files = [
-        "frontend/src/__tests__/spiderfoot-cockpit.contract.test.ts",
+        "frontend/src/__tests__/unified-cockpit.contract.test.ts",
         "frontend/src/test-setup.ts",
     ]
     for rel in test_files:
