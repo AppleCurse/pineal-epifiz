@@ -40,7 +40,7 @@ beforeEach(() => {
 describe('UnifiedPinealCockpit controls and honesty', () => {
   it('renders PWR, ARM, REC switches and toggles stores', async () => {
     installFetch((path) => {
-      if (path === '/api/vault/status') return jsonResponse({ locked: true });
+      if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: true });
       return undefined;
     });
 
@@ -62,7 +62,7 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
 
   it('ACİL STOP calls /api/tasks/{id}/halt and disarms ARM', async () => {
     const calls = installFetch((path) => {
-      if (path === '/api/vault/status') return jsonResponse({ locked: true });
+      if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: true });
       if (path === '/api/tasks/op_test_123/halt') return jsonResponse({ status: 'halted' });
       return undefined;
     });
@@ -84,7 +84,7 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
 
   it('does not render fabricated 847 Hz or 94% while processing', () => {
     installFetch((path) => {
-      if (path === '/api/vault/status') return jsonResponse({ locked: true });
+      if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: true });
       return undefined;
     });
 
@@ -96,7 +96,7 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
 
   it('renders phone OSINT dossier card when phone probe returns metadata', async () => {
     const calls = installFetch((path) => {
-      if (path === '/api/vault/status') return jsonResponse({ locked: false });
+      if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: false });
       if (path === '/api/commander/phone-probe') {
         return jsonResponse({
           phone_input: '+905551112233',
@@ -135,7 +135,7 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
 
   it('renders direct dispatch inputs and posts to /api/commander/dispatch', async () => {
     const calls = installFetch((path) => {
-      if (path === '/api/vault/status') return jsonResponse({ locked: false });
+      if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: false });
       if (path === '/api/commander/dispatch') {
         return jsonResponse({
           status: 'unavailable',
@@ -156,5 +156,52 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
       expect(calls.some((c) => c.method === 'POST' && c.path === '/api/commander/dispatch')).toBe(true);
     });
     expect((await screen.findAllByText(/Doğrudan ajan yürütmesi bağlı değil/i)).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('opens multi-provider settings modal, seals provider_keys, and displays agent model routing', async () => {
+    const calls = installFetch((path, init) => {
+      if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: false });
+      if (path.startsWith('/api/llm/routing')) {
+        return jsonResponse({
+          provider_keys_set: ['deepseek'],
+          has_openrouter: false,
+          use_local: false,
+          has_tavily: false,
+          has_serpapi: false,
+          has_exa: false,
+          routing: {
+            agents: {
+              aspasia: { chain: ['anthropic/claude-sonnet-5', 'google/gemini-3.7-flash'], source: 'agent_matrix' },
+              authenticity_auditor: { chain: ['deepseek/deepseek-v4-flash'], source: 'agent_matrix' },
+            },
+          },
+        });
+      }
+      if (path === '/api/vault' && init?.method === 'POST') {
+        return jsonResponse({ status: 'ok', message: 'Kasa güncellendi' });
+      }
+      return undefined;
+    });
+
+    render(UnifiedPinealCockpit);
+    const gearBtn = screen.getByTestId('open-settings-btn');
+    await fireEvent.click(gearBtn);
+
+    expect(await screen.findByText(/Doğrudan Sağlayıcı Anahtarları/i)).toBeTruthy();
+    const deepseekInput = screen.getByLabelText(/DeepSeek/i);
+    await fireEvent.input(deepseekInput, { target: { value: 'sk-deepseek-real-123456' } });
+
+    const saveBtn = screen.getByRole('button', { name: /KASAYA MÜHÜRLE VE UYGULA/i });
+    await fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      const post = calls.find((c) => c.method === 'POST' && c.path === '/api/vault');
+      expect(post).toBeTruthy();
+      expect((post?.body as any)?.provider_keys?.deepseek).toBe('sk-deepseek-real-123456');
+    });
+
+    const routingTab = screen.getByRole('button', { name: /Ajan → Model Haritası/i });
+    await fireEvent.click(routingTab);
+    expect(await screen.findByText(/anthropic\/claude-sonnet-5/i)).toBeTruthy();
   });
 });

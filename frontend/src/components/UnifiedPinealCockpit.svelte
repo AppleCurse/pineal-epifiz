@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { get } from 'svelte/store';
   import {
-    apiToken, currentApiToken, apiFetch, isAuthFailure, clientId, wsUrl, logs, taskStatus,
+    apiToken, setApiToken, currentApiToken, apiFetch, isAuthFailure, clientId, wsUrl, logs, taskStatus,
     speechState, lastSpeech, voiceEnabled,
     isProcessing, powerEngaged, armEngaged, recordEngaged, agentStatuses, vaultLocked,
     activeViewMode, agentStatusSource, supportRequests, supportTaskId, refreshSupport, mergeTaskSnapshot,
@@ -84,6 +84,123 @@
   let vaultKnown = false;
   let vaultBusy = false;
   let vaultError = '';
+
+  // Ayarlar & Çoklu LLM Kasası + Ajan-Model Haritası
+  let showSettingsModal = false;
+  let settingsTab: 'providers' | 'search' | 'routing' = 'providers';
+  let settingsSaving = false;
+  let settingsStatusMsg = '';
+  let settingsErrorMsg = '';
+  let routingLoading = false;
+  let routingData: any = null;
+  let appTokenInput = currentApiToken();
+  let openRouterInput = '';
+  let providerInputs: Record<string, string> = {
+    anthropic: '',
+    openai: '',
+    'google-gemini': '',
+    deepseek: '',
+    groq: '',
+    xai: '',
+    mistral: '',
+    cohere: ''
+  };
+  let localUrl = 'http://localhost:11434/v1';
+  let localModel = 'dolphin-llama3:latest';
+  let useLocal = false;
+  let tavilyKey = '';
+  let serpapiKey = '';
+  let exaKey = '';
+  let xCookie = '';
+
+  const DIRECT_PROVIDERS = [
+    { id: 'anthropic', label: 'Anthropic (Claude)', placeholder: 'sk-ant-...' },
+    { id: 'openai', label: 'OpenAI (GPT)', placeholder: 'sk-...' },
+    { id: 'google-gemini', label: 'Google Gemini', placeholder: 'AIza...' },
+    { id: 'deepseek', label: 'DeepSeek (V3/V4/R1)', placeholder: 'sk-...' },
+    { id: 'groq', label: 'Groq (Hızlı Llama)', placeholder: 'gsk_...' },
+    { id: 'xai', label: 'xAI (Grok)', placeholder: 'xai-...' },
+    { id: 'mistral', label: 'Mistral AI', placeholder: '...' },
+    { id: 'cohere', label: 'Cohere', placeholder: '...' }
+  ];
+
+  async function loadRoutingSnapshot() {
+    routingLoading = true;
+    try {
+      const cid = get(clientId) || 'default';
+      const res = await apiFetch(`/api/llm/routing?client_id=${encodeURIComponent(cid)}`);
+      if (res.ok) {
+        routingData = await res.json();
+        if (typeof routingData.use_local === 'boolean') useLocal = routingData.use_local;
+      }
+    } catch (_e) {
+      // Routing önizlemesi opsiyonel
+    } finally {
+      routingLoading = false;
+    }
+  }
+
+  function openSettingsModal(tab: 'providers' | 'search' | 'routing' = 'providers') {
+    settingsTab = tab;
+    settingsStatusMsg = '';
+    settingsErrorMsg = '';
+    appTokenInput = currentApiToken();
+    showSettingsModal = true;
+    void loadRoutingSnapshot();
+    void refreshVaultState();
+  }
+
+  async function saveMultiVaultSettings() {
+    if (settingsSaving) return;
+    settingsSaving = true;
+    settingsStatusMsg = '';
+    settingsErrorMsg = '';
+    try {
+      if (appTokenInput !== undefined && appTokenInput.trim()) {
+        setApiToken(appTokenInput.trim());
+      }
+      const cid = get(clientId) || 'default';
+      const cleanedProviders: Record<string, string> = {};
+      for (const [pid, val] of Object.entries(providerInputs)) {
+        if (val && val.trim()) cleanedProviders[pid] = val.trim();
+      }
+      const payload: Record<string, any> = {
+        client_id: cid,
+        use_local: useLocal,
+      };
+      if (openRouterInput.trim()) payload.api_key = openRouterInput.trim();
+      if (Object.keys(cleanedProviders).length > 0) payload.provider_keys = cleanedProviders;
+      if (useLocal || localUrl.trim()) payload.local_url = localUrl.trim();
+      if (useLocal || localModel.trim()) payload.local_model = localModel.trim();
+      if (tavilyKey.trim()) payload.tavily_key = tavilyKey.trim();
+      if (serpapiKey.trim()) payload.serpapi_key = serpapiKey.trim();
+      if (exaKey.trim()) payload.exa_key = exaKey.trim();
+      if (xCookie.trim()) payload.x_cookie = xCookie.trim();
+
+      const res = await apiFetch('/api/vault', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error?.message || data?.detail || `HTTP ${res.status}`);
+      }
+      settingsStatusMsg = 'Anahtarlar ve çoklu LLM yapılandırması kasaya mühürlendi.';
+      openRouterInput = '';
+      for (const k of Object.keys(providerInputs)) providerInputs[k] = '';
+      tavilyKey = '';
+      serpapiKey = '';
+      exaKey = '';
+      xCookie = '';
+      await refreshVaultState();
+      await loadRoutingSnapshot();
+    } catch (e: any) {
+      settingsErrorMsg = `Kayıt hatası: ${e?.message || 'bağlantı hatası'}`;
+    } finally {
+      settingsSaving = false;
+    }
+  }
   let injectHistory: Array<{ type: string; value: string; target: string; note: string; ts: string }> = [];
 
   // Phone OSINT
@@ -614,6 +731,14 @@
         <span class="hm-icon">⏱</span>
         <span class="hm-val">{missionElapsedStr}</span>
       </div>
+      <button
+        class="settings-gear-btn"
+        data-testid="open-settings-btn"
+        on:click={() => openSettingsModal('providers')}
+        title="Çoklu LLM Sağlayıcı Anahtarları, Arama Motorları ve Ajan-Model Haritası"
+      >
+        ⚙️ AYARLAR & ÇOKLU LLM
+      </button>
       <button
         class="vault-lock-btn"
         class:locked={!vaultKnown || $vaultLocked}
@@ -1160,6 +1285,154 @@
       {/each}
     </div>
   </footer>
+
+  {#if showSettingsModal}
+    <div class="cockpit-modal-backdrop" role="presentation" on:click|self={() => (showSettingsModal = false)}>
+      <div class="cockpit-modal-card" role="dialog" aria-modal="true" aria-label="Ayarlar ve Çoklu LLM Kasası">
+        <div class="cockpit-modal-head">
+          <div>
+            <h3>⚙️ AYARLAR, ÇOKLU LLM KASASI & AJAN MODEL HARİTASI</h3>
+            <p class="cockpit-modal-sub">Her sağlayıcıya doğrudan anahtar girin; sistemdeki her ajan/özellik kendi uzman modelini kullanır.</p>
+          </div>
+          <button class="modal-x-btn" on:click={() => (showSettingsModal = false)} aria-label="Kapat">✕</button>
+        </div>
+
+        <div class="cockpit-modal-tabs">
+          <button class:active={settingsTab === 'providers'} on:click={() => (settingsTab = 'providers')}>Çoklu LLM Anahtarları</button>
+          <button class:active={settingsTab === 'search'} on:click={() => (settingsTab = 'search')}>Arama & Oturum (OSINT)</button>
+          <button class:active={settingsTab === 'routing'} on:click={() => { settingsTab = 'routing'; void loadRoutingSnapshot(); }}>Ajan → Model Haritası ({routingData?.routing?.agents ? Object.keys(routingData.routing.agents).length : 21})</button>
+        </div>
+
+        <div class="cockpit-modal-body">
+          {#if settingsTab === 'providers'}
+            <div class="modal-section-box">
+              <h4>Doğrudan Sağlayıcı Anahtarları (Her LLM Ayrı)</h4>
+              <div class="provider-grid">
+                {#each DIRECT_PROVIDERS as prov}
+                  {@const isSet = (routingData?.provider_keys_set || []).includes(prov.id)}
+                  <label class="provider-field">
+                    <span class="pf-top">
+                      <span>{prov.label}</span>
+                      <span class="pf-badge" class:active={isSet}>{isSet ? 'AKTİF' : 'BOŞ'}</span>
+                    </span>
+                    <input type="password" placeholder={prov.placeholder} bind:value={providerInputs[prov.id]} />
+                  </label>
+                {/each}
+              </div>
+            </div>
+
+            <div class="modal-section-box">
+              <h4>OpenRouter Yedek Anahtarı & Yetki Tokenı</h4>
+              <div class="provider-grid">
+                <label class="provider-field">
+                  <span class="pf-top">
+                    <span>OpenRouter (Yedek / Çoklu Model Ağ Geçidi)</span>
+                    <span class="pf-badge" class:active={routingData?.has_openrouter}>{routingData?.has_openrouter ? 'AKTİF' : 'BOŞ'}</span>
+                  </span>
+                  <input type="password" placeholder="sk-or-v1-..." bind:value={openRouterInput} />
+                </label>
+                <label class="provider-field">
+                  <span class="pf-top"><span>PINEAL_TOKEN (Sunucu Yetki Anahtarı)</span></span>
+                  <input type="password" placeholder="Opsiyonel (üretim modu için)" bind:value={appTokenInput} />
+                </label>
+              </div>
+            </div>
+
+            <div class="modal-section-box">
+              <h4>Yerel LLM (Ollama / LM Studio)</h4>
+              <label class="local-toggle-row">
+                <input type="checkbox" bind:checked={useLocal} />
+                <span>Yerel LLM Kullan (Bulut yerine yerel model)</span>
+              </label>
+              <div class="provider-grid">
+                <label class="provider-field">
+                  <span class="pf-top"><span>Base URL</span></span>
+                  <input type="text" bind:value={localUrl} placeholder="http://localhost:11434/v1" />
+                </label>
+                <label class="provider-field">
+                  <span class="pf-top"><span>Model Adı</span></span>
+                  <input type="text" bind:value={localModel} placeholder="dolphin-llama3:latest" />
+                </label>
+              </div>
+            </div>
+          {:else if settingsTab === 'search'}
+            <div class="modal-section-box">
+              <h4>OSINT Arama Motoru Anahtarları & Sosyal Oturum</h4>
+              <div class="provider-grid">
+                <label class="provider-field">
+                  <span class="pf-top">
+                    <span>Tavily API Key</span>
+                    <span class="pf-badge" class:active={routingData?.has_tavily}>{routingData?.has_tavily ? 'AKTİF' : 'BOŞ'}</span>
+                  </span>
+                  <input type="password" placeholder="tvly-..." bind:value={tavilyKey} />
+                </label>
+                <label class="provider-field">
+                  <span class="pf-top">
+                    <span>SerpAPI Key</span>
+                    <span class="pf-badge" class:active={routingData?.has_serpapi}>{routingData?.has_serpapi ? 'AKTİF' : 'BOŞ'}</span>
+                  </span>
+                  <input type="password" placeholder="..." bind:value={serpapiKey} />
+                </label>
+                <label class="provider-field">
+                  <span class="pf-top">
+                    <span>Exa API Key</span>
+                    <span class="pf-badge" class:active={routingData?.has_exa}>{routingData?.has_exa ? 'AKTİF' : 'BOŞ'}</span>
+                  </span>
+                  <input type="password" placeholder="..." bind:value={exaKey} />
+                </label>
+                <label class="provider-field">
+                  <span class="pf-top"><span>X / Platform Cookie (opsiyonel)</span></span>
+                  <input type="password" placeholder="auth_token=...; ct0=..." bind:value={xCookie} />
+                </label>
+              </div>
+            </div>
+          {:else}
+            <div class="modal-section-box">
+              <h4>Gerçek Ajan & Özellik → Uzman Model Zinciri (llm_gateway)</h4>
+              {#if routingLoading && !routingData}
+                <p class="routing-note">Model haritası yükleniyor...</p>
+              {:else if routingData?.routing?.agents}
+                <div class="routing-table-wrap">
+                  <table class="routing-table">
+                    <thead>
+                      <tr>
+                        <th>Ajan / Özellik</th>
+                        <th>Uzman Model Zinciri (Sırayla)</th>
+                        <th>Kaynak</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {#each Object.entries(routingData.routing.agents as Record<string, any>) as [agentName, info]}
+                        <tr>
+                          <td class="rt-agent">{agentName}</td>
+                          <td class="rt-chain">{Array.isArray(info?.chain) ? info.chain.join(' → ') : '—'}</td>
+                          <td class="rt-src">{info?.source || '—'}</td>
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+                </div>
+              {:else}
+                <p class="routing-note">Model yönlendirme verisi alınamadı.</p>
+              {/if}
+            </div>
+          {/if}
+
+          {#if settingsStatusMsg}<div class="modal-alert ok">{settingsStatusMsg}</div>{/if}
+          {#if settingsErrorMsg}<div class="modal-alert err" role="alert">{settingsErrorMsg}</div>{/if}
+        </div>
+
+        <div class="cockpit-modal-foot">
+          <button class="modal-cancel-btn" on:click={() => (showSettingsModal = false)}>Kapat</button>
+          {#if settingsTab !== 'routing'}
+            <button class="modal-save-btn" on:click={saveMultiVaultSettings} disabled={settingsSaving}>
+              {settingsSaving ? 'KAYDEDİLİYOR...' : '🔒 KASAYA MÜHÜRLE VE UYGULA'}
+            </button>
+          {/if}
+        </div>
+      </div>
+    </div>
+  {/if}
 </main>
 
 <style>
@@ -1568,5 +1841,94 @@
     .pillars-grid { grid-template-columns: repeat(2, 1fr); }
     .field-matrix-grid { grid-template-columns: repeat(2, 1fr); }
     .form-dual-fields { grid-template-columns: 1fr; }
+  }
+
+  .settings-gear-btn {
+    padding: 0.45rem 0.75rem;
+    font-family: inherit;
+    font-size: 0.65rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    color: var(--cyan);
+    background: rgba(6, 182, 212, 0.12);
+    border: 1px solid rgba(6, 182, 212, 0.45);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .settings-gear-btn:hover { background: rgba(6, 182, 212, 0.25); color: #fff; }
+  .cockpit-modal-backdrop {
+    position: fixed; inset: 0; z-index: 9999;
+    background: rgba(2, 4, 10, 0.85);
+    backdrop-filter: blur(8px);
+    display: flex; align-items: center; justify-content: center; padding: 1rem;
+  }
+  .cockpit-modal-card {
+    width: min(880px, 96vw); max-height: 90vh;
+    background: #0a0e17; border: 1px solid rgba(6, 182, 212, 0.45);
+    border-radius: 10px; display: flex; flex-direction: column; overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+  }
+  .cockpit-modal-head {
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;
+    padding: 1rem 1.25rem; border-bottom: 1px solid var(--border-dim);
+  }
+  .cockpit-modal-head h3 { font-size: 0.9rem; color: var(--gold); margin: 0 0 0.25rem; }
+  .cockpit-modal-sub { font-size: 0.7rem; color: var(--text-dim); margin: 0; }
+  .modal-x-btn {
+    background: transparent; border: 1px solid var(--border-dim); color: var(--text-dim);
+    border-radius: 4px; padding: 0.25rem 0.55rem; cursor: pointer;
+  }
+  .cockpit-modal-tabs {
+    display: flex; gap: 0.5rem; padding: 0.65rem 1.25rem;
+    background: rgba(5, 7, 12, 0.8); border-bottom: 1px solid var(--border-dim);
+    flex-wrap: wrap;
+  }
+  .cockpit-modal-tabs button {
+    padding: 0.4rem 0.8rem; font-family: inherit; font-size: 0.7rem; font-weight: 700;
+    color: var(--text-dim); background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border-dim); border-radius: 5px; cursor: pointer;
+  }
+  .cockpit-modal-tabs button.active {
+    color: #02140a; background: var(--cyan); border-color: var(--cyan);
+  }
+  .cockpit-modal-body { padding: 1rem 1.25rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1rem; }
+  .modal-section-box {
+    background: rgba(15, 20, 32, 0.7); border: 1px solid var(--border-dim);
+    border-radius: 8px; padding: 0.85rem;
+  }
+  .modal-section-box h4 { font-size: 0.72rem; color: var(--cyan); margin: 0 0 0.65rem; text-transform: uppercase; }
+  .provider-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.65rem; }
+  .provider-field { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.68rem; color: var(--text-dim); }
+  .pf-top { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+  .pf-badge { font-size: 0.58rem; padding: 0.1rem 0.35rem; border-radius: 3px; background: rgba(255,255,255,0.08); color: var(--text-muted); }
+  .pf-badge.active { background: rgba(16, 185, 129, 0.2); color: var(--emerald); border: 1px solid rgba(16, 185, 129, 0.4); }
+  .provider-field input {
+    padding: 0.45rem 0.6rem; font-family: 'JetBrains Mono', monospace; font-size: 0.7rem;
+    color: var(--text-primary); background: #05080f; border: 1px solid var(--border-dim); border-radius: 4px;
+  }
+  .local-toggle-row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.7rem; color: var(--text-primary); margin-bottom: 0.6rem; }
+  .routing-table-wrap { max-height: 360px; overflow: auto; }
+  .routing-table { width: 100%; border-collapse: collapse; font-size: 0.66rem; }
+  .routing-table th, .routing-table td { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--border-dim); }
+  .routing-table th { color: var(--gold); font-weight: 800; }
+  .rt-agent { color: var(--cyan); font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+  .rt-chain { color: var(--text-primary); font-family: 'JetBrains Mono', monospace; }
+  .rt-src { color: var(--text-muted); }
+  .routing-note { font-size: 0.7rem; color: var(--text-dim); }
+  .modal-alert { padding: 0.55rem 0.75rem; border-radius: 5px; font-size: 0.72rem; }
+  .modal-alert.ok { background: rgba(16, 185, 129, 0.15); border: 1px solid var(--emerald); color: var(--emerald); }
+  .modal-alert.err { background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; color: #fca5a5; }
+  .cockpit-modal-foot {
+    display: flex; justify-content: flex-end; gap: 0.65rem;
+    padding: 0.85rem 1.25rem; border-top: 1px solid var(--border-dim);
+  }
+  .modal-cancel-btn {
+    padding: 0.45rem 0.9rem; font-family: inherit; font-size: 0.7rem;
+    background: transparent; color: var(--text-dim); border: 1px solid var(--border-dim); border-radius: 5px; cursor: pointer;
+  }
+  .modal-save-btn {
+    padding: 0.45rem 1rem; font-family: inherit; font-size: 0.7rem; font-weight: 800;
+    background: linear-gradient(135deg, var(--emerald), #059669); color: #02140a; border: none; border-radius: 5px; cursor: pointer;
   }
 </style>

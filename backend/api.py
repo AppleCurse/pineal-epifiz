@@ -3501,6 +3501,24 @@ async def api_vault_status(client_id: str = "default"):
     }
 
 
+@app.get("/api/llm/routing")
+async def api_llm_routing(client_id: str = "default"):
+    """Salt-okunur ajan/ozellik -> model yonlendirme haritasi ve aktif saglayici durumu (sir donmez)."""
+    room = get_room(client_id)
+    vault = room["vault"]
+    executor = get_executor(client_id)
+    snapshot = executor.llm_gateway.effective_routing_snapshot()
+    return {
+        "provider_keys_set": list(vault.get("provider_keys_set") or []),
+        "has_openrouter": vault.get("or_key") is True,
+        "use_local": bool(vault.get("use_local", False)),
+        "has_tavily": bool(vault.get("tavily")),
+        "has_serpapi": bool(vault.get("serpapi")),
+        "has_exa": bool(vault.get("exa")),
+        "routing": snapshot,
+    }
+
+
 @app.post("/api/vault/status")
 async def api_vault_status_toggle(payload: VaultStatusPayload):
     """Vault kilit durumu gecisi (POST /api/vault/status toggle)"""
