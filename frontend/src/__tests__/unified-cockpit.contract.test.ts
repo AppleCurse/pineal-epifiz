@@ -187,7 +187,7 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
     const gearBtn = screen.getByTestId('open-settings-btn');
     await fireEvent.click(gearBtn);
 
-    expect(await screen.findByText(/Doğrudan Sağlayıcı Anahtarları/i)).toBeTruthy();
+    expect(await screen.findByText(/Doğrudan Aktif Rota Sağlayıcıları/i)).toBeTruthy();
     const deepseekInput = screen.getByLabelText(/DeepSeek/i);
     await fireEvent.input(deepseekInput, { target: { value: 'sk-deepseek-real-123456' } });
 

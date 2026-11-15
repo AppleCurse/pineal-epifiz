@@ -96,13 +96,24 @@
   let appTokenInput = currentApiToken();
   let openRouterInput = '';
   let providerInputs: Record<string, string> = {
+    groq: '',
+    deepseek: '',
+    'google-gemini': '',
+    'google-gemini-backup': '',
+    mistral: '',
+    cerebras: '',
+    together: '',
+    fireworks: '',
+    perplexity: '',
+    sambanova: '',
+    'nvidia-nim': '',
+    deepinfra: '',
+    huggingface: '',
+    'nous-research': '',
+    'alibaba-dashscope': '',
     anthropic: '',
     openai: '',
-    'google-gemini': '',
-    deepseek: '',
-    groq: '',
     xai: '',
-    mistral: '',
     cohere: ''
   };
   let localUrl = 'http://localhost:11434/v1';
@@ -113,15 +124,31 @@
   let exaKey = '';
   let xCookie = '';
 
+  // llm_gateway._AGENT_DIRECT_PROVIDER_KEYS ile birebir uyumlu (aktif OpenAI-chat rotalı sağlayıcılar)
   const DIRECT_PROVIDERS = [
-    { id: 'anthropic', label: 'Anthropic (Claude)', placeholder: 'sk-ant-...' },
-    { id: 'openai', label: 'OpenAI (GPT)', placeholder: 'sk-...' },
+    { id: 'groq', label: 'Groq', placeholder: 'gsk_...' },
+    { id: 'deepseek', label: 'DeepSeek', placeholder: 'sk-...' },
     { id: 'google-gemini', label: 'Google Gemini', placeholder: 'AIza...' },
-    { id: 'deepseek', label: 'DeepSeek (V3/V4/R1)', placeholder: 'sk-...' },
-    { id: 'groq', label: 'Groq (Hızlı Llama)', placeholder: 'gsk_...' },
-    { id: 'xai', label: 'xAI (Grok)', placeholder: 'xai-...' },
+    { id: 'google-gemini-backup', label: 'Google Gemini (Yedek)', placeholder: 'AIza...' },
     { id: 'mistral', label: 'Mistral AI', placeholder: '...' },
-    { id: 'cohere', label: 'Cohere', placeholder: '...' }
+    { id: 'cerebras', label: 'Cerebras', placeholder: '...' },
+    { id: 'together', label: 'Together AI', placeholder: '...' },
+    { id: 'fireworks', label: 'Fireworks AI', placeholder: '...' },
+    { id: 'perplexity', label: 'Perplexity', placeholder: 'pplx-...' },
+    { id: 'sambanova', label: 'SambaNova', placeholder: '...' },
+    { id: 'nvidia-nim', label: 'NVIDIA NIM', placeholder: 'nvapi-...' },
+    { id: 'deepinfra', label: 'DeepInfra', placeholder: '...' },
+    { id: 'huggingface', label: 'HuggingFace', placeholder: 'hf_...' },
+    { id: 'nous-research', label: 'Nous Research', placeholder: '...' },
+    { id: 'alibaba-dashscope', label: 'Alibaba DashScope', placeholder: 'sk-...' }
+  ];
+
+  // llm_gateway._DIAGNOSTIC_ONLY_PROVIDERS ile birebir uyumlu (doğrudan taşıyıcısı yok; yalnızca tanı/envanter)
+  const DIAGNOSTIC_PROVIDERS = [
+    { id: 'anthropic', label: 'Anthropic (Tanı / OpenRouter)', placeholder: 'sk-ant-...' },
+    { id: 'openai', label: 'OpenAI (Tanı / OpenRouter)', placeholder: 'sk-...' },
+    { id: 'xai', label: 'xAI Grok (Tanı / OpenRouter)', placeholder: 'xai-...' },
+    { id: 'cohere', label: 'Cohere (Tanı / OpenRouter)', placeholder: '...' }
   ];
 
   async function loadRoutingSnapshot() {
@@ -1306,7 +1333,7 @@
         <div class="cockpit-modal-body">
           {#if settingsTab === 'providers'}
             <div class="modal-section-box">
-              <h4>Doğrudan Sağlayıcı Anahtarları (Her LLM Ayrı)</h4>
+              <h4>Doğrudan Aktif Rota Sağlayıcıları (llm_gateway)</h4>
               <div class="provider-grid">
                 {#each DIRECT_PROVIDERS as prov}
                   {@const isSet = (routingData?.provider_keys_set || []).includes(prov.id)}
@@ -1314,6 +1341,22 @@
                     <span class="pf-top">
                       <span>{prov.label}</span>
                       <span class="pf-badge" class:active={isSet}>{isSet ? 'AKTİF' : 'BOŞ'}</span>
+                    </span>
+                    <input type="password" placeholder={prov.placeholder} bind:value={providerInputs[prov.id]} />
+                  </label>
+                {/each}
+              </div>
+            </div>
+
+            <div class="modal-section-box">
+              <h4>Tanı / Envanter Sağlayıcıları (Doğrudan Taşıyıcı Yok — Claude/GPT/Grok OpenRouter Üzerinden Çalışır)</h4>
+              <div class="provider-grid">
+                {#each DIAGNOSTIC_PROVIDERS as prov}
+                  {@const isSet = (routingData?.provider_keys_set || []).includes(prov.id)}
+                  <label class="provider-field">
+                    <span class="pf-top">
+                      <span>{prov.label}</span>
+                      <span class="pf-badge" class:active={isSet}>{isSet ? 'KAYITLI (TANI)' : 'BOŞ'}</span>
                     </span>
                     <input type="password" placeholder={prov.placeholder} bind:value={providerInputs[prov.id]} />
                   </label>
