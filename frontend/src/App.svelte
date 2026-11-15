@@ -5,18 +5,9 @@
     apiToken, currentApiToken, apiFetch, clientId, wsUrl, logs, taskStatus,
     speechState, lastSpeech, voiceEnabled,
     isProcessing, powerEngaged, recordEngaged, agentStatuses, vaultLocked,
-    activeViewMode, agentStatusSource, supportRequests, supportTaskId, refreshSupport, mergeTaskSnapshot
+    agentStatusSource, supportRequests, supportTaskId, refreshSupport, mergeTaskSnapshot
   } from './store';
   import { uplinkState } from './lib/telemetry';
-  import AtlasPinealCockpit from './components/AtlasPinealCockpit.svelte';
-  import AtlasObservatory from './components/AtlasObservatory.svelte';
-  import TacticalWarRoom from './components/TacticalWarRoom.svelte';
-  // [P6 · CANLI PANEL] Canlı kontrol paneli: ajan hattı, anlık kanal, muhakeme,
-  // kanıt akışı ve çağrı izi — hepsi MEVCUT SoT'tan (WS + /api/aspasia/state).
-  import LiveControlPanel from './components/LiveControlPanel.svelte';
-  import AgentRack from './components/AgentRack.svelte';
-  import HolographicResonanceMesh from './components/HolographicResonanceMesh.svelte';
-  import SpiderFootCockpit from './components/SpiderFootCockpit.svelte';
   import UnifiedPinealCockpit from './components/UnifiedPinealCockpit.svelte';
   import NeuralTelemetryBoard from './components/visualizers/NeuralTelemetryBoard.svelte';
   import SupportPanel from './components/SupportPanel.svelte';
@@ -28,30 +19,6 @@
   let lastToken = currentApiToken();
   let telemetryData: any = null;
   let telemetryPoll: any = null;
-  let evidenceGraph: any = null;
-  let graphMessage = 'Görev seçilmedi';
-  let graphGeneration = 0;
-  $: graphTaskId = $taskStatus?.task_id || '';
-  $: graphRoom = $clientId;
-  $: if ($activeViewMode === 'control') loadEvidenceGraph(graphTaskId, graphRoom);
-
-  async function loadEvidenceGraph(taskId: string, roomId: string) {
-    const generation = ++graphGeneration;
-    evidenceGraph = null;
-    if (!taskId) { graphMessage = 'Görev seçilmedi'; return; }
-    graphMessage = 'Kanıt grafı yükleniyor';
-    try {
-      const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}/graph?client_id=${encodeURIComponent(roomId)}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const graph = await res.json();
-      if (generation !== graphGeneration) return;
-      evidenceGraph = graph;
-      graphMessage = graph.available ? 'Kanıt grafı' : `Kanıt grafı kullanılamıyor: ${graph.reason || 'veri yok'}`;
-    } catch (error: any) {
-      if (generation !== graphGeneration) return;
-      graphMessage = `Kanıt grafı yüklenemedi: ${error?.message || 'hata'}`;
-    }
-  }
 
   let activeSpeechAudio: HTMLAudioElement | null = null;
   let activeSpeechObjectUrl: string | null = null;
@@ -459,39 +426,7 @@
 </script>
 
 <main class="fullscreen-cockpit-viewport">
-  <!-- View switcher: UnifiedPinealCockpit default ('observatory') + legacy surfaces -->
-  <!-- Legacy surface switcher retained below as a rollback path during live validation. -->
-  {#if true}
-  <nav class="view-switcher" aria-label="Görünüm seçimi">
-    <button class:is-active={$activeViewMode === 'observatory'} on:click={() => activeViewMode.set('observatory')}>Ana Kokpit</button>
-    <button class:is-active={$activeViewMode === 'atlas'} on:click={() => activeViewMode.set('atlas')}>Atlas Gözlem</button>
-    <button class:is-active={$activeViewMode === 'cockpit'} on:click={() => activeViewMode.set('cockpit')}>Atlas Kokpit</button>
-    <button class:is-active={$activeViewMode === 'warroom'} on:click={() => activeViewMode.set('warroom')}>Muharebe masası</button>
-    <button class:is-active={$activeViewMode === 'control'} on:click={() => activeViewMode.set('control')}>Canlı kontrol</button>
-    <button class:is-active={$activeViewMode === 'spiderfoot'} on:click={() => activeViewMode.set('spiderfoot')}>Araştırma</button>
-  </nav>
-  {#if $activeViewMode === 'observatory'}
-    <UnifiedPinealCockpit />
-  {:else if $activeViewMode === 'atlas'}
-    <AtlasObservatory />
-  {:else if $activeViewMode === 'cockpit'}
-    <AtlasPinealCockpit />
-  {:else if $activeViewMode === 'warroom'}
-    <TacticalWarRoom />
-  {:else if $activeViewMode === 'control'}
-    <LiveControlPanel />
-    <section aria-label="Ajan durumu ve kanıt grafı">
-      <AgentRack compact={true} />
-      <p>{graphMessage}</p>
-      {#if graphTaskId}<button on:click={() => loadEvidenceGraph(graphTaskId, graphRoom)}>Kanıt grafını yenile</button>{/if}
-      <HolographicResonanceMesh graph={evidenceGraph} size={360} />
-    </section>
-  {:else if $activeViewMode === 'spiderfoot'}
-    <SpiderFootCockpit />
-  {:else}
-    <AtlasPinealCockpit />
-  {/if}
-  {/if}
+  <UnifiedPinealCockpit />
 
   <!--
     Adli Telemetri & Sözleşme Köprüsü — ARTIK GERÇEKTEN GÖRÜNÜR.
@@ -523,29 +458,6 @@
 </main>
 
 <style>
-  .view-switcher {
-    position: fixed;
-    right: 14px;
-    bottom: 14px;
-    display: flex;
-    gap: 6px;
-    z-index: 40;
-  }
-  .view-switcher button {
-    background: rgba(2, 6, 3, 0.85);
-    border: 1px solid rgba(212, 175, 55, 0.5);
-    color: var(--gold, #d4af37);
-    font-family: 'JetBrains Mono', 'Courier New', monospace;
-    font-size: 10px;
-    letter-spacing: 1px;
-    padding: 4px 8px;
-    cursor: pointer;
-  }
-  .view-switcher button.is-active {
-    background: rgba(212, 175, 55, 0.18);
-    color: var(--text-phosphor, #38ef7d);
-  }
-
   .fullscreen-cockpit-viewport {
     width: 100vw;
     height: 100vh;

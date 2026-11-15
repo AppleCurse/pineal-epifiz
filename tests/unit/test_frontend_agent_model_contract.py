@@ -29,14 +29,14 @@ from agent_core.services.task_routing_resolver import resolve_task_chain
 ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_SRC = ROOT / "frontend/src"
 RUNBOOK = ROOT / "RUNBOOK.md"
-WAR_ROOM = FRONTEND_SRC / "components/TacticalWarRoom.svelte"
+WAR_ROOM = FRONTEND_SRC / "components/UnifiedPinealCockpit.svelte"
 
 #: Canlı arayüzde model etiketi taşıyan bileşenler (canlı olmalı).
 LIVE_COMPONENTS = (
     FRONTEND_SRC / "App.svelte",
-    FRONTEND_SRC / "components/AtlasPinealCockpit.svelte",
-    FRONTEND_SRC / "components/TacticalWarRoom.svelte",
-    FRONTEND_SRC / "components/AgentRack.svelte",
+    FRONTEND_SRC / "components/UnifiedPinealCockpit.svelte",
+    FRONTEND_SRC / "components/UnifiedPinealCockpit.svelte",
+    FRONTEND_SRC / "components/UnifiedPinealCockpit.svelte",
 )
 
 

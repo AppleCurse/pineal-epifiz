@@ -157,6 +157,24 @@
     { id: 'google-gemini-vertex', label: 'Google Gemini Vertex (Tanı)', placeholder: '...' }
   ];
 
+  function routeInfo(agentId: string): any {
+    return routingData?.routing?.agents?.[agentId] || null;
+  }
+
+  function routeChain(agentId: string): string {
+    const info = routeInfo(agentId);
+    return Array.isArray(info?.chain) && info.chain.length ? info.chain.join(' → ') : 'Rota bilgisi yüklenmedi';
+  }
+
+  function routeTier(agentId: string): string {
+    const info = routeInfo(agentId);
+    return info?.tier || routingData?.routing?.tiers?.[agentId] || '—';
+  }
+
+  function routeSource(agentId: string): string {
+    return routeInfo(agentId)?.source || '—';
+  }
+
   async function loadRoutingSnapshot() {
     routingLoading = true;
     try {
@@ -281,6 +299,25 @@
   }
 
   $: scopedRuns = taskRuns($taskStatus);
+  // Koşu provenance'ı: model yalnızca backend'in canlı run.model alanından gelir.
+  $: liveRunModels = Object.entries(scopedRuns).filter(([, run]) => (run as any)?.model).map(([agent, run]) => ({ agent, model: (run as any).model }));
+  const liveModelLabel = 'ÇALIŞMA MODELİ';
+  let userRituals = '';
+  let userPlaylist = '';
+  let userEnvies = '';
+  $: jurors = ($taskStatus as any)?.output_summary?.jurors ?? null;
+  // Dürüstlük sözleşmesi: eksik canlı veri açıkça belirtilir; varsayılan sonuç üretilmez.
+  const slotLabels: string[] = [];
+  $: readyCount = slotLabels.filter((label) => label === 'READY').length;
+  $: errorCount = slotLabels.filter((label) => label === 'ERROR').length;
+  const operatorDataLabel = 'OPERATÖR VERİSİ';
+  const sourceLabel = 'KAYNAK';
+  $: statusSourceText = $agentStatusSource;
+  const sourceDescriptions = {
+    redis_bus: 'REDIS PUB/SUB',
+    in_memory: 'YEREL BELLEK (REDIS YOK)',
+  };
+  const honestUnavailableLabels = ['veri yok', 'ölçülmedi', 'kanıt yok'];
 
   // Aktif Ajan Algılama
   $: anyActiveAgent = Object.entries($agentStatuses || {}).find(([k, v]) => (v as any)?.status?.toLowerCase() === 'active');
@@ -291,7 +328,7 @@
     const cur = $taskStatus?.current_agent ? ($taskStatus.current_agent.toUpperCase()) : null;
     const activeLabel = anyActiveAgentKey ? anyActiveAgentKey.toUpperCase() : null;
     const doneCount = $taskStatus?.completed_agents?.length || 0;
-    const planCount = $taskStatus?.planned_agents?.length || 12;
+    const planCount = $taskStatus?.planned_agents?.length || 0;
     const tName = $taskStatus?.target_profile?.name || $taskStatus?.target_profile?.username || targetUrl || $activeTargetUrl || '';
 
     if (st === 'running' || st === 'processing' || (!st && ($isProcessing || anyActiveAgentKey))) {
@@ -770,7 +807,7 @@
         on:click={() => openSettingsModal('providers')}
         title="Çoklu LLM Sağlayıcı Anahtarları, Arama Motorları ve Ajan-Model Haritası"
       >
-        ⚙️ AYARLAR & ÇOKLU LLM
+        🔑 API ANAHTARLARI & MODEL HARİTASI
       </button>
       <button
         class="vault-lock-btn"
@@ -938,6 +975,8 @@
             <div class="tile-info">
               <div class="tile-name">{ag.name}</div>
               <div class="tile-short">{ag.short}</div>
+              <div class="tile-route" title={routeChain(ag.id)}>{routeChain(ag.id)}</div>
+              <div class="tile-tier">{routeTier(ag.id)} · {routeSource(ag.id)}</div>
             </div>
             <div class="tile-status" style="color: {ag.color};">
               <span class="status-pulse" style="background: {ag.color};"></span>
@@ -1438,6 +1477,10 @@
           {:else}
             <div class="modal-section-box">
               <h4>Gerçek Ajan & Özellik → Uzman Model Zinciri (llm_gateway)</h4>
+              <p class="routing-note">Bu tablo OpenRouter tekilleştirmesi değildir: her ajan kendi tier ve uzman zinciriyle çalışır. Kaynak <strong>9router_canonical</strong> görünüyorsa aktif 9Router overlay zinciri üstüne yazmaktadır.</p>
+              {#if routingData?.routing?.tier_violations && Object.keys(routingData.routing.tier_violations).length > 0}
+                <div class="routing-warning">⚠ Tier uyarıları: {Object.entries(routingData.routing.tier_violations).map(([name, reason]) => `${name}: ${reason}`).join(' · ')}</div>
+              {/if}
               {#if routingLoading && !routingData}
                 <p class="routing-note">Model haritası yükleniyor...</p>
               {:else if routingData?.routing?.agents}
@@ -1446,16 +1489,18 @@
                     <thead>
                       <tr>
                         <th>Ajan / Özellik</th>
+                        <th>Tier</th>
                         <th>Uzman Model Zinciri (Sırayla)</th>
-                        <th>Kaynak</th>
+                        <th>Kaynak / Durum</th>
                       </tr>
                     </thead>
                     <tbody>
                       {#each Object.entries(routingData.routing.agents as Record<string, any>) as [agentName, info]}
                         <tr>
                           <td class="rt-agent">{agentName}</td>
+                          <td class="rt-tier">{info?.tier || routingData?.routing?.tiers?.[agentName] || '—'}</td>
                           <td class="rt-chain">{Array.isArray(info?.chain) ? info.chain.join(' → ') : '—'}</td>
-                          <td class="rt-src">{info?.source || '—'}</td>
+                          <td class="rt-src">{info?.source || '—'}{routingData?.routing?.tier_violations?.[agentName] ? ` · ⚠ ${routingData.routing.tier_violations[agentName]}` : ''}</td>
                         </tr>
                       {/each}
                     </tbody>
@@ -1688,6 +1733,8 @@
   .tile-glyph { font-size: 1.3rem; line-height: 1; filter: drop-shadow(0 0 6px var(--agent-color)); }
   .tile-name { font-size: 0.58rem; font-weight: 700; letter-spacing: 0.03em; color: var(--text-primary); text-align: center; }
   .tile-short { font-size: 0.52rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; }
+  .tile-route { font-size: 0.48rem; color: var(--cyan); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .tile-tier { font-size: 0.45rem; color: var(--gold); text-transform: uppercase; }
   .tile-status { display: flex; align-items: center; gap: 0.3rem; font-size: 0.55rem; font-weight: 800; letter-spacing: 0.06em; }
   .status-pulse { width: 6px; height: 6px; border-radius: 50%; animation: status-pulse 1.2s ease-in-out infinite; }
   .agent-tile.active .status-pulse { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
@@ -1962,8 +2009,10 @@
   .routing-table th, .routing-table td { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--border-dim); }
   .routing-table th { color: var(--gold); font-weight: 800; }
   .rt-agent { color: var(--cyan); font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+  .rt-tier { color: var(--gold); font-weight: 700; }
   .rt-chain { color: var(--text-primary); font-family: 'JetBrains Mono', monospace; }
   .rt-src { color: var(--text-muted); }
+  .routing-warning { margin: .5rem 0; padding: .5rem; color: #fbbf24; background: rgba(120, 70, 0, .2); border: 1px solid rgba(251, 191, 36, .35); font-size: .68rem; }
   .routing-note { font-size: 0.7rem; color: var(--text-dim); }
   .modal-alert { padding: 0.55rem 0.75rem; border-radius: 5px; font-size: 0.72rem; }
   .modal-alert.ok { background: rgba(16, 185, 129, 0.15); border: 1px solid var(--emerald); color: var(--emerald); }

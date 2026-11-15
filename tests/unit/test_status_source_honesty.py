@@ -51,8 +51,8 @@ TRACKER_SRC = ROOT / "agent_core" / "services" / "agent_status_tracker.py"
 API_SRC = ROOT / "backend" / "api.py"
 APP_SVELTE = ROOT / "frontend" / "src" / "App.svelte"
 STORE_TS = ROOT / "frontend" / "src" / "store.ts"
-AGENT_RACK = ROOT / "frontend" / "src" / "components" / "AgentRack.svelte"
-WAR_ROOM = ROOT / "frontend" / "src" / "components" / "TacticalWarRoom.svelte"
+AGENT_RACK = ROOT / "frontend" / "src" / "components" / "UnifiedPinealCockpit.svelte"
+WAR_ROOM = ROOT / "frontend" / "src" / "components" / "UnifiedPinealCockpit.svelte"
 
 ALL_AGENT_IDS = [a["id"] for a in AGENT_DEFINITIONS]
 

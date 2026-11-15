@@ -178,7 +178,7 @@ def test_removed_orphan_components_are_absent_from_repo(audit):
 def test_frontend_test_files_are_not_reported_as_dead(audit):
     """Vitest test dosyaları "ulaşılamaz bileşen" diye suçlanmamalı.
 
-    [2026-10-24] `SpiderFootCockpit` sözleşme testleri eklenince C5 dedektörü
+    [2026-10-24] `UnifiedPinealCockpit` sözleşme testleri eklenince C5 dedektörü
     onları ölü kod saydı: test dosyaları tarayıcı paketine girmez, bu yüzden
     `main.ts → App.svelte` grafiğinden ulaşılamaz olmaları NORMALDİR.
     """
