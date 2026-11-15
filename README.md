@@ -307,9 +307,9 @@ karşı** koşturur ve ham çıktıyı basar: `0` kanıtlandı · `1` döngü k�
 
 ---
 
-## 11 · API yüzeyi (74 HTTP ucu + 1 WebSocket)
+## 11 · API yüzeyi (75 HTTP ucu + 1 WebSocket)
 
-> Sayım biçimi: **74 = path+metot çifti**, **73 benzersiz yol**. Fark tek bir yoldan gelir: `/api/vault/status` hem `GET` (durum) hem `POST` (kilit aç/kapa) kabul eder. Sayı `backend.api.app.routes` üzerinden ölçülür.
+> Sayım biçimi: **75 = path+metot çifti**, **74 benzersiz yol**. Fark tek bir yoldan gelir: `/api/vault/status` hem `GET` (durum) hem `POST` (kilit aç/kapa) kabul eder. Sayı `backend.api.app.routes` üzerinden ölçülür.
 
 | Alan | Uçlar | Ne yapar |
 |---|---|---|
@@ -402,7 +402,7 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 | `config/` | Yönlendirme, sağlayıcı kataloğu, karar yapılandırması, RTK politikası |
 
 **Tam ve aranabilir harita:** **[docs/envanter.html](docs/envanter.html)** —
-818 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
+820 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
 ile yenilenir, CI `--check` ile bayatlamayı yakalar.
 
 **Ayrıca:** [ARCHITECTURE.md](ARCHITECTURE.md) · [README_TECHNICAL.md](README_TECHNICAL.md) ·

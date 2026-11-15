@@ -5652,11 +5652,66 @@ async def api_report_build(req: ReportBuildPayload):
         else:
             broadcast_log(req.client_id, "INFO", f"RAPOR: {fmt} üretildi ({req.title[:40]})")
 
+    if not wanted and "markdown" in formats:
+        if not state.enabled_flags.get(report_factory.GATE):
+            results["markdown"] = {
+                "capability_id": "renderer.report.markdown",
+                "available": False,
+                "denied_by": f"gate_disabled:{report_factory.GATE}",
+                "reason": f"gate_disabled:{report_factory.GATE}",
+                "artifacts": [],
+                "manifest_path": "",
+                "manifest_sha256": "",
+                "evidence_ids": [],
+                "rejected_item_count": 0,
+                "excluded_strategy_count": 0,
+                "evidence": [],
+            }
+            broadcast_log(req.client_id, "WARNING", f"RAPOR: markdown engellendi — kapı:gate_disabled:{report_factory.GATE}")
+        else:
+            pkg = report_factory.build_report(
+                req.evidence,
+                title=req.title,
+                subject=req.subject,
+                formats=("markdown",),
+            )
+            results["markdown"] = {
+                "capability_id": "renderer.report.markdown",
+                "available": True,
+                "denied_by": None,
+                "reason": None,
+                "artifacts": [
+                    {
+                        "format": a.format,
+                        "path": a.path,
+                        "available": a.available,
+                        "reason": a.reason,
+                        "sha256": a.sha256,
+                        "bytes": a.bytes,
+                    }
+                    for a in pkg.artifacts
+                ],
+                "manifest_path": pkg.manifest_path,
+                "manifest_sha256": pkg.manifest_sha256,
+                "evidence_ids": [item.evidence_id for item in pkg.evidence],
+                "rejected_item_count": pkg.rejected_count,
+                "excluded_strategy_count": pkg.excluded_strategy_count,
+                "evidence": [
+                    {
+                        "evidence_id": item.evidence_id,
+                        "content": item.content[:300],
+                        "provenance_refs": list(item.provenance_refs)[:5],
+                    }
+                    for item in pkg.evidence[:10]
+                ],
+            }
+            broadcast_log(req.client_id, "INFO", f"RAPOR: markdown üretildi ({req.title[:40]})")
+
     return {
         "title": req.title,
         "subject": req.subject,
         "gate": report_factory.GATE,
-        "formats": results or {"note": "yalnız markdown + manifest istendi"},
+        "formats": results,
     }
 
 

@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "tiers": {
+    "depth_analyst": {
+      "tier": "heavy",
+      "note": "Psychodynamic depth reports; deepseek-first flip."
+    },
+    "human_behavior": {
+      "tier": "heavy",
+      "note": "Cold-reading inference over evidence (text path, no images)."
+    },
+    "aspasia": {
+      "tier": "heavy",
+      "note": "Chief dialogue + only images= caller (aspasia_chief)."
+    },
+    "mirror_truth": {
+      "tier": "heavy",
+      "note": "Truth-alignment judgment."
+    },
+    "resonance_synthesizer": {
+      "tier": "heavy",
+      "note": "Synthesis reasoning."
+    },
+    "friction_detector": {
+      "tier": "heavy",
+      "note": "Bounds judgment."
+    },
+    "cognitive_profiler": {
+      "tier": "heavy",
+      "note": "Profile inference. REVIEW: downgrade candidate if workload is extraction-heavy."
+    },
+    "authenticity_auditor": {
+      "tier": "heavy",
+      "note": "Audit judgment; cheap-first chain escalates to claude."
+    },
+    "shadow_executor": {
+      "tier": "heavy",
+      "note": "DORMANT: no gateway callers; evidence-gated execution intent."
+    },
+    "osint_investigator": {
+      "tier": "heavy",
+      "note": "Synthesis over tool results; holds gateway but never queries (dormant chain)."
+    },
+    "vision_analyzer": {
+      "tier": "vision",
+      "note": "Only task=vision caller with images; gemini-first chain."
+    },
+    "autonomous_verifier": {
+      "tier": "verify",
+      "note": "Search-gated (tavily/serpapi/exa keys required or no_search_provider)."
+    },
+    "autonomous_verifier_extract": {
+      "tier": "simple",
+      "note": "Claim extraction; the ONLY task=fast caller."
+    },
+    "dialogue_manager": {
+      "tier": "simple",
+      "note": "DORMANT: no gateway callers; traffic-management intent."
+    },
+    "interpreter": {
+      "tier": "simple",
+      "note": "DORMANT in gateway (no callers); live path bypasses chains via interpreter_agent.py:37 hardcoded default (separate behavior-change round)."
+    },
+    "lilith_growth": {
+      "tier": "simple",
+      "note": "CLI-only (run_lilith.py explicit model); bulk content generation = cost-sensitive intent."
+    },
+    "pattern_interrupt": {
+      "tier": "simple",
+      "note": "Short intervention generation; high-frequency cheap intent."
+    },
+    "passion_mapper": {
+      "tier": "simple",
+      "note": "Mapping/classification over scraped data. REVIEW: upgrade candidate if inference depth grows."
+    },
+    "pineal_juror_google": {
+      "tier": "jury",
+      "note": "Jüri koltuğu 1/3 — bağımsız hakem (Gemini ailesi)."
+    },
+    "pineal_juror_claude": {
+      "tier": "jury",
+      "note": "Jüri koltuğu 2/3 — üreten Claude ise düşürülür."
+    },
+    "pineal_juror_open": {
+      "tier": "jury",
+      "note": "Jüri koltuğu 3/3 — açık/harici hat, hakem."
+    }
+  }
+}

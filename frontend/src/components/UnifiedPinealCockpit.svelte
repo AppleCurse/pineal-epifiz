@@ -114,7 +114,10 @@
     anthropic: '',
     openai: '',
     xai: '',
-    cohere: ''
+    cohere: '',
+    'azure-openai': '',
+    iflow: '',
+    'google-gemini-vertex': ''
   };
   let localUrl = 'http://localhost:11434/v1';
   let localModel = 'dolphin-llama3:latest';
@@ -148,7 +151,10 @@
     { id: 'anthropic', label: 'Anthropic (Tanı / OpenRouter)', placeholder: 'sk-ant-...' },
     { id: 'openai', label: 'OpenAI (Tanı / OpenRouter)', placeholder: 'sk-...' },
     { id: 'xai', label: 'xAI Grok (Tanı / OpenRouter)', placeholder: 'xai-...' },
-    { id: 'cohere', label: 'Cohere (Tanı / OpenRouter)', placeholder: '...' }
+    { id: 'cohere', label: 'Cohere (Tanı / OpenRouter)', placeholder: '...' },
+    { id: 'azure-openai', label: 'Azure OpenAI (Tanı)', placeholder: '...' },
+    { id: 'iflow', label: 'iFlow (Tanı)', placeholder: '...' },
+    { id: 'google-gemini-vertex', label: 'Google Gemini Vertex (Tanı)', placeholder: '...' }
   ];
 
   async function loadRoutingSnapshot() {

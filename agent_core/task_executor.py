@@ -2059,7 +2059,7 @@ class PinealExecutor:
         # GÖREV 2.3/2.4: psikodinamik derinlik motoru (deterministik).
         # Metin yoksa agirlik otomatik gorsel+zamansala kayar; motor ASLA
         # halt etmez (hic kanal yoksa no_evidence verdict'i doner).
-        self._rack_update("depth_analyst", "active")
+        self._rack_update("psychodynamic_depth", "active")
         try:
             from agent_core.services.psychodynamic_depth import analyze_depth
             depth_res = analyze_depth(input_data)
@@ -2073,9 +2073,9 @@ class PinealExecutor:
                 f"telafi={depth_res.get('compensation_index')} "
                 f"reaksiyon={depth_res.get('reaction_formation_index')}"
             )
-            self._rack_update("depth_analyst", "ready")
+            self._rack_update("psychodynamic_depth", "ready")
         except Exception as e:
-            self._rack_update("depth_analyst", "wait")
+            self._rack_update("psychodynamic_depth", "wait")
             self._log("WARNING", f"[{task_id}] Derinlik motoru atlandı: {str(e)[:80]}")
 
         # HÜKÜM-MÜHÜR: derinlik özeti kanonik kanıta yazılır (salt-okur
