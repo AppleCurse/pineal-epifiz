@@ -189,7 +189,7 @@ def test_critical_cross_stack_happy_path_without_method_mocks(
     #: (backend/api.py:1987 → War Room "LLM ÇAĞRI KİMLİĞİ" satırı).
     war_room = (
         Path(__file__).resolve().parents[2]
-        / "frontend/src/components/TacticalWarRoom.svelte"
+        / "frontend/src/components/UnifiedPinealCockpit.svelte"
     ).read_text(encoding="utf-8")
     assert "run.call_ids" in war_room
 

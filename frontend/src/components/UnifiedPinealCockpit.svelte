@@ -297,9 +297,18 @@
     return Boolean((pillarSummaries as any)?.[pillarId]?.hasData);
   }
 
+  let preflightResult: any = null;
   $: scopedRuns = taskRuns($taskStatus);
   // Koşu provenance'ı: model yalnızca backend'in canlı run.model alanından gelir.
   $: liveRunModels = Object.entries(scopedRuns).filter(([, run]) => (run as any)?.model).map(([agent, run]) => ({ agent, model: (run as any).model }));
+  $: activeTaskAgentIds = (() => {
+    const ids = new Set<string>(Object.keys(scopedRuns));
+    for (const a of ($taskStatus?.planned_agents || [])) if (a) ids.add(String(a));
+    for (const a of ($taskStatus?.completed_agents || [])) if (a) ids.add(String(a));
+    if ($taskStatus?.current_agent) ids.add(String($taskStatus.current_agent));
+    return Array.from(ids);
+  })();
+  $: channelStatusList = Array.isArray($taskStatus?.channel_status) ? $taskStatus.channel_status : [];
   const liveModelLabel = 'ÇALIŞMA MODELİ';
   let userRituals = '';
   let userPlaylist = '';
@@ -449,6 +458,37 @@
     const platWarn = getPlatformSupportWarning(url, routingData?.cross_platform_enabled);
     if (platWarn) {
       chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: platWarn }];
+    }
+
+    preflightResult = null;
+    try {
+      const pfRes = await apiFetch('/api/target/preflight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: $clientId || 'default',
+          url,
+          scraper_type: 'cross',
+        }),
+      });
+      if (pfRes.ok) {
+        const pf = await pfRes.json();
+        preflightResult = pf;
+        if (pf.eligible === false) {
+          playHalt();
+          const reasons = Array.isArray(pf.reasons) && pf.reasons.length
+            ? pf.reasons.join(' | ')
+            : 'Hedef ön-kontrolü geçemedi.';
+          chatMessages = [...chatMessages, {
+            ts: nowTime(),
+            sender: 'Aspasia',
+            text: `Ön-kontrol engeli [${pf.platform || 'unknown'}]: ${reasons}`,
+          }];
+          return;
+        }
+      }
+    } catch {
+      // Ağ hatası durumunda /api/initiate kendi güvenlik kapılarını uygular
     }
 
     isProcessing.set(true);
@@ -1081,39 +1121,99 @@
         <h2>12 SAHA AJANI & CANLI MUHAKEME (CHAIN-OF-THOUGHT)</h2>
       </div>
 
-      <!-- 12 SAHA AJANI MATRİSİ -->
-      <div class="field-matrix-grid">
-        {#each FIELD_AGENTS as ag}
-          {@const rStatus = scopedRuns[ag.id] ? taskRunLabel(scopedRuns[ag.id]) : rackAvailability($agentStatuses?.[ag.id]?.status)}
-          {@const isActive = rStatus === 'ACTIVE' || rStatus === 'RUNNING'}
-          {@const isReady = rStatus === 'DONE' || rStatus === 'READY' || rStatus === 'COMPLETED'}
-          {@const isError = rStatus === 'FAILED' || rStatus === 'ERROR' || rStatus === 'HALTED'}
-          {@const isWait = rStatus === 'WAIT' || rStatus === 'WAITING' || rStatus === 'QUEUED' || rStatus === 'IDLE'}
-          <div
-            class="agent-tile {isActive ? 'active' : ''} {isReady ? 'ready' : ''} {isError ? 'error' : ''} {isWait ? 'wait' : ''} {selectedAgentId === ag.id ? 'selected' : ''}"
-            style="--agent-color: {ag.color};"
-            on:click={() => selectAgent(ag.id)}
-            role="button"
-            tabindex="0"
-            on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectAgent(ag.id); } }}
-          >
-            <div class="tile-glyph">{ag.glyph}</div>
-            <div class="tile-info">
-              <div class="tile-name">{ag.name}</div>
-              <div class="tile-short">{ag.short}</div>
-              <div class="tile-route" title={routeChain(ag.id)}>{routeChain(ag.id)}</div>
-              <div class="tile-tier">{routeTier(ag.id)} · {routeSource(ag.id)}</div>
+      <!-- GÖREVDE GERÇEKTEN ÇALIŞAN AJANLAR -->
+      {#if activeTaskAgentIds.length > 0}
+        <div class="field-matrix-grid">
+          {#each activeTaskAgentIds as agId}
+            {@const agMeta = FIELD_AGENTS.find(a => a.id === agId)}
+            {@const run = scopedRuns[agId]}
+            {@const rStatus = run ? taskRunLabel(run) : ($taskStatus?.current_agent === agId ? 'RUNNING' : 'PLANNED')}
+            {@const isActive = rStatus === 'ACTIVE' || rStatus === 'RUNNING'}
+            {@const isReady = rStatus === 'DONE' || rStatus === 'READY' || rStatus === 'COMPLETED'}
+            {@const isError = rStatus === 'FAILED' || rStatus === 'ERROR' || rStatus === 'HALTED'}
+            {@const isWait = !isActive && !isReady && !isError}
+            <div
+              class="agent-tile {isActive ? 'active' : ''} {isReady ? 'ready' : ''} {isError ? 'error' : ''} {isWait ? 'wait' : ''} {selectedAgentId === agId ? 'selected' : ''}"
+              style="--agent-color: {agMeta?.color || '#06b6d4'};"
+              on:click={() => selectAgent(agId)}
+              role="button"
+              tabindex="0"
+              on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectAgent(agId); } }}
+            >
+              <div class="tile-glyph">{agMeta?.glyph || '◈'}</div>
+              <div class="tile-info">
+                <div class="tile-name">{agMeta?.name || agId.toUpperCase()}</div>
+                <div class="tile-short">{run?.model || 'model bekleniyor'}</div>
+                <div class="tile-route">
+                  {#if Array.isArray(run?.call_ids) && run.call_ids.length > 0}
+                    LLM ÇAĞRI KİMLİĞİ: {run.call_ids.slice(0, 2).join(', ')}
+                  {:else}
+                    {routeChain(agId)}
+                  {/if}
+                </div>
+                <div class="tile-tier">{routeTier(agId)} · {routeSource(agId)}</div>
+              </div>
+              <div class="tile-status" style="color: {agMeta?.color || '#06b6d4'};">
+                <span class="status-pulse" style="background: {agMeta?.color || '#06b6d4'};"></span>
+                <span class="status-label">{rStatus}</span>
+              </div>
+              {#if isActive}
+                <div class="activity-bar"><div class="activity-fill"></div></div>
+              {/if}
             </div>
-            <div class="tile-status" style="color: {ag.color};">
-              <span class="status-pulse" style="background: {ag.color};"></span>
-              <span class="status-label">{rStatus}</span>
+          {/each}
+        </div>
+      {:else}
+        <div class="cot-empty" style="margin-bottom: 0.5rem;">
+          <p>Bu görevde henüz çalışmış ajan yok.</p>
+          <small>Hedef girip KAZIYI BAŞLAT dediğinizde yalnızca bu görevde gerçekten koşan ajanlar burada görünür.</small>
+        </div>
+      {/if}
+
+      <details class="catalog-details">
+        <summary>Sistemdeki Ajan Kataloğu ({FIELD_AGENTS.length} ajan)</summary>
+        <div class="field-matrix-grid" style="margin-top: 0.45rem;">
+          {#each FIELD_AGENTS as ag}
+            <div
+              class="agent-tile wait {selectedAgentId === ag.id ? 'selected' : ''}"
+              style="--agent-color: {ag.color};"
+              on:click={() => selectAgent(ag.id)}
+              role="button"
+              tabindex="0"
+              on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectAgent(ag.id); } }}
+            >
+              <div class="tile-glyph">{ag.glyph}</div>
+              <div class="tile-info">
+                <div class="tile-name">{ag.name}</div>
+                <div class="tile-route" title={routeChain(ag.id)}>{routeChain(ag.id)}</div>
+                <div class="tile-tier">{routeTier(ag.id)} · {routeSource(ag.id)}</div>
+              </div>
             </div>
-            {#if isActive}
-              <div class="activity-bar"><div class="activity-fill"></div></div>
-            {/if}
+          {/each}
+        </div>
+      </details>
+
+      <!-- VERİ KANALLARI (channel_status) -->
+      {#if channelStatusList.length > 0}
+        <div class="channel-status-box">
+          <div class="cot-header">
+            <span class="cot-icon">📡</span>
+            <h3>VERİ KANALLARI (channel_status — {channelStatusList.length})</h3>
           </div>
-        {/each}
-      </div>
+          <div class="channel-list">
+            {#each channelStatusList as ch}
+              {@const cStatus = String(ch?.status || 'unknown').toLowerCase()}
+              <div class="channel-row" class:ch-ok={cStatus === 'ok'} class:ch-fail={cStatus === 'failed' || cStatus === 'timed_out' || cStatus === 'unavailable' || cStatus === 'not_run'}>
+                <span class="ch-name">{ch?.channel || 'kanal'}</span>
+                <span class="ch-badge">{cStatus.toUpperCase()}</span>
+                {#if ch?.reason || ch?.detail}
+                  <span class="ch-reason">{ch.reason || ch.detail}</span>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        </div>
+      {/if}
 
       <!-- SOVEREIGN PULSE BAR -->
       <div class="sovereign-pulse-section">
@@ -2376,4 +2476,14 @@
   .deck-title-stack { flex-direction: column; align-items: flex-start; gap: 0.2rem; }
   .ribbon-row { display: flex; align-items: center; gap: 0.4rem; }
   .pillars-sub { font-size: 0.62rem; color: var(--text-dim); line-height: 1.3; }
+  .catalog-details { margin: 0.35rem 0 0.55rem; font-size: 0.66rem; color: var(--text-dim); }
+  .catalog-details summary { cursor: pointer; padding: 0.25rem 0.4rem; border: 1px dashed var(--border-dim); border-radius: 4px; }
+  .channel-status-box { padding: 0.65rem; background: rgba(8,10,15,0.85); border: 1px solid var(--border-dim); border-radius: 6px; margin-bottom: 0.5rem; }
+  .channel-list { display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.35rem; }
+  .channel-row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.65rem; padding: 0.25rem 0.45rem; border-radius: 4px; background: rgba(255,255,255,0.03); }
+  .channel-row.ch-ok { border-left: 3px solid var(--emerald); }
+  .channel-row.ch-fail { border-left: 3px solid #ef4444; color: #fca5a5; }
+  .ch-name { font-family: 'JetBrains Mono', monospace; font-weight: 700; }
+  .ch-badge { font-size: 0.58rem; padding: 0.08rem 0.35rem; border-radius: 3px; background: rgba(255,255,255,0.08); }
+  .ch-reason { color: var(--text-dim); font-size: 0.6rem; }
 </style>
