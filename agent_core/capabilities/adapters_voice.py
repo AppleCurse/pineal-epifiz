@@ -562,6 +562,17 @@ def _local_stt_endpoint() -> tuple[str, str]:
     return _local_endpoint_from_env("PINEAL_STT_URL")
 
 
+#: Makine-okunur sebep: ne CLI ne yerel uç var (kurulum ipucu status()'ta).
+STT_NOT_INSTALLED_REASON = "stt_engine_not_installed"
+
+#: Operatöre NE yapacağını söyleyen tek satır (status + ret gövdesi aynı metni kullanır).
+STT_REMEDIATION_HINT = (
+    "Yerel STT motoru yok. Kurulum: `pip install -U openai-whisper` (CLI `whisper`) "
+    "veya çalışan bir yerel STT ucunu PINEAL_STT_URL ile gösterin (yalnız localhost). "
+    "Ses MAKİNEDEN ÇIKMAZ; bulut STT desteklenmez. Kapı: ENABLE_LOCAL_STT=true."
+)
+
+
 class LocalSTTCapability(BaseCapability):
     """Yerel konuşma tanıma: `whisper` CLI ya da YEREL bir STT ucu.
 
@@ -588,7 +599,12 @@ class LocalSTTCapability(BaseCapability):
             return "cli", ""
         if os.getenv("PINEAL_STT_CMD", "").strip() and not command:
             return "", "invalid_command"
-        return "", reason
+        # [2026-11-11] Eski dönüş BOŞ sebepti (`""`): /api/speech/status
+        # {"available": false, "reason": ""} diyordu — "yok" diyor ama NEDEN ve
+        # NE YAPILACAĞINI söylemiyordu. Sebep artık makine-okunur ve tek yerden.
+        # Yapılandırma HİÇ yoksa "kurulu değil"; yapılandırma var ama geçersizse
+        # (uzak host, kötü şema) spesifik sebep korunur — ikisi ayrı eylem ister.
+        return "", STT_NOT_INSTALLED_REASON if reason == "no_local_endpoint" else reason
 
     def availability(self) -> Availability:
         if not _flag("ENABLE_LOCAL_STT"):
