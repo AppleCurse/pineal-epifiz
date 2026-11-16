@@ -49,7 +49,35 @@ def test_worker_buffers_frames_while_upstream_is_connecting():
     assert "1013" in source, "tavan aşımı sessiz düşürme değil, açık kapanış olmalı"
 
 
-@pytest.mark.skipif(shutil.which("node") is None, reason="node yok")
+def _node_supports_strip_types() -> tuple[bool, str]:
+    """Node 22.6+ TS'i sıyırabilir. Daha eskisinde bayrak yoktur (ölçülür).
+
+    Bu kontrol YOKKEN test CI'da sessizce yanlış nedene düşebiliyordu:
+    bayrak desteklenmiyorsa Node 9 ile çıkar ve "edge kırık" gibi görünür.
+    Artık yetenek ÖLÇÜLÜR: destek yoksa test SKIP olur (yanlış alarm yok,
+    ama destek varsa davranış gerçekten ölçülür).
+    """
+    node = shutil.which("node")
+    if node is None:
+        return False, "node yok"
+    try:
+        probe = subprocess.run(
+            [node, "--experimental-strip-types", "-e", "const x: number = 1;"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:  # pragma: no cover
+        return False, f"node çalıştırılamadı: {type(exc).__name__}"
+    if probe.returncode != 0:
+        return False, "node --experimental-strip-types desteklenmiyor (Node < 22.6?)"
+    return True, ""
+
+
+_STRIP_OK, _STRIP_REASON = _node_supports_strip_types()
+
+
+@pytest.mark.skipif(not _STRIP_OK, reason=_STRIP_REASON or "node yok")
 def test_edge_proxy_forwards_early_auth_frame_to_upstream():
     """DAVRANIŞ ÖLÇÜMÜ: Worker gerçekten koşar, auth çerçevesi upstream'e varır."""
     result = subprocess.run(

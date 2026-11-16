@@ -71,6 +71,18 @@ def test_evidence_record_emits_canonical_evidence_id():
 
 
 def test_report_all_formats_and_download(tmp_path: Path, monkeypatch):
+    """Tüm formatlar + indirme.
+
+    [2026-11-11] `video` formatı `ffmpeg` İKİLİSİNE bağlıdır; CI imajında
+    (ubuntu-latest) bu ikili kurulu değil. Önceden test bu yüzden
+    `dependency_missing:ffmpeg` ile kırılıyordu — yani "rapor fabrikası bozuk"
+    gibi görünen şey, eksik bir SİSTEM bağımlılığıydı (yanlış teşhis).
+    Davranış doğru: rapor dürüstçe `available=False` + sebep diyor. Test artık
+    bu gerçeği ölçüyor: ffmpeg varsa video GERÇEKTEN üretilmeli; yoksa o
+    format SKIP edilir (diğer formatlar yine zorunlu).
+    """
+    import shutil
+
     monkeypatch.setenv("PINEAL_REPORT_DIR", str(tmp_path))
     monkeypatch.setenv("ENABLE_REPORT_FACTORY", "true")
     ev_id = "ev_" + "a" * 20
@@ -90,7 +102,14 @@ def test_report_all_formats_and_download(tmp_path: Path, monkeypatch):
     )
     assert pkg.available
     assert ev_id in pkg.evidence_ids
-    for fmt in ("markdown", "pdf", "diagram", "video"):
+    required = ["markdown", "pdf", "diagram"]
+    if shutil.which("ffmpeg"):
+        required.append("video")
+    else:
+        video = pkg.artifact("video")
+        assert video is not None and not video.available
+        assert video.reason == "dependency_missing:ffmpeg"
+    for fmt in required:
         art = pkg.artifact(fmt)
         assert art is not None and art.available, f"{fmt} failed: {art.reason if art else 'missing'}"
         assert art.bytes > 0
