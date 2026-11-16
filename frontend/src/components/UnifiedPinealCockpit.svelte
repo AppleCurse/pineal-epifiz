@@ -355,6 +355,7 @@
 
   onMount(() => {
     void refreshVaultState();
+    void loadRoutingSnapshot();
     missionTimer = setInterval(() => {
       if (missionStartTime) {
         const diff = Math.floor((Date.now() - missionStartTime) / 1000);
@@ -414,6 +415,26 @@
     }
   }
 
+  function getPlatformSupportWarning(raw: string, crossEnabled: boolean | undefined): string | null {
+    const trimmed = (raw || '').trim();
+    if (!trimmed || isPhoneInput(trimmed) || crossEnabled !== false) return null;
+    if (!trimmed.includes('.') && !trimmed.includes('://')) return null;
+    try {
+      const candidate = trimmed.includes('://') ? trimmed : `https://${trimmed}`;
+      const host = new URL(candidate).hostname.toLowerCase().replace(/\.$/, '');
+      const isNative =
+        host === 'instagram.com' || host.endsWith('.instagram.com') || host === 'instagr.am' ||
+        host === 'x.com' || host.endsWith('.x.com') ||
+        host === 'twitter.com' || host.endsWith('.twitter.com');
+      if (isNative) return null;
+      return `Platform Uyarısı: "${host}" için çapraz platform taraması (ENABLE_CROSS_PLATFORM) kapalı. Doğrudan kazıma yalnızca Instagram ve X için etkindir.`;
+    } catch {
+      return null;
+    }
+  }
+
+  $: platformWarning = getPlatformSupportWarning(targetUrl, routingData?.cross_platform_enabled);
+
   async function launchAnalysis() {
     const url = targetUrl.trim();
     if (!url || $isProcessing) return;
@@ -421,16 +442,15 @@
       chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: 'Müşteri, operasyon başlatılamaz: ARM şalteri kapalı. Lütfen üst konsoldan ARM anahtarını açın.' }];
       return;
     }
+    const platWarn = getPlatformSupportWarning(url, routingData?.cross_platform_enabled);
+    if (platWarn) {
+      chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: platWarn }];
+    }
+
     isProcessing.set(true);
     activeTargetUrl.set(url);
     missionStartTime = Date.now();
     playRunning();
-
-    chatMessages = [...chatMessages, {
-      ts: nowTime(),
-      sender: 'Aspasia',
-      text: `Hedef profil kilitlendi Müşteri: [${url}]. 12 kişilik ajan timi ve kazıyıcı sensörler sahada.`
-    }];
 
     try {
       const res = await apiFetch('/api/initiate', {
@@ -455,6 +475,13 @@
       if (data.task_id) {
         taskStatus.update(s => ({ ...(s || {}), task_id: data.task_id, status: 'processing' }));
       }
+      chatMessages = [...chatMessages, {
+        ts: nowTime(),
+        sender: 'Aspasia',
+        text: data.task_id
+          ? `Görev kabul edildi (ID: ${data.task_id}) — [${url}]. Planlanan ajanlar ve sensörler arka planda başlatılıyor; canlı durumlar akıştan izlenecek.`
+          : `Görev kabul edildi — [${url}]. Canlı durumlar akıştan izlenecek.`
+      }];
     } catch (e: any) {
       isProcessing.set(false);
       playHalt();
@@ -753,6 +780,9 @@
       >
         {$isProcessing ? '▲ KAZILIYOR...' : '▲ KAZIYI BAŞLAT'}
       </button>
+      {#if platformWarning}
+        <div class="platform-warning" role="status">{platformWarning}</div>
+      {/if}
     </div>
 
     <!-- Sağ: Sistem Metrikleri + Şalterler + Acil Stop + Vault -->
@@ -1124,8 +1154,8 @@
       <!-- SEÇİLİ AJANA DİREKT EMİR (DISPATCH) ARAYÜZÜ -->
       <div class="direct-dispatch-console">
         <div class="console-header-bar">
-          <span class="ca-tag">DİREKT MUHATAP: <strong>{(selectedAgentId || 'aspasia').toUpperCase()}</strong></span>
-          <span class="ca-hint">Seçili ajana emir veya soru gönder</span>
+          <span class="ca-tag">DİREKT MUHATAP: <strong>{(selectedAgentId || 'aspasia').toUpperCase()}</strong> <span class="ca-disabled-badge">(DEVRE DIŞI — 503)</span></span>
+          <span class="ca-hint">Doğrudan ajan emri bağlı değil; görev için KAZIYI BAŞLAT veya Aspasia Komut kullanın</span>
         </div>
         <div class="console-input-row">
           <input
@@ -1203,9 +1233,12 @@
 
     <!-- SÜTUN 3: 7 ADLİ SÜTUN + ASPASIA SOHBET + TELEMETRİ (Sağ - 28%) -->
     <section class="column-deck col-right">
-      <div class="deck-title-ribbon">
-        <span class="ribbon-icon">⟐</span>
-        <h2>7 ADLİ SÜTUN — KANIT RADARI</h2>
+      <div class="deck-title-ribbon deck-title-stack">
+        <div class="ribbon-row">
+          <span class="ribbon-icon">⟐</span>
+          <h2>7 ADLİ KANIT KATEGORİSİ — RADAR</h2>
+        </div>
+        <small class="pillars-sub">Ajanlar + 7 deterministik dalga motoru (Frequency, Seismos, Void, Strata, Gravity, Pulse, Key) bulgularını toplar</small>
       </div>
 
       <!-- 7 ADLİ SÜTUN GRİD -->
@@ -2029,4 +2062,18 @@
     padding: 0.45rem 1rem; font-family: inherit; font-size: 0.7rem; font-weight: 800;
     background: linear-gradient(135deg, var(--emerald), #059669); color: #02140a; border: none; border-radius: 5px; cursor: pointer;
   }
+  .platform-warning {
+    width: 100%;
+    margin-top: 0.35rem;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.66rem;
+    color: #fbbf24;
+    background: rgba(120, 70, 0, 0.22);
+    border: 1px solid rgba(251, 191, 36, 0.4);
+    border-radius: 4px;
+  }
+  .ca-disabled-badge { color: #fbbf24; font-weight: 700; font-size: 0.62rem; }
+  .deck-title-stack { flex-direction: column; align-items: flex-start; gap: 0.2rem; }
+  .ribbon-row { display: flex; align-items: center; gap: 0.4rem; }
+  .pillars-sub { font-size: 0.62rem; color: var(--text-dim); line-height: 1.3; }
 </style>
