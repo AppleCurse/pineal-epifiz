@@ -21,7 +21,6 @@ ret metni ve gerçek ``browser_binary_status()`` ölçümü üzerinden.
 
 from __future__ import annotations
 
-import asyncio
 
 import pytest
 

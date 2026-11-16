@@ -21,7 +21,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
-from agent_core.domain.channel_status import ChannelRun, failed as channel_failed
+from agent_core.domain.channel_status import failed as channel_failed
 from agent_core.scraper.instagram_ghost import (
     InsufficientEvidenceError as ScraperInsufficientEvidenceError,
 )
@@ -130,7 +130,7 @@ async def run_osint_dossier(
         search_tasks = [executor.search_engine.search(q, num_results=6) for q in queries]
         search_results = await asyncio.gather(*search_tasks, return_exceptions=True)
 
-        all_raw_results, web_search_status_record = _summarize_osint_search_results(
+        all_raw_results, web_search_status_record = summarize_osint_search_results(
             search_results
         )
         web_search_status = web_search_status_record["status"]

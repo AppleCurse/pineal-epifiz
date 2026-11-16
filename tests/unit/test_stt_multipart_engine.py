@@ -192,8 +192,6 @@ def test_upload_reaches_a_real_local_engine_byte_for_byte(vault_open_client):
 
 def test_listen_without_engine_returns_no_fabricated_transcript(vault_open_client, monkeypatch):
     """Motor yokken: uydurma transkript YOK, dürüst ret + sebep."""
-    import os
-
     monkeypatch.delenv("PINEAL_STT_CMD", raising=False)
     monkeypatch.setenv("ENABLE_LOCAL_STT", "true")
     monkeypatch.setenv("PINEAL_STT_URL", "http://127.0.0.1:9/stt")  # kapalı port

@@ -54,7 +54,6 @@ import logging
 import importlib
 import shutil
 import os
-import re
 import hashlib
 import time
 
@@ -121,17 +120,21 @@ from agent_core.version import VERSION
 # (sebep) / hata" — boş liste değil. Dosya kuralları `backend/services/
 # web_dossier.py` modülünde (API-BÖLME 3).
 from agent_core.domain.task_execution_state import task_state_fields
-from agent_core.domain.channel_status import (
+from agent_core.domain.channel_status import (  # noqa: F401 (dış sözleşme)
     ChannelRun,
     failed as channel_failed,
     serialize as serialize_channel_status,
 )
-from backend.services.web_dossier import (
+from backend.services.web_dossier import instagram_channel_rows
+
+# [LINT · 2026-11-11] Kanal defteri yardımcıları burada KULLANILMIYOR artık
+# (sahipleri: web_dossier / x_dispatch / osint_dossier). Dış sözleşme için
+# api üzerinden erişilebilirlik korunur; ruff'a bunun BİLİNÇLİ olduğu söylenir.
+from backend.services.web_dossier import (  # noqa: F401
     build_dossier_failure_profile,
     build_dossier_profile,
     build_snippets,
     dossier_channel_rows,
-    instagram_channel_rows,
     x_sensor_channel_rows,
 )
 # [API-BÖLME 4 · 2026-10-16] Public-web araştırma gövdesi ayrı modüle taşındı;
@@ -144,7 +147,7 @@ from backend.services.browser_capability import (
 # [API-BÖLME 7 · 2026-11-11] Sensör yolları (X / IG deneme döngüsü / açık
 # kaynak dosyası) kendi modüllerinde; adlar burada YENİDEN İHRAÇ edilir.
 from backend.services.x_dispatch import run_x_dispatch
-from backend.services.osint_dossier import (
+from backend.services.osint_dossier import (  # noqa: F401 (yeniden ihraç, dış sözleşme)
     run_osint_dossier,
     summarize_osint_search_results as _summarize_osint_search_results,
 )
@@ -3243,8 +3246,6 @@ async def api_llm_routing(client_id: str = "default"):
         "has_tavily": bool(vault.get("tavily")),
         "has_serpapi": bool(vault.get("serpapi")),
         "has_exa": bool(vault.get("exa")),
-        "cross_platform_enabled": _flag_env("ENABLE_CROSS_PLATFORM"),
-        "native_platforms": ["instagram", "x"],
         "routing": snapshot,
     }
 
