@@ -1179,13 +1179,28 @@ def check_goz3_3() -> CheckResult:
     )
 
 
+#: E6 bulgusunun bugünkü ÖLÇÜM ADRESLERİ.
+#:
+#: [2026-11-11] Eski adres `frontend/src/components/AtlasPinealCockpit.svelte`
+#: idi; o dosya REPODA YOK (git log --all ile ölçüldü) — yani bekçi her koşuda
+#: "ölçülecek dosya yok" ile exit 2 veriyordu: NE regresyon ne de yeşil.
+#: Okunamayan dosya hakkında hüküm verilemez; adres, bulgunun kilitlediği
+#: davranışın GERÇEK sahibine taşındı:
+#:   - sabit (`INSUFFICIENT_EVIDENCE`)  -> canlı kokpit bileşeni
+#:   - kanıt kapısı (`hasEvidence`)     -> `frontend/src/lib/evidence.ts`
+#: Kapanış hükmü artık İKİ dosyanın birlikte ölçümüne bağlı.
+_COCKPIT_UI = "frontend/src/components/UnifiedPinealCockpit.svelte"
+_EVIDENCE_LIB = "frontend/src/lib/evidence.ts"
+
+
 def check_goz3_4() -> CheckResult:
     """Arayüz boş veriyi 'dolu' gibi mi gösteriyor (UI tiyatrosu)?"""
-    rel = "frontend/src/components/AtlasPinealCockpit.svelte"
+    rel = _COCKPIT_UI
     const = _hits(rel, r"INSUFFICIENT_EVIDENCE = ")
-    helper = _hits(rel, r"function hasEvidence|const hasEvidence")
+    # Kanıt kapısının TANIMI kütüphanede, KULLANIMI kokpitte ölçülür.
+    helper = _hits(_EVIDENCE_LIB, r"export function hasEvidence|function hasEvidence")
     uses = _count(rel, r"INSUFFICIENT_EVIDENCE")
-    gate_uses = _count(rel, r"hasEvidence\(")
+    gate_uses = _count(_EVIDENCE_LIB, r"hasEvidence\(")
     # Denetimin kalıbı: `|| "Veri mevcut değil"`. İKİ ayrı ölçüm gerekir, yoksa
     # bekçi kendi tuzağına düşer:
     #   (1) CANLI dolgu   → yorum OLMAYAN satırda geçen kalıp (gerçek kusur)
