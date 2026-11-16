@@ -204,4 +204,50 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
     await fireEvent.click(routingTab);
     expect(await screen.findByText(/anthropic\/claude-sonnet-5/i)).toBeTruthy();
   });
+
+  it('does not claim agents are in the field before /api/initiate succeeds and logs task_id after acceptance', async () => {
+    installFetch((path, init) => {
+      if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: false });
+      if (path === '/api/initiate' && init?.method === 'POST') {
+        return jsonResponse({ task_id: 'tsk-honest-42', status: 'queued' });
+      }
+      return undefined;
+    });
+
+    render(UnifiedPinealCockpit);
+    const armBtn = screen.getByRole('button', { name: /ARM/i });
+    await fireEvent.click(armBtn);
+
+    const targetInput = screen.getByPlaceholderText(/Hedef Profil URL/i);
+    await fireEvent.input(targetInput, { target: { value: 'https://www.instagram.com/realuser/' } });
+
+    const launchBtn = screen.getByRole('button', { name: /KAZIYI BAŞLAT/i });
+    await fireEvent.click(launchBtn);
+
+    expect(await screen.findByText(/Görev kabul edildi \(ID: tsk-honest-42\)/i)).toBeTruthy();
+    expect(screen.queryByText(/12 kişilik ajan timi ve kazıyıcı sensörler sahada/i)).toBeNull();
+  });
+
+  it('warns when a non-IG/X URL is entered while cross_platform_enabled is false and labels 503 dispatch honestly', async () => {
+    installFetch((path) => {
+      if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: false });
+      if (path.startsWith('/api/llm/routing')) {
+        return jsonResponse({
+          provider_keys_set: [],
+          cross_platform_enabled: false,
+          native_platforms: ['instagram', 'x'],
+          routing: { agents: {} },
+        });
+      }
+      return undefined;
+    });
+
+    render(UnifiedPinealCockpit);
+    expect(screen.getByText(/\(DEVRE DIŞI — 503\)/i)).toBeTruthy();
+
+    const targetInput = screen.getByPlaceholderText(/Hedef Profil URL/i);
+    await fireEvent.input(targetInput, { target: { value: 'https://www.tiktok.com/@sample' } });
+
+    expect(await screen.findByText(/ENABLE_CROSS_PLATFORM/i)).toBeTruthy();
+  });
 });

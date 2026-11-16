@@ -3515,6 +3515,8 @@ async def api_llm_routing(client_id: str = "default"):
         "has_tavily": bool(vault.get("tavily")),
         "has_serpapi": bool(vault.get("serpapi")),
         "has_exa": bool(vault.get("exa")),
+        "cross_platform_enabled": _flag_env("ENABLE_CROSS_PLATFORM"),
+        "native_platforms": ["instagram", "x"],
         "routing": snapshot,
     }
 
