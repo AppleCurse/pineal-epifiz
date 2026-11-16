@@ -1487,10 +1487,22 @@ class PinealExecutor:
                          llm_calls: list | None = None,
                          aux_llm_calls: list | None = None) -> dict:
         """Build an auditable evidence entry while retaining its provenance."""
+        import hashlib as _hashlib
+        import json as _json
+
+        dumped = result.model_dump()
+        ts = datetime.now(timezone.utc).isoformat()
+        raw_key = _json.dumps(
+            {"agent": agent_name, "evidence_type": evidence_type, "ts": ts, "result": dumped},
+            sort_keys=True,
+            default=str,
+        )
+        ev_id = "ev_" + _hashlib.sha256(raw_key.encode("utf-8")).hexdigest()[:20]
         record = {
+            "evidence_id": ev_id,
             "agent": agent_name,
-            "result": result.model_dump(),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "result": dumped,
+            "timestamp": ts,
             "evidence_type": evidence_type,
         }
         if source_agent is not None:
