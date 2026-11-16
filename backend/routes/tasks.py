@@ -44,6 +44,7 @@ from backend.security.task_ownership import TaskForbiddenError
 __all__ = [
     "MAX_TASK_ID_LENGTH",
     "delete_task",
+    "get_task_detail",
     "list_visible_tasks",
     "read_tasks_sync",
     "visible_tasks_sync",
@@ -185,3 +186,82 @@ def delete_task(
         }
 
     return api_delete_task
+
+
+def get_task_detail(
+    *,
+    get_room: Callable[[str], dict],
+):
+    """Uç nokta fabrikası: ``GET /api/tasks/{task_id}`` handler'ını üretir."""
+
+    async def api_get_task_detail(task_id: str, client_id: str = "default"):
+        room = get_room(client_id)
+        try:
+            if len(task_id) > MAX_TASK_ID_LENGTH:
+                raise ValueError
+            validate_identifier(task_id, field="task_id")
+            mem_path = safe_child_path(
+                room["executor"].memory.storage_path,
+                f"{task_id}.json",
+            )
+        except ValueError:
+            return JSONResponse(
+                {"error": {"code": "INVALID_TASK_ID", "message": "Invalid task identifier"}},
+                status_code=400,
+            )
+
+        if not guard_task(room, task_id, None):
+            raise TaskForbiddenError(task_id)
+
+        disk_data: dict | None = None
+        if os.path.exists(mem_path):
+            try:
+                with open(mem_path, "r", encoding="utf-8") as f:
+                    loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    disk_data = loaded
+            except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+                return JSONResponse(
+                    {"error": {"code": "MEMORY_CORRUPTED", "message": "Görev belleği okunamadı"}},
+                    status_code=409,
+                )
+
+        active_snap = room.get("active_tasks", {}).get(task_id)
+        if disk_data is None and active_snap is None:
+            return JSONResponse(
+                {"error": {"code": "NOT_FOUND", "message": f"Görev bulunamadı: {task_id}"}},
+                status_code=404,
+            )
+
+        import hashlib as _hashlib
+        import re as _re
+
+        raw_evidence = list((disk_data or {}).get("evidence") or [])
+        if not raw_evidence and active_snap is not None:
+            raw_evidence = list(getattr(active_snap, "evidence_chain", []) or [])
+        evidence = []
+        for idx, item in enumerate(raw_evidence):
+            if isinstance(item, dict):
+                copy_item = dict(item)
+                cur_id = str(copy_item.get("evidence_id") or "")
+                if not _re.fullmatch(r"ev_[0-9a-f]{20}", cur_id):
+                    digest_src = json.dumps({"task_id": task_id, "idx": idx, "item": copy_item}, sort_keys=True, default=str)
+                    copy_item["evidence_id"] = "ev_" + _hashlib.sha256(digest_src.encode("utf-8")).hexdigest()[:20]
+                evidence.append(copy_item)
+            else:
+                evidence.append(item)
+
+        return {
+            "task_id": task_id,
+            "status": (disk_data or {}).get("status") or getattr(active_snap, "status", None) or "unknown",
+            "memory_state": (disk_data or {}).get("memory_state") or "READY",
+            "last_updated": (disk_data or {}).get("last_updated"),
+            "confidence": (disk_data or {}).get("confidence"),
+            "halted_reason": (disk_data or {}).get("halted_reason") or getattr(active_snap, "halted_reason", None),
+            "target_profile": (disk_data or {}).get("target_profile") or getattr(active_snap, "target_profile", None),
+            "evidence_count": len(evidence),
+            "evidence": evidence,
+            "evidence_chain": evidence,
+        }
+
+    return api_get_task_detail

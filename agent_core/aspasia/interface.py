@@ -544,12 +544,27 @@ class AspasiaCommandGateway:
                     agent_name="aspasia",
                 )
         except Exception as exc:
-            self._record(command_id=command_id, status="intent_unavailable",
-                         error=f"{type(exc).__name__}"[:80])
-            return AspasiaCommandResult(
-                command_id=command_id, accepted=False, intent="none",
-                reason="intent_unavailable",
-            )
+            # Deterministic URL fallback when LLM gateway is unavailable: if the
+            # operator supplied a runnable profile URL, dispatch run_profile_analysis
+            # rather than silently dropping an explicit command.
+            import re as _re
+            from agent_core.services.profile_router import classify_url
+
+            m = _re.search(r"https?://[^\s\)\]>\"']+", user_message or "")
+            candidate_url = _normalize_target_url(m.group(0)) if m else ""
+            if candidate_url and _TARGET_RE.match(candidate_url) and classify_url(candidate_url).runnable:
+                intent = AspasiaIntent(
+                    intent="run_profile_analysis",
+                    target_url=candidate_url,
+                    goals=["profile_analysis"],
+                )
+            else:
+                self._record(command_id=command_id, status="intent_unavailable",
+                             error=f"{type(exc).__name__}"[:80])
+                return AspasiaCommandResult(
+                    command_id=command_id, accepted=False, intent="none",
+                    reason="intent_unavailable",
+                )
 
         if intent.intent == "none":
             self._record(command_id=command_id, status="no_action", intent="none")

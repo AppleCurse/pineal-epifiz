@@ -318,7 +318,7 @@ def _write_video(path: Path, title: str, entries: list[Any], *, tmp: Path) -> tu
             [
                 ffmpeg, "-y", "-loglevel", "error",
                 "-f", "concat", "-safe", "0", "-i", str(listing),
-                "-vsync", "vfr", "-pix_fmt", "yuv420p", str(path),
+                "-fps_mode", "vfr", "-pix_fmt", "yuv420p", str(path),
             ],
             capture_output=True,
             timeout=180,
