@@ -111,8 +111,67 @@ export const onRequest = async (context: any) => {
   let forwardedBytes = 0;
   let agentStatusFrames = 0;
 
+  // [P0-15 · D-01 · 2026-11-11] İLK MESAJ KAYBI KAPATILDI.
+  //
+  // Ölçülen kusur: `upstream` hâlâ CONNECTING (0) iken `pipeEnd.accept()`
+  // çağrılıp istemciye 101 dönülüyordu. İstemci (App.svelte) bağlantı açılır
+  // açılmaz İLK mesaj olarak `{type:"auth", token}` gönderiyor; eski pump
+  // `if (to.readyState !== WebSocket.OPEN) return;` yüzünden bu çerçeveyi
+  // SESSİZCE çöpe atıyordu → backend 5 sn sonra 1008 ile kapatıyordu.
+  //
+  // Düzeltme: CONNECTING durumundaki hedefe giden çerçeveler TAMPONLANIR ve
+  // `open` olayında SIRAYLA iletilir. Kuyruk TAVANLIDIR: tavan aşılırsa
+  // sessiz düşürme yerine bağlantı 1013 ile KAPATILIR (uydurma "çalışıyor"
+  // görüntüsü yok). `send` hatası da sessiz yutulmaz: iki uç da kapatılır.
+  const MAX_PENDING_FRAMES = 64;
+  const MAX_PENDING_BYTES = 256 * 1024;
+
   const pump = (from: WebSocket, to: WebSocket, label: string) => {
+    // Yalnız istemci->upstream yönünde tampon gerekir (istemci erken konuşan
+    // taraftır); yine de tek yerden uygulanır: hedef CONNECTING ise tamponla.
+    const pending: any[] = [];
+    let pendingBytes = 0;
+    let closed = false;
+    const closeBoth = (code: number) => {
+      if (closed) return;
+      closed = true;
+      // `from` kapanışı YETMEZ: Cloudflare'de `from` bu pump'ın sunucu ucu
+      // olabilir ve istemci ucunun kapanma kodunu taşımaz. Bu yüzden pompa
+      // çiftinin GÖRÜNÜR ucuna (varsa `peer`) kod açıkça iletilir.
+      for (const socket of new Set([from, (from as any).peer, to])) {
+        if (!socket) continue;
+        try {
+          socket.close(code);
+        } catch {
+          /* zaten kapalı */
+        }
+      }
+      guard(to)();
+    };
+    to.addEventListener("open", () => {
+      while (pending.length > 0) {
+        const frame = pending.shift();
+        try {
+          to.send(frame);
+        } catch {
+          closeBoth(1011);
+          return;
+        }
+      }
+      pendingBytes = 0;
+    });
     from.addEventListener("message", (ev: any) => {
+      if (to.readyState === WebSocket.CONNECTING) {
+        const size = typeof ev.data === "string" ? ev.data.length : 0;
+        if (pending.length >= MAX_PENDING_FRAMES || pendingBytes + size > MAX_PENDING_BYTES) {
+          // Sessiz düşürme YASAK: tavan aşıldıysa açıkça kapat.
+          closeBoth(1013);
+          return;
+        }
+        pending.push(ev.data);
+        pendingBytes += size;
+        return;
+      }
       if (to.readyState !== WebSocket.OPEN) return;
       // Tüm mesajlar şeffaf iletilir — özellikle agent_status_update
       // Agent Rack slotlarının Ready/Active/Wait canlı değişimi için kritik
@@ -130,7 +189,12 @@ export const onRequest = async (context: any) => {
           );
         }
       }
-      to.send(ev.data);
+      try {
+        to.send(ev.data);
+      } catch {
+        // Sessiz yutma yok: gönderim başarısızsa iki uç da kapatılır.
+        closeBoth(1011);
+      }
     });
     from.addEventListener("close", guard(to));
     from.addEventListener("error", guard(to));

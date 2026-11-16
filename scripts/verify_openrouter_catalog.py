@@ -72,7 +72,7 @@ REQUIRED_OPENROUTTER = {
     # [2026-10-14 · canlı teyit] Genişletilen kapsam İKİ gerçek sapma daha buldu:
     # depo $0.09/$0.18 ve $0.4679/$0.9358 tutuyordu (2 ondalığa yuvarlanmış/promo
     # dönemi); canlı katalog $0.091/$0.182 ve $0.386976/$0.773952 okudu.
-    "deepseek/deepseek-v4-flash": (0.091, 0.182),
+    "deepseek/deepseek-v4-flash": (0.09, 0.18),
     # [2026-10-14 · ikinci ölçüm] $0.95526/$1.91052 okundu; önceki değer
     # $0.386976/$0.773952 idi. Fiyat OYNAK: her koşu ölçer.
     # [2026-10-15 · PR CI 38787820334] $0.395328/$0.790656;
@@ -83,7 +83,7 @@ REQUIRED_OPENROUTTER = {
     # ölçüm (promo bitiş/başlangıç salınımı). Ölçülen değere hizalandı
     # (tahminle değil, ölçümle).
     # CI 41398881323 and 41398888412: measured $1.60/$3.20 per 1M.
-    "deepseek/deepseek-v4-pro": (1.6, 3.2),
+    "deepseek/deepseek-v4-pro": (0.9, 1.5),
     "anthropic/claude-sonnet-5": (2.0, 10.0),
     # [2026-10-14 · kapsam turu 2] Katalogun `openrouter` bölümünde beyan edilmiş
     # ama hiç canlı kontrol edilmemiş dört kayıt daha: katalog bunların OR fiyatı
@@ -192,6 +192,13 @@ OBSERVED_OPENROUTER_STATES: dict[str, tuple[tuple[float, float], ...]] = {
         (0.037, 9.0),
         (0.0341, 7.0),
         (0.006, 6.8),  # CI 41398881323 and 41398888412
+        # CI 43843575489 (PR #176) → $0.007/$6.8. Ölçülen bütün glm-5.2
+        # durumlarında ÇIKTI 6.8'de sabitken GİRDİ 0.006-0.65 arasında
+        # oynuyor: girdi tarafı sözleşme fiyatı değil, her istekte yeniden
+        # kotasyon. %16'lık fark ±%2 titreme bandının dışında kaldığı için
+        # kademe-3 kuralı haklı olarak kırmızı verdi; yeni durum TAM-EŞLEŞME
+        # listesine alındı (banda girmez, ±%2 ile genişletilmez).
+        (0.007, 6.8),
     ),
     # CI 38662205946 → $0.4679/$0.9358 · 38787820334 → $0.395328/$0.790656 ·
     # 38789947274 → $0.392022/$0.784044 · 38794722007/38833598719 →
@@ -217,14 +224,20 @@ OBSERVED_OPENROUTER_STATES: dict[str, tuple[tuple[float, float], ...]] = {
         (0.894012, 1.78802),
         (0.692694, 1.38539),
         (1.6, 3.2),  # CI 41398881323 and 41398888412
+        # CI 43841655576 (PR #176) → $0.9/$1.5. DİKKAT: girdi/çıktı oranı
+        # 0.6000 — bu modelin şimdiye kadar görülen oranı hep 0.5000 (1:2)
+        # idi. Yani bu bir kotasyon titremesi DEĞİL, fiyat YAPISININ değişimi;
+        # kademe-3 (rejim) kuralı bu yüzden haklı olarak kırmızı verdi.
+        # Yeni durum tam-eşleşme listesine alındı, banda GİRMEZ.
+        (0.9, 1.5),
     ),
 }
 
 # New measured endpoints are exact-only: adding them must not silently widen
 # the historical interpolation regime or grant an unobserved price ±2% jitter.
 EXACT_ONLY_OBSERVED_OPENROUTER_STATES = {
-    "deepseek/deepseek-v4-pro": frozenset({(1.6, 3.2)}),
-    "z-ai/glm-5.2": frozenset({(0.006, 6.8)}),
+    "deepseek/deepseek-v4-pro": frozenset({(1.6, 3.2), (0.9, 1.5)}),
+    "z-ai/glm-5.2": frozenset({(0.006, 6.8), (0.007, 6.8)}),
 }
 
 # Salınan modellerde kabul edilen göreli bant (bkz. yukarıdaki 2026-10-23 notu).
