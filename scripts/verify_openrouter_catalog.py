@@ -192,6 +192,13 @@ OBSERVED_OPENROUTER_STATES: dict[str, tuple[tuple[float, float], ...]] = {
         (0.037, 9.0),
         (0.0341, 7.0),
         (0.006, 6.8),  # CI 41398881323 and 41398888412
+        # CI 43843575489 (PR #176) → $0.007/$6.8. Ölçülen bütün glm-5.2
+        # durumlarında ÇIKTI 6.8'de sabitken GİRDİ 0.006-0.65 arasında
+        # oynuyor: girdi tarafı sözleşme fiyatı değil, her istekte yeniden
+        # kotasyon. %16'lık fark ±%2 titreme bandının dışında kaldığı için
+        # kademe-3 kuralı haklı olarak kırmızı verdi; yeni durum TAM-EŞLEŞME
+        # listesine alındı (banda girmez, ±%2 ile genişletilmez).
+        (0.007, 6.8),
     ),
     # CI 38662205946 → $0.4679/$0.9358 · 38787820334 → $0.395328/$0.790656 ·
     # 38789947274 → $0.392022/$0.784044 · 38794722007/38833598719 →
@@ -230,7 +237,7 @@ OBSERVED_OPENROUTER_STATES: dict[str, tuple[tuple[float, float], ...]] = {
 # the historical interpolation regime or grant an unobserved price ±2% jitter.
 EXACT_ONLY_OBSERVED_OPENROUTER_STATES = {
     "deepseek/deepseek-v4-pro": frozenset({(1.6, 3.2), (0.9, 1.5)}),
-    "z-ai/glm-5.2": frozenset({(0.006, 6.8)}),
+    "z-ai/glm-5.2": frozenset({(0.006, 6.8), (0.007, 6.8)}),
 }
 
 # Salınan modellerde kabul edilen göreli bant (bkz. yukarıdaki 2026-10-23 notu).
