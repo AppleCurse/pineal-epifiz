@@ -143,7 +143,21 @@ def _make_initiate():
     )
 
 
+from backend.services.browser_capability import BrowserBinaryStatus
+
+
 def _patch_mission(monkeypatch, fake_scrape, fake_executor, calls):
+    # [2026-11-11] Bu testler KAZIMA MANTIĞINI sınar (retry/dürüst ret), tarayıcı
+    # kurulumunu değil. Gerçek makinede tarayıcı ikilisi olmadığı için altyapı ön
+    # kontrolü döngüyü daha ilk adımda keserdi; "ikili VAR" durumu ölçülerek
+    # sabitlenir ki deneme sayısı sözleşmesi anlamlı kalsın. Altyapı YOKken
+    # davranış ayrıca ölçülür: tests/unit/test_browser_infrastructure_gate.py.
+    monkeypatch.setattr(
+        "backend.services.scrape_dispatch.browser_binary_status",
+        lambda: BrowserBinaryStatus(
+            available=True, source="test", path="/usr/bin/chromium", reason=None
+        ),
+    )
     monkeypatch.setattr(api, "scrape_instagram", fake_scrape)
     monkeypatch.setattr(api, "get_executor", lambda cid: fake_executor)
     monkeypatch.setattr(api, "get_vault", lambda cid: {})
