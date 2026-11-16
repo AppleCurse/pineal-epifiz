@@ -754,6 +754,7 @@ from backend.security.principal import (  # noqa: F401  (geriye dönük ihracat)
 # client_id'siyle A'nın görevini listeleyip `DELETE` ile kanıtını diskten
 # kalıcı silebiliyordu. Kalıcı `task_id -> principal` kaydı bu deliği kapatır;
 # semantik oda mührüyle birebir aynıdır (kayıt yoksa ilk erişen sahiplenir).
+from backend.routes.preflight import register_preflight_routes
 from backend.routes.reports import ReportBuildPayload, register_report_routes  # noqa: E402,F401
 from backend.routes.tasks import delete_task, get_task_detail, list_visible_tasks; from backend.routes.support import register_support_routes  # noqa: E702,E401
 from backend.routes.language import (  # noqa: E402,F401 (API-BÖLME 2: yeniden ihraç, dış sözleşme)
@@ -5390,6 +5391,13 @@ register_report_routes(
     rate_limit=rate_limit,
     check_vault_interlock=_check_vault_interlock,
     broadcast_log=broadcast_log,
+    flag_env=_flag_env,
+)
+
+register_preflight_routes(
+    app,
+    get_room=get_room,
+    check_vault_interlock=_check_vault_interlock,
     flag_env=_flag_env,
 )
 

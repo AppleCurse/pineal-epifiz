@@ -321,4 +321,32 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
     });
     expect(await screen.findByText(/ÜRETİLDİ/i)).toBeTruthy();
   });
+
+  it('blocks /api/initiate when /api/target/preflight returns eligible=false', async () => {
+    const calls = installFetch((path, init) => {
+      if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: false });
+      if (path === '/api/target/preflight' && init?.method === 'POST') {
+        return jsonResponse({
+          eligible: false,
+          platform: 'web',
+          scraper_type: 'unsupported_web',
+          reasons: ['UNSUPPORTED_PLATFORM: Çapraz platform kapalı'],
+        });
+      }
+      return undefined;
+    });
+
+    render(UnifiedPinealCockpit);
+    const armBtn = screen.getByRole('button', { name: /ARM/i });
+    await fireEvent.click(armBtn);
+
+    const targetInput = screen.getByPlaceholderText(/Hedef Profil URL/i);
+    await fireEvent.input(targetInput, { target: { value: 'https://www.tiktok.com/@sample' } });
+
+    const launchBtn = screen.getByRole('button', { name: /KAZIYI BAŞLAT/i });
+    await fireEvent.click(launchBtn);
+
+    expect(await screen.findByText(/Ön-kontrol engeli/i)).toBeTruthy();
+    expect(calls.some((c) => c.method === 'POST' && c.path === '/api/initiate')).toBe(false);
+  });
 });

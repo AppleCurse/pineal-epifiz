@@ -184,19 +184,14 @@ def test_critical_cross_stack_happy_path_without_method_mocks(
     assert 'data.type === "snapshot_update"' in source
     assert 'data.type === "result"' in source
     assert "data.event.event_type" in source
-    #: [2026-11-11] BAYAT İDDİA TEMİZLENDİ: bu blok `TacticalWarRoom.svelte`
-    #: dosyasını okuyordu — o dosya REPODA HİÇ VAR OLMADI (git log --all ile
-    #: ölçüldü). Yani test, var olmayan bir bileşen üzerinden "canlı arayüz
-    #: call_ids bağlıyor" diyordu: kanıtı olmayan bir iddia ve her koşuda
-    #: FileNotFoundError. İddia artık GERÇEK dosyaya bağlandı: çağrı kimliği
-    #: frontend'de `lib/evidence.ts` içinde `entry.call_ids` olarak kanıt
-    #: zincirine yazılıyor; kaynağı backend'in `call_ids` alanıdır.
-    evidence_ts = (
-        Path(__file__).resolve().parents[2] / "frontend/src/lib/evidence.ts"
+    #: [P6 · 2026-10-18] Ölü `UnifiedCompactPanel.svelte` silindi; canlı
+    #: arayüz çağrı kimliğini backend'in `call_ids` alanından bağlar
+    #: (backend/api.py:1987 → War Room "LLM ÇAĞRI KİMLİĞİ" satırı).
+    war_room = (
+        Path(__file__).resolve().parents[2]
+        / "frontend/src/components/UnifiedPinealCockpit.svelte"
     ).read_text(encoding="utf-8")
-    assert "entry.call_ids" in evidence_ts, (
-        "frontend kanıt zinciri çağrı kimliğini (call_ids) taşımıyor"
-    )
+    assert "run.call_ids" in war_room
 
 
 def test_running_task_can_be_cancelled_idempotently(local_llm, monkeypatch, tmp_path):

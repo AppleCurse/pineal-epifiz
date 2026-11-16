@@ -207,3 +207,19 @@ def test_aspasia_command_dispatches_runnable_url_when_llm_unavailable():
     assert res.task_id == "tsk-aspasia-real-1"
     assert len(dispatched) == 1
     assert dispatched[0]["target_url"] == "https://www.instagram.com/example"
+
+
+def test_target_preflight_blocks_locked_vault_and_unsupported_platform(monkeypatch):
+    monkeypatch.setenv("ENABLE_CROSS_PLATFORM", "false")
+    client = TestClient(app)
+
+    res_blocked = client.post(
+        "/api/target/preflight",
+        json={"client_id": "preflight_test_room", "url": "https://www.tiktok.com/@sample", "scraper_type": "cross"},
+    )
+    assert res_blocked.status_code == 200
+    body = res_blocked.json()
+    assert body["eligible"] is False
+    assert body["scraper_type"] == "unsupported_web"
+    assert any("UNSUPPORTED_PLATFORM" in r for r in body["reasons"])
+    assert any("VAULT_LOCKED" in r for r in body["reasons"])
