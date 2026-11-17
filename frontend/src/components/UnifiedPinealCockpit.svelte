@@ -11,6 +11,7 @@
   } from '../store';
   import { uplinkState, health, sysTelemetry, startHealthPoll, stopHealthPoll } from '../lib/telemetry';
   import { playClick, playHalt, playRunning } from '../lib/consoleAudio';
+  import { hasEvidence, buildPillarSummaries, evidenceChainToReportItems } from '../lib/evidence';
   import { taskRuns, taskRunLabel, rackAvailability } from '../lib/taskRunStatus';
   import { checkVaultStatus, vaultExists } from '../lib/tauriBridge';
 
@@ -69,12 +70,27 @@
 
   // --- STATE ---
   let targetUrl = '';
+  let contextRituals = '';
+  let contextPlaylist = '';
+  let contextEnvies = '';
+  let showContextInputs = false;
   let telemetryVisible = true;
   let selectedAgentId: string | null = 'aspasia';
-  let commandInstruction = '';
-  let commandTwinUrl = '';
-  let isDispatching = false;
-  let dispatchResult: any = null;
+  // Task History & Report Factory Modal
+  let showHistoryModal = false;
+  let historyTab: 'tasks' | 'reports' = 'tasks';
+  let tasksLoading = false;
+  let tasksError = '';
+  let taskHistoryList: any[] = [];
+  let reportStatusLoading = false;
+  let reportStatusData: any = null;
+  let reportListData: any[] = [];
+  let reportTitle = 'Pineal Adli Analiz Raporu';
+  let reportSubject = '';
+  let reportFormats: Record<string, boolean> = { markdown: true, pdf: true, diagram: true, video: false };
+  let reportBuilding = false;
+  let reportBuildResult: any = null;
+  let reportBuildError = '';
 
   // Commander Override
   let injectType = 'twin_url';
@@ -127,6 +143,8 @@
   let serpapiKey = '';
   let exaKey = '';
   let xCookie = '';
+  let igCookie = '';
+  let isAdultDeclared = false;
 
   // llm_gateway._AGENT_DIRECT_PROVIDER_KEYS ile birebir uyumlu (aktif OpenAI-chat rotalı sağlayıcılar)
   const DIRECT_PROVIDERS = [
@@ -228,6 +246,7 @@
       if (serpapiKey.trim()) payload.serpapi_key = serpapiKey.trim();
       if (exaKey.trim()) payload.exa_key = exaKey.trim();
       if (xCookie.trim()) payload.x_cookie = xCookie.trim();
+      if (igCookie.trim()) payload.ig_sessionid = igCookie.trim();
 
       const res = await apiFetch('/api/vault', {
         method: 'POST',
@@ -245,6 +264,7 @@
       serpapiKey = '';
       exaKey = '';
       xCookie = '';
+      igCookie = '';
       await refreshVaultState();
       await loadRoutingSnapshot();
     } catch (e: any) {
@@ -261,7 +281,7 @@
 
   // Chat & Mission
   let chatMessages: Array<{ ts: string; sender: string; text: string }> = [
-    { ts: nowTime(), sender: 'Aspasia', text: 'Sistem çevrimiçi Müşteri. 12 saha ajanı ve Lilith konseyde hazır. Hedef profil girin veya dilediğiniz ajana doğrudan emir verin.' }
+    { ts: nowTime(), sender: 'Aspasia', text: 'Sistem çevrimiçi Müşteri. 12 saha ajanı operasyona hazır. (Lilith viral büyüme motoru bağımsız devrededir). Hedef profil girin veya dilediğiniz ajana doğrudan emir verin.' }
   ];
   let inputMessage = '';
   let isSending = false;
@@ -269,14 +289,16 @@
   let missionTimer: any = null;
   let missionElapsedStr = '00:00';
 
-  // 7 Adli Sütun Listesi
+  // 7 Adli Sütun Listesi + Backend evidence_chain bağlantısı
   $: followerAudit = $taskStatus?.follower_audit || null;
   $: timingForensics = $taskStatus?.timing_forensics || null;
   $: depthReport = $taskStatus?.depth_report || null;
   $: visualEvidence = $taskStatus?.visual_evidence || null;
   $: shadowProfile = $taskStatus?.shadow_profile || null;
   $: osintFootprint = $taskStatus?.osint_footprint || null;
-  $: resonanceCalc = $taskStatus?.resonance_calc || null;
+  $: resonanceCalc = $taskStatus?.resonance_calc || $taskStatus?.reso || null;
+  $: evidenceChain = Array.isArray($taskStatus?.evidence_chain) ? $taskStatus.evidence_chain : [];
+  $: pillarSummaries = buildPillarSummaries($taskStatus);
 
   const INSUFFICIENT_EVIDENCE = 'YETERSİZ KANIT';
 
@@ -303,11 +325,22 @@
     };
     const entry = summaries[pillarId];
     return !!entry && !!entry[0] && entry[1].some(key => hasSummaryValue(entry[0][key]));
+  function getPillarHasData(pillarId: string): boolean {
+    return Boolean((pillarSummaries as any)?.[pillarId]?.hasData);
   }
 
+  let preflightResult: any = null;
   $: scopedRuns = taskRuns($taskStatus);
   // Koşu provenance'ı: model yalnızca backend'in canlı run.model alanından gelir.
   $: liveRunModels = Object.entries(scopedRuns).filter(([, run]) => (run as any)?.model).map(([agent, run]) => ({ agent, model: (run as any).model }));
+  $: activeTaskAgentIds = (() => {
+    const ids = new Set<string>(Object.keys(scopedRuns));
+    for (const a of ($taskStatus?.planned_agents || [])) if (a) ids.add(String(a));
+    for (const a of ($taskStatus?.completed_agents || [])) if (a) ids.add(String(a));
+    if ($taskStatus?.current_agent) ids.add(String($taskStatus.current_agent));
+    return Array.from(ids);
+  })();
+  $: channelStatusList = Array.isArray($taskStatus?.channel_status) ? $taskStatus.channel_status : [];
   const liveModelLabel = 'ÇALIŞMA MODELİ';
   let userRituals = '';
   let userPlaylist = '';
@@ -318,6 +351,10 @@
   $: readyCount = slotLabels.filter((label) => label === 'READY').length;
   $: errorCount = slotLabels.filter((label) => label === 'ERROR').length;
   const operatorDataLabel = 'OPERATÖR VERİSİ';
+
+  // Dynamic Waveform based on real telemetry resonance score and processing state
+  $: waveAmp = $isProcessing ? 22 : ($taskStatus?.resonance_score ? Math.round(Number($taskStatus.resonance_score) * 20) : 6);
+  $: dynamicWavePath = `M0,30 Q50,${30 - waveAmp} 100,30 T200,${30 + waveAmp} T300,${30 - Math.round(waveAmp * 0.7)} T400,30`;
   const sourceLabel = 'KAYNAK';
   $: statusSourceText = $agentStatusSource;
   const sourceDescriptions = {
@@ -362,6 +399,7 @@
 
   onMount(() => {
     void refreshVaultState();
+    void loadRoutingSnapshot();
     missionTimer = setInterval(() => {
       if (missionStartTime) {
         const diff = Math.floor((Date.now() - missionStartTime) / 1000);
@@ -377,15 +415,20 @@
     };
   });
 
+  function formatPresetWithTarget(preset: string): string {
+    const t = (targetUrl || $activeTargetUrl || '').trim();
+    return t ? `${t} — ${preset}` : preset;
+  }
+
   function selectAgent(agentId: string) {
     selectedAgentId = agentId;
     playClick(400, 30);
     const sov = SOVEREIGNS.find(s => s.id === agentId);
     if (sov && sov.presets.length > 0) {
-      commandInstruction = sov.presets[0];
+      inputMessage = formatPresetWithTarget(sov.presets[0]);
     } else {
       const fa = FIELD_AGENTS.find(a => a.id === agentId);
-      if (fa && fa.preset) commandInstruction = fa.preset;
+      if (fa && fa.preset) inputMessage = formatPresetWithTarget(fa.preset);
     }
   }
 
@@ -421,6 +464,26 @@
     }
   }
 
+  function getPlatformSupportWarning(raw: string, crossEnabled: boolean | undefined): string | null {
+    const trimmed = (raw || '').trim();
+    if (!trimmed || isPhoneInput(trimmed) || crossEnabled !== false) return null;
+    if (!trimmed.includes('.') && !trimmed.includes('://')) return null;
+    try {
+      const candidate = trimmed.includes('://') ? trimmed : `https://${trimmed}`;
+      const host = new URL(candidate).hostname.toLowerCase().replace(/\.$/, '');
+      const isNative =
+        host === 'instagram.com' || host.endsWith('.instagram.com') || host === 'instagr.am' ||
+        host === 'x.com' || host.endsWith('.x.com') ||
+        host === 'twitter.com' || host.endsWith('.twitter.com');
+      if (isNative) return null;
+      return `Platform Uyarısı: "${host}" için çapraz platform taraması (ENABLE_CROSS_PLATFORM) kapalı. Doğrudan kazıma yalnızca Instagram ve X için etkindir.`;
+    } catch {
+      return null;
+    }
+  }
+
+  $: platformWarning = getPlatformSupportWarning(targetUrl, routingData?.cross_platform_enabled);
+
   async function launchAnalysis() {
     const url = targetUrl.trim();
     if (!url || $isProcessing) return;
@@ -428,6 +491,51 @@
       chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: 'Müşteri, operasyon başlatılamaz: ARM şalteri kapalı. Lütfen üst konsoldan ARM anahtarını açın.' }];
       return;
     }
+    if (!isAdultDeclared) {
+      chatMessages = [...chatMessages, {
+        ts: nowTime(),
+        sender: 'Aspasia',
+        text: 'Müşteri, operasyon kilitli: Hedefin 18 yaşından büyük (reşit) olduğu beyan edilmelidir. Çocuk profillerinin taranması yasal olarak engellenmiştir.'
+      }];
+      playHalt();
+      return;
+    }
+    const platWarn = getPlatformSupportWarning(url, routingData?.cross_platform_enabled);
+    if (platWarn) {
+      chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: platWarn }];
+    }
+
+    preflightResult = null;
+    try {
+      const pfRes = await apiFetch('/api/target/preflight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: $clientId || 'default',
+          url,
+          scraper_type: 'cross',
+        }),
+      });
+      if (pfRes.ok) {
+        const pf = await pfRes.json();
+        preflightResult = pf;
+        if (pf.eligible === false) {
+          playHalt();
+          const reasons = Array.isArray(pf.reasons) && pf.reasons.length
+            ? pf.reasons.join(' | ')
+            : 'Hedef ön-kontrolü geçemedi.';
+          chatMessages = [...chatMessages, {
+            ts: nowTime(),
+            sender: 'Aspasia',
+            text: `Ön-kontrol engeli [${pf.platform || 'unknown'}]: ${reasons}`,
+          }];
+          return;
+        }
+      }
+    } catch {
+      // Ağ hatası durumunda /api/initiate kendi güvenlik kapılarını uygular
+    }
+
     isProcessing.set(true);
     activeTargetUrl.set(url);
     missionStartTime = Date.now();
@@ -446,9 +554,9 @@
         body: JSON.stringify({
           client_id: $clientId,
           url,
-          rituals: '',
-          playlist: '',
-          envies: '',
+          rituals: contextRituals.trim(),
+          playlist: contextPlaylist.trim(),
+          envies: contextEnvies.trim(),
           scraper_type: 'cross',
         })
       });
@@ -464,6 +572,13 @@
         // Yeni görevde önceki görevin kanıt ve özetlerini asla taşıma.
         taskStatus.update(s => s?.task_id === data.task_id ? s : mergeTaskSnapshot(null, { task_id: data.task_id, status: 'processing' }));
       }
+      chatMessages = [...chatMessages, {
+        ts: nowTime(),
+        sender: 'Aspasia',
+        text: data.task_id
+          ? `Görev kabul edildi (ID: ${data.task_id}) — [${url}]. Planlanan ajanlar ve sensörler arka planda başlatılıyor; canlı durumlar akıştan izlenecek.`
+          : `Görev kabul edildi — [${url}]. Canlı durumlar akıştan izlenecek.`
+      }];
     } catch (e: any) {
       isProcessing.set(false);
       playHalt();
@@ -523,52 +638,134 @@
     }
   }
 
-  async function dispatchAgentTask() {
-    if (!commandInstruction.trim() || isDispatching) return;
-    isDispatching = true;
-    playClick(500, 40);
-
-    const payload = {
-      client_id: $clientId || 'default',
-      agent_id: selectedAgentId,
-      instruction: commandInstruction.trim(),
-      target_url: targetUrl || $activeTargetUrl || '',
-      twin_url: commandTwinUrl.trim(),
-      context: {
-        bio: $taskStatus?.target_profile?.bio || '',
-        posts: $taskStatus?.target_profile?.posts || [],
-      }
-    };
-
+  async function loadTaskHistory() {
+    tasksLoading = true;
+    tasksError = '';
     try {
-      const res = await apiFetch('/api/commander/dispatch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) {
-        const error = await res.json().catch(() => ({}));
-        throw new Error(error?.error?.message || `HTTP ${res.status}`);
-      }
-      dispatchResult = await res.json();
-      playClick(600, 50);
+      const cid = $clientId || 'default';
+      const res = await apiFetch(`/api/tasks?client_id=${encodeURIComponent(cid)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      taskHistoryList = Array.isArray(data.tasks) ? data.tasks : [];
+    } catch (e: any) {
+      tasksError = e?.message || 'Görev geçmişi alınamadı';
+    } finally {
+      tasksLoading = false;
+    }
+  }
 
-      const agentName = SOVEREIGNS.find(s => s.id === selectedAgentId)?.name || FIELD_AGENTS.find(a => a.id === selectedAgentId)?.name || (selectedAgentId ?? '').toUpperCase();
+  async function loadPastTaskIntoCockpit(taskId: string) {
+    tasksError = '';
+    try {
+      const cid = $clientId || 'default';
+      const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}?client_id=${encodeURIComponent(cid)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const detail = await res.json();
+      taskStatus.set({
+        task_id: detail.task_id,
+        status: detail.status || 'completed',
+        confidence: detail.confidence,
+        target_profile: detail.target_profile || null,
+        evidence_chain: Array.isArray(detail.evidence_chain) ? detail.evidence_chain : [],
+        runs: {},
+      });
+      if (detail.target_profile?.url) {
+        reportSubject = detail.target_profile.url;
+      } else if (detail.target_profile?.username) {
+        reportSubject = `@${detail.target_profile.username}`;
+      }
+      reportTitle = `Pineal Rapor — ${detail.task_id}`;
+      showHistoryModal = false;
       chatMessages = [...chatMessages, {
         ts: nowTime(),
-        sender: agentName,
-        text: dispatchResult.output_text || 'Görev sonlandırıldı.'
+        sender: 'Aspasia',
+        text: `Geçmiş görev yüklendi: ${detail.task_id} (${detail.evidence_count ?? 0} kanıt kaydı).`
       }];
     } catch (e: any) {
-      playHalt();
-      dispatchResult = {
-        status: 'error',
-        agent_id: selectedAgentId,
-        thought_chain: ['Aksaklık oluştu: ' + (e?.message || e)],
-        output_text: `Görev yürütülmedi: ${e?.message || e}`,
-      };
+      tasksError = e?.message || 'Görev detayı yüklenemedi';
+    }
+  }
+
+  async function deletePastTask(taskId: string) {
+    tasksError = '';
+    try {
+      const cid = $clientId || 'default';
+      const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}?client_id=${encodeURIComponent(cid)}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await loadTaskHistory();
+    } catch (e: any) {
+      tasksError = e?.message || 'Görev silinemedi';
+    }
+  }
+
+  async function loadReportCenter() {
+    reportStatusLoading = true;
+    try {
+      const cid = $clientId || 'default';
+      const [sRes, lRes] = await Promise.all([
+        apiFetch('/api/report/status'),
+        apiFetch(`/api/report/list?client_id=${encodeURIComponent(cid)}`),
+      ]);
+      if (sRes.ok) reportStatusData = await sRes.json();
+      if (lRes.ok) {
+        const lJson = await lRes.json();
+        reportListData = Array.isArray(lJson.reports) ? lJson.reports : [];
+      }
+    } catch {
+      // non-fatal
     } finally {
-      isDispatching = false;
+      reportStatusLoading = false;
+    }
+  }
+
+  function openHistoryModal(tab: 'tasks' | 'reports' = 'tasks') {
+    historyTab = tab;
+    showHistoryModal = true;
+    if (!reportSubject) {
+      reportSubject = targetUrl || $activeTargetUrl || $taskStatus?.target_profile?.url || '';
+    }
+    void loadTaskHistory();
+    void loadReportCenter();
+  }
+
+  async function buildReportFromCockpit() {
+    if (reportBuilding) return;
+    reportBuilding = true;
+    reportBuildError = '';
+    reportBuildResult = null;
+    const selectedFormats = Object.entries(reportFormats)
+      .filter(([, on]) => on)
+      .map(([fmt]) => fmt);
+    if (selectedFormats.length === 0) {
+      reportBuildError = 'En az bir çıktı formatı seçin.';
+      reportBuilding = false;
+      return;
+    }
+    const evidenceItems = evidenceChainToReportItems($taskStatus);
+    try {
+      const res = await apiFetch('/api/report/build', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: $clientId || 'default',
+          title: (reportTitle || 'Pineal Adli Analiz Raporu').trim(),
+          subject: (reportSubject || targetUrl || $activeTargetUrl || '').trim(),
+          evidence: evidenceItems,
+          formats: selectedFormats,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error?.message || `HTTP ${res.status}`);
+      }
+      reportBuildResult = data;
+      await loadReportCenter();
+    } catch (e: any) {
+      reportBuildError = e?.message || 'Rapor üretilemedi';
+    } finally {
+      reportBuilding = false;
     }
   }
 
@@ -638,6 +835,8 @@
         if (command.ok) {
           const data = await command.json();
           if (data.accepted && data.task_id) {
+            isProcessing.set(true);
+            taskStatus.update(s => ({ ...(s || {}), task_id: data.task_id, status: 'processing' }));
             chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: `Emir alındı. Görev: ${data.task_id}` }];
             return;
           }
@@ -720,7 +919,7 @@
     <div class="hud-brand">
       <span class="pulse-beacon" class:active={$isProcessing}></span>
       <div class="brand-titles">
-        <h1 class="brand-title">PINEAL HERETIC // MASTER MISSION COCKPIT</h1>
+        <h1 class="brand-title">ATLAS EPİFİZ // PINEAL OBSERVATORY</h1>
         <span class="live-status-badge">{plainLiveStatus}</span>
         <p class="intro-help">Pineal, erişilebilen açık kaynak verilerini araştırmanıza yardımcı olur. Başlamak için hedef girin, ARM kilidini açın ve analizi başlatın. Kullanılabilir kaynaklar kurulum ve platforma göre değişir.</p>
       </div>
@@ -755,14 +954,52 @@
           {isProbingPhone ? '✦ TARANIYOR...' : '✦ NUMARAYI SORGULA'}
         </button>
       {/if}
+      <label class="adult-consent-badge" title="Hedef kişinin 18 yaşından büyük (reşit) olduğu beyanıdır.">
+        <input type="checkbox" bind:checked={isAdultDeclared} />
+        <span>18+ REŞİT</span>
+      </label>
       <button
         class="cassette-launch-btn"
         class:is-running={$isProcessing}
         on:click={launchAnalysis}
-        disabled={$isProcessing || !targetUrl.trim()}
+        disabled={$isProcessing || !targetUrl.trim() || !isAdultDeclared}
       >
         {$isProcessing ? '▲ ANALİZ EDİLİYOR...' : '▲ ANALİZİ BAŞLAT'}
       </button>
+      <button
+        type="button"
+        class="context-toggle-btn"
+        class:is-open={showContextInputs}
+        on:click={() => showContextInputs = !showContextInputs}
+        title="Kullanıcı Ritüelleri, Çalma Listesi ve Derin Hedef Bağlamını Ekle"
+      >
+        {showContextInputs ? '▼ BAĞLAMI KAPAT' : '✦ BAĞLAM (RİTÜEL / MÜZİK / HEDEF)'}
+      </button>
+      {#if showContextInputs}
+        <div class="context-inputs-flyout">
+          <input
+            type="text"
+            class="context-mini-input"
+            bind:value={contextRituals}
+            placeholder="Kişisel Ritüeller (örn: Gece okumaları, felsefe, çay)..."
+          />
+          <input
+            type="text"
+            class="context-mini-input"
+            bind:value={contextPlaylist}
+            placeholder="Çalma Listesi / Müzik (örn: Neşet Ertaş, Klasik, Ambient)..."
+          />
+          <input
+            type="text"
+            class="context-mini-input"
+            bind:value={contextEnvies}
+            placeholder="Derin Hedef / Arzu (örn: Sahici ve derin bağ kurmak)..."
+          />
+        </div>
+      {/if}
+      {#if platformWarning}
+        <div class="platform-warning" role="status">{platformWarning}</div>
+      {/if}
     </div>
 
     <!-- Sağ: Sistem Metrikleri + Şalterler + Acil Stop + Vault -->
@@ -813,12 +1050,45 @@
       </div>
       <button
         class="settings-gear-btn"
+        on:click={() => {
+          activeViewMode.set('observatory');
+          if (typeof localStorage !== 'undefined') localStorage.setItem('pineal_view_mode', 'observatory');
+        }}
+        title="Atlas Portalına / Sade Karşılama Ekranına Dön"
+      >
+        🏛️ ATLAS PORTALI
+      </button>
+      <button
+        class="settings-gear-btn history-hub-btn"
+        data-testid="open-history-btn"
+        on:click={() => openHistoryModal('tasks')}
+        title="Görev Geçmişi, Rapor Fabrikası ve Geçmiş Raporlar"
+      >
+        📜 GEÇMİŞ & RAPORLAR
+      </button>
+      <button
+        class="settings-gear-btn"
         data-testid="open-settings-btn"
         on:click={() => openSettingsModal('providers')}
         title="Çoklu LLM Sağlayıcı Anahtarları, Arama Motorları ve Ajan-Model Haritası"
       >
         🔑 API ANAHTARLARI & MODEL HARİTASI
       </button>
+      <!--
+        [AUDIT 2026-11-17 · EK H.2-F] TR/EN dil düğmesi BURADAN KALDIRILDI.
+        Sebep (ölçüldü): `frontend/src/i18n.ts` 94 TR + 94 EN anahtarı taşıyor,
+        ama bunların yalnız **10'u** bugünkü arayüz metinleriyle birebir örtüşüyor
+        (appTitle, active, vaultSaving, liveStatus, playlistPlaceholder, confidence,
+        runningBtn, system, resonanceScore, statusRunning). Tablo eski yerleşim için
+        yazılmış: örn. `initiateBtn="ANALİZİ BAŞLAT"` ama ekrandaki düğme
+        "KAZIYI BAŞLAT". Düğme bu hâliyle `currentLang`'ı değiştiriyor, ekranda
+        değişen tek şey düğmenin kendi harfleri oluyordu — Tüzük §3.3'ün
+        yasakladığı "çalışır görünen kontrol".
+        Gerçek iki dillilik ayrı bir iştir: 94 anahtarın güncellenmesi + eksik
+        anahtarların eklenmesi + çocuk kilidi/KVKK metinlerinin çeviri incelemesi.
+        O iş bitmeden bu düğme geri konmamalı.
+      -->
+
       <button
         class="vault-lock-btn"
         class:locked={!vaultKnown || $vaultLocked}
@@ -863,7 +1133,7 @@
         <p class="station-desc">Sokratik Retorik, Hakikat Aynası, Taktiksel Sentez ve Empatik Strateji</p>
         <div class="station-presets">
           {#each SOVEREIGNS[0].presets as p}
-            <button class="preset-btn" on:click|stopPropagation={() => { selectAgent('aspasia'); commandInstruction = p; }}>
+            <button class="preset-btn" on:click|stopPropagation={() => { selectAgent('aspasia'); inputMessage = formatPresetWithTarget(p); }}>
               ◈ {p.slice(0, 36)}...
             </button>
           {/each}
@@ -890,7 +1160,7 @@
         <p class="station-desc">Dopamin Kancası, Amigdala Uyarımı, Maske Yırtıcı ve Viralite</p>
         <div class="station-presets">
           {#each SOVEREIGNS[1].presets as p}
-            <button class="preset-btn btn-pink" on:click|stopPropagation={() => { selectAgent('lilith'); commandInstruction = p; }}>
+            <button class="preset-btn btn-pink" on:click|stopPropagation={() => { selectAgent('lilith'); inputMessage = formatPresetWithTarget(p); }}>
               ✦ {p.slice(0, 36)}...
             </button>
           {/each}
@@ -965,39 +1235,99 @@
         <h2>12 SAHA AJANI & CANLI MUHAKEME (CHAIN-OF-THOUGHT)</h2>
       </div>
 
-      <!-- 12 SAHA AJANI MATRİSİ -->
-      <div class="field-matrix-grid">
-        {#each FIELD_AGENTS as ag}
-          {@const rStatus = scopedRuns[ag.id] ? taskRunLabel(scopedRuns[ag.id]) : rackAvailability($agentStatuses?.[ag.id]?.status)}
-          {@const isActive = rStatus === 'ACTIVE' || rStatus === 'RUNNING'}
-          {@const isReady = rStatus === 'DONE' || rStatus === 'READY' || rStatus === 'COMPLETED'}
-          {@const isError = rStatus === 'FAILED' || rStatus === 'ERROR' || rStatus === 'HALTED'}
-          {@const isWait = rStatus === 'WAIT' || rStatus === 'WAITING' || rStatus === 'QUEUED' || rStatus === 'IDLE'}
-          <div
-            class="agent-tile {isActive ? 'active' : ''} {isReady ? 'ready' : ''} {isError ? 'error' : ''} {isWait ? 'wait' : ''} {selectedAgentId === ag.id ? 'selected' : ''}"
-            style="--agent-color: {ag.color};"
-            on:click={() => selectAgent(ag.id)}
-            role="button"
-            tabindex="0"
-            on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectAgent(ag.id); } }}
-          >
-            <div class="tile-glyph">{ag.glyph}</div>
-            <div class="tile-info">
-              <div class="tile-name">{ag.name}</div>
-              <div class="tile-short">{ag.short}</div>
-              <div class="tile-route" title={routeChain(ag.id)}>{routeChain(ag.id)}</div>
-              <div class="tile-tier">{routeTier(ag.id)} · {routeSource(ag.id)}</div>
+      <!-- GÖREVDE GERÇEKTEN ÇALIŞAN AJANLAR -->
+      {#if activeTaskAgentIds.length > 0}
+        <div class="field-matrix-grid">
+          {#each activeTaskAgentIds as agId}
+            {@const agMeta = FIELD_AGENTS.find(a => a.id === agId)}
+            {@const run = scopedRuns[agId]}
+            {@const rStatus = run ? taskRunLabel(run) : ($taskStatus?.current_agent === agId ? 'RUNNING' : 'PLANNED')}
+            {@const isActive = rStatus === 'ACTIVE' || rStatus === 'RUNNING'}
+            {@const isReady = rStatus === 'DONE' || rStatus === 'READY' || rStatus === 'COMPLETED'}
+            {@const isError = rStatus === 'FAILED' || rStatus === 'ERROR' || rStatus === 'HALTED'}
+            {@const isWait = !isActive && !isReady && !isError}
+            <div
+              class="agent-tile {isActive ? 'active' : ''} {isReady ? 'ready' : ''} {isError ? 'error' : ''} {isWait ? 'wait' : ''} {selectedAgentId === agId ? 'selected' : ''}"
+              style="--agent-color: {agMeta?.color || '#06b6d4'};"
+              on:click={() => selectAgent(agId)}
+              role="button"
+              tabindex="0"
+              on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectAgent(agId); } }}
+            >
+              <div class="tile-glyph">{agMeta?.glyph || '◈'}</div>
+              <div class="tile-info">
+                <div class="tile-name">{agMeta?.name || agId.toUpperCase()}</div>
+                <div class="tile-short">{run?.model || 'model bekleniyor'}</div>
+                <div class="tile-route">
+                  {#if Array.isArray(run?.call_ids) && run.call_ids.length > 0}
+                    LLM ÇAĞRI KİMLİĞİ: {run.call_ids.slice(0, 2).join(', ')}
+                  {:else}
+                    {routeChain(agId)}
+                  {/if}
+                </div>
+                <div class="tile-tier">{routeTier(agId)} · {routeSource(agId)}</div>
+              </div>
+              <div class="tile-status" style="color: {agMeta?.color || '#06b6d4'};">
+                <span class="status-pulse" style="background: {agMeta?.color || '#06b6d4'};"></span>
+                <span class="status-label">{rStatus}</span>
+              </div>
+              {#if isActive}
+                <div class="activity-bar"><div class="activity-fill"></div></div>
+              {/if}
             </div>
-            <div class="tile-status" style="color: {ag.color};">
-              <span class="status-pulse" style="background: {ag.color};"></span>
-              <span class="status-label">{rStatus}</span>
+          {/each}
+        </div>
+      {:else}
+        <div class="cot-empty" style="margin-bottom: 0.5rem;">
+          <p>Bu görevde henüz çalışmış ajan yok.</p>
+          <small>Hedef girip KAZIYI BAŞLAT dediğinizde yalnızca bu görevde gerçekten koşan ajanlar burada görünür.</small>
+        </div>
+      {/if}
+
+      <details class="catalog-details">
+        <summary>Sistemdeki Ajan Kataloğu ({FIELD_AGENTS.length} ajan)</summary>
+        <div class="field-matrix-grid" style="margin-top: 0.45rem;">
+          {#each FIELD_AGENTS as ag}
+            <div
+              class="agent-tile wait {selectedAgentId === ag.id ? 'selected' : ''}"
+              style="--agent-color: {ag.color};"
+              on:click={() => selectAgent(ag.id)}
+              role="button"
+              tabindex="0"
+              on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectAgent(ag.id); } }}
+            >
+              <div class="tile-glyph">{ag.glyph}</div>
+              <div class="tile-info">
+                <div class="tile-name">{ag.name}</div>
+                <div class="tile-route" title={routeChain(ag.id)}>{routeChain(ag.id)}</div>
+                <div class="tile-tier">{routeTier(ag.id)} · {routeSource(ag.id)}</div>
+              </div>
             </div>
-            {#if isActive}
-              <div class="activity-bar"><div class="activity-fill"></div></div>
-            {/if}
+          {/each}
+        </div>
+      </details>
+
+      <!-- VERİ KANALLARI (channel_status) -->
+      {#if channelStatusList.length > 0}
+        <div class="channel-status-box">
+          <div class="cot-header">
+            <span class="cot-icon">📡</span>
+            <h3>VERİ KANALLARI (channel_status — {channelStatusList.length})</h3>
           </div>
-        {/each}
-      </div>
+          <div class="channel-list">
+            {#each channelStatusList as ch}
+              {@const cStatus = String(ch?.status || 'unknown').toLowerCase()}
+              <div class="channel-row" class:ch-ok={cStatus === 'ok'} class:ch-fail={cStatus === 'failed' || cStatus === 'timed_out' || cStatus === 'unavailable' || cStatus === 'not_run'}>
+                <span class="ch-name">{ch?.channel || 'kanal'}</span>
+                <span class="ch-badge">{cStatus.toUpperCase()}</span>
+                {#if ch?.reason || ch?.detail}
+                  <span class="ch-reason">{ch.reason || ch.detail}</span>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        </div>
+      {/if}
 
       <!-- SOVEREIGN PULSE BAR -->
       <div class="sovereign-pulse-section">
@@ -1016,7 +1346,8 @@
             </defs>
             <path
               class="wave-path"
-              d="M0,30 Q50,10 100,30 T200,30 T300,30 T400,30"
+              class:processing={$isProcessing}
+              d={dynamicWavePath}
               stroke="url(#pulseGrad)"
               stroke-width="2"
               fill="none"
@@ -1025,7 +1356,8 @@
             />
             <path
               class="wave-glow"
-              d="M0,30 Q50,10 100,30 T200,30 T300,30 T400,30"
+              class:processing={$isProcessing}
+              d={dynamicWavePath}
               stroke="#ec4899"
               stroke-width="1"
               fill="none"
@@ -1153,69 +1485,83 @@
             placeholder="İkiz URL (Opsiyonel)..."
             disabled={isDispatching}
           />
-          <button
-            type="button"
-            class="console-dispatch-btn"
-            class:running={isDispatching}
-            on:click={dispatchAgentTask}
-            disabled={isDispatching || !commandInstruction.trim()}
-          >
-            {isDispatching ? '⚡ ÇALIŞIYOR...' : '🔥 GÖREVİ VER'}
-          </button>
-        </div>
-      </div>
-
-      <!-- CANLI MUHAKEME / CHAIN-OF-THOUGHT -->
+      <!-- CANLI KANIT ZİNCİRİ (BACKEND evidence_chain) -->
       <div class="chain-of-thought-section">
         <div class="cot-header">
           <span class="cot-icon">⟐</span>
-          <h3>CANLI MUHAKEME — AJAN DÜŞÜNCE ZİNCİRİ</h3>
+          <h3>CANLI KANIT ZİNCİRİ (evidence_chain — {evidenceChain.length})</h3>
+          <button
+            type="button"
+            class="cot-report-shortcut"
+            on:click={() => openHistoryModal('reports')}
+            title="Bu kanıt zincirinden Rapor Fabrikası ile rapor üret"
+          >
+            📄 Rapor Üret
+          </button>
         </div>
         <div class="cot-content">
-          {#if dispatchResult?.thought_chain && dispatchResult.thought_chain.length > 0}
+          {#if evidenceChain.length > 0}
             <div class="thought-chain">
-              {#each dispatchResult.thought_chain as thought, i}
-                <div class="thought-node" style="--delay: {i * 80}ms;">
+              {#each evidenceChain.slice(0, 12) as item, i}
+                {@const ep = item?.epistemic_type || item?.evidence_type || 'kayıt'}
+                {@const src = item?.provenance?.engine || item?.source_agent || item?.agent || 'bilinmiyor'}
+                {@const conf = item?.uncertainty?.confidence ?? item?.result?.confidence ?? item?.confidence}
+                <div class="thought-node" style="--delay: {i * 40}ms;">
                   <span class="thought-index">{i + 1}</span>
-                  <span class="thought-text">{thought}</span>
+                  <span class="thought-text">
+                    <strong>{item?.agent || 'pipeline'}</strong> · [{ep}] · kaynak: {src}
+                    {#if typeof conf === 'number'} · güven: {conf <= 1 ? Math.round(conf * 100) : Math.round(conf)}%{/if}
+                  </span>
                 </div>
               {/each}
             </div>
           {:else if $taskStatus?.current_agent}
             <div class="cot-placeholder">
               <span class="cot-agent">{$taskStatus.current_agent.toUpperCase()}</span>
-              <span class="cot-action">düşünüyor...</span>
+              <span class="cot-action">kanıt topluyor...</span>
               <div class="cot-typing"><span></span><span></span><span></span></div>
             </div>
           {:else}
             <div class="cot-empty">
               <span class="empty-glyph">⟐</span>
-              <p>Henüz aktif bir muhakeme zinciri yok.</p>
-              <small>Bir ajan seçip görev gönderin veya operasyon başlatın.</small>
+              <p>Henüz mühürlenmiş kanıt zinciri yok.</p>
+              <small>Operasyon başlatın veya Geçmiş &amp; Raporlar üzerinden önceki bir görevi yükleyin.</small>
             </div>
           {/if}
         </div>
       </div>
 
-      <!-- SEÇİLİ AJAN DETAY PANELİ -->
-      {#if selectedAgentId && dispatchResult}
+      <!-- SEÇİLİ AJAN GERÇEK KOŞU / KANIT DETAYI -->
+      {#if selectedAgentId && (scopedRuns[selectedAgentId] || evidenceChain.some((e: any) => e?.agent === selectedAgentId || e?.source_agent === selectedAgentId))}
+        {@const selRun = scopedRuns[selectedAgentId]}
+        {@const selChain = evidenceChain.filter((e: any) => e?.agent === selectedAgentId || e?.source_agent === selectedAgentId)}
         <div class="selected-agent-detail">
           <div class="detail-header">
             <span class="detail-glyph" style="color: {FIELD_AGENTS.find(a => a.id === selectedAgentId)?.color || SOVEREIGNS.find(s => s.id === selectedAgentId)?.accent}">
               {FIELD_AGENTS.find(a => a.id === selectedAgentId)?.glyph || SOVEREIGNS.find(s => s.id === selectedAgentId)?.glyph}
             </span>
-            <h3>{dispatchResult.agent_id?.toUpperCase() || selectedAgentId.toUpperCase()} — ÇIKTI</h3>
+            <h3>{selectedAgentId.toUpperCase()} — CANLI KOŞU &amp; KANIT ({selChain.length})</h3>
           </div>
-          <div class="detail-output">{dispatchResult.output_text || 'Çıktı yok.'}</div>
+          <div class="detail-output">
+            {#if selRun}
+              <div>Durum: <strong>{selRun.status || '-'}</strong> · Model: <code>{selRun.model || 'bilinmiyor'}</code></div>
+            {/if}
+            {#each selChain.slice(0, 3) as entry}
+              <div class="detail-chain-row">[{entry.epistemic_type || entry.evidence_type || 'kanıt'}] {JSON.stringify(entry.result ?? entry.content ?? entry).slice(0, 220)}</div>
+            {/each}
+          </div>
         </div>
       {/if}
     </section>
 
     <!-- SÜTUN 3: 7 ADLİ SÜTUN + ASPASIA SOHBET + TELEMETRİ (Sağ - 28%) -->
     <section class="column-deck col-right">
-      <div class="deck-title-ribbon">
-        <span class="ribbon-icon">⟐</span>
-        <h2>7 ADLİ SÜTUN — KANIT RADARI</h2>
+      <div class="deck-title-ribbon deck-title-stack">
+        <div class="ribbon-row">
+          <span class="ribbon-icon">⟐</span>
+          <h2>7 ADLİ KANIT KATEGORİSİ — RADAR</h2>
+        </div>
+        <small class="pillars-sub">Ajanlar + 7 deterministik dalga motoru (Frequency, Seismos, Void, Strata, Gravity, Pulse, Key) bulgularını toplar</small>
       </div>
 
       <p class="summary-disclaimer">Bu kartlar analiz özetleridir; tek başına doğrulanmış kanıt değildir. Skorların kaynakları ve güven düzeyi burada gösterilmiyor.</p>
@@ -1223,14 +1569,23 @@
       <!-- 7 ADLİ SÜTUN GRİD -->
       <div class="pillars-grid">
         {#each PILLARS as p}
-          {@const hasData = getPillarHasData(p.id)}
+          {@const summary = (pillarSummaries as any)[p.id]}
+          {@const hasData = Boolean(summary?.hasData)}
           <div class="pillar-column {hasData ? 'has-data' : ''} {p.id}-pillar" style="--pillar-color: {p.color};">
             <div class="pillar-header">
               <span class="pillar-icon">{p.icon}</span>
               <span class="pillar-label">{p.label}</span>
               <span class="pillar-badge">{hasData ? 'ÖZET VERİ' : 'VERİ YOK'}</span>
+              <span class="pillar-badge">{hasData ? `KANIT (${summary.evidenceCount})` : 'YETERSİZ / YOK'}</span>
             </div>
             <div class="pillar-content">
+              <div class="pillar-epistemic-meta">
+                <span><strong>Kanıt:</strong> {summary?.evidenceCount ?? 0}</span>
+                <span><strong>Güven:</strong> {summary?.confidence !== null && summary?.confidence !== undefined ? summary.confidence + '%' : 'ölçülmedi'}</span>
+                <span><strong>Kaynak:</strong> {summary?.sources?.length ? summary.sources.slice(0, 2).join(', ') : 'yok'}</span>
+                <span><strong>Epistemik:</strong> {summary?.epistemicTypes?.length ? summary.epistemicTypes.join(', ') : 'yok'}</span>
+                <span><strong>Yeterlilik:</strong> {summary?.sufficiency || 'yetersiz'}</span>
+              </div>
               {#if hasData}
                 <div class="evidence-preview">
                   {#if p.id === 'follower' && followerAudit}
@@ -1259,10 +1614,12 @@
                     <div class="evidence-item"><strong>Telefon:</strong> {osintFootprint.phone_exposed == null ? 'Bilinmiyor' : osintFootprint.phone_exposed ? 'Açık' : 'Kapalı'}</div>
                   {:else if p.id === 'resonance' && resonanceCalc}
                     <div class="evidence-item"><strong>Rezonans Açısı:</strong> {resonanceCalc.resonance_angle !== undefined ? resonanceCalc.resonance_angle + '°' : '—'}</div>
-                    <div class="evidence-item"><strong>Uyum Skoru:</strong> {resonanceCalc.alignment_score !== undefined ? resonanceCalc.alignment_score + '%' : '—'}</div>
+                    <div class="evidence-item"><strong>Uyum Skoru:</strong> {(resonanceCalc.alignment_score ?? resonanceCalc.compatibility_score) !== undefined ? (resonanceCalc.alignment_score ?? resonanceCalc.compatibility_score) + '%' : '—'}</div>
                     <div class="evidence-item"><strong>Vektör Uzayı:</strong> {resonanceCalc.vector_dimensions || '—'} boyut</div>
+                  {:else if summary?.chainEntries?.length}
+                    <div class="evidence-item"><strong>Zincir Kaydı:</strong> {JSON.stringify(summary.chainEntries[0]?.result ?? summary.chainEntries[0]).slice(0, 140)}</div>
                   {:else}
-                    <div class="evidence-empty">Veri bekleniyor...</div>
+                    <div class="evidence-empty">Yapılandırılmış özet bekleniyor...</div>
                   {/if}
                 </div>
               {:else}
@@ -1371,6 +1728,170 @@
       {/each}
     </div>
   </footer>
+
+  {#if showHistoryModal}
+    <div class="cockpit-modal-backdrop" role="dialog" aria-modal="true" aria-label="Görev Geçmişi ve Rapor Fabrikası">
+      <div class="cockpit-modal-card">
+        <div class="cockpit-modal-head">
+          <h3>📜 GÖREV GEÇMİŞİ &amp; RAPOR FABRİKASI</h3>
+          <button class="modal-close-btn" on:click={() => showHistoryModal = false}>✕</button>
+        </div>
+
+        <div class="cockpit-modal-tabs">
+          <button class:active={historyTab === 'tasks'} on:click={() => { historyTab = 'tasks'; void loadTaskHistory(); }}>
+            Görev Geçmişi ({taskHistoryList.length})
+          </button>
+          <button class:active={historyTab === 'reports'} on:click={() => { historyTab = 'reports'; void loadReportCenter(); }}>
+            Rapor Fabrikası &amp; Geçmiş Raporlar ({reportListData.length})
+          </button>
+        </div>
+
+        <div class="cockpit-modal-body">
+          {#if historyTab === 'tasks'}
+            <div class="modal-section-box">
+              <div class="history-toolbar">
+                <h4>Kayıtlı Görevler (GET /api/tasks)</h4>
+                <button type="button" class="modal-cancel-btn" on:click={loadTaskHistory} disabled={tasksLoading}>
+                  {tasksLoading ? 'Yükleniyor...' : '↻ Yenile'}
+                </button>
+              </div>
+              {#if tasksError}
+                <div class="modal-alert err">{tasksError}</div>
+              {/if}
+              {#if tasksLoading && taskHistoryList.length === 0}
+                <p class="routing-note">Görev geçmişi yükleniyor...</p>
+              {:else if taskHistoryList.length === 0}
+                <p class="routing-note">Bu oda için henüz kayıtlı görev yok.</p>
+              {:else}
+                <div class="routing-table-wrap">
+                  <table class="routing-table">
+                    <thead>
+                      <tr>
+                        <th>Görev ID</th>
+                        <th>Durum</th>
+                        <th>Kanıt</th>
+                        <th>Güven</th>
+                        <th>Tarih</th>
+                        <th>İşlem</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {#each taskHistoryList as t}
+                        <tr>
+                          <td class="rt-agent">{t.task_id}</td>
+                          <td>{t.status || t.memory_state || '-'}</td>
+                          <td>{t.evidence_count ?? 0}</td>
+                          <td>{typeof t.confidence === 'number' ? Math.round(t.confidence * 100) + '%' : '-'}</td>
+                          <td>{t.last_updated || '-'}</td>
+                          <td class="history-actions">
+                            <button type="button" class="mini-action-btn" on:click={() => loadPastTaskIntoCockpit(t.task_id)}>YÜKLE</button>
+                            <button type="button" class="mini-action-btn danger" on:click={() => deletePastTask(t.task_id)}>SİL</button>
+                          </td>
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+                </div>
+              {/if}
+            </div>
+          {:else}
+            <div class="modal-section-box">
+              <h4>Rapor Fabrikası — Kanıttan Rapor Üret (POST /api/report/build)</h4>
+              {#if reportStatusData}
+                <p class="routing-note">
+                  Kapı: <code>{reportStatusData.gate}</code> · Dizin: <code>{reportStatusData.report_dir}</code>
+                </p>
+                <div class="format-chips">
+                  {#each reportStatusData.formats || [] as fmt}
+                    <label class="format-chip" class:disabled={!fmt.available}>
+                      <input type="checkbox" bind:checked={reportFormats[fmt.format]} />
+                      <span>{fmt.format.toUpperCase()}</span>
+                      <small>({fmt.available ? 'hazır' : fmt.reason || 'yok'})</small>
+                    </label>
+                  {/each}
+                </div>
+              {:else if reportStatusLoading}
+                <p class="routing-note">Rapor fabrikası durumu kontrol ediliyor...</p>
+              {/if}
+
+              <div class="provider-grid" style="margin-top: 0.6rem;">
+                <label class="provider-field">
+                  <span>Rapor Başlığı</span>
+                  <input type="text" bind:value={reportTitle} placeholder="Pineal Adli Analiz Raporu" />
+                </label>
+                <label class="provider-field">
+                  <span>Konu / Hedef</span>
+                  <input type="text" bind:value={reportSubject} placeholder="https://instagram.com/..." />
+                </label>
+              </div>
+              <p class="routing-note" style="margin-top: 0.45rem;">
+                Aktif kanıt zincirinden taşınacak satır: <strong>{evidenceChainToReportItems($taskStatus).length}</strong>
+              </p>
+              <div style="margin-top: 0.5rem;">
+                <button type="button" class="modal-save-btn" on:click={buildReportFromCockpit} disabled={reportBuilding}>
+                  {reportBuilding ? 'ÜRETİLİYOR...' : '📄 RAPOR PAKETİ ÜRET'}
+                </button>
+              </div>
+
+              {#if reportBuildError}
+                <div class="modal-alert err" style="margin-top: 0.5rem;">{reportBuildError}</div>
+              {/if}
+              {#if reportBuildResult}
+                <div class="modal-alert ok" style="margin-top: 0.5rem;">
+                  <strong>Rapor sonucu ({reportBuildResult.title}):</strong>
+                  {#each Object.entries(reportBuildResult.formats || {}) as [fmtName, fmtRes]}
+                    {@const r = fmtRes as any}
+                    <div class="report-res-row">
+                      <code>{fmtName}</code>: {r.available ? 'ÜRETİLDİ' : `ENGELLENDİ / YOK (${r.denied_by || r.reason || 'bilinmiyor'})`}
+                      {#if r.manifest_sha256} · sha256: <code>{r.manifest_sha256.slice(0, 12)}…</code>{/if}
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+
+            <div class="modal-section-box">
+              <div class="history-toolbar">
+                <h4>Geçmiş Raporlar (GET /api/report/list)</h4>
+                <button type="button" class="modal-cancel-btn" on:click={loadReportCenter} disabled={reportStatusLoading}>
+                  ↻ Yenile
+                </button>
+              </div>
+              {#if reportListData.length === 0}
+                <p class="routing-note">Henüz üretilmiş rapor paketi bulunamadı.</p>
+              {:else}
+                <div class="report-history-list">
+                  {#each reportListData as rep}
+                    <div class="report-history-card">
+                      <div class="rh-head">
+                        <strong>{rep.title}</strong>
+                        <span>{rep.created_at || '-'}</span>
+                      </div>
+                      <div class="rh-meta">
+                        Hedef: {rep.subject || '-'} · Kanıt: {rep.evidence_count} · Manifest: <code>{(rep.manifest_sha256 || '').slice(0, 12)}…</code>
+                      </div>
+                      <div class="rh-links">
+                        {#each rep.artifacts || [] as art}
+                          {#if art.download_url}
+                            <a class="report-dl-link" href={`${art.download_url}?client_id=${encodeURIComponent($clientId || "default")}`} target="_blank" rel="noopener">
+                              ⬇ {art.kind} ({art.bytes} B)
+                            </a>
+                          {/if}
+                        {/each}
+                        {#if rep.manifest_url}
+                          <a class="report-dl-link" href={`${rep.manifest_url}?client_id=${encodeURIComponent($clientId || "default")}`} target="_blank" rel="noopener">⬇ manifest.json</a>
+                        {/if}
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {/if}
+        </div>
+      </div>
+    </div>
+  {/if}
 
   {#if showSettingsModal}
     <div class="cockpit-modal-backdrop" role="presentation" on:click|self={() => (showSettingsModal = false)}>
@@ -1483,7 +2004,11 @@
                   <input type="password" placeholder="..." bind:value={exaKey} />
                 </label>
                 <label class="provider-field">
-                  <span class="pf-top"><span>X / Platform Cookie (opsiyonel)</span></span>
+                  <span class="pf-top"><span>Instagram Session / Cookie (sessionid)</span></span>
+                  <input type="password" placeholder="sessionid=... veya doğrudan sessionid" bind:value={igCookie} />
+                </label>
+                <label class="provider-field">
+                  <span class="pf-top"><span>X / Twitter Cookie (auth_token / ct0)</span></span>
                   <input type="password" placeholder="auth_token=...; ct0=..." bind:value={xCookie} />
                 </label>
               </div>
@@ -1638,6 +2163,36 @@
   .phone-launch-btn:hover:not(:disabled) { box-shadow: 0 0 30px rgba(236,72,153,0.55); }
   .phone-launch-btn.is-running { background: linear-gradient(135deg, var(--amber), #d97706); animation: btn-pulse 1.2s ease-in-out infinite; }
   .cassette-launch-btn:disabled, .phone-launch-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  .adult-consent-badge {
+    display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.45rem 0.65rem;
+    font-size: 0.68rem; font-weight: 800; color: var(--gold);
+    background: rgba(212,175,55,0.08); border: 1px solid rgba(212,175,55,0.3);
+    border-radius: 4px; cursor: pointer; user-select: none; white-space: nowrap;
+  }
+  .adult-consent-badge input { cursor: pointer; accent-color: var(--gold); }
+
+  .context-toggle-btn {
+    padding: 0.5rem 0.8rem; font-family: inherit; font-size: 0.68rem; font-weight: 700;
+    color: var(--cyan); background: rgba(6,182,212,0.1); border: 1px solid rgba(6,182,212,0.3);
+    border-radius: 4px; cursor: pointer; transition: all 0.2s; white-space: nowrap;
+  }
+  .context-toggle-btn:hover, .context-toggle-btn.is-open {
+    background: rgba(6,182,212,0.22); border-color: var(--cyan); box-shadow: 0 0 10px rgba(6,182,212,0.3);
+  }
+  .context-inputs-flyout {
+    position: absolute; top: calc(100% + 8px); left: 0; right: 0; z-index: 50;
+    display: flex; gap: 0.5rem; padding: 0.75rem; background: rgba(10,14,20,0.98);
+    border: 1px solid var(--border-glow); border-radius: 6px; box-shadow: 0 8px 30px rgba(0,0,0,0.9);
+  }
+  .context-mini-input {
+    flex: 1; padding: 0.5rem 0.8rem; background: rgba(5,7,12,0.9);
+    border: 1px solid rgba(255,255,255,0.12); border-radius: 4px;
+    color: var(--text-primary); font-family: inherit; font-size: 0.78rem; outline: none;
+  }
+  .context-mini-input:focus {
+    border-color: var(--cyan); box-shadow: 0 0 0 1px var(--cyan);
+  }
 
   /* Hud Meters */
   .hud-meters { display: flex; align-items: center; gap: 1rem; justify-content: flex-end; }
@@ -1888,19 +2443,60 @@
   .emergency-stop-btn { padding: 0.4rem 0.7rem; font-family: inherit; font-size: 0.65rem; font-weight: 900; letter-spacing: 0.08em; color: #fff; background: linear-gradient(135deg, #dc2626, #991b1b); border: 1px solid rgba(239,68,68,0.7); border-radius: 4px; cursor: pointer; transition: all 0.15s; text-transform: uppercase; white-space: nowrap; }
   .emergency-stop-btn:hover { box-shadow: 0 0 16px rgba(239,68,68,0.6); transform: translateY(-1px); }
 
-  /* Direct Dispatch Console */
-  .direct-dispatch-console { padding: 0.75rem; background: rgba(8,10,15,0.85); border: 1px solid rgba(6,182,212,0.3); border-radius: 6px; display: flex; flex-direction: column; gap: 0.5rem; flex-shrink: 0; }
-  .console-header-bar { display: flex; justify-content: space-between; align-items: center; font-size: 0.65rem; color: var(--text-dim); gap: 0.5rem; flex-wrap: wrap; }
-  .ca-tag strong { color: var(--cyan); font-weight: 800; }
-  .ca-hint { color: var(--text-muted); font-size: 0.6rem; }
-  .console-input-row { display: flex; gap: 0.45rem; align-items: center; }
-  .console-text-input { flex: 1.6; min-width: 0; padding: 0.5rem 0.7rem; font-family: inherit; font-size: 0.72rem; color: var(--text-primary); background: rgba(3,3,5,0.9); border: 1px solid var(--border-dim); border-radius: 4px; outline: none; }
-  .console-text-input:focus { border-color: var(--cyan); }
-  .console-twin-input { flex: 1; min-width: 0; padding: 0.5rem 0.6rem; font-family: inherit; font-size: 0.68rem; color: var(--text-primary); background: rgba(3,3,5,0.9); border: 1px solid var(--border-dim); border-radius: 4px; outline: none; }
-  .console-twin-input:focus { border-color: var(--magenta); }
-  .console-dispatch-btn { padding: 0.5rem 0.85rem; font-family: inherit; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.06em; color: #02140a; background: linear-gradient(135deg, var(--cyan), #0891b2); border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; transition: all 0.15s; }
-  .console-dispatch-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-  .console-dispatch-btn.running { background: linear-gradient(135deg, var(--amber), #d97706); }
+  .cot-report-shortcut {
+    margin-left: auto;
+    padding: 0.2rem 0.55rem;
+    font-family: inherit;
+    font-size: 0.62rem;
+    font-weight: 700;
+    color: var(--emerald);
+    background: rgba(16, 185, 129, 0.12);
+    border: 1px solid rgba(16, 185, 129, 0.35);
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .pillar-epistemic-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.6rem;
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    margin-bottom: 0.4rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px dashed rgba(255,255,255,0.08);
+  }
+  .detail-chain-row { margin-top: 0.35rem; font-size: 0.66rem; color: var(--text-dim); font-family: 'JetBrains Mono', monospace; }
+  .history-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+  .history-actions { display: flex; gap: 0.3rem; }
+  .mini-action-btn {
+    padding: 0.2rem 0.45rem;
+    font-family: inherit;
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: var(--cyan);
+    background: rgba(6, 182, 212, 0.12);
+    border: 1px solid rgba(6, 182, 212, 0.35);
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .mini-action-btn.danger { color: #fca5a5; background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.35); }
+  .format-chips { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.45rem; }
+  .format-chip {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    padding: 0.25rem 0.5rem; font-size: 0.66rem;
+    background: rgba(255,255,255,0.04); border: 1px solid var(--border-dim); border-radius: 4px; cursor: pointer;
+  }
+  .format-chip.disabled { opacity: 0.65; }
+  .report-res-row { font-size: 0.66rem; margin-top: 0.25rem; }
+  .report-history-list { display: flex; flex-direction: column; gap: 0.5rem; max-height: 240px; overflow: auto; }
+  .report-history-card { padding: 0.55rem; background: rgba(0,0,0,0.28); border: 1px solid var(--border-dim); border-radius: 5px; }
+  .rh-head { display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--text-primary); }
+  .rh-meta { font-size: 0.62rem; color: var(--text-dim); margin: 0.25rem 0; }
+  .rh-links { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .report-dl-link {
+    font-size: 0.62rem; color: var(--cyan); text-decoration: none;
+    padding: 0.15rem 0.45rem; border: 1px solid rgba(6, 182, 212, 0.35); border-radius: 3px;
+  }
 
   /* Phone OSINT Dossier Card */
   .phone-osint-dossier-card { padding: 0.85rem; background: linear-gradient(135deg, rgba(236,72,153,0.08), rgba(8,10,15,0.92)); border: 1px solid rgba(236,72,153,0.4); border-radius: 6px; display: flex; flex-direction: column; gap: 0.65rem; flex-shrink: 0; }
@@ -2051,4 +2647,28 @@
     padding: 0.45rem 1rem; font-family: inherit; font-size: 0.7rem; font-weight: 800;
     background: linear-gradient(135deg, var(--emerald), #059669); color: #02140a; border: none; border-radius: 5px; cursor: pointer;
   }
+  .platform-warning {
+    width: 100%;
+    margin-top: 0.35rem;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.66rem;
+    color: #fbbf24;
+    background: rgba(120, 70, 0, 0.22);
+    border: 1px solid rgba(251, 191, 36, 0.4);
+    border-radius: 4px;
+  }
+  .ca-disabled-badge { color: #fbbf24; font-weight: 700; font-size: 0.62rem; }
+  .deck-title-stack { flex-direction: column; align-items: flex-start; gap: 0.2rem; }
+  .ribbon-row { display: flex; align-items: center; gap: 0.4rem; }
+  .pillars-sub { font-size: 0.62rem; color: var(--text-dim); line-height: 1.3; }
+  .catalog-details { margin: 0.35rem 0 0.55rem; font-size: 0.66rem; color: var(--text-dim); }
+  .catalog-details summary { cursor: pointer; padding: 0.25rem 0.4rem; border: 1px dashed var(--border-dim); border-radius: 4px; }
+  .channel-status-box { padding: 0.65rem; background: rgba(8,10,15,0.85); border: 1px solid var(--border-dim); border-radius: 6px; margin-bottom: 0.5rem; }
+  .channel-list { display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.35rem; }
+  .channel-row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.65rem; padding: 0.25rem 0.45rem; border-radius: 4px; background: rgba(255,255,255,0.03); }
+  .channel-row.ch-ok { border-left: 3px solid var(--emerald); }
+  .channel-row.ch-fail { border-left: 3px solid #ef4444; color: #fca5a5; }
+  .ch-name { font-family: 'JetBrains Mono', monospace; font-weight: 700; }
+  .ch-badge { font-size: 0.58rem; padding: 0.08rem 0.35rem; border-radius: 3px; background: rgba(255,255,255,0.08); }
+  .ch-reason { color: var(--text-dim); font-size: 0.6rem; }
 </style>

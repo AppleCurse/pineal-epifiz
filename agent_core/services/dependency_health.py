@@ -46,6 +46,7 @@ class StartupDependencyError(RuntimeError):
 
 REQUIRED_DEPENDENCIES = (
     DependencyRequirement("pydantic", "pydantic"),
+    DependencyRequirement("phonenumbers", "phonenumbers"),
     DependencyRequirement("fastapi", "fastapi"),
     DependencyRequirement("httpx", "httpx"),
     DependencyRequirement("numpy", "numpy"),
@@ -59,9 +60,6 @@ REQUIRED_DEPENDENCIES = (
     DependencyRequirement("canonical_memory", "agent_core.services.canonical_memory"),
 )
 
-# These packages must not be imported when their experimental/configured path
-# is disabled. Once enabled, however, they are startup requirements and fail
-# closed instead of silently changing product behavior.
 CONFIGURED_DEPENDENCIES = (
     DependencyRequirement("sentence-transformers", "sentence_transformers", "PINEAL_MEMORY_ENGINE", "hindsight"),
     DependencyRequirement("open-interpreter", "interpreter", "ENABLE_INTERPRETER"),

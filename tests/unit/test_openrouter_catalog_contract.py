@@ -704,7 +704,10 @@ def test_current_ci_observed_prices_are_consistent_across_catalog_and_accounting
     from agent_core.services.llm_gateway import LLMGateway
 
     expected = {
-        "deepseek/deepseek-v4-pro": (1.6, 3.2),
+        # [2026-11-11] CI 43841655576 canlı katalogda v4-pro için $0.9/$1.5
+        # (girdi/çıktı oranı 1:2 DEĞİL, 0.6) ve v4-flash için $0.09/$0.18
+        # okudu; üç yer (pin · katalog · harcama tablosu) birlikte güncellendi.
+        "deepseek/deepseek-v4-pro": (0.9, 1.5),
         "z-ai/glm-5.2": (0.006, 6.8),
     }
     catalog = oc._catalog_models(oc._load_catalog())

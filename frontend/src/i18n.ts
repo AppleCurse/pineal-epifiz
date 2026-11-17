@@ -7,9 +7,9 @@ export const currentLang = writable<Language>('tr');
 export const t = {
   tr: {
     // Header & Brand
-    appTitle: "PINEAL-HERETIC v3.0",
-    appSubtitle: "360° BÜTÜNCÜL İNSAN TANIMA VE REZONANS İSTASYONU",
-    footerText: "PINEAL 3.0 • ÇOKLU MODLU GÖRSEL ZEKA • SIFIR HALÜSİNASYON • CANLI TELEMETRİ",
+    appTitle: "ATLAS EPİFİZ // PINEAL OBSERVATORY",
+    appSubtitle: "DİJİTAL MARUZİYET İSTİHBARATI, KÜL (SİLME) VE SEDEF (YENİDEN İNŞA) İSTASYONU",
+    footerText: "ATLAS EPİFİZ v3.0.0-rc.2 • İZ · KÜL · SEDEF • SIFIR HALÜSİNASYON • CANLI TELEMETRİ",
 
     // Left Panel: Telemetry & Vault
     engineTelemetry: "MOTOR TELEMETRİSİ",
@@ -116,9 +116,9 @@ export const t = {
   },
   en: {
     // Header & Brand
-    appTitle: "PINEAL-HERETIC v3.0",
+    appTitle: "ATLAS EPİFİZ // PINEAL OBSERVATORY",
     appSubtitle: "360° HOLISTIC HUMAN RECOGNITION & RESONANCE STATION",
-    footerText: "PINEAL 3.0 • MULTIMODAL VISION • ZERO HALLUCINATION • REAL-TIME TELEMETRY",
+    footerText: "ATLAS EPİFİZ v3.0.0-rc.2 • MULTIMODAL VISION • ZERO HALLUCINATION • REAL-TIME TELEMETRY",
 
     // Left Panel: Telemetry & Vault
     engineTelemetry: "ENGINE TELEMETRY",

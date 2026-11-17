@@ -544,7 +544,7 @@ class LLMGateway:
         # $0.09/$0.18 gösteriyordu (eski $0.0679/$0.168 iki tarafla da uyuşmuyordu).
         # [2026-10-14 · canlı teyit] Gerçek fiyat $0.091/$0.182 (2 ondalığa
         # yuvarlanmış değer sayacı %1,1 eksik sayıyordu).
-        "deepseek/deepseek-v4-flash": {"in": 0.091, "out": 0.182},
+        "deepseek/deepseek-v4-flash": {"in": 0.09, "out": 0.18},
         # [2026-10-14 · canlı teyit] $0.3276/$1.03 -> $0.04/$7.00. Girdi 8×
         # ucuzladı, çıktı 6,8× pahalandı: eski tablo her iki yönde de yanlıştı.
         # [2026-10-15 · CI 38662205946] Son çıktı ölçümü $4.40/1M.
@@ -568,7 +568,7 @@ class LLMGateway:
         # [2026-10-16 · CI 38833598719 + 38840573018 + 38843226709] Canlı katalog
         # yeniden $0.95526/$1.91052'ye döndü (üç koşuda birebir aynı ölçüm).
         # CI 41398881323 and 41398888412 measured $1.60/$3.20 per 1M.
-        "deepseek/deepseek-v4-pro": {"in": 1.6, "out": 3.2},
+        "deepseek/deepseek-v4-pro": {"in": 0.9, "out": 1.5},
         "google/gemini-3.7-flash": {"in": 0.75, "out": 3.75},
         # 2026-09-02 karar matrisi: Sonnet 5 $2/$10 (promo), Grok 4.6 $2/$6.
         # 2026-09-08 notu: Sonnet 5 promo'su 31.08.2026'da sona erdi; Anthropic

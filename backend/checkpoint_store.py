@@ -133,20 +133,22 @@ def _atomic_write(task_id: str, data: Dict[str, Any]) -> None:
     try:
         os.replace(tmp, path)
     except PermissionError:
-        # Windows / OneDrive kilit gecikmesi (WinError 5): 50ms bekle ve tekrar dene
         import time
         time.sleep(0.05)
         try:
             os.replace(tmp, path)
-        except Exception:
-            # Doğrudan yazma fallback
-            with open(path, "w", encoding="utf-8") as f_dest:
-                f_dest.write(payload)
+        except Exception as exc:
             try:
                 os.remove(tmp)
-            except Exception:
+            except OSError:
                 pass
-
+            raise CheckpointError(f"checkpoint atomic replace failed: {exc}") from exc
+    except Exception as exc:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise CheckpointError(f"checkpoint atomic replace failed: {exc}") from exc
 
 def set_input(
     task_id: str,

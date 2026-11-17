@@ -110,6 +110,21 @@ def test_public_health_endpoint_reports_successful_startup(monkeypatch):
         monkeypatch.delenv(flag, raising=False)
     monkeypatch.delenv("PINEAL_MEMORY_ENGINE", raising=False)
 
+    # [2026-11-11] Tarayıcı ikilisi yokken /health artık DÜRÜSTÇE `degraded`
+    # der (browser_binary_missing). Bu testin konusu BAĞIMLILIK sağlığı;
+    # tarayıcı ölçümü sabitlenir, ayrı testte gerçek ölçümle sınanır:
+    # tests/unit/test_browser_infrastructure_gate.py.
+    import backend.api as api_module
+    from backend.services.browser_capability import BrowserBinaryStatus
+
+    monkeypatch.setattr(
+        api_module,
+        "browser_binary_status",
+        lambda: BrowserBinaryStatus(
+            available=True, source="test", path="/usr/bin/chromium", reason=None
+        ),
+    )
+
     with TestClient(app) as client:
         response = client.get("/health")
 

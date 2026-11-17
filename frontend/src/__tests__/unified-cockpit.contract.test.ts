@@ -28,6 +28,24 @@ function installFetch(route: (path: string, init: RequestInit) => Response | und
   return calls;
 }
 
+/**
+ * [AUDIT 2026-11-17 · EK H.2-E] 18+ REŞİT beyan kutusu.
+ *
+ * `0acc47f4` KAZIYI BAŞLAT düğmesine `!isAdultDeclared` kilidi ekledi
+ * (Tüzük §2 kırmızı çizgisi) ama sözleşme testleri bu kapıyı bilmiyordu:
+ * iki test düğmeye beyan olmadan basıyor, `/api/initiate` hiç çağrılmadığı
+ * için "Görev kabul edildi" / "Ön-kontrol engeli" metinleri ekrana
+ * gelmiyordu. Kapı **kasıtlı** olduğundan testler yeni sözleşmeyi anlatır;
+ * susturulmaz. Aşağıda ayrıca kapının kendisini doğrulayan bir test var.
+ */
+async function declareAdult(container: HTMLElement): Promise<void> {
+  const box = container.querySelector<HTMLInputElement>(
+    '.adult-consent-badge input[type="checkbox"]'
+  );
+  if (!box) throw new Error('18+ REŞİT beyan kutusu bulunamadı (kapı kaldırılmış olabilir)');
+  await fireEvent.click(box);
+}
+
 beforeEach(() => {
   clientId.set('test_room');
   powerEngaged.set(true);
@@ -181,29 +199,15 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
     expect(screen.getAllByText(/WhatsApp/i).length).toBeGreaterThanOrEqual(1);
   });
 
-  it('renders direct dispatch inputs and posts to /api/commander/dispatch', async () => {
-    const calls = installFetch((path) => {
+  it('removes dead 503 direct dispatch UI and shows live evidence_chain section', async () => {
+    installFetch((path) => {
       if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: false });
-      if (path === '/api/commander/dispatch') {
-        return jsonResponse({
-          status: 'unavailable',
-          error: { code: 'DIRECT_AGENT_DISPATCH_UNAVAILABLE', message: 'Doğrudan ajan yürütmesi bağlı değil' },
-        }, 503);
-      }
       return undefined;
     });
 
     render(UnifiedPinealCockpit);
-    const instrInput = screen.getByPlaceholderText(/özel emir veya soru/i);
-    await fireEvent.input(instrInput, { target: { value: 'Profili analiz et' } });
-
-    const dispatchBtn = screen.getByRole('button', { name: /GÖREVİ VER/i });
-    await fireEvent.click(dispatchBtn);
-
-    await waitFor(() => {
-      expect(calls.some((c) => c.method === 'POST' && c.path === '/api/commander/dispatch')).toBe(true);
-    });
-    expect((await screen.findAllByText(/Doğrudan ajan yürütmesi bağlı değil/i)).length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByRole('button', { name: /GÖREVİ VER/i })).toBeNull();
+    expect(screen.getByText(/CANLI KANIT ZİNCİRİ \(evidence_chain/i)).toBeTruthy();
   });
 
   it('opens multi-provider settings modal, seals provider_keys, and displays agent model routing', async () => {
@@ -251,5 +255,190 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
     const routingTab = screen.getByRole('button', { name: /Ajan → Model Haritası/i });
     await fireEvent.click(routingTab);
     expect(await screen.findByText(/anthropic\/claude-sonnet-5/i)).toBeTruthy();
+  });
+
+  it('does not claim agents are in the field before /api/initiate succeeds and logs task_id after acceptance', async () => {
+    installFetch((path, init) => {
+      if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: false });
+      if (path === '/api/initiate' && init?.method === 'POST') {
+        return jsonResponse({ task_id: 'tsk-honest-42', status: 'queued' });
+      }
+      return undefined;
+    });
+
+    const { container } = render(UnifiedPinealCockpit);
+    const armBtn = screen.getByRole('button', { name: /ARM/i });
+    await fireEvent.click(armBtn);
+
+    const targetInput = screen.getByPlaceholderText(/Hedef Profil URL/i);
+    await fireEvent.input(targetInput, { target: { value: 'https://www.instagram.com/realuser/' } });
+    await declareAdult(container);  // 18+ beyanı olmadan düğme kilitli (Tüzük §2)
+
+    const launchBtn = screen.getByRole('button', { name: /KAZIYI BAŞLAT/i });
+    await fireEvent.click(launchBtn);
+
+    expect(await screen.findByText(/Görev kabul edildi \(ID: tsk-honest-42\)/i)).toBeTruthy();
+    expect(screen.queryByText(/12 kişilik ajan timi ve kazıyıcı sensörler sahada/i)).toBeNull();
+  });
+
+  it('warns when a non-IG/X URL is entered while cross_platform_enabled is false', async () => {
+    installFetch((path) => {
+      if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: false });
+      if (path.startsWith('/api/llm/routing')) {
+        return jsonResponse({
+          provider_keys_set: [],
+          cross_platform_enabled: false,
+          native_platforms: ['instagram', 'x'],
+          routing: { agents: {} },
+        });
+      }
+      return undefined;
+    });
+
+    render(UnifiedPinealCockpit);
+    const targetInput = screen.getByPlaceholderText(/Hedef Profil URL/i);
+    await fireEvent.input(targetInput, { target: { value: 'https://www.tiktok.com/@sample' } });
+
+    expect(await screen.findByText(/ENABLE_CROSS_PLATFORM/i)).toBeTruthy();
+  });
+
+  it('opens Task History and Report Factory modal, loads past task, builds report, and lists past reports', async () => {
+    const calls = installFetch((path, init) => {
+      if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: false });
+      if (path.startsWith('/api/tasks?')) {
+        return jsonResponse({
+          tasks: [
+            { task_id: 'tsk-past-1', status: 'completed', evidence_count: 1, confidence: 0.9, last_updated: '2026-11-16T01:00:00Z' },
+          ],
+          active_tasks: [],
+        });
+      }
+      if (path.startsWith('/api/tasks/tsk-past-1?')) {
+        return jsonResponse({
+          task_id: 'tsk-past-1',
+          status: 'completed',
+          confidence: 0.9,
+          target_profile: { url: 'https://instagram.com/pastuser' },
+          evidence_count: 1,
+          evidence_chain: [
+            {
+              agent: 'authenticity_auditor',
+              evidence_type: 'primary',
+              epistemic_type: 'observation',
+              uncertainty: { confidence: 0.9, data_sufficiency: 'sufficient' },
+              result: { authenticity_score: 91 },
+            },
+          ],
+        });
+      }
+      if (path === '/api/report/status') {
+        return jsonResponse({
+          gate: 'ENABLE_REPORT_FACTORY',
+          report_dir: 'memory/reports',
+          formats: [{ format: 'markdown', available: true, reason: '' }],
+        });
+      }
+      if (path.startsWith('/api/report/list')) {
+        return jsonResponse({
+          gate: 'ENABLE_REPORT_FACTORY',
+          gate_enabled: true,
+          reports: [
+            {
+              title: 'Geçmiş Rapor 1',
+              subject: 'https://instagram.com/pastuser',
+              created_at: '2026-11-16T01:05:00Z',
+              evidence_count: 1,
+              manifest_sha256: 'abc123def456',
+              manifest_url: '/api/report/file/rep.manifest.json',
+              artifacts: [{ name: 'rep.md', kind: 'markdown', available: true, bytes: 420, download_url: '/api/report/file/rep.md' }],
+            },
+          ],
+        });
+      }
+      if (path === '/api/report/build' && init?.method === 'POST') {
+        return jsonResponse({
+          title: 'Pineal Rapor — tsk-past-1',
+          formats: { markdown: { available: true, manifest_sha256: 'deadbeef1234' } },
+        });
+      }
+      return undefined;
+    });
+
+    render(UnifiedPinealCockpit);
+    const histBtn = screen.getByTestId('open-history-btn');
+    await fireEvent.click(histBtn);
+
+    expect(await screen.findByText('tsk-past-1')).toBeTruthy();
+    const loadBtn = screen.getByRole('button', { name: 'YÜKLE' });
+    await fireEvent.click(loadBtn);
+
+    expect(await screen.findByText(/Geçmiş görev yüklendi: tsk-past-1/i)).toBeTruthy();
+    expect(screen.getByText(/KANIT \(1\)/i)).toBeTruthy();
+
+    await fireEvent.click(histBtn);
+    const reportTab = screen.getByRole('button', { name: /Rapor Fabrikası/i });
+    await fireEvent.click(reportTab);
+
+    expect(await screen.findByText('Geçmiş Rapor 1')).toBeTruthy();
+    const buildBtn = screen.getByRole('button', { name: /RAPOR PAKETİ ÜRET/i });
+    await fireEvent.click(buildBtn);
+
+    await waitFor(() => {
+      expect(calls.some((c) => c.method === 'POST' && c.path === '/api/report/build')).toBe(true);
+    });
+    expect(await screen.findByText(/ÜRETİLDİ/i)).toBeTruthy();
+  });
+
+  it('blocks /api/initiate when /api/target/preflight returns eligible=false', async () => {
+    const calls = installFetch((path, init) => {
+      if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: false });
+      if (path === '/api/target/preflight' && init?.method === 'POST') {
+        return jsonResponse({
+          eligible: false,
+          platform: 'web',
+          scraper_type: 'unsupported_web',
+          reasons: ['UNSUPPORTED_PLATFORM: Çapraz platform kapalı'],
+        });
+      }
+      return undefined;
+    });
+
+    const { container } = render(UnifiedPinealCockpit);
+    const armBtn = screen.getByRole('button', { name: /ARM/i });
+    await fireEvent.click(armBtn);
+
+    const targetInput = screen.getByPlaceholderText(/Hedef Profil URL/i);
+    await fireEvent.input(targetInput, { target: { value: 'https://www.tiktok.com/@sample' } });
+    await declareAdult(container);  // 18+ beyanı olmadan düğme kilitli (Tüzük §2)
+
+    const launchBtn = screen.getByRole('button', { name: /KAZIYI BAŞLAT/i });
+    await fireEvent.click(launchBtn);
+
+    expect(await screen.findByText(/Ön-kontrol engeli/i)).toBeTruthy();
+    expect(calls.some((c) => c.method === 'POST' && c.path === '/api/initiate')).toBe(false);
+  });
+
+  it('keeps KAZIYI BAŞLAT locked until the 18+ adult declaration is ticked (Tüzük §2)', async () => {
+    const calls = installFetch((path) => {
+      if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: false });
+      return undefined;
+    });
+
+    const { container } = render(UnifiedPinealCockpit);
+    const armBtn = screen.getByRole('button', { name: /ARM/i });
+    await fireEvent.click(armBtn);
+
+    const targetInput = screen.getByPlaceholderText(/Hedef Profil URL/i);
+    await fireEvent.input(targetInput, { target: { value: 'https://www.instagram.com/realuser/' } });
+
+    const launchBtn = screen.getByRole('button', { name: /KAZIYI BAŞLAT/i }) as HTMLButtonElement;
+    // Beyan YOK → düğme kilitli ve `/api/initiate` hiç çağrılmıyor (kırmızı çizgi).
+    expect(launchBtn.disabled).toBe(true);
+    await fireEvent.click(launchBtn);
+    expect(calls.some((c) => c.method === 'POST' && c.path === '/api/initiate')).toBe(false);
+
+    // Beyan VAR → aynı düğme açılır: kapı süs değil, gerçek mandal.
+    await declareAdult(container);
+    await waitFor(() => expect(launchBtn.disabled).toBe(false));
   });
 });

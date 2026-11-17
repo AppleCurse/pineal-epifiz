@@ -180,11 +180,32 @@ async def read_report(
     return result
 
 
+#: Kapı kapalıyken ilk yapılacak iş: kapıyı aç (motor kurulumu ikinci adım).
+_STT_GATE_HINT = (
+    "Dinleme kapalı: ENABLE_LOCAL_STT=true yapın, sonra yerel motoru kurun "
+    "(pip install -U openai-whisper veya PINEAL_STT_URL)."
+)
+
+
+def _multipart_available() -> bool:
+    """Form/dosya yüklemesi gerçekten çözülebiliyor mu? (uydurma yok)
+
+    `python-multipart` kurulu değilse Starlette her dosya yüklemesini 500 ile
+    reddeder; bunu /api/speech/status içinde ÖNCEDEN söylemek gerekir.
+    """
+    try:
+        import multipart  # noqa: F401
+    except Exception:  # pragma: no cover - kurulu olmayan ortam
+        return False
+    return True
+
+
 def engine_status() -> Dict[str, Any]:
     """Motorların BUGÜNKÜ dürüst durumu (yoksa neden yok): TTS + STT."""
     from agent_core.capabilities.adapters_voice import (
         LocalSTTCapability,
         LocalTTSCapability,
+        STT_REMEDIATION_HINT,
     )
 
     tts = LocalTTSCapability()
@@ -213,6 +234,12 @@ def engine_status() -> Dict[str, Any]:
             "engine": stt_engine or "",
             "available": bool(stt.availability().available),
             "reason": stt.availability().reason or stt_reason or "",
+            # [2026-11-11] "yok" demek yetmez: operatöre NE yapacağını söyle.
+            # Motor seçiliyse ipucu BOŞ (yanlış yönlendirme yok).
+            "remediation": ""
+            if stt_engine
+            else (_STT_GATE_HINT if not _flag(STT_GATE) else STT_REMEDIATION_HINT),
+            "multipart_available": _multipart_available(),
         },
         "report": {
             "capability_id": REPORT_CAPABILITY_ID,

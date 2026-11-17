@@ -1,31 +1,39 @@
-# Pineal Epifiz
+# ATLAS EPİFİZ // PINEAL OBSERVATORY
 
-**Herkese açık sosyal medya profillerini inceleyip, "bu kişi kim, ne ilgileniyor, nasıl bir
-iletişim tarzı var, neyi neden kaçınıyor" sorularına **kanıta dayalı** cevap veren; sonra da
-sistemde olan biteni **canlı**, insan diliyle anlatan bir inceleme ve denetim platformu.**
+> *"Dijital dünya hafızası değil, kayıt sistemidir. O kayıtlara tıklanır. Atlas Epifiz der ki: Kayıtları siz yöneteceksiniz. Merkezde hiç kapanmayan EPİFİZ GÖZÜ var."*
 
-Bu bir hacker aracı değildir. Şifre kırmaz, gizli hesaplara girmez. Yalnızca herkese açık
-sayfaları okur, topladığı veriyi matematiksel ölçümlerle inceler ve her iddianın arkasına
-gerçek bir kanıt koyar. Veri yoksa **"bilmiyorum"** der; boşluğu doldurmaz.
+**Atlas Epifiz; kişiler ve kurumlar için kanıta dayalı dijital maruziyet istihbaratı, stratejik profil analizi, dijital iz temizliği (kül) ve yeni kimlik inşası (sedef) sunan özel bir gözlem ve operasyon merkezidir.**
+
+Bu bir hacker aracı veya sahte ahlakçı noter kapısı değildir. Şifre kırmaz, gizli hesaplara girmez; kamuya açık dijital ayak izlerini toplar, **7 dalga motoruyla** ve **13 görev ajanıyla** matematiksel ölçümlerle inceler, her iddianın arkasına kriptografik kanıt mühürler.
 
 ```
                        ╔═══════════════════════════════════════════╗
-                       ║        P I N E A L   E P İ F İ Z          ║
+                       ║        A T L A S   E P İ F İ Z            ║
                        ║      v3.0.0-rc.2 ADLİ BİLİŞSEL İSTASYON   ║
+                       ║       PINEAL OBSERVATORY // MASTER DECK   ║
                        ╚═══════════════════════════════════════════╝
 
-    [ 🌐 AÇIK KAYNAK TOPLAMA ]      [ 🧠 7 DALGA MOTORU ]        [ 👁️ CANLI DENETİM ]
-   Instagram · X · Web Arama        Ritim · Kırılma · Boşluk      KONTROL PANELİ
-   E-posta · Kullanıcı adı · Web     Katman · Çekim · Nefes · Ana  (her şey canlı)
+  [ ⌖ HEDEF & HESAP İSTİHBARATI ]   [ 🔥 DİJİTAL KÜL (SİLME) ]   [ 🛡️ DİJİTAL SEDEF (İNŞA) ]
+  • Bir hesabı 360° derinlemesine çöz • İnternetteki varlığını sil  • Sıfırdan yeni kişilik kur
+  • Zafiyet ve motivasyon haritası    • Eski kayıtları küle çevir   • Sarsılmaz dijital itibar
+  • Savunma düşüren ilk temas köprüsü • Unutulma hakkı operasyonu   • Yeni bir insan olarak doğ
                │                                  │                        │
                └──────────────┬───────────────────┴────────────────────────┘
                               │
-                    [ ⚡ 13 GÖREV AJANI · TEK SÜREÇ İÇİ ]
-              Kural tabanlı yönlendirici · Sırayla · Kanıt zinciri
-                              │
-                    [ 💬 ASPASIA · SENİNLE KONUŞAN ARAYÜZ ]
-              "Ne oluyor şu an?" sorusunu doğal dille yanıtlar
+             [ 👁️ MERKEZDEKİ GÖZ: KAYNAK · KORELASYON · ANALİZ · DOĞRULAMA · BAĞLAM ]
+             [ ⚡ 13 GÖREV AJANI ] · [ 🧠 7 DALGA MOTORU ] · [ 💬 ASPASIA PRIME & LILITH ]
 ```
+
+---
+
+## Dört Temel Hizmet Kapısı ve Üç Protokol (İZ · KÜL · SEDEF)
+
+1. **Hedef ve Hesap İstihbaratı (`PROTOKOL 01: İZ`):** Bir hesabı veya şahsı açık kaynaklardan (OSINT) 360° derinlikle çözmek isteyenler için; gerçek kimlik, zaman serisi ritmi, zafiyet haritası ve savunmasını düşüren ilk temas stratejisi.
+2. **Güvenilirlik & Adli Risk Radarı:** Kiminle masaya oturduğunu bilmek isteyenler için; bot/şişirme analizi, sirkadiyen aktivite saatleri ve sahnelenen vitrin ile sızan gerçeklik arasındaki maske puanı.
+3. **Dijital Varlığını İnternetten Silme (`PROTOKOL 02: KÜL`):** İnternetteki tüm izini, eski sızıntılarını ve istenmeyen geçmişini hukuki ve teknik kanallardan kaynağından söndürüp küle gömmek isteyenler için.
+4. **Yeni Bir Kişilik & İtibar İnşası (`PROTOKOL 03: SEDEF`):** Geçmişi arkada bırakıp internette yepyeni, lekesiz, dokunulmaz ve güçlü bir dijital kimlik ve zırh kuşanmak isteyenler için.
+
+---
 
 ---
 
@@ -307,7 +315,7 @@ karşı** koşturur ve ham çıktıyı basar: `0` kanıtlandı · `1` döngü k�
 
 ---
 
-## 11 · API yüzeyi (75 HTTP ucu + 1 WebSocket)
+## 11 · API yüzeyi (79 HTTP ucu + 1 WebSocket)
 
 > Sayım biçimi: **75 = path+metot çifti**, **74 benzersiz yol**. Fark tek bir yoldan gelir: `/api/vault/status` hem `GET` (durum) hem `POST` (kilit aç/kapa) kabul eder. Sayı `backend.api.app.routes` üzerinden ölçülür.
 
@@ -402,7 +410,7 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 | `config/` | Yönlendirme, sağlayıcı kataloğu, karar yapılandırması, RTK politikası |
 
 **Tam ve aranabilir harita:** **[docs/envanter.html](docs/envanter.html)** —
-798 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
+814 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
 ile yenilenir, CI `--check` ile bayatlamayı yakalar.
 
 **Ayrıca:** [ARCHITECTURE.md](ARCHITECTURE.md) · [README_TECHNICAL.md](README_TECHNICAL.md) ·
