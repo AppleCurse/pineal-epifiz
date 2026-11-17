@@ -16,6 +16,7 @@ Dürüstlük:
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from agent_core.capabilities.adapters_osint import _flag
@@ -29,6 +30,8 @@ from agent_core.capabilities.base import (
     CapabilityResult,
     make_evidence,
 )
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["HandleProbeCapability", "PhoneProbeCapability"]
 

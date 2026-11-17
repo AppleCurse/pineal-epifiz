@@ -13,7 +13,6 @@
   import { hasEvidence, buildPillarSummaries, evidenceChainToReportItems } from '../lib/evidence';
   import { taskRuns, taskRunLabel, rackAvailability } from '../lib/taskRunStatus';
   import { checkVaultStatus, vaultExists } from '../lib/tauriBridge';
-  import { currentLang, t } from '../i18n';
 
   // --- 1. SOVEREIGNS (ASPASIA & LILITH) ---
   const SOVEREIGNS = [
@@ -1042,17 +1041,21 @@
       >
         🔑 API ANAHTARLARI & MODEL HARİTASI
       </button>
-      <button
-        class="settings-gear-btn lang-toggle-btn"
-        data-testid="lang-toggle-btn"
-        on:click={() => {
-          currentLang.update(l => l === 'tr' ? 'en' : 'tr');
-          playClick(500, 25);
-        }}
-        title="Dili Değiştir / Switch Language (TR / EN)"
-      >
-        🌐 {$currentLang.toUpperCase()}
-      </button>
+      <!--
+        [AUDIT 2026-11-17 · EK H.2-F] TR/EN dil düğmesi BURADAN KALDIRILDI.
+        Sebep (ölçüldü): `frontend/src/i18n.ts` 94 TR + 94 EN anahtarı taşıyor,
+        ama bunların yalnız **10'u** bugünkü arayüz metinleriyle birebir örtüşüyor
+        (appTitle, active, vaultSaving, liveStatus, playlistPlaceholder, confidence,
+        runningBtn, system, resonanceScore, statusRunning). Tablo eski yerleşim için
+        yazılmış: örn. `initiateBtn="ANALİZİ BAŞLAT"` ama ekrandaki düğme
+        "KAZIYI BAŞLAT". Düğme bu hâliyle `currentLang`'ı değiştiriyor, ekranda
+        değişen tek şey düğmenin kendi harfleri oluyordu — Tüzük §3.3'ün
+        yasakladığı "çalışır görünen kontrol".
+        Gerçek iki dillilik ayrı bir iştir: 94 anahtarın güncellenmesi + eksik
+        anahtarların eklenmesi + çocuk kilidi/KVKK metinlerinin çeviri incelemesi.
+        O iş bitmeden bu düğme geri konmamalı.
+      -->
+
       <button
         class="vault-lock-btn"
         class:locked={!vaultKnown || $vaultLocked}
