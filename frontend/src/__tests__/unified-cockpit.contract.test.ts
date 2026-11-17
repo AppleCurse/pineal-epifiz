@@ -94,6 +94,54 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
     expect(container.textContent).not.toContain('94%');
   });
 
+  it('does not mistake empty or status-only summaries for evidence', () => {
+    installFetch(() => undefined);
+    taskStatus.set({ follower_audit: {}, timing_forensics: { hour_distribution: {} }, depth_report: { status: 'failed' } });
+    const { container } = render(UnifiedPinealCockpit);
+    expect(container.querySelectorAll('.pillar-column.has-data')).toHaveLength(0);
+    expect(container.textContent).not.toContain('KANIT VAR');
+    expect(container.textContent).toContain('tek başına doğrulanmış kanıt değildir');
+  });
+
+  it('labels actual summary values without claiming verified evidence', () => {
+    installFetch(() => undefined);
+    taskStatus.set({ follower_audit: { avg_followers: 0 }, osint_footprint: { phone_exposed: false } });
+    const { container } = render(UnifiedPinealCockpit);
+    expect(container.querySelectorAll('.pillar-column.has-data')).toHaveLength(2);
+    expect(container.querySelector('.follower-pillar')?.textContent).toContain('Ortalama: 0');
+    expect(container.querySelector('.osint-pillar')?.textContent).toContain('Telefon: Kapalı');
+    expect(container.textContent).not.toContain('KANIT VAR');
+  });
+
+  it('clears previous results when a new analysis is accepted', async () => {
+    installFetch((path) => path === '/api/initiate' ? jsonResponse({ task_id: 'new-task' }) : undefined);
+    armEngaged.set(true);
+    taskStatus.set({ task_id: 'old-task', follower_audit: { bot_risk: 75 }, evidence_chain: [{ old: true }], channel_status: [{ channel: 'old', status: 'failed' }] });
+    render(UnifiedPinealCockpit);
+    await fireEvent.input(screen.getByPlaceholderText(/Hedef Profil URL/i), { target: { value: '@example' } });
+    await fireEvent.click(screen.getByRole('button', { name: /ANALİZİ BAŞLAT/i }));
+    await waitFor(() => expect(get(taskStatus)?.task_id).toBe('new-task'));
+    expect(get(taskStatus).follower_audit).toBeUndefined();
+    expect(get(taskStatus).evidence_chain).toBeUndefined();
+    expect(get(taskStatus).channel_status).toBeUndefined();
+  });
+
+  it('does not overwrite a result that arrives before the start response', async () => {
+    installFetch((path) => {
+      if (path === '/api/initiate') {
+        taskStatus.set({ task_id: 'new-task', status: 'completed', evidence_chain: [{ agent: 'early-result' }] });
+        return jsonResponse({ task_id: 'new-task' });
+      }
+      return undefined;
+    });
+    armEngaged.set(true);
+    render(UnifiedPinealCockpit);
+    await fireEvent.input(screen.getByPlaceholderText(/Hedef Profil URL/i), { target: { value: '@example' } });
+    await fireEvent.click(screen.getByRole('button', { name: /ANALİZİ BAŞLAT/i }));
+    await waitFor(() => expect(get(taskStatus)?.status).toBe('completed'));
+    expect(get(taskStatus).evidence_chain[0].agent).toBe('early-result');
+  });
+
   it('renders phone OSINT dossier card when phone probe returns metadata', async () => {
     const calls = installFetch((path) => {
       if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: false });
