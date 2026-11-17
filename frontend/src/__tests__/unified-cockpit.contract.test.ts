@@ -28,6 +28,24 @@ function installFetch(route: (path: string, init: RequestInit) => Response | und
   return calls;
 }
 
+/**
+ * [AUDIT 2026-11-17 · EK H.2-E] 18+ REŞİT beyan kutusu.
+ *
+ * `0acc47f4` KAZIYI BAŞLAT düğmesine `!isAdultDeclared` kilidi ekledi
+ * (Tüzük §2 kırmızı çizgisi) ama sözleşme testleri bu kapıyı bilmiyordu:
+ * iki test düğmeye beyan olmadan basıyor, `/api/initiate` hiç çağrılmadığı
+ * için "Görev kabul edildi" / "Ön-kontrol engeli" metinleri ekrana
+ * gelmiyordu. Kapı **kasıtlı** olduğundan testler yeni sözleşmeyi anlatır;
+ * susturulmaz. Aşağıda ayrıca kapının kendisini doğrulayan bir test var.
+ */
+async function declareAdult(container: HTMLElement): Promise<void> {
+  const box = container.querySelector<HTMLInputElement>(
+    '.adult-consent-badge input[type="checkbox"]'
+  );
+  if (!box) throw new Error('18+ REŞİT beyan kutusu bulunamadı (kapı kaldırılmış olabilir)');
+  await fireEvent.click(box);
+}
+
 beforeEach(() => {
   clientId.set('test_room');
   powerEngaged.set(true);
@@ -200,12 +218,13 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
       return undefined;
     });
 
-    render(UnifiedPinealCockpit);
+    const { container } = render(UnifiedPinealCockpit);
     const armBtn = screen.getByRole('button', { name: /ARM/i });
     await fireEvent.click(armBtn);
 
     const targetInput = screen.getByPlaceholderText(/Hedef Profil URL/i);
     await fireEvent.input(targetInput, { target: { value: 'https://www.instagram.com/realuser/' } });
+    await declareAdult(container);  // 18+ beyanı olmadan düğme kilitli (Tüzük §2)
 
     const launchBtn = screen.getByRole('button', { name: /KAZIYI BAŞLAT/i });
     await fireEvent.click(launchBtn);
@@ -336,17 +355,42 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
       return undefined;
     });
 
-    render(UnifiedPinealCockpit);
+    const { container } = render(UnifiedPinealCockpit);
     const armBtn = screen.getByRole('button', { name: /ARM/i });
     await fireEvent.click(armBtn);
 
     const targetInput = screen.getByPlaceholderText(/Hedef Profil URL/i);
     await fireEvent.input(targetInput, { target: { value: 'https://www.tiktok.com/@sample' } });
+    await declareAdult(container);  // 18+ beyanı olmadan düğme kilitli (Tüzük §2)
 
     const launchBtn = screen.getByRole('button', { name: /KAZIYI BAŞLAT/i });
     await fireEvent.click(launchBtn);
 
     expect(await screen.findByText(/Ön-kontrol engeli/i)).toBeTruthy();
     expect(calls.some((c) => c.method === 'POST' && c.path === '/api/initiate')).toBe(false);
+  });
+
+  it('keeps KAZIYI BAŞLAT locked until the 18+ adult declaration is ticked (Tüzük §2)', async () => {
+    const calls = installFetch((path) => {
+      if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: false });
+      return undefined;
+    });
+
+    const { container } = render(UnifiedPinealCockpit);
+    const armBtn = screen.getByRole('button', { name: /ARM/i });
+    await fireEvent.click(armBtn);
+
+    const targetInput = screen.getByPlaceholderText(/Hedef Profil URL/i);
+    await fireEvent.input(targetInput, { target: { value: 'https://www.instagram.com/realuser/' } });
+
+    const launchBtn = screen.getByRole('button', { name: /KAZIYI BAŞLAT/i }) as HTMLButtonElement;
+    // Beyan YOK → düğme kilitli ve `/api/initiate` hiç çağrılmıyor (kırmızı çizgi).
+    expect(launchBtn.disabled).toBe(true);
+    await fireEvent.click(launchBtn);
+    expect(calls.some((c) => c.method === 'POST' && c.path === '/api/initiate')).toBe(false);
+
+    // Beyan VAR → aynı düğme açılır: kapı süs değil, gerçek mandal.
+    await declareAdult(container);
+    await waitFor(() => expect(launchBtn.disabled).toBe(false));
   });
 });

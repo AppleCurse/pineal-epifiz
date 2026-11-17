@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { activeViewMode, targetUrl as storeTargetUrl, activeTargetUrl, isProcessing, apiFetch, clientId, taskStatus } from '../store';
+  import { activeViewMode, activeTargetUrl, isProcessing, apiFetch, clientId, taskStatus } from '../store';
   import { playClick } from '../lib/consoleAudio';
 
   // Seçili hizmet sekmesi

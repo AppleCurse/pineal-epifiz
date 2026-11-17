@@ -17,6 +17,7 @@ from typing import Any, Optional
 from pydantic import BaseModel
 
 from agent_core.services.llm_gateway import LLMGateway
+from agent_core.utils.security import redact_text
 
 ASPASIA_SYSTEM_PROMPT = """Sen ASPASIA'sın: PINEAL sisteminin kullanıcıyla konuşan başdanışmanı ve tek merkezli sohbet/komut arayüzüsün.
 
@@ -397,9 +398,12 @@ Yukarıdaki sistem durumu ve kullanıcı mesajını dikkate alarak ASPASIA kimli
                     "ve 'Kasayı Mühürle' butonuna basın; ardından sohbeti yeniden deneyin."
                 )
             else:
+                #: Ham exception metni ekrana/telemetriye SIZMAZ: `redact_text` ortam
+                #: sırlarını (API anahtarı, token, imzalı URL parçası) [REDACTED] yapar.
+                #: [:60] kırpması geri gelmedi — rehberlik tam, ama sır maskeli.
                 final_msg = (
                     "Tamam, şu an Aspasia'nın model bağlantısı çalışmadı. "
-                    f"Görünen hata: {err_str}. "
+                    f"Görünen hata: {redact_text(err_str)}. "
                     "Sistem verisini uydurmuyorum; bağlantıyı ve API anahtarını kontrol edip tekrar denemek en doğru adım."
                 )
             assessment = "fallback"
