@@ -23,11 +23,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # 1. KARAR: CLI-ONLY
 # ─────────────────────────────────────────────────────────────────────────────
 def test_lilith_cli_is_not_called_from_the_main_line():
-    """Ana hat Lilith'i çağırmaz (CLI-only kararının kod karşılığı).
+    """Ana hat Lilith’i çağırmaz (CLI-only kararının kod karşılığı).
 
     Tarama **AST** ile yapılır: yalnız gerçek `import run_lilith` /
     `from run_lilith import ...` ifadeleri sayılır. Yorumlarda geçen metin
-    (ör. "`run_lilith.py` bu adaptörleri seçer") çağrı DEĞİLDİR.
+    (ör. `„run_lilith.py“ bu adaptörleri seçer") çağrı DEĞİLDİR.
     """
     import ast
 
@@ -46,13 +46,11 @@ def test_lilith_cli_is_not_called_from_the_main_line():
                         offenders.append(str(path.relative_to(REPO_ROOT)))
     assert not offenders, f"ana hattan Lilith çağrısı var: {offenders}"
 
-
 def test_lilith_agent_is_not_in_the_executor_chain():
-    """Görev yürütücüsü Lilith ajanını çalıştırmaz."""
+    """Lilith kanıt zincirini bozmasın diye PinealExecutor içinde olmamalıdır (PR #140)."""
     source = (REPO_ROOT / "agent_core" / "task_executor.py").read_text(encoding="utf-8")
     assert "lilith_growth" not in source
     assert "LilithGrowthAgent" not in source
-
 
 def test_readme_states_the_cli_only_decision():
     """README kararı AÇIKÇA yazar (P3 teslim şartı)."""

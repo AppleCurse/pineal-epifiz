@@ -5,10 +5,12 @@
     apiToken, currentApiToken, apiFetch, clientId, wsUrl, logs, taskStatus,
     speechState, lastSpeech, voiceEnabled,
     isProcessing, powerEngaged, recordEngaged, agentStatuses, vaultLocked,
-    agentStatusSource, supportRequests, supportTaskId, refreshSupport, mergeTaskSnapshot
+    agentStatusSource, supportRequests, supportTaskId, refreshSupport, mergeTaskSnapshot,
+    activeViewMode
   } from './store';
   import { uplinkState } from './lib/telemetry';
   import UnifiedPinealCockpit from './components/UnifiedPinealCockpit.svelte';
+  import AtlasPortal from './components/AtlasPortal.svelte';
   import NeuralTelemetryBoard from './components/visualizers/NeuralTelemetryBoard.svelte';
   import SupportPanel from './components/SupportPanel.svelte';
 
@@ -426,35 +428,30 @@
 </script>
 
 <main class="fullscreen-cockpit-viewport">
-  <UnifiedPinealCockpit />
+  {#if $activeViewMode === 'cockpit'}
+    <UnifiedPinealCockpit />
 
-  <!--
-    Adli Telemetri & Sözleşme Köprüsü — ARTIK GERÇEKTEN GÖRÜNÜR.
-    [AUDIT 2026-10-07 · Madde 6] Bu katman eskiden
-    `<div style="display: none;" aria-hidden="true">` içindeydi: bileşen
-    DOM'a basılıyor ama KULLANICI HİÇ GÖREMİYORDU; yani telemetri
-    gözlemlenebilirliği fiilen yoktu ve "TELEMETRY OFFLINE" uyarısı bile
-    hiçbir zaman ekrana ulaşmıyordu. Pano artık görünür bir panel;
-    kapamak kullanıcının BİLİNÇLİ seçimiyle olur (aşağıdaki düğme).
-  -->
-  <button
-    class="telemetry-toggle"
-    on:click={() => (telemetryVisible = !telemetryVisible)}
-    aria-expanded={telemetryVisible}
-    aria-controls="neural-telemetry-panel"
-    title="Nöral telemetri panosunu göster / gizle"
-  >
-    {telemetryVisible ? '▼ TELEMETRİYİ GİZLE' : '▲ TELEMETRİYİ GÖSTER'}
-  </button>
+    <button
+      class="telemetry-toggle"
+      on:click={() => (telemetryVisible = !telemetryVisible)}
+      aria-expanded={telemetryVisible}
+      aria-controls="neural-telemetry-panel"
+      title="Nöral telemetri panosunu göster / gizle"
+    >
+      {telemetryVisible ? '▼ TELEMETRİYİ GİZLE' : '▲ TELEMETRİYİ GÖSTER'}
+    </button>
 
-  {#if telemetryVisible}
-    <div class="telemetry-panel" id="neural-telemetry-panel">
-      <NeuralTelemetryBoard telemetry={telemetryData} />
-    </div>
+    {#if telemetryVisible}
+      <div class="telemetry-panel" id="neural-telemetry-panel">
+        <NeuralTelemetryBoard telemetry={telemetryData} />
+      </div>
+    {/if}
+
+    <!-- [B0] Destek & güvenli devam kokpiti — açık talepler görünür ve yanıtlanabilir -->
+    <SupportPanel />
+  {:else}
+    <AtlasPortal />
   {/if}
-
-  <!-- [B0] Destek & güvenli devam kokpiti — açık talepler görünür ve yanıtlanabilir -->
-  <SupportPanel />
 </main>
 
 <style>
@@ -462,10 +459,11 @@
     width: 100vw;
     height: 100vh;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
     background: #000;
-    overflow: hidden;
+    overflow-y: auto;
+    overflow-x: hidden;
   }
 
   /* [AUDIT 2026-10-07 · Madde 6] Telemetri panosu ve açma/kapama düğmesi.

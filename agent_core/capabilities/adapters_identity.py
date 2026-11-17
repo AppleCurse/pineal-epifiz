@@ -49,16 +49,7 @@ class HandleProbeCapability(BaseCapability):
     )
 
     def availability(self) -> Availability:
-        """Bağımlılık yok → her zaman ``ok``. Kapı kararı PolicyKernel'indir.
-
-        [2026-10-23 · B1/B2 dersi] Eski adaptörler env bayrağını BURADA da
-        okuyordu; sonuç "iki farklı gerçek" oluyordu: politika onayla kapıyı
-        açsa bile `availability()` env'e bakıp `gate_disabled` diyebiliyordu.
-        Bu yetenek native (dış paket yok) olduğu için bağımlılık denetimi
-        gerekmez; `ENABLE_CROSS_PLATFORM` kapısını yalnız politika uygular ve
-        ret sebebi `denied_by` alanında makine-okunur görünür.
-        """
-        if self.id == "sensor.identity.handle_probe" and not _flag("ENABLE_CROSS_PLATFORM"):
+        if not _flag("ENABLE_CROSS_PLATFORM"):
             return Availability.unavailable("gate_disabled:ENABLE_CROSS_PLATFORM")
         return Availability.ok()
 
@@ -133,6 +124,11 @@ class PhoneProbeCapability(BaseCapability):
     )
 
     def availability(self) -> Availability:
+        try:
+            import phonenumbers  # noqa: F401
+        except Exception as exc:
+            logger.warning("PhoneProbeCapability dependency check failed: %s", type(exc).__name__)
+            return Availability.unavailable("dependency_missing:phonenumbers")
         return Availability.ok()
 
     async def run(self, ctx: CapabilityContext) -> CapabilityResult:

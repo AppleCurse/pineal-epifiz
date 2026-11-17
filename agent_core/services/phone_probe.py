@@ -48,6 +48,7 @@ class PhoneMetadata(BaseModel):
     line_type: str = "UNKNOWN"  # MOBILE, FIXED_LINE, VOIP, UNKNOWN
     is_valid: bool = False
     is_possible: bool = False
+    dependency_missing: bool = False
 
     model_config = ConfigDict(extra="allow")
 
@@ -134,6 +135,18 @@ def parse_phone_metadata(raw_phone: str, default_region: str = "TR") -> PhoneMet
             line_type=l_type,
             is_valid=valid,
             is_possible=possible,
+            dependency_missing=False,
+        )
+    except ModuleNotFoundError:
+        logger.warning("phonenumbers module missing: dependency_missing:phonenumbers")
+        return PhoneMetadata(
+            raw_input=raw_phone,
+            e164=cleaned,
+            national_format=raw_phone,
+            international_format=cleaned,
+            is_valid=False,
+            is_possible=False,
+            dependency_missing=True,
         )
     except Exception as e:
         logger.warning("phonenumbers parse failed: %s", type(e).__name__)
@@ -144,6 +157,7 @@ def parse_phone_metadata(raw_phone: str, default_region: str = "TR") -> PhoneMet
             international_format=cleaned,
             is_valid=False,
             is_possible=False,
+            dependency_missing=False,
         )
 
 

@@ -234,7 +234,7 @@ async def test_full_mission_runs_every_routed_agent(monkeypatch):
 
     executed = {
         name for name, agent in executor.agents.items()
-        if getattr(agent.execute, "await_count", 0) > 0 or getattr(agent.analyze, "await_count", 0) > 0
+        if (isinstance(getattr(agent.execute, "await_count", None), int) and agent.execute.await_count > 0) or (isinstance(getattr(agent.analyze, "await_count", None), int) and agent.analyze.await_count > 0)
     }
     # Planlanan ajanların tamamı koşuldu (çağrı zinciri bağlı).
     planned = set(status.planned_agents)

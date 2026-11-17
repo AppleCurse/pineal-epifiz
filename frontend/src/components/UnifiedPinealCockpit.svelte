@@ -13,6 +13,7 @@
   import { hasEvidence, buildPillarSummaries, evidenceChainToReportItems } from '../lib/evidence';
   import { taskRuns, taskRunLabel, rackAvailability } from '../lib/taskRunStatus';
   import { checkVaultStatus, vaultExists } from '../lib/tauriBridge';
+  import { currentLang, t } from '../i18n';
 
   // --- 1. SOVEREIGNS (ASPASIA & LILITH) ---
   const SOVEREIGNS = [
@@ -69,6 +70,10 @@
 
   // --- STATE ---
   let targetUrl = '';
+  let contextRituals = '';
+  let contextPlaylist = '';
+  let contextEnvies = '';
+  let showContextInputs = false;
   let telemetryVisible = true;
   let selectedAgentId: string | null = 'aspasia';
   // Task History & Report Factory Modal
@@ -138,6 +143,8 @@
   let serpapiKey = '';
   let exaKey = '';
   let xCookie = '';
+  let igCookie = '';
+  let isAdultDeclared = false;
 
   // llm_gateway._AGENT_DIRECT_PROVIDER_KEYS ile birebir uyumlu (aktif OpenAI-chat rotalı sağlayıcılar)
   const DIRECT_PROVIDERS = [
@@ -239,6 +246,7 @@
       if (serpapiKey.trim()) payload.serpapi_key = serpapiKey.trim();
       if (exaKey.trim()) payload.exa_key = exaKey.trim();
       if (xCookie.trim()) payload.x_cookie = xCookie.trim();
+      if (igCookie.trim()) payload.ig_sessionid = igCookie.trim();
 
       const res = await apiFetch('/api/vault', {
         method: 'POST',
@@ -256,6 +264,7 @@
       serpapiKey = '';
       exaKey = '';
       xCookie = '';
+      igCookie = '';
       await refreshVaultState();
       await loadRoutingSnapshot();
     } catch (e: any) {
@@ -272,7 +281,7 @@
 
   // Chat & Mission
   let chatMessages: Array<{ ts: string; sender: string; text: string }> = [
-    { ts: nowTime(), sender: 'Aspasia', text: 'Sistem çevrimiçi Müşteri. 12 saha ajanı ve Lilith konseyde hazır. Hedef profil girin veya dilediğiniz ajana doğrudan emir verin.' }
+    { ts: nowTime(), sender: 'Aspasia', text: 'Sistem çevrimiçi Müşteri. 12 saha ajanı operasyona hazır. (Lilith viral büyüme motoru bağımsız devrededir). Hedef profil girin veya dilediğiniz ajana doğrudan emir verin.' }
   ];
   let inputMessage = '';
   let isSending = false;
@@ -319,6 +328,10 @@
   $: readyCount = slotLabels.filter((label) => label === 'READY').length;
   $: errorCount = slotLabels.filter((label) => label === 'ERROR').length;
   const operatorDataLabel = 'OPERATÖR VERİSİ';
+
+  // Dynamic Waveform based on real telemetry resonance score and processing state
+  $: waveAmp = $isProcessing ? 22 : ($taskStatus?.resonance_score ? Math.round(Number($taskStatus.resonance_score) * 20) : 6);
+  $: dynamicWavePath = `M0,30 Q50,${30 - waveAmp} 100,30 T200,${30 + waveAmp} T300,${30 - Math.round(waveAmp * 0.7)} T400,30`;
   const sourceLabel = 'KAYNAK';
   $: statusSourceText = $agentStatusSource;
   const sourceDescriptions = {
@@ -455,6 +468,15 @@
       chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: 'Müşteri, operasyon başlatılamaz: ARM şalteri kapalı. Lütfen üst konsoldan ARM anahtarını açın.' }];
       return;
     }
+    if (!isAdultDeclared) {
+      chatMessages = [...chatMessages, {
+        ts: nowTime(),
+        sender: 'Aspasia',
+        text: 'Müşteri, operasyon kilitli: Hedefin 18 yaşından büyük (reşit) olduğu beyan edilmelidir. Çocuk profillerinin taranması yasal olarak engellenmiştir.'
+      }];
+      playHalt();
+      return;
+    }
     const platWarn = getPlatformSupportWarning(url, routingData?.cross_platform_enabled);
     if (platWarn) {
       chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: platWarn }];
@@ -503,9 +525,9 @@
         body: JSON.stringify({
           client_id: $clientId,
           url,
-          rituals: '',
-          playlist: '',
-          envies: '',
+          rituals: contextRituals.trim(),
+          playlist: contextPlaylist.trim(),
+          envies: contextEnvies.trim(),
           scraper_type: 'cross',
         })
       });
@@ -866,7 +888,7 @@
     <div class="hud-brand">
       <span class="pulse-beacon" class:active={$isProcessing}></span>
       <div class="brand-titles">
-        <h1 class="brand-title">PINEAL HERETIC // MASTER MISSION COCKPIT</h1>
+        <h1 class="brand-title">ATLAS EPİFİZ // PINEAL OBSERVATORY</h1>
         <span class="live-status-badge">{plainLiveStatus}</span>
       </div>
     </div>
@@ -900,14 +922,49 @@
           {isProbingPhone ? '✦ TARANIYOR...' : '✦ NUMARAYI SORGULA'}
         </button>
       {/if}
+      <label class="adult-consent-badge" title="Hedef kişinin 18 yaşından büyük (reşit) olduğu beyanıdır.">
+        <input type="checkbox" bind:checked={isAdultDeclared} />
+        <span>18+ REŞİT</span>
+      </label>
       <button
         class="cassette-launch-btn"
         class:is-running={$isProcessing}
         on:click={launchAnalysis}
-        disabled={$isProcessing || !targetUrl.trim()}
+        disabled={$isProcessing || !targetUrl.trim() || !isAdultDeclared}
       >
         {$isProcessing ? '▲ KAZILIYOR...' : '▲ KAZIYI BAŞLAT'}
       </button>
+      <button
+        type="button"
+        class="context-toggle-btn"
+        class:is-open={showContextInputs}
+        on:click={() => showContextInputs = !showContextInputs}
+        title="Kullanıcı Ritüelleri, Çalma Listesi ve Derin Hedef Bağlamını Ekle"
+      >
+        {showContextInputs ? '▼ BAĞLAMI KAPAT' : '✦ BAĞLAM (RİTÜEL / MÜZİK / HEDEF)'}
+      </button>
+      {#if showContextInputs}
+        <div class="context-inputs-flyout">
+          <input
+            type="text"
+            class="context-mini-input"
+            bind:value={contextRituals}
+            placeholder="Kişisel Ritüeller (örn: Gece okumaları, felsefe, çay)..."
+          />
+          <input
+            type="text"
+            class="context-mini-input"
+            bind:value={contextPlaylist}
+            placeholder="Çalma Listesi / Müzik (örn: Neşet Ertaş, Klasik, Ambient)..."
+          />
+          <input
+            type="text"
+            class="context-mini-input"
+            bind:value={contextEnvies}
+            placeholder="Derin Hedef / Arzu (örn: Sahici ve derin bağ kurmak)..."
+          />
+        </div>
+      {/if}
       {#if platformWarning}
         <div class="platform-warning" role="status">{platformWarning}</div>
       {/if}
@@ -960,6 +1017,16 @@
         <span class="hm-val">{missionElapsedStr}</span>
       </div>
       <button
+        class="settings-gear-btn"
+        on:click={() => {
+          activeViewMode.set('observatory');
+          if (typeof localStorage !== 'undefined') localStorage.setItem('pineal_view_mode', 'observatory');
+        }}
+        title="Atlas Portalına / Sade Karşılama Ekranına Dön"
+      >
+        🏛️ ATLAS PORTALI
+      </button>
+      <button
         class="settings-gear-btn history-hub-btn"
         data-testid="open-history-btn"
         on:click={() => openHistoryModal('tasks')}
@@ -974,6 +1041,17 @@
         title="Çoklu LLM Sağlayıcı Anahtarları, Arama Motorları ve Ajan-Model Haritası"
       >
         🔑 API ANAHTARLARI & MODEL HARİTASI
+      </button>
+      <button
+        class="settings-gear-btn lang-toggle-btn"
+        data-testid="lang-toggle-btn"
+        on:click={() => {
+          currentLang.update(l => l === 'tr' ? 'en' : 'tr');
+          playClick(500, 25);
+        }}
+        title="Dili Değiştir / Switch Language (TR / EN)"
+      >
+        🌐 {$currentLang.toUpperCase()}
       </button>
       <button
         class="vault-lock-btn"
@@ -1232,7 +1310,8 @@
             </defs>
             <path
               class="wave-path"
-              d="M0,30 Q50,10 100,30 T200,30 T300,30 T400,30"
+              class:processing={$isProcessing}
+              d={dynamicWavePath}
               stroke="url(#pulseGrad)"
               stroke-width="2"
               fill="none"
@@ -1241,7 +1320,8 @@
             />
             <path
               class="wave-glow"
-              d="M0,30 Q50,10 100,30 T200,30 T300,30 T400,30"
+              class:processing={$isProcessing}
+              d={dynamicWavePath}
               stroke="#ec4899"
               stroke-width="1"
               fill="none"
@@ -1861,7 +1941,11 @@
                   <input type="password" placeholder="..." bind:value={exaKey} />
                 </label>
                 <label class="provider-field">
-                  <span class="pf-top"><span>X / Platform Cookie (opsiyonel)</span></span>
+                  <span class="pf-top"><span>Instagram Session / Cookie (sessionid)</span></span>
+                  <input type="password" placeholder="sessionid=... veya doğrudan sessionid" bind:value={igCookie} />
+                </label>
+                <label class="provider-field">
+                  <span class="pf-top"><span>X / Twitter Cookie (auth_token / ct0)</span></span>
                   <input type="password" placeholder="auth_token=...; ct0=..." bind:value={xCookie} />
                 </label>
               </div>
@@ -2015,6 +2099,36 @@
   .phone-launch-btn:hover:not(:disabled) { box-shadow: 0 0 30px rgba(236,72,153,0.55); }
   .phone-launch-btn.is-running { background: linear-gradient(135deg, var(--amber), #d97706); animation: btn-pulse 1.2s ease-in-out infinite; }
   .cassette-launch-btn:disabled, .phone-launch-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  .adult-consent-badge {
+    display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.45rem 0.65rem;
+    font-size: 0.68rem; font-weight: 800; color: var(--gold);
+    background: rgba(212,175,55,0.08); border: 1px solid rgba(212,175,55,0.3);
+    border-radius: 4px; cursor: pointer; user-select: none; white-space: nowrap;
+  }
+  .adult-consent-badge input { cursor: pointer; accent-color: var(--gold); }
+
+  .context-toggle-btn {
+    padding: 0.5rem 0.8rem; font-family: inherit; font-size: 0.68rem; font-weight: 700;
+    color: var(--cyan); background: rgba(6,182,212,0.1); border: 1px solid rgba(6,182,212,0.3);
+    border-radius: 4px; cursor: pointer; transition: all 0.2s; white-space: nowrap;
+  }
+  .context-toggle-btn:hover, .context-toggle-btn.is-open {
+    background: rgba(6,182,212,0.22); border-color: var(--cyan); box-shadow: 0 0 10px rgba(6,182,212,0.3);
+  }
+  .context-inputs-flyout {
+    position: absolute; top: calc(100% + 8px); left: 0; right: 0; z-index: 50;
+    display: flex; gap: 0.5rem; padding: 0.75rem; background: rgba(10,14,20,0.98);
+    border: 1px solid var(--border-glow); border-radius: 6px; box-shadow: 0 8px 30px rgba(0,0,0,0.9);
+  }
+  .context-mini-input {
+    flex: 1; padding: 0.5rem 0.8rem; background: rgba(5,7,12,0.9);
+    border: 1px solid rgba(255,255,255,0.12); border-radius: 4px;
+    color: var(--text-primary); font-family: inherit; font-size: 0.78rem; outline: none;
+  }
+  .context-mini-input:focus {
+    border-color: var(--cyan); box-shadow: 0 0 0 1px var(--cyan);
+  }
 
   /* Hud Meters */
   .hud-meters { display: flex; align-items: center; gap: 1rem; justify-content: flex-end; }

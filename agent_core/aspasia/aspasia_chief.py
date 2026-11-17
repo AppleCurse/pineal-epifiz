@@ -388,12 +388,20 @@ Yukarıdaki sistem durumu ve kullanıcı mesajını dikkate alarak ASPASIA kimli
             except Exception:  # filtre asla sohbeti düşürmez
                 pass
         except Exception as e:
-            # Fallback Aspasia Response
-            final_msg = (
-                "Tamam, şu an Aspasia'nın model bağlantısı çalışmadı. "
-                f"Görünen hata: {str(e)[:60]}. "
-                "Sistem verisini uydurmuyorum; bağlantıyı kontrol edip tekrar denemek en doğru adım."
-            )
+            # Fallback Aspasia Response - P0 Düzeltmesi: [:60] kırpması kaldırıldı, tam rehberlik eklendi.
+            err_str = str(e).strip()
+            if "REAL_LLM_CALL_NOT_EXECUTED" in err_str or "VAULT_LOCKED" in err_str:
+                final_msg = (
+                    "Aspasia model bağlantısı beklemede. Canlı LLM çağrıları kapalı veya Kasa mühürsüz. "
+                    "Çözüm: Sol üstteki 'Güvenli Kasa (Vault)' alanına geçerli bir OpenRouter/OpenAI API anahtarı girin "
+                    "ve 'Kasayı Mühürle' butonuna basın; ardından sohbeti yeniden deneyin."
+                )
+            else:
+                final_msg = (
+                    "Tamam, şu an Aspasia'nın model bağlantısı çalışmadı. "
+                    f"Görünen hata: {err_str}. "
+                    "Sistem verisini uydurmuyorum; bağlantıyı ve API anahtarını kontrol edip tekrar denemek en doğru adım."
+                )
             assessment = "fallback"
 
         if isinstance(room_state, dict):

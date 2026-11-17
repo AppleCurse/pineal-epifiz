@@ -2885,6 +2885,8 @@ async def api_initiate(req: InitiatePayload, request: Request):
 class VaultPayload(BaseModel):
     client_id: str
     x_cookie: str = ""
+    ig_cookie: str = ""
+    ig_sessionid: str = ""
     api_key: str = ""
     tavily_key: str = ""
     serpapi_key: str = ""
@@ -2911,12 +2913,21 @@ async def api_vault(req: VaultPayload):
             {"error": {"code": "PLACEHOLDER_KEY", "message": "KASA REDDETTİ: cookie havuzunda gerçek anahtar malzemesi yok (boş/placeholder)."}},
             status_code=400,
         )
+    ig_session = req.ig_sessionid or req.ig_cookie
+    if ig_session and not _is_real_key(ig_session):
+        return JSONResponse(
+            {"error": {"code": "PLACEHOLDER_KEY", "message": "KASA REDDETTİ: Instagram oturum çerezi placeholder (boş/örnek); gerçek sessionid girin."}},
+            status_code=400,
+        )
     vault = get_vault(req.client_id)
     executor = get_executor(req.client_id)
-    credential_submitted = bool(req.x_cookie or req.api_key)
+    credential_submitted = bool(req.x_cookie or req.api_key or ig_session)
     if req.x_cookie:
         vault["x_cookie"] = req.x_cookie
-        broadcast_log(req.client_id, "INFO", "KASA: Cookie belleğe mühürlendi.")
+        broadcast_log(req.client_id, "INFO", "KASA: Twitter/X Cookie belleğe mühürlendi.")
+    if ig_session:
+        vault["ig_sessionid"] = ig_session.strip()
+        broadcast_log(req.client_id, "INFO", "KASA: Instagram oturum çerezi (sessionid) belleğe mühürlendi.")
     if req.api_key:
         executor.llm_gateway.set_key(req.api_key, unlock_live=True)
         if shadow_executor is not None:

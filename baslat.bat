@@ -3,7 +3,7 @@ setlocal
 chcp 65001 >nul
 cd /d "%~dp0"
 echo ==============================================
-echo PINEAL-HERETIC v2.0 - COMMAND CENTER INITIATION
+echo ATLAS-EPİFİZ v3.0.0-rc.2 - COMMAND CENTER INITIATION
 echo ==============================================
 echo.
 
