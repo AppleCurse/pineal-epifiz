@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import TaskEvidence from './TaskEvidence.svelte';
   import { get } from 'svelte/store';
   import {
     apiToken, setApiToken, currentApiToken, apiFetch, isAuthFailure, clientId, wsUrl, logs, taskStatus,
@@ -301,6 +302,29 @@
 
   const INSUFFICIENT_EVIDENCE = 'YETERSİZ KANIT';
 
+  // Özet alanlarının varlığı, kanonik ve doğrulanmış kanıt anlamına gelmez.
+  function hasSummaryValue(val: any): boolean {
+    if (val === null || val === undefined) return false;
+    if (typeof val === 'number') return Number.isFinite(val);
+    if (typeof val === 'boolean') return true;
+    if (typeof val === 'string') return val.trim().length > 0;
+    if (Array.isArray(val)) return val.some(hasSummaryValue);
+    if (typeof val === 'object') return Object.values(val).some(hasSummaryValue);
+    return false;
+  }
+
+  function getPillarHasData(pillarId: string): boolean {
+    const summaries: Record<string, [any, string[]]> = {
+      follower: [followerAudit, ['avg_followers', 'authenticity_score', 'bot_risk']],
+      timing: [timingForensics, ['hour_distribution', 'automation_score', 'timezone_inferred']],
+      depth: [depthReport, ['personality_type', 'depth_score', 'mask_score']],
+      visual: [visualEvidence, ['consistency_score', 'deepfake_risk', 'aesthetic_signature']],
+      shadow: [shadowProfile, ['shadow_accounts', 'link_weight', 'coordination_score']],
+      osint: [osintFootprint, ['usernames', 'email_leaks', 'phone_exposed']],
+      resonance: [resonanceCalc, ['resonance_angle', 'alignment_score', 'vector_dimensions']],
+    };
+    const entry = summaries[pillarId];
+    return !!entry && !!entry[0] && entry[1].some(key => hasSummaryValue(entry[0][key]));
   function getPillarHasData(pillarId: string): boolean {
     return Boolean((pillarSummaries as any)?.[pillarId]?.hasData);
   }
@@ -517,6 +541,12 @@
     missionStartTime = Date.now();
     playRunning();
 
+    chatMessages = [...chatMessages, {
+      ts: nowTime(),
+      sender: 'Aspasia',
+      text: `Görev başlatma isteği gönderiliyor: [${url}]. Çalışan kanallar ve ajanlar sunucudan bildirilince gösterilecek.`
+    }];
+
     try {
       const res = await apiFetch('/api/initiate', {
         method: 'POST',
@@ -538,7 +568,9 @@
       }
       const data = await res.json();
       if (data.task_id) {
-        taskStatus.update(s => ({ ...(s || {}), task_id: data.task_id, status: 'processing' }));
+        // Aynı görevin WS sonucu yanıttan önce gelmiş olabilir; onu ezme.
+        // Yeni görevde önceki görevin kanıt ve özetlerini asla taşıma.
+        taskStatus.update(s => s?.task_id === data.task_id ? s : mergeTaskSnapshot(null, { task_id: data.task_id, status: 'processing' }));
       }
       chatMessages = [...chatMessages, {
         ts: nowTime(),
@@ -889,6 +921,7 @@
       <div class="brand-titles">
         <h1 class="brand-title">ATLAS EPİFİZ // PINEAL OBSERVATORY</h1>
         <span class="live-status-badge">{plainLiveStatus}</span>
+        <p class="intro-help">Pineal, erişilebilen açık kaynak verilerini araştırmanıza yardımcı olur. Başlamak için hedef girin, ARM kilidini açın ve analizi başlatın. Kullanılabilir kaynaklar kurulum ve platforma göre değişir.</p>
       </div>
     </div>
 
@@ -931,7 +964,7 @@
         on:click={launchAnalysis}
         disabled={$isProcessing || !targetUrl.trim() || !isAdultDeclared}
       >
-        {$isProcessing ? '▲ KAZILIYOR...' : '▲ KAZIYI BAŞLAT'}
+        {$isProcessing ? '▲ ANALİZ EDİLİYOR...' : '▲ ANALİZİ BAŞLAT'}
       </button>
       <button
         type="button"
@@ -1430,6 +1463,28 @@
         </div>
       {/if}
 
+      <!-- SEÇİLİ AJANA DİREKT EMİR (DISPATCH) ARAYÜZÜ -->
+      <div class="direct-dispatch-console">
+        <div class="console-header-bar">
+          <span class="ca-tag">DİREKT MUHATAP: <strong>{(selectedAgentId || 'aspasia').toUpperCase()}</strong></span>
+          <span class="ca-hint">Doğrudan ajan yürütmesi şu anda bağlı değil; Aspasia sohbetini kullanabilirsiniz.</span>
+        </div>
+        <div class="console-input-row">
+          <input
+            type="text"
+            class="console-text-input"
+            bind:value={commandInstruction}
+            placeholder="> {(selectedAgentId || 'aspasia').toUpperCase()} için özel emir veya soru..."
+            disabled={isDispatching}
+            on:keydown={(e) => { if (e.key === 'Enter') dispatchAgentTask(); }}
+          />
+          <input
+            type="text"
+            class="console-twin-input"
+            bind:value={commandTwinUrl}
+            placeholder="İkiz URL (Opsiyonel)..."
+            disabled={isDispatching}
+          />
       <!-- CANLI KANIT ZİNCİRİ (BACKEND evidence_chain) -->
       <div class="chain-of-thought-section">
         <div class="cot-header">
@@ -1509,6 +1564,8 @@
         <small class="pillars-sub">Ajanlar + 7 deterministik dalga motoru (Frequency, Seismos, Void, Strata, Gravity, Pulse, Key) bulgularını toplar</small>
       </div>
 
+      <p class="summary-disclaimer">Bu kartlar analiz özetleridir; tek başına doğrulanmış kanıt değildir. Skorların kaynakları ve güven düzeyi burada gösterilmiyor.</p>
+
       <!-- 7 ADLİ SÜTUN GRİD -->
       <div class="pillars-grid">
         {#each PILLARS as p}
@@ -1518,6 +1575,7 @@
             <div class="pillar-header">
               <span class="pillar-icon">{p.icon}</span>
               <span class="pillar-label">{p.label}</span>
+              <span class="pillar-badge">{hasData ? 'ÖZET VERİ' : 'VERİ YOK'}</span>
               <span class="pillar-badge">{hasData ? `KANIT (${summary.evidenceCount})` : 'YETERSİZ / YOK'}</span>
             </div>
             <div class="pillar-content">
@@ -1531,7 +1589,7 @@
               {#if hasData}
                 <div class="evidence-preview">
                   {#if p.id === 'follower' && followerAudit}
-                    <div class="evidence-item"><strong>Ortalama:</strong> {followerAudit.avg_followers || '—'}</div>
+                    <div class="evidence-item"><strong>Ortalama:</strong> {followerAudit.avg_followers ?? '—'}</div>
                     <div class="evidence-item"><strong>Gerçeklik:</strong> {followerAudit.authenticity_score !== undefined ? followerAudit.authenticity_score + '%' : '—'}</div>
                     <div class="evidence-item"><strong>Bot Riski:</strong> {followerAudit.bot_risk !== undefined ? followerAudit.bot_risk + '%' : '—'}</div>
                   {:else if p.id === 'timing' && timingForensics}
@@ -1553,7 +1611,7 @@
                   {:else if p.id === 'osint' && osintFootprint}
                     <div class="evidence-item"><strong>Kullanıcı Adları:</strong> {osintFootprint.usernames?.length || 0}</div>
                     <div class="evidence-item"><strong>E-posta Sızıntıları:</strong> {osintFootprint.email_leaks?.length || 0}</div>
-                    <div class="evidence-item"><strong>Telefon:</strong> {osintFootprint.phone_exposed ? 'Açık' : 'Kapalı'}</div>
+                    <div class="evidence-item"><strong>Telefon:</strong> {osintFootprint.phone_exposed == null ? 'Bilinmiyor' : osintFootprint.phone_exposed ? 'Açık' : 'Kapalı'}</div>
                   {:else if p.id === 'resonance' && resonanceCalc}
                     <div class="evidence-item"><strong>Rezonans Açısı:</strong> {resonanceCalc.resonance_angle !== undefined ? resonanceCalc.resonance_angle + '°' : '—'}</div>
                     <div class="evidence-item"><strong>Uyum Skoru:</strong> {(resonanceCalc.alignment_score ?? resonanceCalc.compatibility_score) !== undefined ? (resonanceCalc.alignment_score ?? resonanceCalc.compatibility_score) + '%' : '—'}</div>
@@ -1577,6 +1635,8 @@
           </div>
         {/each}
       </div>
+
+      <TaskEvidence task={$taskStatus} />
 
       <!-- ASPASIA CANLI SOHBET -->
       <div class="aspasia-chat-section">
@@ -2066,6 +2126,7 @@
   @keyframes beacon-pulse { 0%,100% { opacity: 0.4; transform: scale(1); } 50% { opacity: 0.9; transform: scale(1.15); } }
   @keyframes beacon-active { 0%,100% { opacity: 0.7; transform: scale(1); } 50% { opacity: 1; transform: scale(1.2); } }
 
+  .intro-help, .summary-disclaimer { color: #b3c1d4; font-size: 0.75rem; line-height: 1.5; margin-top: 0.4rem; }
   .brand-title { font-size: clamp(1rem, 2.2vw, 1.4rem); font-weight: 800; letter-spacing: 0.12em; color: var(--text-primary); text-transform: uppercase; }
   .live-status-badge {
     display: inline-block; margin-top: 0.3rem; padding: 0.25rem 0.6rem;
@@ -2158,6 +2219,7 @@
     border: 1px solid var(--border-dim); border-radius: 8px;
     padding: 1rem; overflow: hidden; position: relative;
   }
+  .col-right { overflow-y: auto; }
   .column-deck::before {
     content: ''; position: absolute; inset: 0; border-radius: 8px;
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.03), inset 0 -1px 0 rgba(0,0,0,0.3);
@@ -2477,6 +2539,8 @@
     .field-matrix-grid { grid-template-columns: repeat(3, 1fr); }
   }
   @media (max-width: 1300px) {
+    .command-deck { height: auto; min-height: 100vh; width: 100%; }
+    .column-deck { overflow: visible; }
     .master-hud-header { grid-template-columns: 1fr; gap: 1rem; text-align: center; }
     .target-cassette-bar { justify-content: center; flex-wrap: wrap; }
     .hud-meters { justify-content: center; }
@@ -2487,6 +2551,10 @@
     .pillars-grid { grid-template-columns: repeat(2, 1fr); }
     .field-matrix-grid { grid-template-columns: repeat(2, 1fr); }
     .form-dual-fields { grid-template-columns: 1fr; }
+    .master-hud-header { padding: 1rem; }
+    .hud-meters { flex-wrap: wrap; }
+    .cassette-text-input { width: 100%; max-width: none; }
+    .cassette-input-wrap { width: 100%; }
   }
 
   .settings-gear-btn {

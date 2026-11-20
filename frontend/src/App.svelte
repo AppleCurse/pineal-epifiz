@@ -466,6 +466,10 @@
     overflow-x: hidden;
   }
 
+  @media (max-width: 1300px) {
+    .fullscreen-cockpit-viewport { height: 100dvh; width: 100%; display: block; overflow-y: auto; overflow-x: hidden; }
+  }
+
   /* [AUDIT 2026-10-07 · Madde 6] Telemetri panosu ve açma/kapama düğmesi.
      Sol üst köşede kompakt konumlandırıldı — alttaki Aspasia sohbet ekranını ASLA kapatmaz. */
   .telemetry-panel {
