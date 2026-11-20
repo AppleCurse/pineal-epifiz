@@ -325,8 +325,6 @@
     };
     const entry = summaries[pillarId];
     return !!entry && !!entry[0] && entry[1].some(key => hasSummaryValue(entry[0][key]));
-  function getPillarHasData(pillarId: string): boolean {
-    return Boolean((pillarSummaries as any)?.[pillarId]?.hasData);
   }
 
   let preflightResult: any = null;
@@ -1463,28 +1461,6 @@
         </div>
       {/if}
 
-      <!-- SEÇİLİ AJANA DİREKT EMİR (DISPATCH) ARAYÜZÜ -->
-      <div class="direct-dispatch-console">
-        <div class="console-header-bar">
-          <span class="ca-tag">DİREKT MUHATAP: <strong>{(selectedAgentId || 'aspasia').toUpperCase()}</strong></span>
-          <span class="ca-hint">Doğrudan ajan yürütmesi şu anda bağlı değil; Aspasia sohbetini kullanabilirsiniz.</span>
-        </div>
-        <div class="console-input-row">
-          <input
-            type="text"
-            class="console-text-input"
-            bind:value={commandInstruction}
-            placeholder="> {(selectedAgentId || 'aspasia').toUpperCase()} için özel emir veya soru..."
-            disabled={isDispatching}
-            on:keydown={(e) => { if (e.key === 'Enter') dispatchAgentTask(); }}
-          />
-          <input
-            type="text"
-            class="console-twin-input"
-            bind:value={commandTwinUrl}
-            placeholder="İkiz URL (Opsiyonel)..."
-            disabled={isDispatching}
-          />
       <!-- CANLI KANIT ZİNCİRİ (BACKEND evidence_chain) -->
       <div class="chain-of-thought-section">
         <div class="cot-header">
@@ -1570,13 +1546,13 @@
       <div class="pillars-grid">
         {#each PILLARS as p}
           {@const summary = (pillarSummaries as any)[p.id]}
-          {@const hasData = Boolean(summary?.hasData)}
+          {@const hasData = getPillarHasData(p.id) || Boolean(summary?.hasData)}
           <div class="pillar-column {hasData ? 'has-data' : ''} {p.id}-pillar" style="--pillar-color: {p.color};">
             <div class="pillar-header">
               <span class="pillar-icon">{p.icon}</span>
               <span class="pillar-label">{p.label}</span>
               <span class="pillar-badge">{hasData ? 'ÖZET VERİ' : 'VERİ YOK'}</span>
-              <span class="pillar-badge">{hasData ? `KANIT (${summary.evidenceCount})` : 'YETERSİZ / YOK'}</span>
+              <span class="pillar-badge">{hasData ? `KANIT (${summary?.evidenceCount ?? 0})` : 'YETERSİZ / YOK'}</span>
             </div>
             <div class="pillar-content">
               <div class="pillar-epistemic-meta">

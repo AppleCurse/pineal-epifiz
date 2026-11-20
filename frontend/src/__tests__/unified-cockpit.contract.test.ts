@@ -135,7 +135,8 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
     installFetch((path) => path === '/api/initiate' ? jsonResponse({ task_id: 'new-task' }) : undefined);
     armEngaged.set(true);
     taskStatus.set({ task_id: 'old-task', follower_audit: { bot_risk: 75 }, evidence_chain: [{ old: true }], channel_status: [{ channel: 'old', status: 'failed' }] });
-    render(UnifiedPinealCockpit);
+    const { container } = render(UnifiedPinealCockpit);
+    await declareAdult(container);
     await fireEvent.input(screen.getByPlaceholderText(/Hedef Profil URL/i), { target: { value: '@example' } });
     await fireEvent.click(screen.getByRole('button', { name: /ANALİZİ BAŞLAT/i }));
     await waitFor(() => expect(get(taskStatus)?.task_id).toBe('new-task'));
@@ -153,7 +154,8 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
       return undefined;
     });
     armEngaged.set(true);
-    render(UnifiedPinealCockpit);
+    const { container } = render(UnifiedPinealCockpit);
+    await declareAdult(container);
     await fireEvent.input(screen.getByPlaceholderText(/Hedef Profil URL/i), { target: { value: '@example' } });
     await fireEvent.click(screen.getByRole('button', { name: /ANALİZİ BAŞLAT/i }));
     await waitFor(() => expect(get(taskStatus)?.status).toBe('completed'));
@@ -274,7 +276,7 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
     await fireEvent.input(targetInput, { target: { value: 'https://www.instagram.com/realuser/' } });
     await declareAdult(container);  // 18+ beyanı olmadan düğme kilitli (Tüzük §2)
 
-    const launchBtn = screen.getByRole('button', { name: /KAZIYI BAŞLAT/i });
+    const launchBtn = screen.getByRole('button', { name: /ANALİZİ BAŞLAT/i });
     await fireEvent.click(launchBtn);
 
     expect(await screen.findByText(/Görev kabul edildi \(ID: tsk-honest-42\)/i)).toBeTruthy();
@@ -411,14 +413,14 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
     await fireEvent.input(targetInput, { target: { value: 'https://www.tiktok.com/@sample' } });
     await declareAdult(container);  // 18+ beyanı olmadan düğme kilitli (Tüzük §2)
 
-    const launchBtn = screen.getByRole('button', { name: /KAZIYI BAŞLAT/i });
+    const launchBtn = screen.getByRole('button', { name: /ANALİZİ BAŞLAT/i });
     await fireEvent.click(launchBtn);
 
     expect(await screen.findByText(/Ön-kontrol engeli/i)).toBeTruthy();
     expect(calls.some((c) => c.method === 'POST' && c.path === '/api/initiate')).toBe(false);
   });
 
-  it('keeps KAZIYI BAŞLAT locked until the 18+ adult declaration is ticked (Tüzük §2)', async () => {
+  it('keeps ANALİZİ BAŞLAT locked until the 18+ adult declaration is ticked (Tüzük §2)', async () => {
     const calls = installFetch((path) => {
       if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: false });
       return undefined;
@@ -431,7 +433,7 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
     const targetInput = screen.getByPlaceholderText(/Hedef Profil URL/i);
     await fireEvent.input(targetInput, { target: { value: 'https://www.instagram.com/realuser/' } });
 
-    const launchBtn = screen.getByRole('button', { name: /KAZIYI BAŞLAT/i }) as HTMLButtonElement;
+    const launchBtn = screen.getByRole('button', { name: /ANALİZİ BAŞLAT/i }) as HTMLButtonElement;
     // Beyan YOK → düğme kilitli ve `/api/initiate` hiç çağrılmıyor (kırmızı çizgi).
     expect(launchBtn.disabled).toBe(true);
     await fireEvent.click(launchBtn);
