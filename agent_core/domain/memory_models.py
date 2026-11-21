@@ -171,6 +171,7 @@ class TaskSnapshot(BaseModel):
     required_threshold: float = 0.70
     agent_runs: Dict[str, AgentRun] = {}
     evidence_chain: List[Dict[str, Any]] = []
+    target_profile: Optional[Dict[str, Any]] = None
     holistic_profile: Optional[HolisticProfile] = None
     follower_audit: Optional[Dict[str, Any]] = None
     timing_forensics: Optional[Dict[str, Any]] = None
@@ -178,6 +179,7 @@ class TaskSnapshot(BaseModel):
     depth_report: Optional[Dict[str, Any]] = None
     visual_evidence: Optional[Dict[str, Any]] = None
     shadow_profile: Optional[Dict[str, Any]] = None
+    lilith_report: Optional[Dict[str, Any]] = None
     osint_footprint: Optional[Dict[str, Any]] = None
     telemetry: Optional[Dict[str, Any]] = None
     #: [P0 · DENETİM 2026-10-16] Kanal durumu defteri: her sensör/araştırma

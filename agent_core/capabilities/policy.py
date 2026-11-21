@@ -23,7 +23,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
-__all__ = ["PolicyDecision", "PolicyState", "PolicyKernel", "BUILTIN_GATES", "MANAGED_GATE_FLAGS"]
+__all__ = [
+    "PolicyDecision",
+    "PolicyState",
+    "PolicyKernel",
+    "BUILTIN_GATES",
+    "MANAGED_GATE_FLAGS",
+    "LOCAL_CORE_FLAGS",
+    "EXTERNAL_KEYED_FLAGS",
+]
 
 
 #: Çekirdeğin bildiği yapısal kapılar. Bunun dışındaki her şey fail-closed reddedilir.
@@ -73,6 +81,34 @@ MANAGED_GATE_FLAGS: tuple[str, ...] = (
     # [DENETİM 2026-10-14 · B1] Ses kapıları adaptörlerde vardı, listede YOKTU:
     # `/api/speech/*` kendi durumunu elle kurduğu için çalışıyordu ama MCP ve
     # `policy_state()` çağıran her yol bu yetenekleri KALICI kapalı görüyordu.
+    "ENABLE_LOCAL_TTS",
+    "ENABLE_LOCAL_STT",
+)
+
+#: Profil 1 — Anahtarsız / Yerel Çekirdek kapıları.
+#: Harici ücretli API anahtarı veya operatör hesap şifresi istemeyen,
+#: `PINEAL_CAPABILITY_PROFILE=local_core` ile tek şalterde açılabilen modüller.
+LOCAL_CORE_FLAGS: tuple[str, ...] = (
+    "ENABLE_CROSS_PLATFORM",
+    "ENABLE_COMPANY_TARGETING",
+    "ENABLE_REPORT_FACTORY",
+    "ENABLE_MAIGRET",
+    "ENABLE_HOLEHE",
+    "ENABLE_CRAWL4AI",
+    "ENABLE_SCRAPLING",
+    "ENABLE_MEDIA_FORENSICS",
+)
+
+#: Profil 2 — Hesap / Harici Servis / Yerel Model / Kod Çalıştırma kapıları.
+#: Operatör hesabı, ayrı servis, yerel model ağırlığı veya sandbox gerektirenler.
+EXTERNAL_KEYED_FLAGS: tuple[str, ...] = (
+    "ENABLE_X_SENSOR",
+    "ENABLE_IG_SECONDARY",
+    "ENABLE_AGENT_REACH",
+    "ENABLE_SEARXNG",
+    "ENABLE_LOCAL_TRANSLATE",
+    "ENABLE_LOCAL_JURY",
+    "ENABLE_INTERPRETER",
     "ENABLE_LOCAL_TTS",
     "ENABLE_LOCAL_STT",
 )

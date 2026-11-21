@@ -443,4 +443,67 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
     await declareAdult(container);
     await waitFor(() => expect(launchBtn.disabled).toBe(false));
   });
+
+  it('routes Lilith station messages directly to POST /api/lilith/strategy and renders counter-moves', async () => {
+    const calls = installFetch((path) => {
+      if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: false });
+      if (path === '/api/lilith/strategy') {
+        return jsonResponse({
+          status: 'ok',
+          agent: 'lilith',
+          metrics_source: 'model_and_formula',
+          lilith: { hook: 'Beklenti kıran kanca', psychological_angle: 'Dopamin boşluğu' },
+          neuro_metrics: { viral_coefficient_score: 7.4, dominant_neurotransmitter: 'dopamine' },
+          shadow: { strategy: 'mirroring' },
+          counter_moves: [{ scenario: 'savunmaci', our_counter_move: 'Sakin net yanıt' }],
+        });
+      }
+      return undefined;
+    });
+
+    const { container } = render(UnifiedPinealCockpit);
+    const lilithCard = container.querySelector('.lilith-station') as HTMLElement;
+    expect(lilithCard).toBeTruthy();
+    await fireEvent.click(lilithCard);
+
+    const chatInput = container.querySelector('.chat-input-area input, .chat-input, input[placeholder*="Aspasia"], input[placeholder*="mesaj"], input[placeholder*="sor"]') as HTMLInputElement;
+    expect(chatInput).toBeTruthy();
+    await fireEvent.input(chatInput, { target: { value: 'Karşı hamle hazırla' } });
+    await fireEvent.keyDown(chatInput, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(calls.some((c) => c.method === 'POST' && c.path === '/api/lilith/strategy')).toBe(true);
+    });
+    expect(calls.some((c) => c.method === 'POST' && c.path === '/api/aspasia/chat')).toBe(false);
+    await waitFor(() => {
+      expect(screen.getByText(/Beklenti kıran kanca/)).toBeTruthy();
+      expect(screen.getByText(/Sakin net yanıt/)).toBeTruthy();
+    });
+  });
+
+  it('routes graph/memory queries directly to POST /api/brain/route', async () => {
+    const calls = installFetch((path) => {
+      if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: false });
+      if (path === '/api/brain/route') {
+        return jsonResponse({
+          route: 'graph',
+          result: { available: true, node_count: 4, edge_count: 3, machine_note: 'GRAF: 4 düğüm, 3 bağ' },
+        });
+      }
+      return undefined;
+    });
+
+    const { container } = render(UnifiedPinealCockpit);
+    const chatInput = container.querySelector('.chat-input-area input, .chat-input, input[placeholder*="Aspasia"], input[placeholder*="mesaj"], input[placeholder*="sor"]') as HTMLInputElement;
+    expect(chatInput).toBeTruthy();
+    await fireEvent.input(chatInput, { target: { value: 'İlişki grafını çiz' } });
+    await fireEvent.keyDown(chatInput, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(calls.some((c) => c.method === 'POST' && c.path === '/api/brain/route')).toBe(true);
+    });
+    await waitFor(() => {
+      expect(screen.getByText(/GRAF: 4 düğüm, 3 bağ/)).toBeTruthy();
+    });
+  });
 });

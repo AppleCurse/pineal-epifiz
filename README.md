@@ -160,9 +160,9 @@ Sistemde **7 dalga motoru** var (`agent_core/engines/`) — hepsi deterministik 
 
 ---
 
-## 6 · On üç görev ajanı
+## 6 · On dört görev ajanı
 
-Sistemde **13 görev ajanı** var (`agent_core/task_executor.py:220`) — hepsi aynı süreç içinde, kural tabanlı
+Sistemde **14 görev ajanı** var (`agent_core/task_executor.py:220`) — hepsi aynı süreç içinde, kural tabanlı
 `CognitiveRouter` sırasıyla çalıştırır. (Docker'daki `beacon-*` servisleri yalnızca
 canlılık işaretidir, analiz yapmaz.)
 
@@ -180,11 +180,11 @@ canlılık işaretidir, analiz yapmaz.)
 | `pattern_interrupt` | Beklenti kırma ve temas stratejisi |
 | `resonance_synthesizer` | İlk temas ve rezonans köprüsü sentezi |
 | `depth_analyst` | 7 sütunlu derinlik çıktısının adli analizi |
-| `shadow_executor` | Gölge arketip ve bastırılmış motivasyon (deneysel hat) |
+| `shadow_executor` | Gölge arketip ve bastırılmış motivasyon (kanıt zinciri dışı strateji hattı) |
+| `lilith_growth` | 360° profil + deterministik motor çıktılarından nörobilişsel strateji ve karşı-hamle paketi (`status.lilith_report`, kanıt zincirini kirletmez) |
 
-`ENABLE_INTERPRETER=true` ile 14. ajan (`interpreter`) devreye girer.
-`LilithGrowthAgent` online hattın **dışındadır** (CLI-only: `run_lilith.py`) —
-çünkü girdisi profil metni değil, üretim isteğidir; kanıt zincirine karışmamalıdır.
+`ENABLE_INTERPRETER=true` ile 15. ajan (`interpreter`) devreye girer.
+`LilithGrowthAgent` hem `run_lilith.py` CLI'si hem de `PinealExecutor` + `POST /api/lilith/strategy` hattından tek kaynak olarak çalışır.
 
 ---
 
@@ -315,9 +315,9 @@ karşı** koşturur ve ham çıktıyı basar: `0` kanıtlandı · `1` döngü k�
 
 ---
 
-## 11 · API yüzeyi (80 HTTP ucu + 1 WebSocket)
+## 11 · API yüzeyi (83 HTTP ucu + 1 WebSocket)
 
-> Sayım biçimi: **80 = path+metot çifti**, **78 benzersiz yol**. Fark iki yoldan gelir: `/api/vault/status` hem `GET` (durum) hem `POST` (kilit aç/kapa), `/api/tasks/{task_id}` hem `GET` hem `DELETE` kabul eder. Sayı `backend.api.app.routes` üzerinden ölçülür.
+> Sayım biçimi: **83 = path+metot çifti**, **81 benzersiz yol**. Fark iki yoldan gelir: `/api/vault/status` hem `GET` (durum) hem `POST` (kilit aç/kapa), `/api/tasks/{task_id}` hem `GET` hem `DELETE` kabul eder. Sayı `backend.api.app.routes` üzerinden ölçülür.
 
 | Alan | Uçlar | Ne yapar |
 |---|---|---|
@@ -376,7 +376,7 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 | IG gönderi tavanı | Ham HTML yolunda 20 sahte gönderi → **20 post**; `PINEAL_IG_MAX_POSTS=5` → **5 post** (sabit 12 yok) |
 | 13 ajan GERÇEKTEN koşuyor | Gerçek `CognitiveRouter` + gerçek `PinealExecutor` ile görev koşuldu, her ajanın `execute/analyze` çağrısı kaydedildi → **13/13** (rota 10, yürütücü 3 ayrı çağrı). Test: `tests/unit/test_claims_are_runtime_proven.py` |
 | 28 yetenek erişilebilir | `availability()` 28/28 **istisnasız** yanıt verdi (5 açık: socid, dil, handle_probe, phone_probe, rapor metni; 23'ü kapı/bağımlılık sebebiyle kapalı). Her kimliğin adaptör dışı çağrı yeri var; 3 web çıkarıcısı `WEB_EXTRACTION_ORDER` zinciriyle çağrılıyor (`web_research.py`) |
-| Çağrı yeri olmayan uçlar | 78 benzersiz HTTP yolu: **23**'ü UI/edge worker'dan, **72**'si testlerden çağrılıyor; **3**'ünün çağrı yeri yok (`/api/vault/lock`, `/api/vault/unlock`, `/api/tasks/{task_id}/changes`). Ölçüm `tests/unit/test_http_endpoint_call_sites.py` ile kilitli |
+| Çağrı yeri olmayan uçlar | 81 benzersiz HTTP yolu: **25**'i UI/edge worker'dan, **77**'si testlerden çağrılıyor; **2**'sinin çağrı yeri yok (`/api/vault/lock`, `/api/tasks/{task_id}/changes`). Ölçüm `tests/unit/test_http_endpoint_call_sites.py` ile kilitli |
 | Panelin görsel doğrulaması | Headless Playwright Chromium (`chrome-win64`) ile 1920×1080 çözünürlükte tam ekran görüntüsü alındı (`cockpit_live_visual.png`), pikselleriyle kanıtlandı |
 
 **DOĞRULANMADI (sebebiyle):**
@@ -410,7 +410,7 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 | `config/` | Yönlendirme, sağlayıcı kataloğu, karar yapılandırması, RTK politikası |
 
 **Tam ve aranabilir harita:** **[docs/envanter.html](docs/envanter.html)** —
-817 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
+821 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
 ile yenilenir, CI `--check` ile bayatlamayı yakalar.
 
 **Ayrıca:** [ARCHITECTURE.md](ARCHITECTURE.md) · [README_TECHNICAL.md](README_TECHNICAL.md) ·

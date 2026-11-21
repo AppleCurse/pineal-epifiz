@@ -814,6 +814,32 @@
     }
   }
 
+  function formatLilithReply(data: any): string {
+    const parts: string[] = [];
+    const lilith = data?.lilith || {};
+    const neuro = data?.neuro_metrics || lilith?.neuro_metrics;
+    if (lilith.hook) parts.push(`KANCA: ${lilith.hook}`);
+    if (lilith.psychological_angle) parts.push(`AÇI: ${lilith.psychological_angle}`);
+    if (neuro) {
+      const vc = neuro.viral_coefficient_score ?? '?';
+      const dom = neuro.dominant_neurotransmitter ?? '?';
+      const src = data?.metrics_source || 'formül';
+      parts.push(`NÖRO FORMÜL [${src}]: Vc=${vc}/10 · Baskın=${dom}`);
+    }
+    if (data?.shadow?.strategy) {
+      parts.push(`GÖLGE STRATEJİSİ: ${data.shadow.strategy}`);
+    }
+    const moves = Array.isArray(data?.counter_moves) ? data.counter_moves : [];
+    if (moves.length > 0) {
+      const moveLines = moves.map((m: any) => `• [${m.scenario}] ${m.our_counter_move}`);
+      parts.push(`KARŞI HAMLELER:\n${moveLines.join('\n')}`);
+    }
+    if (data?.fallback_reason) {
+      parts.push(`Not: ${data.fallback_reason} (deterministik çekirdek çıktısı kullanıldı).`);
+    }
+    return parts.join('\n') || 'Lilith strateji hattından yanıt döndü.';
+  }
+
   async function sendAspasiaMessage() {
     const text = inputMessage.trim();
     if (!text || isSending) return;
@@ -822,6 +848,64 @@
     chatMessages = [...chatMessages, { ts: nowTime(), sender: 'SÖZ', text }];
 
     try {
+      const activeTaskId = ($taskStatus as any)?.task_id || null;
+      const targetHint = (targetUrl || '').trim().replace(/^https?:\/\/(?:www\.)?(?:instagram\.com|x\.com|twitter\.com)\//i, '').replace(/\/.*$/, '').replace(/^@/, '') || undefined;
+
+      // 1. LILITH hattı seçiliyse doğrudan birleşik /api/lilith/strategy motorunu çalıştır
+      if (selectedAgentId === 'lilith') {
+        const lRes = await apiFetch('/api/lilith/strategy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            client_id: $clientId,
+            task_id: activeTaskId,
+            instruction: text,
+            target_username: targetHint,
+          })
+        });
+        if (!lRes.ok) {
+          const errBody = await lRes.json().catch(() => ({}));
+          throw new Error(errBody?.error?.message || `HTTP ${lRes.status}`);
+        }
+        const lData = await lRes.json();
+        chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Lilith', text: formatLilithReply(lData) }];
+        return;
+      }
+
+      // 2. Hafıza Kristali, İlişki Grafı veya Şirket/Domain sorgusuysa /api/brain/route'a bağlan
+      const lower = text.toLocaleLowerCase('tr-TR').replace(/\u0307/g, '');
+      const isBrainSpecial =
+        /(hafıza|hafiza|kristal|ilişki graf|iliski graf|bağlantı haritası|baglanti haritasi)/.test(lower) ||
+        (/(şirket|sirket|kurum|domain|alan adı|alan adi|firma)/.test(lower) && /\.[a-z]{2,}\b/i.test(text));
+      if (isBrainSpecial) {
+        const bRes = await apiFetch('/api/brain/route', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            client_id: $clientId,
+            message: text,
+            mode: 'auto',
+            task_id: activeTaskId,
+            target: targetHint,
+          })
+        });
+        if (!bRes.ok) {
+          const errBody = await bRes.json().catch(() => ({}));
+          throw new Error(errBody?.error?.message || `HTTP ${bRes.status}`);
+        }
+        const bData = await bRes.json();
+        const r = bData?.result || {};
+        const summary =
+          r.machine_note ||
+          (bData?.route === 'graph'
+            ? `İlişki grafı: ${r.node_count ?? 0} düğüm, ${r.edge_count ?? 0} bağ (${r.available ? 'hazır' : r.reason || 'kanıt yok'}).`
+            : bData?.route === 'company'
+              ? `Kurum taraması (${bData.domain || ''}): ${r.available ? 'tamamlandı' : r.reason || 'kapı kapalı'}.`
+              : JSON.stringify(r).slice(0, 320));
+        chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: `[${String(bData?.route || 'brain').toUpperCase()}] ${summary}` }];
+        return;
+      }
+
       let commandReason = '';
       try {
         const command = await apiFetch('/api/aspasia/command', {
@@ -857,7 +941,7 @@
       const reply = data.message || data.reply || data.response || 'Sohbet yanıtı boş.';
       chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: `Komut: ${commandReason}. ${reply}` }];
     } catch (e: any) {
-      chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: `Bağlantı kesintisi: ${e?.message || e}` }];
+      chatMessages = [...chatMessages, { ts: nowTime(), sender: selectedAgentId === 'lilith' ? 'Lilith' : 'Aspasia', text: `Bağlantı kesintisi: ${e?.message || e}` }];
     } finally {
       isSending = false;
     }

@@ -85,7 +85,7 @@ def test_registered_agent_count_is_13(audit):
                 for k in node.value.keys:
                     if isinstance(k, audit.ast.Constant) and isinstance(k.value, str):
                         registered.append(k.value)
-    assert len(registered) == 13, f"beklenen 13 ajan, bulunan {len(registered)}: {registered}"
+    assert len(registered) == 14, f"beklenen 14 ajan, bulunan {len(registered)}: {registered}"
 
 
 # ── C4 · yetenek ────────────────────────────────────────────────────────────

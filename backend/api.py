@@ -3430,9 +3430,13 @@ def _check_vault_interlock(client_id: str) -> bool:
 # Gemini'yi çağırmak yerine bu uçtan geçer. Satır yerine MODÜL çıkarıldı.
 from backend.routes.mobile_coach import register_mobile_coach_routes
 from backend.routes.hook_studio import register_hook_studio_routes
+from backend.routes.lilith import register_lilith_routes
+from backend.routes.brain_hub import register_brain_hub_routes
 
 register_mobile_coach_routes(app, rate_limit=rate_limit, rate_identity=_rate_identity, gateway_provider=lambda: getattr(aspasia_chief, "llm", None))
 register_hook_studio_routes(app, rate_limit=rate_limit, rate_identity=_rate_identity, gateway_provider=lambda: getattr(aspasia_chief, "llm", None), get_executor=get_executor, require_vault_open=lambda client_id: _require_vault_open(client_id), require_minor_clearance=lambda client_id, subject: _require_minor_clearance(client_id, subject=subject))
+register_lilith_routes(app, rate_limit=rate_limit, rate_identity=_rate_identity, gateway_provider=lambda: getattr(aspasia_chief, "llm", None), get_executor=get_executor, require_vault_open=lambda client_id: _require_vault_open(client_id), require_minor_clearance=lambda client_id, subject: _require_minor_clearance(client_id, subject=subject))
+register_brain_hub_routes(app, rate_limit=rate_limit, rate_identity=_rate_identity, get_room=get_room, get_executor=get_executor, gateway_provider=lambda: getattr(aspasia_chief, "llm", None), aspasia_provider=lambda: aspasia_chief, check_vault_interlock=_check_vault_interlock, require_vault_open=lambda client_id: _require_vault_open(client_id), require_minor_clearance=lambda client_id, subject: _require_minor_clearance(client_id, subject=subject))
 
 app.include_router(
     build_speech_router(
@@ -4226,6 +4230,10 @@ def _aspasia_command_dispatch(spec: dict) -> "str | None":
     planlama beyni kurmaz (ajan planı = executor'ın CognitiveRouter'ı).
     """
     client_id = spec["client_id"]
+    if _require_minor_clearance(client_id, subject=str(spec.get("target_url") or "")) is not None:
+        return None
+    if _require_vault_open(client_id) is not None:
+        return None
     room = get_room(client_id)
     # [AUDIT N1] /api/initiate ile aynı doyma kuralı (tek yazma kanalı).
     if _active_tasks_full(room):
@@ -4277,6 +4285,10 @@ async def aspasia_command(payload: AspasiaCommandPayload, request: Request):
             {"error": {"code": "RATE_LIMITED", "message": "Aspasia yoğun; kısa bir mola verin."}},
             status_code=429,
         )
+    if (blocked := _require_minor_clearance(payload.client_id, subject=payload.user_message)) is not None:
+        return blocked
+    if (locked := _require_vault_open(payload.client_id)) is not None:
+        return locked
     room = get_room(payload.client_id)
     aspasia = room.get("aspasia") or aspasia_chief
     if not aspasia or getattr(aspasia, "commands", None) is None:

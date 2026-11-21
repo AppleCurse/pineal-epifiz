@@ -47,10 +47,10 @@ def test_lilith_cli_is_not_called_from_the_main_line():
     assert not offenders, f"ana hattan Lilith çağrısı var: {offenders}"
 
 def test_lilith_agent_is_not_in_the_executor_chain():
-    """Lilith kanıt zincirini bozmasın diye PinealExecutor içinde olmamalıdır (PR #140)."""
+    """Lilith yürütücüde ayrı strateji hattı (status.lilith_report) olarak çalışır; kanıt zincirine (evidence_chain) yazmaz."""
     source = (REPO_ROOT / "agent_core" / "task_executor.py").read_text(encoding="utf-8")
-    assert "lilith_growth" not in source
-    assert "LilithGrowthAgent" not in source
+    assert "status.lilith_report =" in source
+    assert '"agent": "lilith_growth"' not in source
 
 def test_readme_states_the_cli_only_decision():
     """README kararı AÇIKÇA yazar (P3 teslim şartı)."""

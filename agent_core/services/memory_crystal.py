@@ -215,12 +215,26 @@ def load_crystal(target: str, base: Optional[str] = None) -> Crystal:
 
 
 def _iter_canonical(evidence: Any) -> Iterable[dict]:
-    """Kanıt zinciri üç biçimde gelebilir: liste / {"evidence": [...]} / görev belleği."""
+    """Kanıt zinciri üç biçimde gelebilir: liste / {"evidence": [...]} / görev belleği.
+
+    `pillar_evidence_adapter` gibi kayıtlar gerçek kanonik `EvidenceItem`
+    öğelerini `result.items` altında taşır; onları da düzleştirip kristale açar.
+    """
     if isinstance(evidence, dict):
         evidence = evidence.get("evidence") or evidence.get("evidence_chain") or []
     if not isinstance(evidence, Sequence) or isinstance(evidence, (str, bytes)):
         return []
-    return [item for item in evidence if isinstance(item, dict)]
+    out: List[dict] = []
+    for item in evidence:
+        if not isinstance(item, dict):
+            continue
+        out.append(item)
+        res = item.get("result")
+        if isinstance(res, dict) and isinstance(res.get("items"), list):
+            for sub in res["items"]:
+                if isinstance(sub, dict):
+                    out.append(sub)
+    return out
 
 
 def _fragment_of(target: str, task_id: str, item: dict) -> Optional[MemoryFragment]:
@@ -229,7 +243,12 @@ def _fragment_of(target: str, task_id: str, item: dict) -> Optional[MemoryFragme
     if not content:
         result = item.get("result")
         if isinstance(result, dict):
-            content = str(result.get("content") or result.get("text") or "").strip()
+            raw_res = result.get("content") or result.get("text") or ""
+            if not raw_res and isinstance(result.get("summary"), str):
+                raw_res = result["summary"]
+            elif not raw_res and isinstance(result.get("summary"), list):
+                raw_res = " · ".join(str(x).strip() for x in result["summary"] if str(x).strip())
+            content = str(raw_res).strip()
     if not content:
         return None
 

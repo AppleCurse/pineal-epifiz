@@ -276,7 +276,26 @@ class AspasiaChief:
                 lines.append(f"  [ÖNERİLEN İLK DİYALOG KONUSU]: {topic}")
                 lines.append(f"  [SAHİCİ İLETİŞİM KÖPRÜSÜ]: \"{msg}\"")
             lines.append("--------------------------------------")
-                    
+
+        shadow_profile = getattr(snapshot, "shadow_profile", None) if not isinstance(snapshot, dict) else snapshot.get("shadow_profile")
+        if isinstance(shadow_profile, dict) and shadow_profile:
+            sh_strat = shadow_profile.get("strategy") or ""
+            sh_fb = shadow_profile.get("fallback_reason") or ""
+            lines.append(f"  [GÖLGE STRATEJİSİ]: {sh_strat or 'yok'}" + (f" (not: {sh_fb})" if sh_fb else ""))
+
+        lilith_report = getattr(snapshot, "lilith_report", None) if not isinstance(snapshot, dict) else snapshot.get("lilith_report")
+        if isinstance(lilith_report, dict) and lilith_report:
+            l_hook = str(lilith_report.get("hook") or "").strip()
+            l_metrics = lilith_report.get("neuro_metrics") or {}
+            l_vc = l_metrics.get("viral_coefficient_score") if isinstance(l_metrics, dict) else None
+            l_dom = l_metrics.get("dominant_neurotransmitter") if isinstance(l_metrics, dict) else None
+            l_src = lilith_report.get("metrics_source") or ""
+            lines.append(
+                f"  [LILITH KARŞI-HAMLE & NÖRO]: Vc={l_vc if l_vc is not None else '?'} | "
+                f"Baskın={l_dom or '?'} | Kaynak={l_src or '?'}"
+                + (f" | Kanca: \"{l_hook[:140]}\"" if l_hook else "")
+            )
+
         if isinstance(room_state, dict) and room_state.get("logs"):
             lines.append("Son Oda Kayıtları:\n" + "\n".join(str(x) for x in room_state["logs"][-10:]))
         return "\n".join(lines)

@@ -50,6 +50,7 @@ from agent_core.agents.depth_analyst import DepthAnalyst
 from agent_core.agents.friction_detector import FrictionDetectorAgent
 from agent_core.agents.human_behavior import HumanBehaviorAnalyzer
 from agent_core.agents.interpreter_agent import InterpreterAgent
+from agent_core.agents.lilith_growth import LilithGrowthAgent
 from agent_core.agents.mirror_truth import MirrorOfTruth
 from agent_core.agents.osint_investigator import OsintInvestigatorAgent
 from agent_core.agents.passion_mapper import PassionMapperAgent
@@ -201,6 +202,7 @@ class PinealExecutor:
         # adımlar None'a eşlenir: gerçek durumları olay akışında ve koşu
         # kayıtlarında (runs / War Room) yaşar, başka ajanın slotunu ÇALMAZ.
         "shadow_executor": None,
+        "lilith_growth": None,
         "pineal_7pillar": None,
         "vision_analyzer": None,
     }
@@ -232,6 +234,7 @@ class PinealExecutor:
             "osint_investigator": OsintInvestigatorAgent(self.llm_gateway),
             "shadow_executor": ShadowExecutor(llm_gateway=self.llm_gateway),
             "depth_analyst": DepthAnalyst(self.llm_gateway),
+            "lilith_growth": LilithGrowthAgent(self.llm_gateway),
         }
         # [GÖLGE DENETİMİ 2026-10-24] Kapı TEK kaynaktan okunur (state.flag_enabled):
         # `1/true/yes/on` hepsi açık sayılır, `policy_state()` ile aynı gerçek.
@@ -1654,6 +1657,10 @@ class PinealExecutor:
         await self.memory.merge_evidence(
             task_id, status.evidence_chain, metadata={"target_profile": profile}
         )
+        from pathlib import Path as _Path
+        raw_base = getattr(self.memory, "storage_path", None)
+        base_dir = str(raw_base) if isinstance(raw_base, (str, _Path)) else None
+        t_key = ""
         try:
             from agent_core.services.change_tracker import (
                 build_snapshot,
@@ -1661,17 +1668,28 @@ class PinealExecutor:
                 target_key,
             )
             t_key = target_key(profile, status.evidence_chain or [])
-            if t_key:
-                base_dir = getattr(self.memory, "storage_path", None)
+            if t_key and base_dir:
                 snapshot = build_snapshot(
+                    status.evidence_chain or [],
+                    profile,
+                    task_id=str(task_id),
+                    target=t_key,
+                )
+                record_snapshot(base_dir, snapshot)
+        except Exception as exc:  # noqa: BLE001
+            self._log("WARNING", f"DEĞİŞİM İZLEME: anlık görüntü kaydedilemedi: {exc}")
+
+        if t_key:
+            try:
+                from agent_core.services import memory_crystal
+                memory_crystal.crystallize(
                     t_key,
                     str(task_id),
                     status.evidence_chain or [],
-                    base_dir=base_dir,
+                    base=base_dir,
                 )
-                record_snapshot(snapshot, base_dir=base_dir)
-        except Exception as exc:  # noqa: BLE001
-            self._log("WARNING", f"DEĞİŞİM İZLEME: anlık görüntü kaydedilemedi: {exc}")
+            except Exception as exc:  # noqa: BLE001
+                self._log("WARNING", f"HAFIZA KRİSTALİ: kristal kaydedilemedi: {exc}")
 
     async def execute_task(
         self,
@@ -1748,6 +1766,8 @@ class PinealExecutor:
         # izleme + ilişki grafı için kararlı hedef anahtarı).
         self._current_target_profile = input_data.get("target_profile") or {}
         status = TaskStatus(task_id=task_id, status="processing", created_at=datetime.now(timezone.utc))
+        if isinstance(self._current_target_profile, dict) and self._current_target_profile:
+            status.target_profile = dict(self._current_target_profile)
         # [P0 · DENETİM 2026-10-16] Hedef kanal durumu (X sensörü, web araması,
         # Instagram kazıma...) görev payload'ından devralınır; görev içinde
         # koşan kanallar buna eklenir. Böylece "ÇALIŞMADI: sebep" telemetriye
@@ -1780,7 +1800,8 @@ class PinealExecutor:
             # devredilir — yeniden üretildiğinde aynı değere düşerdi.
             for _fld in (
                 "osint_footprint", "depth_report", "psychodynamic_depth",
-                "shadow_profile", "follower_audit", "timing_forensics",
+                "shadow_profile", "lilith_report", "target_profile",
+                "follower_audit", "timing_forensics",
                 "holistic_profile", "frequency_map", "seismos_events",
                 "void_map", "strata_map", "gravity_map", "pulse_map",
                 "key_matrix", "visual_evidence", "investigation",
@@ -2064,6 +2085,7 @@ class PinealExecutor:
                 # "kapsam" etiketiyle okur (olasılık olarak sunulmaz).
                 _tp2 = input_data.setdefault("target_profile", {})
                 _tp2["cross_profile_matches"] = _matches
+                status.target_profile = dict(_tp2)
                 self._log("INFO", f"[{task_id}] ÇAPRAZ PROFİL: {len(_corr.matches)} platform hesabı eşleştirildi")
         except Exception as _c_exc:
             self._log("WARNING", f"[{task_id}] Çapraz profilleme atlandı: {_c_exc}")
@@ -3373,6 +3395,91 @@ class PinealExecutor:
                         error_message=str(e)[:200],
                     )
                     self._log("WARNING", f"[{task_id}] Gölge forensiği atlandı: {e}")
+
+            # --- 6. DAMGA: LILITH STRATEJİ & NÖROBİLİŞSEL KARŞI-HAMLE HATTI ---
+            # Kanıt zincirini kirletmez (status.evidence_chain'e yazmaz);
+            # 360° profil + deterministik motor çıktılarından ayrı `lilith_report`
+            # alanını üretir. LLM yokken de deterministik motor sinyallerinden
+            # NeuroMetrics tabanını hesaplar (uydurma metin üretmez).
+            if self._resume_done(status, "lilith_growth"):
+                self._log("INFO", f"[{task_id}] RESUME: lilith_growth atlandı — tur tekrarlanmadı.")
+            elif "lilith_growth" in self.agents:
+                self._rack_update("lilith_growth", "active")
+                try:
+                    _hp = status.holistic_profile
+                    _tp = input_data.get("target_profile") if isinstance(input_data.get("target_profile"), dict) else {}
+                    _lilith_payload = {
+                        "topic": str(_tp.get("username") or _tp.get("name") or input_data.get("target_url") or ""),
+                        "platform": str(_tp.get("platform") or "instagram"),
+                        "target_profile": _tp,
+                        "passion_profile": _hp.passions.model_dump() if (_hp and getattr(_hp, "passions", None)) else {},
+                        "friction_profile": _hp.frictions.model_dump() if (_hp and getattr(_hp, "frictions", None)) else {},
+                        "cognitive_style": _hp.cognitive.model_dump() if (_hp and getattr(_hp, "cognitive", None)) else {},
+                    }
+                    with self._capture_llm_calls(task_id, "lilith_growth") as lilith_scope:
+                        lilith_result = await self._bounded(
+                            self.agents["lilith_growth"].execute(_lilith_payload),
+                            self.config.get_agent_config("lilith_growth").timeout_seconds,
+                            "lilith_growth",
+                        )
+                    lilith_dump = (
+                        lilith_result.model_dump()
+                        if hasattr(lilith_result, "model_dump")
+                        else (dict(lilith_result) if isinstance(lilith_result, dict) else {})
+                    )
+                    # Deterministik motor tabanlı NeuroMetrics (LLM çevrimdışı olsa bile)
+                    if not lilith_dump.get("neuro_metrics"):
+                        _pdepth = input_data.get("psychodynamic_depth") or {}
+                        _tfor = input_data.get("timing_forensics") or {}
+                        _faudit = input_data.get("follower_audit") or {}
+                        _has_det = bool(_pdepth or _tfor or _faudit)
+                        if _has_det:
+                            _d_sig = _pdepth.get("confidence") if isinstance(_pdepth, dict) else None
+                            _c_sig = _pdepth.get("reaction_formation_index") if isinstance(_pdepth, dict) else None
+                            _s_sig = _faudit.get("engagement_quality_score") if isinstance(_faudit, dict) else None
+                            _o_sig = _tfor.get("consistency_score") if isinstance(_tfor, dict) else None
+                            _det_metrics = LilithGrowthAgent.compute_neuro_formula(
+                                dopamine=_d_sig if isinstance(_d_sig, (int, float)) and _d_sig > 0 else 0.55,
+                                serotonin=_s_sig if isinstance(_s_sig, (int, float)) and _s_sig > 0 else 0.50,
+                                cortisol=_c_sig if isinstance(_c_sig, (int, float)) and _c_sig > 0 else 0.45,
+                                oxytocin=_o_sig if isinstance(_o_sig, (int, float)) and _o_sig > 0 else 0.50,
+                            )
+                            lilith_dump["neuro_metrics"] = _det_metrics.model_dump()
+                            lilith_dump["metrics_source"] = "deterministic_engines"
+                    else:
+                        lilith_dump["metrics_source"] = "model_and_formula"
+                    lilith_dump["_provenance"] = self._provenance_for(
+                        "lilith_growth", lilith_result, lilith_scope.records
+                    )
+                    status.lilith_report = lilith_dump
+                    status.agent_runs["lilith_growth"] = AgentRun(
+                        task_id=task_id, agent_name="lilith_growth", status="completed",
+                        started_at=datetime.now(timezone.utc), completed_at=datetime.now(timezone.utc),
+                        output_summary=lilith_dump, call_ids=list(lilith_scope.call_ids),
+                        confidence=(
+                            getattr(lilith_result, "confidence", None)
+                            if isinstance(getattr(lilith_result, "confidence", None), (int, float))
+                            and getattr(lilith_result, "data_confidence", False)
+                            else None
+                        ),
+                        warnings=[] if getattr(lilith_result, "data_confidence", False) else [
+                            getattr(lilith_result, "fallback_reason", None)
+                            or getattr(lilith_result, "confidence_reason", None)
+                            or "deterministic_only"
+                        ],
+                    )
+                    self._log("INFO", f"[{task_id}] LILITH HATTI: Strateji & nörobilişsel profil mühürlendi")
+                    self._rack_update("lilith_growth", "ready")
+                except Exception as e:
+                    self._rack_update("lilith_growth", "wait")
+                    status.agent_runs["lilith_growth"] = AgentRun(
+                        task_id=task_id, agent_name="lilith_growth",
+                        status="timed_out" if isinstance(e, AgentTimeoutError) else "failed",
+                        started_at=datetime.now(timezone.utc), completed_at=datetime.now(timezone.utc),
+                        error_code="AGENT_TIMEOUT" if isinstance(e, AgentTimeoutError) else None,
+                        error_message=str(e)[:200],
+                    )
+                    self._log("WARNING", f"[{task_id}] Lilith hattı atlandı: {e}")
 
             # [FIX #1] OSINT artık discovery fazında çalışıyor (derinlik
             # motorundan ÖNCE). Eski sondaki blok KALDIRILDI: çıktı

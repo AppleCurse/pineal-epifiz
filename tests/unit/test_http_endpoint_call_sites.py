@@ -29,8 +29,8 @@ README = REPO_ROOT / "README.md"
 
 #: README'deki uç çağrı yerleri satırının kilitli biçimi.
 _ROW_RE = re.compile(
-    r"(\d+) benzersiz HTTP yolu: \*\*(\d+)\*\*'ü UI/edge worker'dan, "
-    r"\*\*(\d+)\*\*'si testlerden çağrılıyor; \*\*(\d+)\*\*'ünün çağrı yeri yok"
+    r"(\d+) benzersiz HTTP yolu: \*\*(\d+)\*\*'[üiıu] UI/edge worker'dan, "
+    r"\*\*(\d+)\*\*'s?[üiıu] testlerden çağrılıyor; \*\*(\d+)\*\*'[^\s]+ çağrı yeri yok"
 )
 
 #: Bu dosya tarama dışıdır (bkz. modül docstring'i).
@@ -104,5 +104,4 @@ def test_orphan_endpoints_are_exactly_the_documented_ones():
     assert orphans == [
         "/api/tasks/{task_id}/changes",
         "/api/vault/lock",
-        "/api/vault/unlock",
     ], f"çağrı yeri olmayan uçlar değişti: {orphans}"

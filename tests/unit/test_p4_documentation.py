@@ -136,7 +136,7 @@ def test_task_agent_count_claim_holds():
             attrs = [t.attr for t in node.targets if isinstance(t, ast.Attribute)]
             if ("agents" in names or "agents" in attrs) and isinstance(node.value, ast.Dict):
                 count = len(node.value.keys)
-    assert count == 13, f"yürütücü {count} ajan kaydediyor (doküman 13 diyor)"
+    assert count == 14, f"yürütücü {count} ajan kaydediyor (doküman 14 diyor)"
 
 
 def test_dialogue_manager_gap_claim_holds():
