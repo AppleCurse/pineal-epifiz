@@ -21,6 +21,7 @@ import os
 from typing import Any, Mapping
 
 from agent_core.capabilities.policy import (
+    CONSENT_ONLY_FLAGS,
     EXTERNAL_KEYED_FLAGS,
     LOCAL_CORE_FLAGS,
     MANAGED_GATE_FLAGS,
@@ -30,6 +31,7 @@ from agent_core.capabilities.policy import (
 __all__ = [
     "CAPABILITY_PROFILE_ENV",
     "CONSENT_GATED_FLAGS",
+    "CONSENT_ONLY_FLAGS",
     "EXTERNAL_KEYED_FLAGS",
     "LOCAL_CORE_FLAGS",
     "MANAGED_GATE_FLAGS",
@@ -86,6 +88,9 @@ def flag_enabled(flag: str, env: Mapping[str, str] | None = None) -> bool:
     Profil kuralları:
       * ``PINEAL_CAPABILITY_PROFILE=local_core`` ise ``LOCAL_CORE_FLAGS`` içindeki
         bayraklar açık kabul edilir (env'de açıkça ``false``/``0`` yazılmamışsa).
+      * ``CONSENT_ONLY_FLAGS`` (ör. ``ENABLE_CROSS_PLATFORM``) profil tarafından
+        HİÇBİR ZAMAN açılmaz — yalnız env'de açık ``true`` ya da görev bazlı
+        oda onayı (``with_operator_consent``) açar.
       * Varsayılan (``strict`` veya tanımsız): fail-closed (yalnız env'de açık olanlar).
       * Env'de açıkça yazılmış her değer profili ezer.
     """
@@ -112,13 +117,14 @@ def enabled_flags(env: Mapping[str, str] | None = None) -> dict[str, bool]:
 
 
 def capability_profile_summary(env: Mapping[str, str] | None = None) -> dict[str, Any]:
-    """17 dağınık ENABLE_* bayrağını 2 net profilde özetler."""
+    """17 yönetilen ENABLE_* bayrağını profil özetinde özetler (local_core / external_keyed / consent_only)."""
     source = os.environ if env is None else env
     flags = enabled_flags(source)
     raw_profile = str(source.get(CAPABILITY_PROFILE_ENV, "") or "").strip().lower()
     profile = "local_core" if raw_profile == "local_core" else "strict"
     local_core = {f: flags[f] for f in LOCAL_CORE_FLAGS}
     external_keyed = {f: flags[f] for f in EXTERNAL_KEYED_FLAGS}
+    consent_only = {f: flags[f] for f in CONSENT_ONLY_FLAGS}
     return {
         "profile": profile,
         "profile_env": CAPABILITY_PROFILE_ENV,
@@ -138,6 +144,12 @@ def capability_profile_summary(env: Mapping[str, str] | None = None) -> dict[str
             "active_count": sum(1 for v in external_keyed.values() if v),
             "total_count": len(external_keyed),
             "flags": external_keyed,
+        },
+        "consent_only": {
+            "label": "Yalnız Açık Operatör Onayı (profille AÇILAMAZ)",
+            "active_count": sum(1 for v in consent_only.values() if v),
+            "total_count": len(consent_only),
+            "flags": consent_only,
         },
         "active_count": sum(1 for v in flags.values() if v),
         "total_count": len(flags),

@@ -318,7 +318,9 @@ class SearchEngine:
 
     def _searxng_enabled(self) -> bool:
         """SearXNG yedeği açık mı? (kapı: ENABLE_SEARXNG + SEARXNG_BASE_URL)."""
-        return os.getenv("ENABLE_SEARXNG", "false").lower() == "true" and bool(
+        from agent_core.capabilities.state import flag_enabled
+
+        return flag_enabled("ENABLE_SEARXNG") and bool(
             os.getenv("SEARXNG_BASE_URL", "").strip()
         )
 

@@ -826,6 +826,10 @@
       const src = data?.metrics_source || 'formül';
       parts.push(`NÖRO FORMÜL [${src}]: Vc=${vc}/10 · Baskın=${dom}`);
     }
+    const hookStudio = data?.hook_studio || {};
+    if (hookStudio.evidence_verification_status) {
+      parts.push(`KANCA KANITI: ${hookStudio.evidence_verification_status}${hookStudio.data_confidence ? ' (doğrulandı)' : ' (doğrulanmadı)'}`);
+    }
     if (data?.shadow?.strategy) {
       parts.push(`GÖLGE STRATEJİSİ: ${data.shadow.strategy}`);
     }
@@ -835,7 +839,13 @@
       parts.push(`KARŞI HAMLELER:\n${moveLines.join('\n')}`);
     }
     if (data?.fallback_reason) {
-      parts.push(`Not: ${data.fallback_reason} (deterministik çekirdek çıktısı kullanıldı).`);
+      const why = data.fallback_reason;
+      parts.push(why === 'engine_signals_missing'
+        ? 'Not: Nöro formülü üretilemedi (motor sinyali yok) — yalnız metin çıktısı gösteriliyor.'
+        : `Not: ${why} (üretim çıktısı; doğrulanmış kanıt değildir).`);
+    }
+    if (hookStudio.fallback_reason) {
+      parts.push(`Kanca hattı: ${hookStudio.fallback_reason}.`);
     }
     return parts.join('\n') || 'Lilith strateji hattından yanıt döndü.';
   }
@@ -865,7 +875,7 @@
         });
         if (!lRes.ok) {
           const errBody = await lRes.json().catch(() => ({}));
-          throw new Error(errBody?.error?.message || `HTTP ${lRes.status}`);
+          throw Object.assign(new Error(errBody?.error?.message || `HTTP ${lRes.status}`), { status: lRes.status });
         }
         const lData = await lRes.json();
         chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Lilith', text: formatLilithReply(lData) }];
@@ -891,7 +901,7 @@
         });
         if (!bRes.ok) {
           const errBody = await bRes.json().catch(() => ({}));
-          throw new Error(errBody?.error?.message || `HTTP ${bRes.status}`);
+          throw Object.assign(new Error(errBody?.error?.message || `HTTP ${bRes.status}`), { status: bRes.status });
         }
         const bData = await bRes.json();
         const r = bData?.result || {};
@@ -913,7 +923,10 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ client_id: $clientId, user_message: text })
         });
-        if ([401, 403, 429].includes(command.status)) throw new Error(`HTTP ${command.status}`);
+        if ([401, 403, 423, 429, 451].includes(command.status)) {
+          const errBody = await command.json().catch(() => ({}));
+          throw Object.assign(new Error(errBody?.error?.message || `HTTP ${command.status}`), { status: command.status });
+        }
         if (command.ok) {
           const data = await command.json();
           if (data.accepted && data.task_id) {
@@ -927,7 +940,7 @@
           commandReason = `komut kanalı HTTP ${command.status}`;
         }
       } catch (error: any) {
-        if (/HTTP (401|403|429)/.test(String(error?.message))) throw error;
+        if (error?.status && [401, 403, 423, 429, 451].includes(error.status)) throw error;
         commandReason = 'komut durumu doğrulanamadı';
       }
       const res = await apiFetch('/api/aspasia/chat', {
@@ -935,13 +948,30 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ client_id: $clientId, user_message: text })
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw Object.assign(new Error(errBody?.error?.message || `HTTP ${res.status}`), { status: res.status });
+      }
       const data = await res.json();
       if (data.error) throw new Error(data.error.message || data.error.code || 'sohbet kullanılamıyor');
       const reply = data.message || data.reply || data.response || 'Sohbet yanıtı boş.';
       chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: `Komut: ${commandReason}. ${reply}` }];
     } catch (e: any) {
-      chatMessages = [...chatMessages, { ts: nowTime(), sender: selectedAgentId === 'lilith' ? 'Lilith' : 'Aspasia', text: `Bağlantı kesintisi: ${e?.message || e}` }];
+      const status = (e as any)?.status;
+      const detail = e?.message ? ` (${e.message})` : '';
+      let text: string;
+      if (status === 423) {
+        text = `Kasa kilitli — dış dünyaya hiçbir istek çıkamaz. Anahtarı girip kasayı açın, sonra tekrar deneyin.${detail}`;
+      } else if (status === 451) {
+        text = `Reşitlik kapısı — bu hedef için çalışma yapılamaz (çocuk kilidi).${detail}`;
+      } else if (status === 429) {
+        text = 'Hız sınırı — kısa bir mola verip tekrar deneyin.';
+      } else if (status === 401 || status === 403) {
+        text = `Yetki reddedildi.${detail}`;
+      } else {
+        text = `Bağlantı kesintisi: ${e?.message || e}`;
+      }
+      chatMessages = [...chatMessages, { ts: nowTime(), sender: selectedAgentId === 'lilith' ? 'Lilith' : 'Aspasia', text }];
     } finally {
       isSending = false;
     }

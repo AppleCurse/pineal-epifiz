@@ -42,42 +42,42 @@ def _real_sample_input() -> dict:
                 "2026-10-16T21:10:00Z",
             ],
             "posts_meta": [
-                {"likes": 210, "comments": 14},
-                {"likes": 285, "comments": 22},
-                {"likes": 340, "comments": 31},
-                {"likes": 195, "comments": 11},
-                {"likes": 410, "comments": 39},
+                {"like_count": 210, "comment_count": 14},
+                {"like_count": 285, "comment_count": 22},
+                {"like_count": 340, "comment_count": 31},
+                {"like_count": 195, "comment_count": 11},
+                {"like_count": 410, "comment_count": 39},
             ],
             "posts": [
                 {
                     "text": "Gece 02:15 — yeni tipografi ızgarasını bitirdim, mükemmeliyetçilik yine yoruyor.",
                     "timestamp": "2026-10-01T23:15:00Z",
-                    "likes": 210,
-                    "comments": 14,
+                    "like_count": 210,
+                    "comment_count": 14,
                 },
                 {
                     "text": "Tasarım sistemlerinde gereksiz süsleri attık, sadece saf işlev kaldı.",
                     "timestamp": "2026-10-04T22:40:00Z",
-                    "likes": 285,
-                    "comments": 22,
+                    "like_count": 285,
+                    "comment_count": 22,
                 },
                 {
                     "text": "İstanbul mimari fotoğraf serisinden yeni seçki yayınlandı.",
                     "timestamp": "2026-10-08T19:30:00Z",
-                    "likes": 340,
-                    "comments": 31,
+                    "like_count": 340,
+                    "comment_count": 31,
                 },
                 {
                     "text": "Sessiz çalışma saatleri olmadan derin üretim çıkmıyor.",
                     "timestamp": "2026-10-12T23:50:00Z",
-                    "likes": 195,
-                    "comments": 11,
+                    "like_count": 195,
+                    "comment_count": 11,
                 },
                 {
                     "text": "Açık kaynak araçlarla kurduğumuz yeni araştırma akışı yayında.",
                     "timestamp": "2026-10-16T21:10:00Z",
-                    "likes": 410,
-                    "comments": 39,
+                    "like_count": 410,
+                    "comment_count": 39,
                 },
             ],
         },
@@ -172,9 +172,16 @@ def test_zero_mock_fastapi_vault_lilith_and_brain_hub_end_to_end(tmp_path, monke
     assert cap_resp.status_code == 200
     cap_data = cap_resp.json()
     assert cap_data["vault_locked"] is False
-    assert cap_data["wired_pipelines"]["lilith_strategy"] is True
-    assert cap_data["wired_pipelines"]["hook_studio"] is True
-    assert cap_data["profiles"]["local_core"]["total_count"] == 8
+    # wired_pipelines artık TÜRETİLMİŞ envanter: giriş başına {"available", "reason"}
+    assert cap_data["wired_pipelines"]["lilith_strategy"]["available"] is True
+    assert cap_data["wired_pipelines"]["hook_studio"]["available"] is True
+    for name, entry in cap_data["wired_pipelines"].items():
+        assert set(entry) >= {"available", "reason"}, f"{name}: türetilmişenvanter şeması eksik"
+        if not entry["available"]:
+            assert entry["reason"], f"{name}: kapalıysa sebep yazılmalıdır"
+    assert cap_data["profiles"]["local_core"]["total_count"] == 7
+    assert cap_data["profiles"]["consent_only"]["total_count"] == 1
+    assert cap_data["profiles"]["consent_only"]["flags"]["ENABLE_CROSS_PLATFORM"] is False
     assert cap_data["profiles"]["external_keyed"]["total_count"] == 9
 
     # 3. Gerçek /api/lilith/strategy (LilithGrowthAgent + ShadowExecutor + gerçek generate_hook_package)
@@ -193,8 +200,12 @@ def test_zero_mock_fastapi_vault_lilith_and_brain_hub_end_to_end(tmp_path, monke
     assert l_data["status"] == "ok"
     assert l_data["agent"] == "lilith"
     assert l_data["evidence_grounded"] is True
-    assert isinstance(l_data["neuro_metrics"], dict)
-    assert 0.5 <= l_data["neuro_metrics"]["viral_coefficient_score"] <= 10.0
+    # Görev motoru KOŞMADAN çağrılan strateji hattında motor sinyali YOKTUR:
+    # nöro formülü UYDURULMAZ — metrics üretilmez, açık sebep yazılır.
+    # (Gerçek motor sinyaliyle NeuroMetrics üretimi test_zero_mock_executor_*
+    # fonksiyonunda uçtan uca doğrulanır.)
+    assert l_data["neuro_metrics"] is None
+    assert l_data["metrics_source"] == "engine_signals_missing"
     assert isinstance(l_data["hook_studio"], dict)
     assert l_data["hook_studio"]["opening_message"]
     assert len(l_data["counter_moves"]) == 3

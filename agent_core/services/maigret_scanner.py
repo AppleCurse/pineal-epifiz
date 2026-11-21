@@ -73,7 +73,10 @@ def _env_int(name: str, default: int, maximum: int) -> int:
 
 
 def is_enabled() -> bool:
-    return os.getenv("ENABLE_MAIGRET", "false").lower() == "true"
+    """TEK KAYNAK: ``capabilities.state.flag_enabled`` (profil kuralları dahil)."""
+    from agent_core.capabilities.state import flag_enabled
+
+    return flag_enabled("ENABLE_MAIGRET")
 
 
 def sanitize_username(username: str) -> Optional[str]:

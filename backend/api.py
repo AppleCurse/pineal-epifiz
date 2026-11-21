@@ -2433,7 +2433,7 @@ async def run_mission(req: InitiatePayload, task_id: Optional[str] = None):
                     cookie = random.choice(cookie_list)
                     broadcast_log(client_id, "INFO", "DAEMON: Rotasyondan rastgele cookie seçildi.")
                 
-        enable_cross = os.getenv("ENABLE_CROSS_PLATFORM", "false").lower() == "true"
+        enable_cross = _flag_env("ENABLE_CROSS_PLATFORM")
         effective_type = _effective_scraper_type(req.url, req.scraper_type)
         if req.url and effective_type == "cross" and not enable_cross:
             broadcast_log(
@@ -5405,8 +5405,19 @@ async def api_mcp_status(client_id: str = "default"):
 
 
 def _flag_env(name: str) -> bool:
-    """[FAZ D · D4] Env kapısı okuma (speech'teki `_flag` ile aynı dar taraf)."""
-    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+    """Env kapısı okuma — TEK KAYNAK: ``agent_core.capabilities.state.flag_enabled``.
+
+    [K1 · 2026-11-21] Eskiden bağımsız ham okuma yapıyordu (``1/true/yes/on``);
+    çekirdek ise ``flag_enabled`` (``1/true/yes/on/enabled``) ve 2-profil kurallarını
+    biliyordu — aynı bayrak iki farklı gerçek üretebiliyordu. Artık tek kaynak.
+    """
+    from agent_core.capabilities.state import flag_enabled
+
+    try:
+        return bool(flag_enabled(name))
+    except Exception as exc:  # fail-closed + görünür (sessiz çökme yok)
+        logger.warning("_flag_env: %s okunamadı (%s) — dar taraf: kapalı", name, type(exc).__name__)
+        return False
 
 # [API-BÖLME 2] /api/language uçları ayrı modüle taşındı (tek-modül tavanı,
 # docs/reports/API_MONOLITH_SPLIT_PLAN.md §4). Sözleşme değişmedi: aynı yol,

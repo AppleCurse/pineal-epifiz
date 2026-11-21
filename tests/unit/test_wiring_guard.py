@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from agent_core.capabilities.policy import (
+    CONSENT_ONLY_FLAGS,
     EXTERNAL_KEYED_FLAGS,
     LOCAL_CORE_FLAGS,
     MANAGED_GATE_FLAGS,
@@ -26,15 +27,28 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_capability_two_profile_partition_has_no_orphans():
-    """17 ENABLE_* bayrağı eksiksiz ve çakışmasız iki profile bölünmeli."""
+    """17 ENABLE_* bayrağı eksiksiz ve çakışmasız bölünür (local_core + external_keyed + consent_only)."""
     local_set = set(LOCAL_CORE_FLAGS)
     ext_set = set(EXTERNAL_KEYED_FLAGS)
+    consent_set = set(CONSENT_ONLY_FLAGS)
     managed_set = set(MANAGED_GATE_FLAGS)
 
     assert local_set.isdisjoint(ext_set), f"Çakışan bayraklar: {local_set & ext_set}"
-    assert (local_set | ext_set) == managed_set, (
-        f"Yetim/eksik bayraklar: {managed_set ^ (local_set | ext_set)}"
+    assert local_set.isdisjoint(consent_set), f"Çakışan bayraklar: {local_set & consent_set}"
+    assert ext_set.isdisjoint(consent_set), f"Çakışan bayraklar: {ext_set & consent_set}"
+    assert (local_set | ext_set | consent_set) == managed_set, (
+        f"Yetim/eksik bayraklar: {managed_set ^ (local_set | ext_set | consent_set)}"
     )
+
+
+def test_capability_consent_only_flag_not_opened_by_local_core_profile():
+    """ENABLE_CROSS_PLATFORM yerel-çekirdek profiliyle AÇILAMAZ; yalnız açık onay/env açar."""
+    profiled = enabled_flags({"PINEAL_CAPABILITY_PROFILE": "local_core"})
+    assert profiled["ENABLE_CROSS_PLATFORM"] is False, (
+        "çapraz platform kapısı profil tarafından açıldı — rıza kapısı delindi"
+    )
+    explicit = enabled_flags({"PINEAL_CAPABILITY_PROFILE": "local_core", "ENABLE_CROSS_PLATFORM": "true"})
+    assert explicit["ENABLE_CROSS_PLATFORM"] is True, "açık env hâlâ kazanmalı"
 
 
 def test_capability_local_core_profile_enables_local_only_and_respects_explicit_false():

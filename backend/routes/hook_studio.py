@@ -425,13 +425,36 @@ def register_hook_studio_routes(
 
     @app.post("/api/hook/generate")
     async def generate_hook(payload: HookStudioPayload, request: Request):
-        """Hedefin bilişsel profiline ve operatörün niyetine göre açılış kancası ve diyalog ağacı üretir."""
+        """Hedefin bilişsel profiline ve operatörün niyetine göre açılış kancası ve diyalog ağacı üretir.
+
+        Kapı sırası: hız → reşitlik → kasa. Kanca üretimi gerçek bir kişi hakkında
+        strateji kurgular; kasa kapalıyken veya reşitlik beyanı varken ÜRETİLMEZ.
+        (Kapılar çağrıda verilirse — üretimde verilir — uygulanır; birim testleri
+        kapı kablosuz kurabilir.)
+        """
         ip = rate_identity(request)
         if not rate_limit(ip, "hook_generate"):
             return JSONResponse(
                 {"error": {"code": "RATE_LIMITED", "message": "Çok fazla kanca isteği. Lütfen bekleyin."}},
                 status_code=429,
             )
+        if require_minor_clearance is not None:
+            _tp = payload.target_profile if isinstance(payload.target_profile, dict) else {}
+            _subject = str(
+                payload.target_username
+                or _tp.get("username")
+                or _tp.get("name")
+                or payload.custom_goal
+                or payload.intent
+                or ""
+            )
+            blocked = require_minor_clearance(payload.client_id, subject=_subject)
+            if blocked is not None:
+                return blocked
+        if require_vault_open is not None:
+            locked = require_vault_open(payload.client_id)
+            if locked is not None:
+                return locked
         return await generate_hook_package(
             payload,
             gateway_provider=gateway_provider,
