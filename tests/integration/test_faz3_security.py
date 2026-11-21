@@ -1,6 +1,7 @@
 """
 FAZ 3 / G3.1+G3.2 — güvenlik sözleşmeleri (auth, rate limit, deneysel yollar).
 """
+import os
 import uuid
 
 from fastapi.testclient import TestClient
@@ -42,6 +43,11 @@ def test_static_ui_not_blocked_by_token(monkeypatch):
     monkeypatch.setenv("PINEAL_TOKEN", "gizli-anahtar-123")
     with TestClient(app) as client:
         r = client.get("/")
+    if not os.path.isdir("frontend/dist"):
+        # Dist yoksa arayüz monte edilmez (2026-11-21 güvenlik düzeltmesi);
+        # token kontrolü statik yolu etkilemez — 404 kalır.
+        assert r.status_code == 404
+        return
     assert r.status_code == 200
 
 
