@@ -27,7 +27,8 @@ def test_health_ready_returns_200():
         app.state.startup_health = _make_health("ready")
         r = client.get("/health")
     assert r.status_code == 200
-    assert r.json()["status"] == "ready"
+    # [2026-11-21] Herkese açık /health yalnız status taşır; ayrıntı /api/health/detail.
+    assert r.json() == {"status": "ready"}
 
 
 def test_health_degraded_returns_200_not_503():
@@ -40,8 +41,11 @@ def test_health_degraded_returns_200_not_503():
             degraded_reasons=["UNIFIED_ROUTER_CONFIG_MISSING"],
         )
         r = client.get("/health")
+        detail = client.get("/api/health/detail")
     assert r.status_code == 200
-    body = r.json()
+    assert r.json() == {"status": "degraded"}
+    assert detail.status_code == 200
+    body = detail.json()
     assert body["status"] == "degraded"
     assert "UNIFIED_ROUTER_CONFIG_MISSING" in body["degraded_reasons"]
 
@@ -94,7 +98,7 @@ def test_spend_cap_set_no_cap_degraded(monkeypatch):
     monkeypatch.setenv("PINEAL_TOKEN", "test-token-sentinel")
 
     with TestClient(app) as client:
-        r = client.get("/health")
+        r = client.get("/api/health/detail", headers={"X-API-Key": "test-token-sentinel"})
     body = r.json()
     assert body.get("spend_cap_unlimited") is False
     assert "SPEND_CAP_UNLIMITED" not in body.get("degraded_reasons", [])
@@ -109,7 +113,7 @@ def test_spend_cap_dev_unlimited_not_degraded(monkeypatch):
     monkeypatch.delenv("PINEAL_TOKEN", raising=False)
 
     with TestClient(app) as client:
-        r = client.get("/health")
+        r = client.get("/api/health/detail")
     body = r.json()
     assert r.status_code == 200
     assert "SPEND_CAP_UNLIMITED" not in body.get("degraded_reasons", [])

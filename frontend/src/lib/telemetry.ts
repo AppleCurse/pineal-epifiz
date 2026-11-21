@@ -80,10 +80,12 @@ async function pollOnce() {
   if (ticking) return;
   ticking = true;
   try {
-    // 1) /health — bütünlük + gecikme ölçümü
+    // 1) /api/health/detail — bütünlük + gecikme ölçümü
+    //    (2026-11-21: herkese açık /health artık yalnız status taşır;
+    //    ayrıntı kimlikli uçtadır, apiFetch token'ı zaten ekler.)
     const t0 = performance.now();
     try {
-      const res = await apiFetch('/health');
+      const res = await apiFetch('/api/health/detail');
       const ms = Math.round(performance.now() - t0);
       if (!res.ok) throw new Error('http ' + res.status);
       const data = await res.json();

@@ -29,7 +29,9 @@ if not exist venv (
     if errorlevel 1 goto :fail
 )
 call venv\Scripts\activate.bat
-python -m pip install -q -r requirements.txt
+REM [2026-11-21] CI/Docker ile AYNI agac: requirements.lock (pinned). README'deki
+REM elle kurulum da lock'u kullanir; eskidi requirements.txt yalniz alt sinir beyan eder.
+python -m pip install -q -r requirements.lock
 if errorlevel 1 goto :fail
 
 REM --- 2) OSINT ve Retina paketleri (psutil uyumlulugu icin ayri adim) ---
@@ -76,6 +78,7 @@ if not defined ENABLE_IG_SECONDARY set ENABLE_IG_SECONDARY=true
 if not defined ENABLE_COMPANY_TARGETING set ENABLE_COMPANY_TARGETING=true
 if not defined ENABLE_REPORT_FACTORY set ENABLE_REPORT_FACTORY=true
 if not defined ENABLE_MEDIA_FORENSICS set ENABLE_MEDIA_FORENSICS=true
+echo Kapi durumu: ENABLE_CROSS_PLATFORM ENABLE_MAIGRET ENABLE_HOLEHE ENABLE_CRAWL4AI ENABLE_SCRAPLING ENABLE_X_SENSOR ENABLE_IG_SECONDARY ENABLE_COMPANY_TARGETING ENABLE_REPORT_FACTORY ENABLE_MEDIA_FORENSICS acik (kasa ve hiz kapilari HER DURUMDA aktif).
 echo Sunucu baslatiliyor: http://localhost:8000
 echo.
 python -m uvicorn backend.api:app --host 0.0.0.0 --port 8000

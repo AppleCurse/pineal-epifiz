@@ -31,6 +31,7 @@ from agent_core.utils.security import (
     resolve_principal,
     security_posture,
     token_matches,
+    client_ip,
 )
 from backend.security.principal import (
     RoomForbiddenError,
@@ -84,7 +85,15 @@ async def run_telemetry_socket(
     # taşımayabilir — AttributeError ile patlamak yerine "unknown" kovasına
     # düşer (yine de SINIRLANIR, yani kapı atlanmaz).
     client = getattr(websocket, "client", None)
-    peer = getattr(client, "host", None) or "unknown"
+    socket_host = getattr(client, "host", None)
+    # [2026-11-21 · #8] Güvenilen proxy arkasında IP X-Forwarded-For'dan
+    # (PINEAL_TRUST_PROXY_HEADERS=true); değilse soket adresi kullanılır.
+    headers = getattr(websocket, "headers", None) or {}
+    try:
+        forwarded_for = headers.get("x-forwarded-for")
+    except Exception:  # pragma: no cover - test sahteleri her zaman dict değil
+        forwarded_for = None
+    peer = client_ip(forwarded_for=forwarded_for, socket_host=socket_host)
     if not rate_limit(f"ws:{peer}", "ws"):
         logger.warning("WS_RATE_LIMITED peer=%s", peer)
         await websocket.close(code=_CLOSE_TRY_AGAIN)

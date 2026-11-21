@@ -1,0 +1,22 @@
+name: Özellik isteği
+description: Yeni yetenek, ajan veya iyileştirme önerisi
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Hangi sorunu çözer?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Öneri
+      description: Ne yapılmasını istiyorsun? Varsa hangi bileşene dokunur?
+    validations:
+      required: true
+  - type: textarea
+    id: capability
+    attributes:
+      label: Yetenek sözleşmesi (varsa)
+      description: Yeni yetenekse availability() davranışı ve ENABLE_* kapı bayrağı önerisi.

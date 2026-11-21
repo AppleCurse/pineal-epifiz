@@ -1,17 +1,30 @@
 // Atlas Epifiz — LinkedIn Content Script
 // Sözleşme: POST /api/initiate (X-API-Key) -> GET /api/tasks/{id}/graph.
 // Kanıt yoksa panel DOLDURULMAZ; sunucu hatası AYNEN gösterilir.
+//
+// [2026-11-21] Bu dosya eskiden çekirdek mantık (serverError, REASON,
+// profil çıkarma, hedef kapısı) 'core.js'te DÜZELTİLMİŞ olarak varken onu
+// KULLANMIYORdu; manifest yalnız content.js yüklediği için "düzeltilmiş"
+// kod ölüydü. Artık core.js manifest'te ÖNCE yüklenir ve tüm paylaşılan
+// mantık window.AtlasLinkedInCore üzerinden KULLANILIR (kopya yok).
+// Sunucuya ait HER metin textContent ile yazılır — innerHTML'e asla
+// girdi verilmez (hedef-türevli metin sayfaya enjekte edilemez).
 (function () {
   if (window.__ATLAS_EPIFIZ_LOADED__) return;
   window.__ATLAS_EPIFIZ_LOADED__ = true;
 
-  const BACKEND_URL = 'http://127.0.0.1:8000';
+  const CORE = window.AtlasLinkedInCore;
+  if (!CORE) {
+    // core.js manifest sırasıyla yüklenir; yoksa eklenti sessizce çalışamaz —
+    // sessiz başarısızlık YOKTUR, hata konsola yazılır ve eklenti inert kalır.
+    console.error('[ATLAS] core.js yüklenemedi — eklenti devre dışı (manifest sırası: core.js, content.js)');
+    return;
+  }
+
+  const BACKEND_URL = CORE.BACKEND_URL;
   const POLL_MS = 3000;
   const MAX_EMPTY = 12;
-  const REASON = {
-    no_evidence: 'Görev belleğinde kanıt yok — graf üretilmedi.',
-    no_nodes: 'Kanıttan düğüm çıkarılamadı.',
-  };
+  const REASON = CORE.REASON_TEXT;
 
   let isPanelOpen = false;
   let isAnalyzing = false;
@@ -37,17 +50,6 @@
     return h;
   }
 
-  function serverError(status, body) {
-    const code = body?.error?.code || '';
-    const msg = body?.error?.message || body?.detail || '';
-    if (status === 423) return `KASA KİLİTLİ (423). ${msg || 'Konsoldan kasayı aç, sonra tekrar dene.'}`;
-    if (status === 451) return `ÇOCUK KİLİDİ (451). ${msg || 'Operatör beyanı gerekiyor.'}`;
-    if (status === 429) return `HIZ LİMİTİ (429). ${msg || 'Dakikada 5 görev; biraz bekle.'}`;
-    if (status === 401) return `KİMLİK REDDEDİLDİ (401). Token gir (eklenti simgesi). ${msg}`;
-    if (status === 403) return `ODA REDDEDİLDİ (403). ${msg || 'Bu oda başka operatöre kayıtlı.'}`;
-    return `HTTP ${status}${code ? ' · ' + code : ''} ${msg}`.trim();
-  }
-
   async function call(path, init) {
     const { token } = await settings();
     const res = await fetch(BACKEND_URL + path, {
@@ -56,19 +58,22 @@
     });
     let body = null;
     try { body = await res.json(); } catch { body = null; }
-    if (!res.ok) throw new Error(serverError(res.status, body));
+    if (!res.ok) throw new Error(CORE.serverError(res.status, body));
     return body;
   }
 
+  // Ham DOM okumalarını çekirdek şemaya verir; dürüstlük (ad yoksa '' ve
+  // hasTarget:false; geçerli /in/ URL'si yoksa istek KURULMAZ) core.js'tedir.
   function extractProfileData() {
     const nameEl = document.querySelector('h1.text-heading-xlarge') || document.querySelector('h1');
     const titleEl = document.querySelector('div.text-body-medium') || document.querySelector('.pv-text-details__left-panel h2');
     const canonical = document.querySelector('link[rel="canonical"]')?.href || window.location.href;
-    return {
-      name: nameEl ? nameEl.innerText.trim() : 'LinkedIn Profili',
-      title: titleEl ? titleEl.innerText.trim() : '',
-      url: canonical.split('?')[0],
-    };
+    return CORE.extractProfileData({
+      name: nameEl ? nameEl.innerText : '',
+      title: titleEl ? titleEl.innerText : '',
+      canonical,
+      url: window.location.href,
+    });
   }
 
   // ── DOM ────────────────────────────────────────────────────────
@@ -108,7 +113,7 @@
             <div id="atlas-note" class="atlas-data-box"></div>
             <div id="atlas-nodes" class="atlas-matrix-pills"></div>
           </div>
-          <a id="atlas-open-console-link" href="http://127.0.0.1:8000" target="_blank" class="atlas-secondary-btn">🏛️ TAM KONSOLDA AÇ</a>
+          <a id="atlas-open-console-link" href="http://127.0.0.1:8000" target="_blank" rel="noopener noreferrer" class="atlas-secondary-btn">🏛️ TAM KONSOLDA AÇ</a>
         </div>
       </div>`;
     document.body.appendChild(sidebar);
@@ -124,14 +129,17 @@
     sidebar.classList.toggle('active', isPanelOpen);
     if (isPanelOpen) {
       const t = extractProfileData();
-      document.getElementById('atlas-target-name').innerText = `${t.name} (${t.title || 'LinkedIn'})`;
+      document.getElementById('atlas-target-name').innerText = t.display;
+      // Hedef yoksa analiz butonu KAPALI (URL'siz görev açmak, sunucudan
+      // uydurma sonuç istemekle aynı şeydir).
+      document.getElementById('atlas-run-analyze-btn').disabled = !t.hasTarget;
     }
   }
 
   function setStatus(text, kind) {
     const el = document.getElementById('atlas-status');
     if (!el) return;
-    el.innerText = text;
+    el.innerText = text; // daima metin düğümü: sunucu metni HTML yorumlanmaz
     el.dataset.kind = kind || '';
   }
 
@@ -141,6 +149,12 @@
     const target = extractProfileData();
     const { clientId } = await settings();
     currentClient = clientId;
+
+    const plan = CORE.planAnalysis(target, clientId);
+    if (!plan.ok) {
+      setStatus(plan.reason, 'err');
+      return;
+    }
 
     isAnalyzing = true;
     emptyPolls = 0;
@@ -154,26 +168,19 @@
     try {
       const started = await call('/api/initiate', {
         method: 'POST',
-        body: JSON.stringify({
-          client_id: clientId,
-          url: target.url,
-          rituals: '',
-          playlist: '',
-          envies: '',
-          scraper_type: 'cross',
-        }),
+        body: JSON.stringify(plan.body),
       });
       currentTask = started.task_id;
       stop.hidden = false;
       btn.innerText = '⚡ YENİDEN TARA & ANALİZ ET';
-      btn.disabled = false;
+      btn.disabled = !target.hasTarget;
       setStatus(`Görev ${currentTask} — kanıt bekleniyor…`);
       pollTimer = setInterval(() => pollGraph(currentTask, currentClient), POLL_MS);
       pollGraph(currentTask, currentClient);
     } catch (err) {
       setStatus(err.message, 'err');
       btn.innerText = '⚡ YENİDEN TARA & ANALİZ ET';
-      btn.disabled = false;
+      btn.disabled = !target.hasTarget;
       isAnalyzing = false;
     }
   }
@@ -205,28 +212,29 @@
     }
   }
 
+  // Sunucu metni ASLA innerHTML'e verilmez; daima textContent ile yazılır.
   function renderEmpty(g) {
+    const view = CORE.normalizeGraph(g);
     const box = document.getElementById('atlas-results-container');
     const note = document.getElementById('atlas-note');
     const nodes = document.getElementById('atlas-nodes');
     box.classList.remove('atlas-results-hidden');
-    note.innerHTML = `<div><strong>Durum:</strong> ${g.available ? 'graf boş' : 'kanıt yok'}</div>
-      <div><strong>Sebep:</strong> ${g.reason || '—'}</div>`;
-    nodes.innerHTML = '';
+    note.textContent = view.note;
+    nodes.replaceChildren();
   }
 
   function renderGraph(g) {
+    const view = CORE.normalizeGraph(g);
     const box = document.getElementById('atlas-results-container');
     const note = document.getElementById('atlas-note');
     const nodes = document.getElementById('atlas-nodes');
     box.classList.remove('atlas-results-hidden');
-    note.innerHTML = `<div><strong>${g.node_count}</strong> düğüm · <strong>${g.edge_count}</strong> kenar</div>
-      <div class="atlas-muted">${g.machine_note || ''}</div>`;
-    nodes.innerHTML = '';
-    for (const n of g.nodes) {
+    note.textContent = view.note;
+    nodes.replaceChildren();
+    for (const n of view.nodes) {
       const pill = document.createElement('span');
       pill.className = 'atlas-pill' + (n.kind === 'target' ? ' active' : '');
-      pill.innerText = `${n.kind} · ${n.label} (${n.evidence_count})`;
+      pill.innerText = `${n.kind} · ${n.label} (${n.evidence})`;
       nodes.appendChild(pill);
     }
   }

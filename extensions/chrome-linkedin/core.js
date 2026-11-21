@@ -144,6 +144,12 @@ const AtlasLinkedInCore = {
   normalizeError,
 };
 
+// Klasik content-script dünyası: core.js manifest sırasıyla ÖNCE yüklenir ve
+// çekirdeğini açıkça paylaşır (content.js bunu window.AtlasLinkedInCore'dan
+// okur). Node testleri için CommonJS dışa aktarım korunur.
+if (typeof window !== 'undefined') {
+  window.AtlasLinkedInCore = AtlasLinkedInCore;
+}
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = AtlasLinkedInCore;
 }

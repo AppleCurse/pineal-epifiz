@@ -25,8 +25,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: Denetim sırasında düzenlenen, derleyicisi yerelde OLMAYAN dosyalar.
 GUARDED_FILES = [
-    "android/app/src/main/java/com/example/pineal/i18n/I18n.kt",
-    "android/app/src/main/java/com/example/pineal/engine/PinealAnalyzerEngine.kt",
+    "android/app/src/main/java/com/aistudio/pineal/heretic/i18n/I18n.kt",
+    "android/app/src/main/java/com/aistudio/pineal/heretic/engine/PinealAnalyzerEngine.kt",
     "rust_core/src-tauri/src/lib.rs",
     "rust_core/src-tauri/Cargo.toml",
     "rust_core/Cargo.toml",

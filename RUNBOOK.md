@@ -37,7 +37,7 @@
   Emekli promo slug'lar (`solar-pro4`, `ling-3.0-flash`, `glm-5.2`) varsayılan zincirde yok.
 - Token kipi: `PINEAL_TOKEN=x` (HTTP `X-API-Key`; WS ilk auth mesajı). UI token'ı YALNIZ çalışma zamanında Kasa → "API ERİŞİM ANAHTARI" alanından girer (localStorage); build-time gömme yoktur (AUDIT 2026-09-11 P0: `VITE_PINEAL_TOKEN` kaldırıldı). `PINEAL_ENV=production` tokensız başlatılamaz; Docker varsayılanı production'dır.
 - Harcama tavanı: `OPENROUTER_MAX_SPEND_USD` (0=kapalı; env tanımsızsa da 0). Aşılırsa `SpendCapExceeded`.
-- Native yönlendirici: `PINEAL_LLM_BACKEND=legacy|unified` + `PINEAL_ROUTER_CONFIG` (şablon: `config/router.example.json`). `unified` seçilip config verilmezse startup **çökmez**: legacy'ye düşer, `/health` `UNIFIED_ROUTER_CONFIG_MISSING` ile DEGRADED döner (fail-safe; fail-closed değil).
+- Native yönlendirici: `PINEAL_LLM_BACKEND=legacy|unified` + `PINEAL_ROUTER_CONFIG` (şablon: `config/router.example.json`). `unified` seçilip config verilmezse startup **çökmez**: legacy'ye düşer, `/health` `degraded` döner; sebep `/api/health/detail`'de `UNIFIED_ROUTER_CONFIG_MISSING` olarak görünür (fail-safe; fail-closed değil).
 
 ## Sık sorunlar
 | Belirti | Neden → Çözüm |
@@ -138,7 +138,7 @@ Yatay ölçekleme: paylaşımlı session store (Redis vb.) + sticky session gere
 |---|---|---|
 | 1 | `/app/memory` kalıcı volume'a bağlı | Container yeniden başlatma sonrası `GET /api/tasks` aynı görevleri döndürüyor |
 | 2 | `PINEAL_TOKEN` tanımlı | `PINEAL_ENV=production` ile tokensız start etmez (`PRODUCTION_AUTH_REQUIRED`) |
-| 3 | `OPENROUTER_MAX_SPEND_USD` > 0 | `/health → spend_cap_unlimited: false` |
+| 3 | `OPENROUTER_MAX_SPEND_USD` > 0 | `/api/health/detail → spend_cap_unlimited: false` |
 | 4 | `LIVE_LLM_E2E=1` | Aspasia gerçek yanıt veriyor; telemetride `gateway: true` |
 | 5 | `PINEAL_ALLOWED_ORIGINS` explicit | Localhost dışı origin için açıkça belirt |
 | 6 | Tek instance | `railway.toml → numReplicas=1` / `docker-compose → replicas: 1` |
@@ -334,7 +334,7 @@ yaratma/planlama politikası değişmedi: plan = `CognitiveRouter`, yürütme =
 
 ## Bilinçli sınırlar
 - Veritabanı yok (JSON bellek) — çoklu kullanıcı/geçmiş sorgulama gerekirse Store soyutlaması eklenecek.
-- **FAZ 9 Karar B:** `rust_core/` experimental/optional'dır. CI'da bağımsız derlenip test edilir; Python ürün yoluna bağlı değildir, Docker'a paketlenmez, aktivasyon bayrağı ve ürün karar etkisi yoktur. `/health` ile `/api/telemetry` bu statüyü raporlar. Tauri masaüstü taslağı release ürünü değildir.
+- **FAZ 9 Karar B:** `rust_core/` experimental/optional'dır. CI'da bağımsız derlenip test edilir; Python ürün yoluna bağlı değildir, Docker'a paketlenmez, aktivasyon bayrağı ve ürün karar etkisi yoktur. `/api/telemetry` bu statüyü raporlar (`/health` yalnız `status` döner). Tauri masaüstü taslağı release ürünü değildir.
 - Deneysel API'ler (`/api/experimental/*`) ürün sözleşmesi dışıdır.
 - X (Twitter) kazıması devre dışıdır (B4). Instagram kazıması tarayıcı kurulumuna bağlıdır: manuel kurulumda ZORUNLU adım: `python -m playwright install chromium` (Docker imajı otomatik kurar).
 - Docker build `playwright install chromium` adımında düşüyorsa: Dockerfile 3 deneme + 300 sn t/o ile retry eder; süreklileşirse DNS/VPN'i kontrol edin veya `.env`'e `PLAYWRIGHT_DOWNLOAD_HOST=https://cdn.npmmirror.com/binaries/playwright` yazıp `docker compose build pineal` çalıştırın (compose bu build-arg'ı otomatik geçirir).

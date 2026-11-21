@@ -177,8 +177,8 @@ def test_android_client_targets_the_server_side_coach_endpoint():
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[2]
-    client_src = (root / "android/app/src/main/java/com/example/pineal/engine/backend/PinealBackendClient.kt").read_text(encoding="utf-8")
-    engine_src = (root / "android/app/src/main/java/com/example/pineal/engine/AspasiaChatEngine.kt").read_text(encoding="utf-8")
+    client_src = (root / "android/app/src/main/java/com/aistudio/pineal/heretic/engine/backend/PinealBackendClient.kt").read_text(encoding="utf-8")
+    engine_src = (root / "android/app/src/main/java/com/aistudio/pineal/heretic/engine/AspasiaChatEngine.kt").read_text(encoding="utf-8")
     assert 'api/mobile/coach' in client_src
     # Android artık istem kurmuyor: önce sunucu, sonra etiketli geri düşüş.
     assert "tryBackend" in engine_src

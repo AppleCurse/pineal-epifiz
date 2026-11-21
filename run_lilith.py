@@ -24,6 +24,12 @@ import asyncio
 import argparse
 import json
 
+from agent_core.utils.vault_path import default_vault_file
+
+# [2026-11-21 · P1-33] Kasa yolunun tek çözümü (PINEAL_VAULT_FILE >
+# /app/vault-data > CWD) — backend/api.py ve vault_gate.py ile aynı kural.
+_VAULT_FILE = default_vault_file()
+
 if sys.platform == "win32":
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -50,10 +56,10 @@ def inject_vault_key_fallback() -> str | None:
         or os.getenv("OPENROUTER_API_KEY")
     ):
         return None
-    if not os.path.exists(".pineal_vault.json"):
+    if not os.path.exists(_VAULT_FILE):
         return None
     try:
-        with open(".pineal_vault.json", "r", encoding="utf-8") as vf:
+        with open(_VAULT_FILE, "r", encoding="utf-8") as vf:
             vdata = json.load(vf)
     except Exception:
         return None
@@ -85,9 +91,9 @@ def resolve_credentials(model: str) -> tuple[str | None, str | None, str]:
     base_url = os.getenv("OPENROUTER_BASE_URL") or os.getenv("OPENAI_BASE_URL")
     api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("NOUS_API_KEY") or os.getenv("OPENAI_API_KEY")
 
-    if not api_key and os.path.exists(".pineal_vault.json"):
+    if not api_key and os.path.exists(_VAULT_FILE):
         try:
-            with open(".pineal_vault.json", "r", encoding="utf-8") as vf:
+            with open(_VAULT_FILE, "r", encoding="utf-8") as vf:
                 vdata = json.load(vf)
                 api_key = vdata.get("api_key") or vdata.get("openrouter_key") or vdata.get("nous_key")
                 if not api_key:

@@ -315,9 +315,9 @@ karşı** koşturur ve ham çıktıyı basar: `0` kanıtlandı · `1` döngü k�
 
 ---
 
-## 11 · API yüzeyi (79 HTTP ucu + 1 WebSocket)
+## 11 · API yüzeyi (80 HTTP ucu + 1 WebSocket)
 
-> Sayım biçimi: **75 = path+metot çifti**, **74 benzersiz yol**. Fark tek bir yoldan gelir: `/api/vault/status` hem `GET` (durum) hem `POST` (kilit aç/kapa) kabul eder. Sayı `backend.api.app.routes` üzerinden ölçülür.
+> Sayım biçimi: **80 = path+metot çifti**, **78 benzersiz yol**. Fark iki yoldan gelir: `/api/vault/status` hem `GET` (durum) hem `POST` (kilit aç/kapa), `/api/tasks/{task_id}` hem `GET` hem `DELETE` kabul eder. Sayı `backend.api.app.routes` üzerinden ölçülür.
 
 | Alan | Uçlar | Ne yapar |
 |---|---|---|
@@ -365,10 +365,10 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 | Kayıtlı ajanlar | `/api/aspasia/state` → **13** ajan |
 | Kasa kilidi | Kilitliyken `POST /api/initiate` → **423 VAULT_LOCKED** |
 | WebSocket akışı | Yerel istemciyle **63 kare** alındı |
-| Test tabanı | CI'ın kendi komutu (`pytest -q --cov=agent_core --cov=backend --cov-fail-under=80`) → **3109 passed, 6 skipped, 2 xfailed**, kapsam **%86.56** |
+| Test tabanı | CI'ın kendi komutu (`pytest -q --cov=agent_core --cov=backend --cov-fail-under=80`) → **3249 passed, 6 skipped, 2 xfailed**, kapsam **%85.71** |
 | Kod kalitesi | `ruff check .` → **All checks passed!** · `npm run check` → **0 hata / 0 uyarı** · `npm test` (vitest sözleşme testleri) → **6/6** · `npm run build` → ✓ |
 | Denetim bekçileri | `audit_regression.py` → **✓ BEKÇİ GEÇTİ** · `dead_code_audit.py` → **0/0/0/0/0/0/0** (C1/C1b/C2/C3/C4/C5/C6) |
-| Ölçülebilir ilerleme | `backend/api.py` **5754** satır (tavan 5760, düşürülmüş) |
+| Ölçülebilir ilerleme | `backend/api.py` **5470** satır (tavan 5760, düşürülmüş) |
 | Revert-doğrulama | `scripts/revert_verification_p*.py` → **43/43** düzeltme geri alınınca test kırmızıya döndü (p0 7/7 · p1 6/6 · p2 3/3 · p3 4/4 · p4 5/5 · p8 10/10 · p9 8/8; her koşum dosyayı `finally` ile geri yükler) |
 | Komut döngüsü | `scripts/verify_command_loop.py` → erişilemeyen API'de `rc=2` + sebep; kırık döngüde `rc=1` + sebep |
 | Onay kablosu | Onay yok → `sensor.ig.instagrapi` / `sensor.x.twscrape` **`policy:gate_disabled`**; onay var → kapı **açık**, dürüst sebep `dependency_missing:*` (birim testi, sahte çalıştırıcı) |
@@ -376,7 +376,7 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 | IG gönderi tavanı | Ham HTML yolunda 20 sahte gönderi → **20 post**; `PINEAL_IG_MAX_POSTS=5` → **5 post** (sabit 12 yok) |
 | 13 ajan GERÇEKTEN koşuyor | Gerçek `CognitiveRouter` + gerçek `PinealExecutor` ile görev koşuldu, her ajanın `execute/analyze` çağrısı kaydedildi → **13/13** (rota 10, yürütücü 3 ayrı çağrı). Test: `tests/unit/test_claims_are_runtime_proven.py` |
 | 28 yetenek erişilebilir | `availability()` 28/28 **istisnasız** yanıt verdi (5 açık: socid, dil, handle_probe, phone_probe, rapor metni; 23'ü kapı/bağımlılık sebebiyle kapalı). Her kimliğin adaptör dışı çağrı yeri var; 3 web çıkarıcısı `WEB_EXTRACTION_ORDER` zinciriyle çağrılıyor (`web_research.py`) |
-| Ölü uç yok | 68 benzersiz HTTP yolu: **30**'u UI/edge worker'dan, **38**'i testlerden çağrılıyor; **hiçbir çağrı yeri olmayan uç 0**. (`dead_code_audit` uçları KAPSAMAZ — bu ölçüm `test_no_http_endpoint_is_orphaned` ile kilitli) |
+| Çağrı yeri olmayan uçlar | 78 benzersiz HTTP yolu: **23**'ü UI/edge worker'dan, **72**'si testlerden çağrılıyor; **3**'ünün çağrı yeri yok (`/api/vault/lock`, `/api/vault/unlock`, `/api/tasks/{task_id}/changes`). Ölçüm `tests/unit/test_http_endpoint_call_sites.py` ile kilitli |
 | Panelin görsel doğrulaması | Headless Playwright Chromium (`chrome-win64`) ile 1920×1080 çözünürlükte tam ekran görüntüsü alındı (`cockpit_live_visual.png`), pikselleriyle kanıtlandı |
 
 **DOĞRULANMADI (sebebiyle):**
@@ -398,19 +398,19 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 
 | Klasör | İçinde ne var |
 |---|---|
-| `backend/` | HTTP + WS yüzeyi (`api.py` 5754 satır), uç modülleri (`routes/`), servisler (`services/`), güvenlik (`security/`) |
+| `backend/` | HTTP + WS yüzeyi (`api.py` 5470 satır), uç modülleri (`routes/`), servisler (`services/`), güvenlik (`security/`) |
 | `agent_core/` | Çekirdek: görev yürütücü, ajanlar, 7 dalga motoru, yetenek omurgası, hafıza, gölge hat |
 | `frontend/src/` | Svelte arayüzü: 4 görünüm (Savaş Odası, Kontrol Paneli, SpiderFoot Kokpiti, Atlas Kokpiti) + ajan rafı + destek paneli |
 | `rust_core/` | Deneysel, opsiyonel Rust çekirdek (CI'da ayrı derlenir, ürün yoluna bağlı değildir) |
 | `android/` | Android istemcisi (CI'da lint + birim testi) |
 | `functions/` · `worker.ts` | Cloudflare Pages/Workers `/api` ve `/ws` edge vekilleri |
-| `tests/` | 272 test modülü (birim + entegrasyon) |
+| `tests/` | 298 test modülü (birim + entegrasyon) |
 | `scripts/` | Denetim ve doğrulama araçları: ölü kod denetimi, regresyon bekçisi, envanter üreteci, revert doğrulamaları, 9Router ön kontrolü |
 | `docs/` | Tüzük, sözleşmeler, mimari, aktif sözleşmeler ve **tam envanter sayfası** |
 | `config/` | Yönlendirme, sağlayıcı kataloğu, karar yapılandırması, RTK politikası |
 
 **Tam ve aranabilir harita:** **[docs/envanter.html](docs/envanter.html)** —
-816 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
+817 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
 ile yenilenir, CI `--check` ile bayatlamayı yakalar.
 
 **Ayrıca:** [ARCHITECTURE.md](ARCHITECTURE.md) · [README_TECHNICAL.md](README_TECHNICAL.md) ·
@@ -421,7 +421,7 @@ ile yenilenir, CI `--check` ile bayatlamayı yakalar.
 ## 15 · Testler ve kalite kapıları
 
 ```bash
-.venv/bin/python -m pytest tests -q --cov --cov-fail-under=80   # 3109 passed
+.venv/bin/python -m pytest tests -q --cov --cov-fail-under=80   # 3249 passed
 .venv/bin/ruff check .                                           # temiz
 cd frontend && npm run check && npm run build                    # 0/0 + derleme
 .venv/bin/python scripts/dead_code_audit.py                      # ölü kod yok

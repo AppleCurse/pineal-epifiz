@@ -105,8 +105,11 @@ from backend.services.run_entries import (  # noqa: F401  # yeniden dışa aktar
     serialize_run_entry as _serialize_run_entry,
 )
 
+from agent_core.utils.vault_path import default_vault_file
 from agent_core.utils.security import (
     SecurityConfigurationError,
+    is_production_environment,
+    client_ip,
     principal_of_request,
     redact_structure,
     redact_text,
@@ -312,7 +315,19 @@ async def lifespan(application: FastAPI):
 # ve VERSION dosyası 3.0.0-rc.2'ye çıktığında bayat kaldı: API, müşterilerine
 # kendini yanlış sürüm olarak tanıttı. Sürüm artık kopyalanmıyor; VERSION
 # dosyasından OKUNUYOR. Böylece "sürüm kimliği" sorusunun tek bir cevabı var.
-app = FastAPI(title=f"PINEAL-HERETIC v{VERSION} API", lifespan=lifespan)
+# [2026-11-21] OpenAPI şeması ve Swagger UI, üretimde KİMLİKSİZ açılmasın:
+# auth middleware yalnızca /api/ ve /v1/ yollarını kapsar; varsayılan docs
+# uçları (/docs, /redoc, /openapi.json) kapsam dışıydı ve üretimde 200
+# dönüyordu (ölçüldü). Geliştirmede açık kalır; üretimde tamamen kapalıdır.
+# İstisnasız teşhis gerekirse kimlikli /api/health/detail ucu vardır.
+_DOCS_ENABLED = not is_production_environment()
+app = FastAPI(
+    title=f"PINEAL-HERETIC v{VERSION} API",
+    lifespan=lifespan,
+    docs_url="/docs" if _DOCS_ENABLED else None,
+    redoc_url="/redoc" if _DOCS_ENABLED else None,
+    openapi_url="/openapi.json" if _DOCS_ENABLED else None,
+)
 app.include_router(_speech_audio_router)
 app.state.llm_backend_mode = "legacy"
 app.state.openai_router = None
@@ -328,16 +343,27 @@ app.state.startup_health = {
 async def health():
     health_status = app.state.startup_health
     status = health_status.get("status")
-    # "failed" → 503 (bağımlılık eksik veya security gate açılmamış)
-    # "degraded" → 200 (servis çalışıyor ama kısmi; load-balancer geçirir,
-    #   monitoring aracı degraded_reasons / error_code ile alarm üretir)
-    # "ready" → 200
-    # diğer (starting, None) → 503
+    # [2026-11-21] Herkese açık uç YALNIZ yeterlilik sinyali taşır.
+    # Eskiden tam startup_health (bağımlılık envanteri, ortam/auth modu,
+    # harcama tavanı, tarayıcı yolu, 41 model grubu) kimliksiz dönüyordu —
+    # dağıtım haritası. Ayrıntı kimlikli /api/health/detail ucundadır.
+    # Sözleşme korunur: status ready/degraded -> 200, diğerleri -> 503
+    # (Docker HEALTHCHECK ve Railway healthcheckPath buna bağlı).
+    payload = {"status": status}
     if status == "failed":
-        return JSONResponse(health_status, status_code=503)
+        return JSONResponse(payload, status_code=503)
     if status in ("ready", "degraded"):
-        return JSONResponse(health_status, status_code=200)
-    return JSONResponse(health_status, status_code=503)
+        return JSONResponse(payload, status_code=200)
+    return JSONResponse(payload, status_code=503)
+
+
+@app.get("/api/health/detail")
+async def health_detail():
+    """Kimlikli (/api/ öneki middleware ile korunur) ayrıntılı teşhis."""
+    health_status = app.state.startup_health
+    status = health_status.get("status")
+    code = 200 if status in ("ready", "degraded") else 503
+    return JSONResponse(health_status, status_code=code)
 
 
 # --- CORS (FAZ 3): ayni-origin serviste CORS gereksizdir; disaridan erisim
@@ -467,7 +493,13 @@ async def auth_middleware(request: Request, call_next):
             )
             return JSONResponse(body, status_code=401)
 
-        identity = presented_token or (request.client.host if request.client else "unknown")
+        # [2026-11-21 · #8] Proxy arkasında istemci IP'sini X-Forwarded-For'dan
+        # (yalnız PINEAL_TRUST_PROXY_HEADERS=true) çöz; token sunulduysa kimlik
+        # zaten tokenden gelir. Sahte başlık varsayımı varsayılan KAPALI.
+        identity = presented_token or client_ip(
+            forwarded_for=request.headers.get("x-forwarded-for"),
+            socket_host=request.client.host if request.client else None,
+        )
         identity_hash = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
         # [AUDIT P1-18a] Hız sınırı kimliği SUNUCUDAN türetilir ve handler'lara
         # buradan aktarılır. Eskiden handler'lar istemcinin gönderdiği
@@ -818,7 +850,11 @@ async def _scraper_capability() -> dict:
         _telemetry_capability["value"] = result
         return result
 
-VAULT_FILE = ".pineal_vault.json"
+# [2026-11-21 · P1-33 düzeltmesi] Kasa yolu TEK kaynaktan gelir
+# (agent_core.utils.security.default_vault_file): PINEAL_VAULT_FILE >
+# /app/vault-data (birim bağlıysa) > CWD. Compose/railway /app/vault-data
+# birimini bağlar; uygulama artık onu görür. Ayrıntı: vault_gate.py.
+VAULT_FILE = default_vault_file()
 
 
 def _load_vault(vault_file: str = VAULT_FILE) -> dict:
@@ -3834,8 +3870,11 @@ def _dialogue_scope_prefix(request: Request) -> str:
     identity = getattr(request.state, "rate_identity", None)
     if not isinstance(identity, str) or not identity:
         identity = _get_principal()
-    if not identity and request.client is not None:
-        identity = request.client.host
+    if not identity:
+        identity = client_ip(
+            forwarded_for=request.headers.get("x-forwarded-for"),
+            socket_host=request.client.host if request.client else None,
+        )
     if not identity:
         identity = "unknown"
     return hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24] + ":"
@@ -5413,13 +5452,19 @@ register_preflight_routes(
 )
 
 
-static_dir = "frontend/dist" if os.path.exists("frontend/dist") else "frontend"
-try:
-    os.makedirs(static_dir, exist_ok=True)
-except OSError as exc:
-    logger.warning("Statik dizin oluşturulamadı (%s); arayüz mount edilmedi.", exc)
-    static_dir = None
+# [2026-11-21] Statik arayüz YALNIZ frontend/dist'ten sunulur. Eskiden dist
+# yoksa montaj kaynağı "frontend/" idi — yani gerçek derleme yoksa ham kaynak
+# ağacı (src/, package.json, .env.example, configler) HTTP'ye açılıyordu;
+# ayrıca o sayfa çalışmazdı zaten (tarayıcı ham .ts'i koşturamaz). Dist yoksa
+# arayüz monte EDİLMEZ ve nedeni loglanır (arayüz içindir: cd frontend &&
+# npm run build); API uçları etkilenmez.
+static_dir = "frontend/dist" if os.path.isdir("frontend/dist") else None
+if static_dir is None:
+    logger.warning(
+        "frontend/dist bulunamadı — arayüz statik olarak mount edilmedi. "
+        "Arayüz için: cd frontend && npm run build (ya da geliştirmede vite proxy kullanın)."
+    )
 
-if static_dir and os.path.exists(static_dir):
+if static_dir and os.path.isdir(static_dir):
     # Sona ekliyoruz ki api rotaları statik dosyalardan önce ezilmesin
     app.mount("/", StaticFiles(directory=static_dir, html=True), name="frontend")

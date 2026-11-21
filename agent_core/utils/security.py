@@ -86,6 +86,37 @@ def _is_production() -> bool:
     return _environment_name() not in _DEVELOPMENT_ENVIRONMENTS
 
 
+#: İlk X-Forwarded-For değerini gerçekten güvenilen proxy'den gelen istek
+#: olarak yorumla. Varsayılan KAPALI: doğrudan internete açık sunucuda
+#: istemci başlığı sahteciliği sınırsız rate-limit bypass olurdu.
+def trust_proxy_headers() -> bool:
+    return os.getenv("PINEAL_TRUST_PROXY_HEADERS", "").strip().lower() == "true"
+
+
+def client_ip(*, forwarded_for: Optional[str], socket_host: Optional[str]) -> str:
+    """Oran sınırı kimliği için istemci IP'si.
+
+    ``x-forwarded-for`` yalnızca PINEAL_TRUST_PROXY_HEADERS=true iken
+    (ör. Cloudflare/Railway proxy'si arkasında) okunur; zincirin İLK
+    değeri gerçek istemcidir. Kapalıyken ya da başlık yoksa soket adresi.
+    """
+    if trust_proxy_headers() and forwarded_for:
+        first = forwarded_for.split(",")[0].strip()
+        if first:
+            return first
+    return socket_host or "unknown"
+
+
+def is_production_environment() -> bool:
+    """``_is_production`` için herkese açık ad.
+
+    Çağrı yerleri (ör. FastAPI docs kapısı) ortam kararını TEK yerden alır;
+    kendi üye-kümelerini yeniden tanımlamak ("production", "prod") yerine bu
+    fail-closed kuralı kullanır.
+    """
+    return _is_production()
+
+
 def security_posture() -> dict:
     """Validate auth posture and describe development's explicit open mode."""
     configured_environment = os.getenv("PINEAL_ENV", "").strip()

@@ -13,7 +13,8 @@ Düzeltme sonrası sözleşme:
     2. Kalıcı altyapı arızası görülürse yeniden deneme KESİLİR (bekleme yok).
     3. Kişiye özel kanıt yetersizliği (gizli hesap) altyapı arızası SAYILMAZ;
        mevcut dürüst davranış korunur.
-    4. ``/health`` ikili yokken ``degraded`` + ``browser_binary_missing`` der.
+    4. ``/health`` ikili yokken ``degraded`` der; bileşen dökümü kimlikli
+       ``/api/health/detail`` ucundadır (2026-11-21 ayrıştırması).
 
 Testler DAVRANIŞI ölçer: kazıma fonksiyonu çağrı sayısı, uyku çağrı sayısı,
 ret metni ve gerçek ``browser_binary_status()`` ölçümü üzerinden.
@@ -223,14 +224,14 @@ async def test_private_account_is_not_treated_as_infrastructure_failure(monkeypa
 
 # ------------------------------------------------------- 3 · /health kapısı
 def test_health_reports_missing_browser_as_degraded():
-    """/health, ürünün çalışamayacağını ilk saniyede söyler (gerçek ölçüm)."""
+    """Sağlık uçları ürünün çalışamayacağını ilk saniyede söyler (gerçek ölçüm)."""
     from fastapi.testclient import TestClient
 
     from backend.api import app
 
     state = browser_binary_status()
     with TestClient(app) as client:
-        body = client.get("/health").json()
+        body = client.get("/api/health/detail").json()
 
     components = body.get("components") or {}
     assert "browser" in components, "sağlık yanıtı tarayıcı bileşenini taşımalı"
@@ -257,7 +258,7 @@ def test_health_gate_does_not_fire_when_binary_exists(monkeypatch):
         ),
     )
     with TestClient(api_module.app) as client:
-        body = client.get("/health").json()
+        body = client.get("/api/health/detail").json()
 
     assert body.get("components", {}).get("browser", {}).get("available") is True
     assert BROWSER_MISSING_REASON not in (body.get("degraded_reasons") or [])

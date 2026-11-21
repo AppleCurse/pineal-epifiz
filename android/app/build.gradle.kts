@@ -7,17 +7,39 @@ plugins {
 }
 
 android {
-    namespace = "com.example.pineal"
+    // [2026-11-21] namespace, applicationId ile aynı hizada: "com.example.*"
+    // şablon artığıydı. Kaynaklar da com.aistudio.pineal.heretic altına
+    // taşındı; uygulama kimliği değişmedi (applicationId AYNI kaldı).
+    namespace = "com.aistudio.pineal.heretic"
     compileSdk = 35
 
     defaultConfig {
         applicationId = "com.aistudio.pineal.heretic"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "3.0.0"
+        // VERSION dosyası tek kaynak: 3.0.0-rc.2 (bkz. VERSION).
+        versionCode = 3
+        versionName = "3.0.0-rc.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    // [2026-11-21] Release imzası GİZLİ ENV VAR'lardan okunur; hiçbir gizli
+    // değer depoya girmez. Dört değişkenin hepsi tanımlıysa release derlemesi
+    // imzalanır; değilse sessiz unsigned APK yerine AÇIK uyarı loglanır ve
+    // imzasız kalır (uydurma imza YOK). CI'da imzalama istenirse
+    // PINEAL_RELEASE_* değişkenleri keystore ile birlikte verilmelidir.
+    val releaseStoreFile = System.getenv("PINEAL_RELEASE_STORE_FILE")?.takeIf { it.isNotBlank() }
+    val releaseStorePassword = System.getenv("PINEAL_RELEASE_STORE_PASSWORD")?.takeIf { it.isNotBlank() }
+    val releaseKeyAlias = System.getenv("PINEAL_RELEASE_KEY_ALIAS")?.takeIf { it.isNotBlank() }
+    val releaseKeyPassword = System.getenv("PINEAL_RELEASE_KEY_PASSWORD")?.takeIf { it.isNotBlank() }
+    val releaseSigningReady = releaseStoreFile != null && releaseStorePassword != null &&
+        releaseKeyAlias != null && releaseKeyPassword != null
+    if (!releaseSigningReady) {
+        logger.lifecycle(
+            "[pineal] PINEAL_RELEASE_STORE_FILE/STORE_PASSWORD/KEY_ALIAS/KEY_PASSWORD " +
+                "tanımlı değil — release build İMZASIZ üretilecek."
+        )
     }
 
     signingConfigs {
@@ -29,11 +51,22 @@ android {
                 keyPassword = "android"
             }
         }
+        if (releaseSigningReady) {
+            create("release") {
+                storeFile = file(releaseStoreFile!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (releaseSigningReady) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

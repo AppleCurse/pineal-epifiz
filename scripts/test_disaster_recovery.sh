@@ -30,7 +30,10 @@ set -euo pipefail
 
 SERVICE="pineal"
 MEMORY_FILE="//app/memory/dr_test.json"
-VAULT_FILE="//app/vault-data/dr_test.json"
+# [2026-11-21 · P1-33] Uygulama artık /app/vault-data birimini gerçekten
+# okur (PINEAL_VAULT_FILE > /app/vault-data > CWD — agent_core/utils/vault_path.py);
+# bu script hacmin kendisini değil, uygulamanın gördüğü yolu sınar.
+VAULT_FILE="/app/vault-data/.pineal_vault.json"
 MARKER="persisted_test_data"
 WAIT_TIMEOUT="${DR_WAIT_TIMEOUT:-300}"
 
@@ -87,6 +90,8 @@ if docker compose up --help 2>/dev/null | grep -q -- '--wait-timeout'; then
     WAIT_ARGS=(--wait --wait-timeout "$WAIT_TIMEOUT")
 fi
 
+RESULT=0
+
 step "1/6 Konteyneri ayağa kaldır (healthcheck beklenir, t/o ${WAIT_TIMEOUT}s)"
 dcomp up -d "${WAIT_ARGS[@]}"
 ok "konteyner çalışıyor ve /health hazır"
@@ -96,7 +101,22 @@ dcomp exec -T "$SERVICE" sh -c \
     "mkdir -p /app/memory /app/vault-data \
      && printf '{\"status\": \"%s\"}' '$MARKER' > '$MEMORY_FILE' \
      && printf '{\"status\": \"%s\"}' '$MARKER' > '$VAULT_FILE'"
-ok "yazıldı: $MEMORY_FILE ve $VAULT_FILE"
+ok "yazıldı: $MEMORY_FILE ve $VAULT_FILE (uygulama yolundan)"
+
+step "2b/6 Uygulama kasa dosyasını görebiliyor mu? (uygulamanın çözdüğü yol)"
+# Eskiden "volume var mı" diye dosya yazılıp okunuyordu — hacme dosya
+# düşmesi, UYGULAMANIN o dosyayı okuyacağı anlamına gelmez (P1-33: hacim
+# bağlıydı ama VAULT_FILE /app/.pineal_vault.json idi). Şimdi asıl kanıt:
+# konteyner İÇİNDE uygulamanın çözdüğü kasa yolu /app/vault-data mı?
+RESOLVED=$(dcomp exec -T "$SERVICE" python -c \
+    "from agent_core.utils.vault_path import default_vault_file; print(default_vault_file())" | tr -d '\r')
+echo "  uygulama kasa yolu: $RESOLVED"
+if [ "$RESOLVED" != "/app/vault-data/.pineal_vault.json" ]; then
+    bad "uygulama /app/vault-data yerine '$RESOLVED' kullanıyor (P1-33 regresyonu)"
+    RESULT=1
+else
+    ok "uygulama /app/vault-data birim yolunu çözüyor"
+fi
 
 step "3/6 FELAKET: hard-kill + konteyneri sil (down — bilinçli olarak -v YOK)"
 dcomp kill "$SERVICE" || true
@@ -108,7 +128,7 @@ dcomp up -d "${WAIT_ARGS[@]}"
 ok "konteyner yeniden oluşturuldu ve sağlıklı"
 
 step "5/6 Veri hayatta mı?"
-RESULT=0
+# RESULT 2b adımında belirlenmiş olabilir; sıfırlamayız, üzerine ekleriz.
 if dcomp exec -T "$SERVICE" cat "$MEMORY_FILE" 2>/dev/null | grep -q "$MARKER"; then
     ok "pineal_memory -> veri HAYATTA"
 else
