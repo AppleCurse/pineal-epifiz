@@ -107,8 +107,10 @@ Uygulama tek sayfa; `frontend/src/App.svelte` iki dal çizer:
   edilir.
 * **Diğer tüm kipler** — `AtlasPortal.svelte` hizmet portalı. Varsayılan açılış
   görünümü `observatory`'dir (`frontend/src/store.ts`; `localStorage`
-  `pineal_view_mode` ile değiştirilebilir) ve portaldaki "TEKNİK KOKPİT'E GEÇ"
-  düğmesi `cockpit`'e geçer.
+  `pineal_view_mode` ile değiştirilebilir) ve portaldaki "Gelişmiş: Teknik Konsol"
+  düğmesi `cockpit`'e geçer. Portal sade, görev odaklı akıştır ("Neye ihtiyacınız
+  var?" — 3 adım: konu → hedef → ne olacak); teknik derinlik tek tıkla ulaşılan
+  konsolda toplanır.
 
 `store.ts` içindeki `ViewMode` tipi gelecek/legacy kipleri de listeler, ama
 `App.svelte`'in çizdiği yalnız yukarıdaki iki daldır — listelenmeyen kipler

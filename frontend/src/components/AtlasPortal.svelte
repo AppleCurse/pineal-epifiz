@@ -15,46 +15,50 @@
     {
       id: 'osint' as ServiceType,
       num: '01',
-      title: 'HEDEF & HESAP İSTİHBARATI',
-      tagline: 'Bir hesabı veya şahsı 360° açık kaynaklardan çözün',
-      desc: 'Sosyal medya hesaplarını, dijital ayak izlerini, gizlenen ilgi alanlarını, hassasiyet noktalarını ve muhatabın savunmasını düşüren en doğru ilk temas stratejisini çıkarır.',
-      placeholder: 'İncelenecek profil linki veya kullanıcı adı (örn: https://instagram.com/kullanici)...',
-      badge: 'AÇIK KAYNAK // OSINT',
+      title: 'BİR HESABI / KİŞİYİ ARAŞTIRMA',
+      tagline: 'Hakkında herkese açık ne var, birlikte görelim',
+      desc: 'Bir sosyal medya profilinin veya kullanıcı adının bıraktığı herkese açık dijital izleri toplar: kim olduğu hakkında ipuçları, ilgi alanları, paylaşım ritmi ve kamuya açık çelişkiler. (Teknik adı: açık kaynak araştırması — OSINT)',
+      placeholder: 'Profil linki veya kullanıcı adı yapıştırın (örn: https://instagram.com/kullanici)...',
+      badge: 'AÇIK KAYNAK ARAŞTIRMASI (OSINT)',
       color: '#10b981',
-      actionLabel: 'HESABI İNCELEMEYE AL'
+      actionLabel: 'ANALİZİ BAŞLAT',
+      expect: 'Herkese açık sayfalar okunur; şifre kırılmaz, kapalı hesap içeriğine girilmez. İşlem birkaç dakika sürebilir; 18 yaş altı hedefler otomatik reddedilir. Sonuçlar ekranda ve Görevlerim listesinde görünür.'
     },
     {
       id: 'risk' as ServiceType,
       num: '02',
-      title: 'GÜVENİLİRLİK & RİSK RADARI',
-      tagline: 'Kiminle masaya oturduğunuzu kanıtıyla bilin',
-      desc: 'Ortaklık, evlilik, iş anlaşması veya yatırım öncesi karşı tarafın gerçekliğini test eder. Takipçi şişirmesini, bot oranını, uyku saatlerinden gerçek konumunu ve sahnelenen vitrin çelişkilerini belgeler.',
-      placeholder: 'Analiz edilecek şahıs profili, web adresi veya kullanıcı adı...',
-      badge: 'ADLİ DENETİM // RADAR',
+      title: 'MASAYA OTURMADAN ÖNCE',
+      tagline: 'Kiminle iş yaptığınızı kanıtıyla görün',
+      desc: 'Ortaklık, iş, evlilik veya yatırım öncesi hızlı arka plan kontrolü: şişirilmiş takipçi oranı, bot şüphesi, paylaşım saatlerinden günlük ritmi ve anlattığıyla gösterdiği arasındaki çelişkiler. (Teknik adı: güvenilirlik & risk kontrolü)',
+      placeholder: 'Kontrol edilecek profil linki, web adresi veya kullanıcı adı...',
+      badge: 'GÜVENİLİRLİK KONTROLÜ',
       color: '#06b6d4',
-      actionLabel: 'RİSK RAPORUNU BAŞLAT'
+      actionLabel: 'KONTROLÜ BAŞLAT',
+      expect: 'Analiz herkese açık izler üzerinden yapılır; özel veriye erişim yoktur. Sonuç bir risk özetidir, hukuki veya finansal tavsiye değildir. Sonuçlar ekranda ve Görevlerim listesinde görünür.'
     },
     {
       id: 'kul' as ServiceType,
       num: '03',
-      title: 'DİJİTAL KÜL (İZLERİ SİLME)',
-      tagline: 'İnternetteki bütün varlığınızı küle gömün',
-      desc: 'Geçmişte kalmış hatalı, yanıltıcı, sızmış veya unutulmasını istediğiniz verilerinizi arama motorlarından, veritabanlarından ve platformlardan yasal ve teknik yollarla kökünden kaldırtır.',
-      placeholder: 'Kaldırılmasını / silinmesini istediğiniz isim, URL veya konu başlığı...',
-      badge: 'PROTOKOL 02 // UNUTULMA',
+      title: 'HAKKIMDA YAZILANI KALDIRMA',
+      tagline: 'Eski, yanlış veya sızmış kayıtlar için silme süreci',
+      desc: 'Geçmişte kalmış hatalı, yanıltıcı veya sızmış kayıtların arama motoru dizinlerinden ve platformlardan kaldırılması için resmî talep sürecini sizin adınıza başlatırız: KVKK/GDPR başvurusu, arama motoru dizin çıkarma, platform şikâyeti. (Teknik adı: unutulma hakkı — KÜL)',
+      placeholder: 'Kaldırılmasını istediğiniz URL, isim veya konu başlığı...',
+      badge: 'SİLME / DÜZELTME TALEBİ (KÜL)',
       color: '#ef4444',
-      actionLabel: 'SİLME TALEBİ OLUŞTUR'
+      actionLabel: 'TALEBİ KAYDET',
+      expect: 'Sihir yok: talebiniz kayda alınır, resmî başvurular ilgili kanalın kararına bağlıdır ve silme garantisi verilemez. Ekibimiz talebinizi inceler ve süreç hakkında sizi bilgilendirir.'
     },
     {
       id: 'sedef' as ServiceType,
       num: '04',
-      title: 'DİJİTAL SEDEF (YENİDEN İNŞA)',
-      tagline: 'Yeni bir insan, lekesiz ve sarsılmaz yeni bir itibar kurun',
-      desc: 'Geçmişi arkada bırakın. İnternette arandığında hakkınızda yalnızca saygın, doğru ve hedefinize uygun profesyonel kayıtların çıkacağı koruyucu bir sedef itibar kalkanı inşa eder.',
-      placeholder: 'İnşa etmek istediğiniz yeni kimlik, unvan, uzmanlık veya alan...',
-      badge: 'PROTOKOL 03 // YENİ KİMLİK',
+      title: 'İTİBARIMI YENİDEN KURMA',
+      tagline: 'Sizi doğru, güncel ve eksiksiz anlatan bir vitrin',
+      desc: 'İnternette hakkınızda arandığınızda çıkanları lehinize çeviririz: doğru ve güncel biyografi, profesyonel içerik, tutarlı profiller — ilk sayfa sizi en güçlü hâlinizle göstersin. Sahte kimlik veya yalan içerik üretmeyiz. (Teknik adı: dijital itibar inşası — SEDEF)',
+      placeholder: 'Kurmak istediğiniz unvan, uzmanlık veya hedef rol...',
+      badge: 'İTİBAR İNŞASI (SEDEF)',
       color: '#d4af37',
-      actionLabel: 'YENİDEN İNŞAYI BAŞLAT'
+      actionLabel: 'TALEBİ KAYDET',
+      expect: 'Talebiniz kayda alınır ve ekip tarafından planlanır; ne üretileceğine sizin onayınızla karar verilir. Sonuç vaat edilmez — arama sonuçlarına platformlar karar verir; her adım kayıtlıdır.'
     }
   ];
 
@@ -96,8 +100,8 @@
         if (data.task_id) {
           taskStatus.update(s => ({ ...(s || {}), task_id: data.task_id, status: 'processing' }));
           isProcessing.set(true);
-          statusNotice = `Operasyon başlatıldı (Görev ID: ${data.task_id}). Ajanlar taramaya başladı.`;
-          // İsteğe bağlı olarak kokpite yönlendir
+          statusNotice = `Analizi başlattık — sonuçlar birkaç dakika sürebilir. İlerlemenizi Görevlerim listesinde ve "Gelişmiş: Teknik Konsol"da canlı görebilirsiniz. (Kayıt no: ${data.task_id})`;
+          // İsteğe bağlı olarak teknik konsola yönlendir
         } else {
           statusNotice = 'Talebiniz kabul edildi. İnceleme sıraya alındı.';
         }
@@ -115,7 +119,7 @@
           })
         });
         if (!res.ok) throw new Error('Talep sunucuya iletilemedi.');
-        statusNotice = `✓ Talebiniz güvenli sisteme mühürlendi. ${currentServiceObj.title} protokolü incelemeye alındı.`;
+        statusNotice = `✓ Talebiniz kayda alındı. Ekibimiz incelemeye alacak ve sizi bilgilendirecek. (${currentServiceObj.title})`;
         inputVal = '';
         noteVal = '';
       }
@@ -145,34 +149,35 @@
       <span class="brand-eye-icon">👁</span>
       <div class="brand-text">
         <strong class="brand-name">ATLAS EPİFİZ</strong>
-        <span class="brand-sub">PINEAL OBSERVATORY // ÖZEL DİJİTAL İSTİHBARAT</span>
+        <span class="brand-sub">ATLAS EPİFİZ // DİJİTAL GÖRÜNÜRLÜK & İTİBAR</span>
       </div>
     </div>
 
     <div class="nav-actions">
-      <a href="#services" class="nav-link">Hizmet Alanları</a>
-      <a href="#protocols" class="nav-link">Üç Protokol</a>
-      <a href="#principles" class="nav-link">İlkelerimiz</a>
-      <button type="button" class="cockpit-switch-btn" on:click={goToCockpit} title="12 Saha Ajanı ve Gelişmiş Konsol">
-        <span class="btn-icon">⚙</span> TEKNİK KOKPİT'E GEÇ
+      <a href="#services" class="nav-link">Neler Yapılabilir</a>
+      <a href="#protocols" class="nav-link">Nasıl Çalışır</a>
+      <a href="#principles" class="nav-link">Sınırlarımız</a>
+      <button type="button" class="cockpit-switch-btn" on:click={goToCockpit} title="İleri düzey operatör ekranı — günlük kullanım için tasarlanmadı">
+        <span class="btn-icon">⚙</span> Gelişmiş: Teknik Konsol
       </button>
     </div>
   </header>
 
   <!-- Hero Karşılama Bölümü -->
   <section class="portal-hero">
-    <div class="hero-badge">PINEAL EPİFİZ EKOSİSTEMİ // RESMÎ HİZMET PORTALI</div>
+    <div class="hero-badge">ATLAS EPİFİZ // DİJİTAL GÖRÜNÜRLÜK & İTİBAR</div>
     <h1 class="hero-title">
-      Dijital dünya hafızası değil, <span class="highlight-gold">kayıt sistemidir</span>.
+      İnternette hakkınızda ne yazıyor — <span class="highlight-gold">ve ne yapabilirsiniz?</span>
     </h1>
     <p class="hero-lead">
-      O kayıtlara her gün tıklanıyor. <strong>Atlas Epifiz</strong> der ki: <em>Kayıtları siz yöneteceksiniz.</em><br />
-      Merkezde hiç kapanmayan <strong>Epifiz Gözü</strong> var.
+      <strong>Atlas Epifiz</strong>, sizinle ilgili herkese açık dijital izleri toplar, ölçer ve size gösterir.<br />
+      Sonrasında ne yapacağınıza siz karar verirsiniz: görmek, kaldırtmak ya da yeniden kurmak.
     </p>
 
     <!-- Hızlı Başlatma Kartı -->
     <div class="portal-terminal-card" id="start">
-      <!-- 4 Hizmet Sekmesi -->
+      <!-- Adım 1 · Ne arıyorsunuz -->
+      <p class="step-tag"><span>1</span> Neye ihtiyacınız var?</p>
       <div class="service-tabs" role="tablist">
         {#each SERVICES as s}
           <button
@@ -202,6 +207,7 @@
         </div>
 
         <div class="terminal-form">
+          <p class="step-tag step-tag-inline"><span>2</span> Hedefi yazın</p>
           <div class="input-wrap">
             <span class="input-icon">⌖</span>
             <input
@@ -213,12 +219,16 @@
             />
           </div>
 
+          <div class="expect-box" role="note">
+            <p class="step-tag step-tag-inline"><span>3</span> Göndermeden önce — ne olacak?</p>
+            <p class="expect-text">{currentServiceObj.expect}</p>
+          </div>
           <div class="secondary-row">
             <input
               type="text"
               class="sub-input"
               bind:value={noteVal}
-              placeholder="Ek bağlam, özel not veya hedefiniz (opsiyonel)..."
+              placeholder="Varsa ek bağlam veya hedefiniz (opsiyonel)..."
             />
             <button
               type="button"
@@ -237,7 +247,7 @@
               {statusNotice}
               {#if isProcessing && (activeService === 'osint' || activeService === 'risk')}
                 <button type="button" class="cockpit-link-inline" on:click={goToCockpit}>
-                  Canlı Ajan Akışını İzle ➔
+                  İlerlemeyi Canlı İzle (Gelişmiş) ➔
                 </button>
               {/if}
             </div>
@@ -250,73 +260,74 @@
   <!-- 4 Hizmet Alanı Detayları -->
   <section class="portal-section" id="services">
     <div class="section-head">
-      <span class="section-tag">ÖZEL HİZMETLERİMİZ</span>
-      <h2 class="section-title">İnternetteki Kaosu Dört Ayrı Disiplinle Yönetin</h2>
-      <p class="section-sub">Kişiler ve kurumlar için kanıta dayalı, yasal ve stratejik çözümler.</p>
+      <span class="section-tag">NELER YAPABİLİRİZ</span>
+      <h2 class="section-title">Dört Soru, Dört Yol</h2>
+      <p class="section-sub">Kişiler ve kurumlar için açık kaynak analizi ve itibar çalışmaları — tahmin değil, kayıt ve ölçümle.</p>
     </div>
 
     <div class="services-grid">
       <article class="service-card">
         <div class="card-icon" style="color: #10b981;">⌖</div>
         <span class="card-num">01</span>
-        <h3>Bir Hesabı / Şahsı Araştırmak</h3>
-        <p>Açık kaynaklardan (OSINT) 360° derinlemesine profil çözümü. Hedefin gerçek kimliği, gizlenen ilgi alanları, hassasiyet ve sürtünme noktaları ve savunmasını düşüren ilk temas stratejisi.</p>
-        <button class="card-action" on:click={() => selectService('osint')}>Bu Hizmeti Seç ➔</button>
+        <h3>Bu hesabın arkasında kim var?</h3>
+        <p>Herkese açık sosyal medya izlerinden derinlemesine profil analizi: ipuçları, ilgi alanları, ritmi ve kamuya açık çelişkiler. <span class="card-hint">(açık kaynak araştırması — OSINT)</span></p>
+        <button class="card-action" on:click={() => selectService('osint')}>Bunu Seç ➔</button>
       </article>
 
       <article class="service-card">
         <div class="card-icon" style="color: #06b6d4;">🛡</div>
         <span class="card-num">02</span>
-        <h3>Kiminle Masaya Oturuyorsunuz?</h3>
-        <p>Ortaklık, evlilik, iş anlaşması veya yatırım öncesi adli risk radarı. Takipçi şişirmesi, bot ağları, paylaşım saatlerinden gerçek sirkadiyen ritim ve sahnelenen vitrin çelişkileri.</p>
-        <button class="card-action" on:click={() => selectService('risk')}>Bu Hizmeti Seç ➔</button>
+        <h3>Kiminle masaya oturuyorum?</h3>
+        <p>Anlaşma, ortaklık ya da evlilik öncesi hızlı arka plan kontrolü: şişirilmiş takipçi, bot şüphesi, ritmi ve çelişkileri belgeler. <span class="card-hint">(güvenilirlik & risk kontrolü)</span></p>
+        <button class="card-action" on:click={() => selectService('risk')}>Bunu Seç ➔</button>
       </article>
 
       <article class="service-card">
         <div class="card-icon" style="color: #ef4444;">🔥</div>
         <span class="card-num">03</span>
-        <h3>Varlığınızı İnternetten Silmek (KÜL)</h3>
-        <p>İnternette kalmış eski, hatalı, yanıltıcı veya sızmış kayıtlarınızı yok edin. KVKK/GDPR ve arama motoru dizin çıkarma süreçleriyle verileri kaynağından söndürün.</p>
-        <button class="card-action" on:click={() => selectService('kul')}>Bu Hizmeti Seç ➔</button>
+        <h3>Hakkımda yazılandan nasıl kurtulurum?</h3>
+        <p>Eski, yanlış veya sızmış kayıtlar için KVKK/GDPR ve arama motoru dizin çıkarma başvurularını sizin adınıza başlatırız. <span class="card-hint">(unutulma hakkı — KÜL)</span></p>
+        <button class="card-action" on:click={() => selectService('kul')}>Bunu Seç ➔</button>
       </article>
 
       <article class="service-card">
         <div class="card-icon" style="color: #d4af37;">🐚</div>
         <span class="card-num">04</span>
-        <h3>Yeni Bir Kişilik & İtibar İnşası (SEDEF)</h3>
-        <p>Geçmişi arkada bırakıp yeni bir insan olarak doğun. Arandığınızda hakkınızda yalnızca saygın, güçlü ve doğru kayıtların çıkacağı sarsılmaz bir itibar kalkanı örün.</p>
-        <button class="card-action" on:click={() => selectService('sedef')}>Bu Hizmeti Seç ➔</button>
+        <h3>İtibarımı nasıl yeniden kurarım?</h3>
+        <p>Sizi doğru, güncel ve eksiksiz anlatan tutarlı profiller ve içerikle ilk sayfayı lehinize çeviririz. <span class="card-hint">(dijital itibar inşası — SEDEF)</span></p>
+        <button class="card-action" on:click={() => selectService('sedef')}>Bunu Seç ➔</button>
       </article>
     </div>
   </section>
 
-  <!-- Üç Temel Protokol -->
+  <!-- Nasıl Çalışır: İZ · KÜL · SEDEF -->
   <section class="portal-section dark-bg" id="protocols">
     <div class="section-head">
-      <span class="section-tag">METODOLOJİ</span>
-      <h2 class="section-title">Üç Temel Protokol: İZ · KÜL · SEDEF</h2>
+      <span class="section-tag">NASIL ÇALIŞIR</span>
+      <h2 class="section-title">İzini Gör · İstenmeyeni Kaldır · Kendi İzinizi Güçlendirin</h2>
+      <p class="section-sub">Üç adım: İZ · KÜL · SEDEF</p>
     </div>
 
     <div class="protocols-row">
       <div class="protocol-box">
         <span class="proto-glyph">🔍</span>
-        <h4>PROTOKOL 01: İZ</h4>
-        <strong>Harita & İstihbarat</strong>
-        <p>İster bir başkasını araştırın, ister kendi dijital izinizi görün. Arama motorları, siciller ve sosyal platformlardaki her kayıt URL ve zaman damgasıyla haritalandırılır.</p>
+        <h4>1. İZ — HARİTALAMA</h4>
+        <strong>Önce ne var, onu görün</strong>
+        <p>Arama motorları, sosyal platformlar ve herkese açık kayıtlar tek listede toplanır; her satırın kaynağı ve tarihi bellidir. İster bir başkasını araştırın, ister kendi izinizi görün. <span class="card-hint">(açık kaynak araştırması)</span></p>
       </div>
 
       <div class="protocol-box">
         <span class="proto-glyph">🔥</span>
-        <h4>PROTOKOL 02: KÜL</h4>
-        <strong>Düzeltme & Silme Talebi</strong>
-        <p>Hatalı veya süresi dolmuş veriler sihirle değil; hukuki ve resmî kanallardan (KVKK, arama motoru başvuruları) talep süreciyle kaynağından söndürülür.</p>
+        <h4>2. KÜL — KALDIRMA SÜRECİ</h4>
+        <strong>İstenmeyenden resmî yolla kurtulun</strong>
+        <p>Hatalı veya süresi dolmuş kayıtlar sihirle değil; KVKK/GDPR başvurusu, arama motoru çıkarma talebi ve platform şikâyetiyle kaldırılır. Son karar kanallarındır — biz süreci sizin adınıza başlatırız. <span class="card-hint">(unutulma hakkı)</span></p>
       </div>
 
       <div class="protocol-box">
         <span class="proto-glyph">🛡</span>
-        <h4>PROTOKOL 03: SEDEF</h4>
-        <strong>Güçlendirme & Yeniden İnşa</strong>
-        <p>Sahte kimlik değil; bireyin/kurumun kendi kontrolünde, resmî kanallarda doğru ve eksiksiz bilgilerle donatılarak itibar saldırılarına karşı doğal kalkan oluşturulmasıdır.</p>
+        <h4>3. SEDEF — GÜÇLENDİRME</h4>
+        <strong>Doğru hikâyenizi görünür kılın</strong>
+        <p>Sahte kimlik değil: kendi kontrolünüzdeki tutarlı, doğru ve eksiksiz kayıtlar ve içerikle arama sonuçlarını lehinize çeviririz. <span class="card-hint">(dijital itibar yönetimi)</span></p>
       </div>
     </div>
   </section>
@@ -324,26 +335,26 @@
   <!-- İlkelerimiz (Dürüstlük & Sınırlar) -->
   <section class="portal-section" id="principles">
     <div class="section-head">
-      <span class="section-tag">DÜRÜSTLÜK VE ANAYASA</span>
-      <h2 class="section-title">Kırmızı Çizgilerimiz ve Çalışma İlkelerimiz</h2>
+      <span class="section-tag">SINIRLARIMIZ</span>
+      <h2 class="section-title">Neler Yapmıyoruz — Açıkça</h2>
     </div>
 
     <div class="principles-grid">
       <div class="principle-item">
-        <strong>✦ Hedef Rıza Kapısı Yoktur</strong>
-        <p>Kamuya açık profil ve açık kaynak istihbaratında hedef rızası aranmaz. Veri açıktaysa incelenir, yetki operatördedir.</p>
+        <strong>✦ Yalnızca Herkese Açık Veriler</strong>
+        <p>Profil sahibi izin vermemiş olsa bile, yalnızca herkese açık sayfalar incelenir — çünkü veri herkese açıktır. Kapalı, özel veya şifreli hiçbir veriye dokunmayız.</p>
       </div>
       <div class="principle-item">
-        <strong>✦ Şifre Kırma / Hackleme Yapılmaz</strong>
-        <p>Sistem hacker aracı değildir. Yalnızca açık kaynakları (OSINT) tarar ve matematiksel ölçümlerle adli kanıt üretir.</p>
+        <strong>✦ Şifre Kırmayız, Sisteme Sızmayız</strong>
+        <p>Bu bir hacker aracı değildir. Herkese açık kaynakları tarar ve ölçer; hiçbir hesaba "giriş" yolu yoktur. <span class="card-hint">(açık kaynak araştırması — OSINT)</span></p>
       </div>
       <div class="principle-item warning-item">
         <strong>⛔ TEK Kırmızı Çizgi: 18 Yaş Altı</strong>
-        <p>18 yaşından küçük hiçbir çocuk araştırılamaz (MinorGate). Tek istisna resmi kayıp vakalarıdır.</p>
+        <p>18 yaşından küçük hiçbir çocuk hedef alınamaz; sistem bu hedefleri reddeder. İstisna yalnızca resmî kayıp vakalarıdır.</p>
       </div>
       <div class="principle-item">
-        <strong>✦ Sıfır Halüsinasyon</strong>
-        <p>Kuru falcılık ve tahmin yapılmaz. Veri yoksa "bilmiyorum" denir; her iddianın arkasına kriptografik kanıt mühürlenir.</p>
+        <strong>✦ Tahmin Üretmiyoruz</strong>
+        <p>Veri yoksa "bilmiyoruz" deriz. Her kayıt kaynağı ve tarihiyle saklanır; uydurulmuş analiz size sunulmaz.</p>
       </div>
     </div>
   </section>
@@ -352,12 +363,12 @@
   <footer class="portal-footer">
     <div class="footer-inner">
       <div class="footer-brand">
-        <strong>ATLAS EPİFİZ // PINEAL OBSERVATORY</strong>
-        <p>Dijital Maruziyet Zekası, Adli İstihbarat ve İtibar Yönetimi.</p>
+        <strong>ATLAS EPİFİZ</strong>
+        <p>Açık kaynak araştırması ve dijital itibar yönetimi.</p>
       </div>
       <div class="footer-links">
         <button type="button" class="footer-btn" on:click={goToCockpit}>
-          👁️ Operatör Konsolu
+          👁️ Gelişmiş: Teknik Konsol
         </button>
       </div>
     </div>
@@ -940,6 +951,52 @@
     font-size: 0.8rem;
     font-weight: 700;
     cursor: pointer;
+  }
+
+
+  /* Rehberli akış — adım etiketleri, beklenti kutusu, kart ipuçları */
+  .step-tag {
+    margin: 0.7rem 1.1rem 0.15rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #8b949e;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+  .step-tag span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.35rem;
+    height: 1.35rem;
+    border-radius: 999px;
+    background: var(--gold);
+    color: #07090e;
+    font-size: 0.72rem;
+    font-weight: 800;
+  }
+  .step-tag-inline { margin: 0 0 0.45rem; }
+  .expect-box {
+    margin: 0.35rem 0 0.75rem;
+    padding: 0.65rem 0.8rem;
+    border: 1px dashed var(--border-color);
+    border-radius: 10px;
+    background: rgba(212, 175, 55, 0.05);
+  }
+  .expect-text {
+    margin: 0;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    color: #c9d1d9;
+  }
+  .card-hint {
+    display: block;
+    margin-top: 0.35rem;
+    font-size: 0.72rem;
+    color: #8b949e;
   }
 
   .footer-btn:hover {
