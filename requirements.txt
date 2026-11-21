@@ -14,6 +14,10 @@ fastapi>=0.141.0
 # için yamalı alt sınır açıkça sabitlenir.
 starlette>=1.0.1,<2.0.0
 uvicorn>=0.30.0
+# /ws telemetri soketleri için uvicorn'un WS implementasyonu. Eskiden yalnız
+# Dockerfile ayrıca kuruyordu; requirements.lock ile CI/geliştirme ağacında YOKTU
+# ve uvicorn "No supported WebSocket library detected" ile /ws'i ölü bırakıyordu.
+websockets>=15.0,<18
 playwright>=1.49.0
 playwright-stealth>=2.0.0
 openai>=2.0.0

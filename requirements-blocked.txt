@@ -18,7 +18,10 @@
 openai-whisper>=20240924
 
 # --- extractor.text.translate_local: trans CLI için -------------------------
-translate-cli>=1.0.0
+# translate-shell'in `trans` binary'si sistem seviyesinde kurulur
+# (apt/brew install translate-shell); PyPI paketi YOKTUR.
+# PyPI'deki `translate` / `translate-cli` bu motorla ilgisizdir.
+# Detay: docs/reports/REMEDIYASYON.md (bölüm 1).
 
 # --- renderer.report.video: ffmpeg Python wrapper (sistem ffmpeg gerekli) --
 ffmpeg-python>=0.2.0

@@ -22,6 +22,7 @@
         "https://*.linkedin.com/in/*"
       ],
       "js": [
+        "core.js",
         "content.js"
       ],
       "css": [

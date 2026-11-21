@@ -36,8 +36,8 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-I18N = REPO_ROOT / "android/app/src/main/java/com/example/pineal/i18n/I18n.kt"
-ENGINE = REPO_ROOT / "android/app/src/main/java/com/example/pineal/engine/PinealAnalyzerEngine.kt"
+I18N = REPO_ROOT / "android/app/src/main/java/com/aistudio/pineal/heretic/i18n/I18n.kt"
+ENGINE = REPO_ROOT / "android/app/src/main/java/com/aistudio/pineal/heretic/engine/PinealAnalyzerEngine.kt"
 
 
 def _strip_kotlin_comments(text: str) -> str:

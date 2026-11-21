@@ -15,8 +15,8 @@ concurrency:
 jobs:
   backend:
     runs-on: ubuntu-latest
-    # [2026-10-05] Takım 1113 -> 1690 teste büyüdü; 10 dakika CI'da yetmiyor
-    # (koşu testler sürerken kesiliyordu). Yerel tam koşu ~100s.
+    # [2026-10-05] Test takımı hızla büyüdü (2026-11: ~3.2k test); 10 dakika CI'da
+    # yetmiyor (koşu testler sürerken kesiliyordu). Yerel tam koşu birkaç dakika.
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
@@ -154,10 +154,27 @@ jobs:
       - name: Verify real Svelte build
         run: grep -q "PINEAL-HERETIC" dist/assets/*.js
 
+  extensions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - name: Syntax-check extension scripts
+        run: |
+          node --check extensions/chrome-linkedin/core.js
+          node --check extensions/chrome-linkedin/content.js
+      - name: Browser extension behavior probe
+        # [2026-11-21 · #10] core.js saf mantık; LinkedIn DOM'una dokunmadan
+        # URL kapısı, planAnalysis sözleşmesi ve server-error yüzlemesi koşar.
+        run: node tests/edge/linkedin_extension.mjs
+
   smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [backend, frontend]
+    needs: [backend, frontend, extensions]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -190,6 +207,18 @@ jobs:
           curl -sf "http://127.0.0.1:8000/" | grep -q 'id="app"'
           curl -s -o /dev/null -w "%{http_code}" -X POST "http://127.0.0.1:8000/api/aspasia/chat" -H 'Content-Type: application/json' -d '{"client_id":"ci","user_message":"hi"}' | grep -q 200
           curl -sf "http://127.0.0.1:8000/health" | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d['status'] in ('ready','degraded') else 1)"
+      - name: WebSocket handshake smoke
+        # [2026-11-21] websockets requirements.lock'a girdi; /ws artık CI'da
+        # GERÇEK el sıkışmasıyla sınanır. Eskiden lock'ta WS kütüphanesi yoktu:
+        # uvicorn "No supported WebSocket library detected" diye logluyor,
+        # /ws isteği 404 dönüyor ve hiçbir adım bunu görmüyordu.
+        env:
+          PINEAL_ENV: development
+        run: |
+          uvicorn backend.api:app --port 8001 &
+          for i in $(seq 1 30); do curl -sf "http://127.0.0.1:8001/health" > /dev/null && break || sleep 1; done
+          python3 -W ignore::DeprecationWarning -c "from websockets.sync.client import connect; ws = connect('ws://127.0.0.1:8001/ws/ci-smoke', open_timeout=10); ws.close(); print('WS_HANDSHAKE_OK: /ws/{client_id} kabul etti')"
+
       - name: MCP stdio handshake smoke
         # [FAZ D · D1] Sunucu gerçekten konuşuyor mu: stateless tools/list +
         # kasa kapalıyken dürüst ret. stdout'a tek bir günlük satırı sızarsa

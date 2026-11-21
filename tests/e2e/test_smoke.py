@@ -7,6 +7,7 @@ Amaç: sistemin "ayakta" sözleşmesini kilitlemek —
   3. /api/aspasia/chat 200 döner (500 regresyonu ebediyen kilitli)
   4. WS + initiate zinciri result üretir
 """
+import os
 import uuid
 
 from fastapi.testclient import TestClient
@@ -17,6 +18,13 @@ from backend.api import app
 def test_root_serves_svelte_shell():
     with TestClient(app) as client:
         r = client.get("/")
+    if not os.path.isdir("frontend/dist"):
+        # [2026-11-21] Dist yoksa arayüz monte EDİLMEZ — kaynak ağacı
+        # (src/, package.json, .env.example) HTTP'ye açılmaz. Bu, güvenlik
+        # düzeltmesinin sözleşmesidir; eski davranış (frontend/ mount) geri
+        # gelirse bu test kırmızıya döner.
+        assert r.status_code == 404
+        return
     assert r.status_code == 200
     assert 'id="app"' in r.text, "index.html Svelte mount noktasını içermeli"
     # Eski sahte React artifact geri gelmemeli:

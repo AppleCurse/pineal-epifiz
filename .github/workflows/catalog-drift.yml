@@ -8,7 +8,6 @@ on:
   push:
     branches:
       - main
-      - arena/006946d1-pineal-epifiz
     paths:
       - .github/workflows/catalog-drift.yml
       - scripts/verify_openrouter_catalog.py

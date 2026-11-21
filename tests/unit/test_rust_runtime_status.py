@@ -29,7 +29,7 @@ def test_rust_status_is_unambiguous_and_defensively_copied():
 
 def test_health_and_telemetry_expose_non_integrated_status():
     with TestClient(app) as client:
-        health = client.get("/health")
+        health = client.get("/api/health/detail")
         telemetry = client.get("/api/telemetry", params={"client_id": "rust_status"})
 
     assert health.status_code == 200

@@ -1,5 +1,13 @@
 # Gerçek Tarayıcı Smoke Raporu — 11 Kasım 2026
 
+> **[2026-11-21 temizliği]** Bu rapordaki PNG ekran görüntüleri
+> (`00-observatory-before`, `02-command`, `03-evidence`, `04-live`,
+> `05-warroom`, `06-observatory-real-data`, `07-rejected-task`) depodan
+> **kaldırıldı** — koda hiçbir referansı olmayan ~2,3 MB ikili artefakttı ve
+> yalnız bu dokümanın anlatısına kanıt olarak atıf yapılıyordu. Ölçümlerin
+> metni ve sayıları aşağıda eksiksiz korunur; "Kanıt: *.png" göndermeleri
+> tarihsel bağlam olarak kalır.
+
 Bu rapor, önceki oturumun **"Frontend'in gerçek browser'da graph JSON'unu
 render etmesi: kanıtlanmadı"** maddesini kapatır. Ölçüm hayali değil: gerçek
 Chromium (playwright-core), gerçek Vite dev sunucusu (port 1420) ve gerçek
@@ -115,11 +123,8 @@ Test, düzeltme geçici olarak kaldırıldığında **başarısız**, geri kondu
 
 ## Dosyalar
 
-- `01-observatory.png` — varsayılan ATLAS yüzeyi (sabit değerler görünür)
-- `02-command.png` — KOMUTA: 12 ajan çipi, klavye erişimi
-- `03-evidence.png` — KANIT RADARI
-- `04-live.png` — CANLI SİSTEM (düzeltme sonrası, sekmeler görünür)
-- `05-warroom.png` — MUHAREBE MASASI
+- Ekran görüntüleri (`01-observatory.png` … `07-rejected-task.png`) 2026-11-21
+  temizliğinde kaldırıldı; aşağıdaki adım çıktıları ve sayılar metnin kendisidir.
 - Araç: `frontend/scripts/browser-smoke.mjs`
 
 ---

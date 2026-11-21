@@ -126,7 +126,7 @@ def test_public_health_endpoint_reports_successful_startup(monkeypatch):
     )
 
     with TestClient(app) as client:
-        response = client.get("/health")
+        response = client.get("/api/health/detail")
 
     assert response.status_code == 200
     assert response.json()["status"] == "ready"

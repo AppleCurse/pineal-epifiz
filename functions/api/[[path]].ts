@@ -55,6 +55,14 @@ export const onRequest = async (context: any) => {
   req.headers.forEach((value: string, key: string) => {
     if (!HOP_BY_HOP.has(key.toLowerCase())) headers.set(key, value);
   });
+  // [2026-11-21] Gerçek istemci IP'si KENAR TARAFINDAKİ `cf-connecting-ip`'tir
+  // (Cloudflare, müşteri-gönderimini bununla DEĞİŞTİRİR). İsteğe AYNEN
+  // `x-forwarded-for` olarak yazarız; istemci-gönderilen XFF zaten HOP_BY_HOP
+  // ile silindi, yani backend iki-başlı XFF zinciri GÖRMEZ. Backend bu değeri
+  // YALNIZ PINEAL_TRUST_PROXY_HEADERS=true iken okur (bkz. #8). Yoksa başlık
+  // hiç yazılmaz (backend soket adresine düşer).
+  const edgeClientIp = req.headers.get("cf-connecting-ip");
+  if (edgeClientIp) headers.set("x-forwarded-for", edgeClientIp);
 
   const method = req.method.toUpperCase();
   const body = method === "GET" || method === "HEAD" ? undefined : await req.arrayBuffer();

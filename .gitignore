@@ -85,3 +85,9 @@ docs/pineal_envanter.zip
 # Tarayıcı smoke aracının bağımlılıkları (frontend/scripts/browser-smoke.mjs)
 frontend/scripts/node_modules/
 frontend/scripts/package-lock.json
+
+# [2026-11-21] İmza materyali asla depoya girmez (release imzası PINEAL_RELEASE_* env'den)
+*.keystore
+*.jks
+*.p12
+android/debug.keystore

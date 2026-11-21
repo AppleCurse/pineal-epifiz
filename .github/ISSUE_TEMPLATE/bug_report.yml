@@ -1,0 +1,40 @@
+name: Hata bildirimi
+description: Beklenen davranıştan sapma
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Ne oldu?
+      description: Gözlediğin davranışı kısaca anlat.
+      placeholder: "Örn. POST /api/initiate 500 döndü"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Ne olmalıydı?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Tekrar üretme adımları
+      description: 1-2-3 ile yaz; komut ve girdileri ekle.
+      placeholder: "1. ...\n2. ...\n3. ..."
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Ortam
+      description: OS, Python/Node sürümü, commit veya sürüm, kapı bayrakları (ENABLE_*)
+      placeholder: "Ubuntu 24.04, Python 3.11, commit abc1234, ENABLE_* varsayılan"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log / çıktı
+      description: İlgili log parçalarını yapıştır (API anahtarlarını maskele!).
+    render: text

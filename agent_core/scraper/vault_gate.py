@@ -52,8 +52,9 @@ _auth_ctx: ContextVar[Optional[bool]] = ContextVar(
     "pineal_vault_egress_authorized", default=None
 )
 
-#: Dosya kasasının yerel adı (backend ile aynı kaynak; env ile yöneltilebilir).
-DEFAULT_VAULT_FILE = ".pineal_vault.json"
+from agent_core.utils.vault_path import default_vault_file  # noqa: E402  (modül docstring sonrası)
+
+DEFAULT_VAULT_FILE = default_vault_file()
 
 #: Yer tutucu değerler anahtar DEĞİLDİR (backend/_vault_bears_key_material
 #: ile aynı sözleşme): "sk-or-v1-YOUR..." satırı mandalı açamaz.
@@ -110,7 +111,7 @@ def _walk_key_material(node: object) -> bool:
 
 def _file_vault_open(path: Optional[str] = None) -> bool:
     """Dosya kasası GERÇEK anahtar taşıyorsa açık; okunamazsa dar taraf (kilitli)."""
-    vault_path = path or os.getenv("PINEAL_VAULT_FILE", DEFAULT_VAULT_FILE)
+    vault_path = path or os.getenv("PINEAL_VAULT_FILE", default_vault_file())
     try:
         with open(vault_path, "r", encoding="utf-8") as handle:
             data = json.load(handle)

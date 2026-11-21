@@ -26,8 +26,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 COPY requirements.lock requirements-osint.txt requirements-retina.txt ./
+# [2026-11-21] websockets artık requirements.lock içinde; ayrı kurulum kalktı —
+# Docker ile CI/geliştirme aynı ağaç (uvicorn /ws soketleri lock'tan gelir).
 RUN pip install --default-timeout=300 -r requirements.lock
-RUN pip install --default-timeout=120 "websockets==17.1"
 
 # ─── Kapı arkasındaki yeteneklerin GERÇEK bağımlılıkları ─────────────────────
 # [AUDIT 2026-10-23] requirements.lock yalnız requirements.txt + osint ağacını
@@ -49,6 +50,9 @@ RUN if [ "$PINEAL_INSTALL_RETINA" = "1" ]; then \
 
 ARG PLAYWRIGHT_DOWNLOAD_HOST=""
 ENV PLAYWRIGHT_DOWNLOAD_HOST=${PLAYWRIGHT_DOWNLOAD_HOST}
+# Tarayıcılar root dışında HERKESİN okuyabildiği sabit yola kurulur;
+# imaj non-root (app) kullanıcısıyla çalışır (bkz. aşağıda USER app).
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 # Browser-backed scraping is a required capability in this image. Retry, then
 # fail the build instead of silently shipping an image without Chromium.
 RUN PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=300000 python -m playwright install --with-deps chromium || \
@@ -60,7 +64,16 @@ COPY agent_core/ ./agent_core/
 COPY config/ ./config/
 COPY --from=frontend /app/frontend/dist ./frontend/dist
 
-RUN mkdir -p /app/memory /app/cache
+# Non-root çalışma: kökte koşan süreç scrape ettiği sayfalardaki her
+# içerikle aynı yetkide işlenir; hata senaryosunda etkiyi sınırlar.
+# Playwright tarayıcıları /ms-playwright altında dünyaya okunur (755).
+RUN groupadd --system --gid 10001 app \
+    && useradd --system --uid 10001 --gid app --home-dir /app --shell /usr/sbin/nologin app \
+    && mkdir -p /app/memory /app/cache /app/vault-data \
+    && chmod -R 0755 /ms-playwright \
+    && chown -R app:app /app
+USER app
+
 VOLUME ["/app/memory", "/app/cache"]
 
 EXPOSE 8000

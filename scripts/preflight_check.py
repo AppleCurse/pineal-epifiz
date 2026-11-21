@@ -3,10 +3,10 @@
 
 Bu betik şunları doğrular:
 1. Python Bağımlılıkları (FastAPI, Playwright, Pydantic, Uvicorn vb.)
-2. Playwright Chromium Tarayıcı Motorunun varlığı
+2. Playwright Chromium Tarayıcı Motorunun varlığı (yoksa kritik: kazıma çöker)
 3. Frontend Derleme Tazeliği (frontend/dist var mı, frontend/src'den yeni mi?)
-4. 9Router / LLM Ağ Geçidi Erişilebilirliği (127.0.0.1:20128)
-5. Ortam Değişkenleri ve Kasa Sağlığı (.env, PINEAL_ENV, ENABLE_CROSS_PLATFORM)
+4. 9Router / LLM Ağ Geçidi Erişilebilirliği (127.0.0.1:20128) — bilgilendirme;
+   kapalıysa cloud LLM/offline yol kullanılır, ön kontrol BAŞARISIZ sayılmaz
 """
 from __future__ import annotations
 
@@ -98,7 +98,12 @@ def main() -> int:
     ok = True
     if not check_python_dependencies():
         ok = False
-    check_playwright_chromium()
+    # [2026-11-21] Chromium artık kritik: sonucu `ok`'a dahil edilir. Eskiden
+    # WARN basıp exit 0 dönüyordu — "başarılı" yalanı. Kasa açıkken bile
+    # tarama Playwright binary'si olmadan çöker; operatör bunu preflight'ta
+    # görmeli, sunucunun ilk görev patlamasında değil.
+    if not check_playwright_chromium():
+        ok = False
     check_llm_gateway()
 
     freshness = check_frontend_freshness()

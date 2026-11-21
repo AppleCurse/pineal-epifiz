@@ -36,7 +36,7 @@ def test_development_open_auth_is_explicit_in_startup_health(monkeypatch):
     monkeypatch.delenv("PINEAL_TOKEN", raising=False)
 
     with TestClient(api.app) as client:
-        response = client.get("/health")
+        response = client.get("/api/health/detail")
 
     assert response.status_code == 200
     assert response.json()["security"] == {
@@ -292,3 +292,30 @@ def test_task_timeout_and_retry_configuration_is_hard_bounded(monkeypatch):
 
     monkeypatch.setenv("PINEAL_TASK_TIMEOUT_SECONDS", "not-an-int")
     assert api._bounded_env_int("PINEAL_TASK_TIMEOUT_SECONDS", 300, 1, 1800) == 300
+
+
+# ─── [2026-11-21 · #8] Güvenilen proxy / istemci IP çözümü ───────────────
+
+def test_client_ip_ignores_forwarded_for_by_default(monkeypatch):
+    monkeypatch.delenv("PINEAL_TRUST_PROXY_HEADERS", raising=False)
+    assert security.client_ip(forwarded_for="1.2.3.4", socket_host="10.0.0.9") == "10.0.0.9"
+
+
+def test_client_ip_trusts_first_forwarded_for_only_with_flag(monkeypatch):
+    monkeypatch.setenv("PINEAL_TRUST_PROXY_HEADERS", "true")
+    assert security.client_ip(forwarded_for="1.2.3.4, 10.0.0.9", socket_host="10.0.0.1") == "1.2.3.4"
+    assert security.client_ip(forwarded_for="  5.6.7.8  ", socket_host="10.0.0.1") == "5.6.7.8"
+
+
+def test_client_ip_falls_back_when_header_missing_or_empty(monkeypatch):
+    monkeypatch.setenv("PINEAL_TRUST_PROXY_HEADERS", "true")
+    assert security.client_ip(forwarded_for=None, socket_host="10.0.0.9") == "10.0.0.9"
+    assert security.client_ip(forwarded_for="  ,  ", socket_host="10.0.0.9") == "10.0.0.9"
+    assert security.client_ip(forwarded_for=None, socket_host=None) == "unknown"
+
+
+def test_client_ip_flag_value_must_be_exact_true(monkeypatch):
+    for value in ("1", "yes", "on", "TRUE ", "True"):
+        monkeypatch.setenv("PINEAL_TRUST_PROXY_HEADERS", value)
+        expected = "1.2.3.4" if value.strip().lower() == "true" else "10.0.0.9"
+        assert security.client_ip(forwarded_for="1.2.3.4", socket_host="10.0.0.9") == expected
