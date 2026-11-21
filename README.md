@@ -170,7 +170,9 @@ canlılık işaretidir, analiz yapmaz.)
 
 Sistemde **28 yetenek** var. `agent_core/capabilities/` — dış dünyaya **tek kapı**.
 Hiçbir yetenek dış servise doğrudan gitmez; önce politika ve kasa kapısından geçer.
-Canlı liste: `GET /api/telemetry` → 28 yetenek.
+Canlı liste: `GET /api/telemetry` → 28 yetenek · 2-profil özeti: `GET /api/brain/capabilities`.
+
+> **Kapı Kuralı (`PINEAL_CAPABILITY_PROFILE`):** Varsayılan `strict` (fail-closed; tüm `ENABLE_*` kapıları kapalı). `PINEAL_CAPABILITY_PROFILE=local_core` ücretli API anahtarı istemeyen **7** modülü tek şalterde açar — ancak **"anahtarsız" = "ağsız" değildir**: kasa kilitliyken dışarı çıkış olmaz, fakat kasa açıldığı anda bu modüller dış ağa (`egress`) aktif tarama yapar. Kapalı tutmak için `strict` profilinde kalın (tekil `ENABLE_*=false` satırları her zaman baskındır). `ENABLE_CROSS_PLATFORM` profile **bağlı değildir**: yalnız görev bazlı açık operatör onayı (`with_operator_consent`) veya `.env`'de açık `ENABLE_CROSS_PLATFORM=true` açar (`CONSENT_ONLY_FLAGS`; `GET /api/brain/capabilities` → `profiles.consent_only`).
 
 | Grup | Yetenekler |
 |---|---|
