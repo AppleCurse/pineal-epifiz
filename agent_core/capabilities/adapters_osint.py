@@ -17,7 +17,6 @@ Dürüstlük sözleşmesi (değişmedi):
 from __future__ import annotations
 
 import contextvars
-import os
 
 _ACTIVE_POLICY_FLAGS: contextvars.ContextVar[dict[str, bool] | None] = contextvars.ContextVar(
     "_ACTIVE_POLICY_FLAGS", default=None
@@ -37,11 +36,20 @@ __all__ = ["MaigretCapability", "HoleheCapability", "SocidCapability"]
 
 
 def _flag(name: str) -> bool:
-    """Env anahtarı açık mı? ('1', 'true', 'yes', 'on' kabul)."""
+    """Bayrak açık mı? TEK KAYNAK: ``state.flag_enabled`` + oda onayı bağlamı.
+
+    Bağlam var olan kapı (``_ACTIVE_POLICY_FLAGS``) yalnız ``True`` ise açar;
+    geri kalan HER ŞEY ``flag_enabled``'a devredilir — profil kuralları
+    (``local_core``), açık env, ``CONSENT_ONLY_FLAGS`` fail-closed tavanı ve
+    bilinmeyen değerler orada tanımlıdır. Böylece adaptör "kapı açık" derken
+    çekirdek "kapalı" diyemez (iki gerçek = iki yalan).
+    """
     active = _ACTIVE_POLICY_FLAGS.get()
-    if active is not None and name in active and active[name] is True:
+    if active is not None and active.get(name) is True:
         return True
-    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on", "enabled"}
+    from agent_core.capabilities.state import flag_enabled
+
+    return flag_enabled(name)
 
 
 # [2026-10-23 · CI/DEĞİL, GERÇEK HATA] Noktalı ad ("paket.alt modül") ve

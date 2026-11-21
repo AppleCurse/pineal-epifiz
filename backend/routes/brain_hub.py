@@ -1,20 +1,29 @@
 """Birleşik Beyin Yönlendirici & 2-Profil Yetenek Merkezi — ``/api/brain/*``.
 
 Neden var?
-    Backend'de 78 API ucu ve 64 LLM'siz servis varken, ön yüz yalnızca dar bir
-    alt kümeyi çağırabiliyordu. Bu modül tek bir akıllı giriş noktası sunar:
+    Arka uçta yetenekler tek tek çağrılmak yerine tek bir akıllı giriş noktasından
+    erişilebilsin diye:
       * ``GET  /api/brain/capabilities`` — 2-profil (Yerel Çekirdek vs Harici)
-        durumu + bağlı motor envanteri (Kablo Bekçisi için canlı doğrulama).
+        durumu + TÜRETİLMİŞ motor envanteri (availability()/kapı/bağımlılık
+        problarıyla hesaplanır; sabit "hepsi True" listesi DEĞİLDİR).
       * ``POST /api/brain/route`` — kullanıcı niyetini gerçek motorlara
         yönlendirir: Lilith (strateji/karşı-hamle), Şirket/Domain tarama
         (``company_recon``), Hafıza Kristali (``memory_crystal``), İlişki Grafı
         (``graph_builder``), Telefon OSINT (``phone_probe``), Profil görevi
         (``aspasia.commands``) veya Aspasia çapraz sorgulama (``aspasia.chat``).
+
+Kurallar:
+    * Veri taşıyan her kol (graph/memory/company/phone/lilith/profile) aynı
+      kapı sırasından geçer: reşitlik → kasa → (explicit görevde) sahiplik.
+    * ``graph`` ve ``memory`` kanıt/hatıra okur: kapısız AÇILAMAZ ve başka
+      operatörün mühürlü odasından OKUNAMAZ (403).
 """
 
 from __future__ import annotations
 
+import importlib
 import logging
+import os
 import re
 from typing import Any, Callable, Dict, Optional
 
@@ -22,10 +31,12 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from agent_core.capabilities.state import capability_profile_summary, policy_state
+from agent_core.capabilities.state import capability_profile_summary, flag_enabled, policy_state
 from agent_core.services.graph_builder import build_evidence_graph
 from agent_core.services.memory_crystal import recall as recall_memory_crystal
 from backend.routes.lilith import LilithStrategyPayload, execute_lilith_strategy
+from backend.security.principal import current_principal
+from backend.security.task_ownership import task_access
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +98,107 @@ def _extract_phone(text: str, fallback: Optional[str]) -> str:
     return m.group(0).strip() if m else ""
 
 
+
+
+def _forbidden(code: str) -> JSONResponse:
+    """Görev/oda sahipliği reddi — gövde oda/task ADI İÇERMEZ (403)."""
+    message = (
+        "Bu oda başka bir operatöre mühürlü."
+        if code == "ROOM_FORBIDDEN"
+        else "Bu görev başka bir operatöre kayıtlı."
+    )
+    return JSONResponse(
+        {"error": {"code": code, "message": message}},
+        status_code=403,
+    )
+
+
+def _room_forbidden(client_id: str, room: Optional[Dict[str, Any]]) -> Optional[JSONResponse]:
+    """Oda mührü (salt-okunur): principal yoksa development davranışı korunur."""
+    principal = current_principal()
+    owner = (room or {}).get("_owner")
+    if principal is not None and owner is not None and owner != principal:
+        logger.warning(
+            "ROOM_FORBIDDEN (brain hub): principal başka mühürlü odaya erişemedi (client_id uzunluğu=%d)",
+            len(client_id or ""),
+        )
+        return _forbidden("ROOM_FORBIDDEN")
+    return None
+
+
+# ── Türetilmiş motor envanteri (sabit "true" listesi YASAK) ──────────────────
+# Her prob LOKAL ve belirlenimcidir: ağ çağrısı, yazma YOK. "available" ==
+# "import/bağımlılık/kapı problunu geçti" demektir; "koştu" iddiası değildir.
+def _pipeline_status(compute) -> Dict[str, Any]:
+    try:
+        available, reason = compute()
+        return {
+            "available": bool(available),
+            "reason": None if available else (reason or "unavailable"),
+        }
+    except Exception as exc:  # fail-closed + makine-okunur sebep
+        return {"available": False, "reason": f"probe_error:{type(exc).__name__}"}
+
+
+def _import_check(module: str, attr: str):
+    def compute():
+        mod = importlib.import_module(module)
+        if not hasattr(mod, attr):
+            return False, f"dependency_missing:{module}.{attr}"
+        return True, None
+
+    return compute
+
+
+def _aspasia_check(aspasia_provider: Callable[[], Any]):
+    def compute():
+        aspasia = aspasia_provider() if callable(aspasia_provider) else None
+        if aspasia is None:
+            return False, "aspasia_unavailable"
+        return True, None
+
+    return compute
+
+
+def _company_recon_check():
+    def compute():
+        if not flag_enabled("ENABLE_COMPANY_TARGETING"):
+            return False, "gate_disabled:ENABLE_COMPANY_TARGETING"
+        from agent_core.services import company_recon
+
+        ok, reason = company_recon.harvester_availability()
+        return bool(ok), (None if ok else (reason or "unavailable"))
+
+    return compute
+
+
+def _phone_probe_check():
+    def compute():
+        try:
+            import phonenumbers  # noqa: F401
+        except Exception:
+            return False, "dependency_missing:phonenumbers"
+        return True, None
+
+    return compute
+
+
+def _build_wired_pipelines(aspasia_provider: Callable[[], Any]) -> Dict[str, Dict[str, Any]]:
+    probes = {
+        "deterministic_7_pillars": _import_check("agent_core.engines.pillar_orchestrator", "PillarOrchestrator"),
+        "cross_profiler": _import_check("agent_core.services.cross_profiler", "correlate_profiles"),
+        "aspasia_cross_exam": _aspasia_check(aspasia_provider),
+        "lilith_strategy": _import_check("agent_core.agents.lilith_growth", "LilithGrowthAgent"),
+        "hook_studio": _import_check("backend.routes.hook_studio", "generate_hook_package"),
+        "shadow_executor": _import_check("agent_core.shadow.shadow_executor", "ShadowExecutor"),
+        "memory_crystal": _import_check("agent_core.services.memory_crystal", "recall"),
+        "evidence_graph": _import_check("agent_core.services.graph_builder", "build_evidence_graph"),
+        "company_recon": _company_recon_check(),
+        "phone_probe": _phone_probe_check(),
+    }
+    return {name: _pipeline_status(compute) for name, compute in probes.items()}
+
+
 def _extract_target_slug(text: str, fallback: Optional[str], executor: Any) -> str:
     if fallback and fallback.strip():
         return fallback.strip().lstrip("@")
@@ -122,18 +234,9 @@ def register_brain_hub_routes(
             "status": "ok",
             "vault_locked": not bool(check_vault_interlock(client_id)),
             "profiles": summary,
-            "wired_pipelines": {
-                "deterministic_7_pillars": True,
-                "cross_profiler": True,
-                "aspasia_cross_exam": True,
-                "lilith_strategy": True,
-                "hook_studio": True,
-                "shadow_executor": True,
-                "memory_crystal": True,
-                "evidence_graph": True,
-                "company_recon": True,
-                "phone_probe": True,
-            },
+            # TÜRETİLMİŞ envanter: her giriş {"available": bool, "reason": str|None}.
+            # "available=True" yalnız "import/bağımlılık/kapı problunu geçti" anlamına gelir.
+            "wired_pipelines": _build_wired_pipelines(aspasia_provider),
         }
 
     @app.post("/api/brain/route")
@@ -168,11 +271,44 @@ def register_brain_hub_routes(
             return {"route": "lilith", "result": res}
 
         if route == "graph":
-            task = None
+            if (blocked := require_minor_clearance(payload.client_id, subject=payload.task_id or payload.message)) is not None:
+                return blocked
+            if (locked := require_vault_open(payload.client_id)) is not None:
+                return locked
+            if (forbidden := _room_forbidden(payload.client_id, room)) is not None:
+                return forbidden
             tasks = getattr(executor, "tasks", None) or {}
+            if payload.task_id:
+                # Önce VARLIK (404), sonra SAHİPLİK (403) — api.py `_terminate_mission`
+                # ile aynı sıra: yok olan görev için sahiplik satırı YAZILMAZ ve
+                # başkasının görevi için varlık doğrulaması 403'ün ÜSTÜNE ÇIKMAZ.
+                from agent_core.utils.security import safe_child_path
+
+                mem_path = None
+                storage = getattr(getattr(executor, "memory", None), "storage_path", None)
+                if storage:
+                    try:
+                        mem_path = safe_child_path(storage, f"{payload.task_id}.json")
+                    except ValueError:
+                        return JSONResponse(
+                            {"error": {"code": "INVALID_TASK_ID", "message": "Invalid task identifier"}},
+                            status_code=400,
+                        )
+                exists = (isinstance(tasks, dict) and payload.task_id in tasks) or (
+                    mem_path is not None and os.path.exists(mem_path)
+                )
+                if not exists:
+                    return JSONResponse(
+                        {"error": {"code": "TASK_NOT_FOUND", "message": "Task not found"}},
+                        status_code=404,
+                    )
+                decision = task_access(payload.task_id, room.get("_owner") or current_principal())
+                if decision == "forbidden":
+                    return _forbidden("TASK_FORBIDDEN")
+            task = None
             if payload.task_id and isinstance(tasks, dict):
                 task = tasks.get(payload.task_id)
-            if task is None:
+            if task is None and not payload.task_id:
                 task = getattr(executor, "last_status", None)
             chain = (task.get("evidence_chain") if isinstance(task, dict) else getattr(task, "evidence_chain", None)) or []
             graph = build_evidence_graph(chain)
@@ -184,6 +320,14 @@ def register_brain_hub_routes(
 
         if route == "memory":
             slug = _extract_target_slug(payload.message, payload.target, executor)
+            # Hafıza kristali GÖREVLER-ARASI kalıcı depodur: reşitlik + kasa kapıları
+            # açılmadan ve oda mührü doğrulanmadan HİÇBİR hatıra okunmaz.
+            if (blocked := require_minor_clearance(payload.client_id, subject=slug or payload.message)) is not None:
+                return blocked
+            if (locked := require_vault_open(payload.client_id)) is not None:
+                return locked
+            if (forbidden := _room_forbidden(payload.client_id, room)) is not None:
+                return forbidden
             if not slug:
                 return {
                     "route": "memory",
@@ -212,7 +356,13 @@ def register_brain_hub_routes(
             from agent_core.capabilities import CapabilityContext, bootstrap, run_capability
 
             bootstrap()
-            state = policy_state(vault_locked=False)
+            # Kasa GERÇEK durumu verilir (ön-kontrol yalnız kapak değil) ve hız
+            # limiti uçta zaten uygulandı → rate_ok=True (yoksa çekirdek her zaman
+            # rate_state_missing ile reddeder — uç yapısal olarak ölü olurdu).
+            state = policy_state(
+                vault_locked=not bool(check_vault_interlock(payload.client_id)),
+                rate_ok=True,
+            )
             cap_res = await run_capability(
                 "sensor.company.harvester",
                 CapabilityContext(subject=domain, params={"domain": domain}),
@@ -245,7 +395,10 @@ def register_brain_hub_routes(
             cap_res = await run_capability(
                 "sensor.identity.phone_probe",
                 CapabilityContext(subject=phone, params={"auto_bridge": False}),
-                state=policy_state(vault_locked=False),
+                state=policy_state(
+                    vault_locked=not bool(check_vault_interlock(payload.client_id)),
+                    rate_ok=True,
+                ),
             )
             return {
                 "route": "phone",

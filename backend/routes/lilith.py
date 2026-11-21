@@ -135,24 +135,26 @@ async def execute_lilith_strategy(
     lilith_pkg = await lilith_agent.execute(lilith_input)
     lilith_data = lilith_pkg.model_dump()
 
-    # LLM çevrimdışıysa deterministik motor sinyallerinden gerçek NeuroMetrics hesapla
+    # LLM çevrimdışıysa deterministik motor sinyallerinden gerçek NeuroMetrics hesapla.
+    # Motor ölçümü eksikse metrics ÜRETİLMEZ — sabit yedek DEĞER YAZILMAZ (kaynak hukuku).
     metrics_source = "model_and_formula"
     if not lilith_data.get("neuro_metrics"):
-        pdepth = engines["psychodynamic_depth"]
-        tfor = engines["timing_forensics"]
-        faudit = engines["follower_audit"]
-        d_sig = pdepth.get("confidence") if isinstance(pdepth, dict) else None
-        c_sig = pdepth.get("reaction_formation_index") if isinstance(pdepth, dict) else None
-        s_sig = faudit.get("engagement_quality_score") if isinstance(faudit, dict) else None
-        o_sig = tfor.get("consistency_score") if isinstance(tfor, dict) else None
-        det_metrics = LilithGrowthAgent.compute_neuro_formula(
-            dopamine=d_sig if isinstance(d_sig, (int, float)) and d_sig > 0 else 0.65,
-            serotonin=s_sig if isinstance(s_sig, (int, float)) and s_sig > 0 else 0.55,
-            cortisol=c_sig if isinstance(c_sig, (int, float)) and c_sig > 0 else 0.50,
-            oxytocin=o_sig if isinstance(o_sig, (int, float)) and o_sig > 0 else 0.55,
+        from agent_core.services.neuro_signals import neuro_inputs_from_engines
+
+        det_inputs = neuro_inputs_from_engines(
+            engines["psychodynamic_depth"],
+            engines["timing_forensics"],
+            engines["follower_audit"],
         )
-        lilith_data["neuro_metrics"] = det_metrics.model_dump()
-        metrics_source = "deterministic_engines"
+        if det_inputs is not None:
+            det_metrics = LilithGrowthAgent.compute_neuro_formula(**det_inputs)
+            lilith_data["neuro_metrics"] = det_metrics.model_dump()
+            metrics_source = "deterministic_engines"
+        else:
+            metrics_source = "engine_signals_missing"
+            lilith_data["fallback_reason"] = (
+                lilith_data.get("fallback_reason") or "engine_signals_missing"
+            )
 
     # 2. ShadowExecutor (gölge & NLP strateji katmanı)
     shadow_data: Dict[str, Any]

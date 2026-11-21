@@ -3429,23 +3429,23 @@ class PinealExecutor:
                     )
                     # Deterministik motor tabanlı NeuroMetrics (LLM çevrimdışı olsa bile)
                     if not lilith_dump.get("neuro_metrics"):
-                        _pdepth = input_data.get("psychodynamic_depth") or {}
-                        _tfor = input_data.get("timing_forensics") or {}
-                        _faudit = input_data.get("follower_audit") or {}
-                        _has_det = bool(_pdepth or _tfor or _faudit)
-                        if _has_det:
-                            _d_sig = _pdepth.get("confidence") if isinstance(_pdepth, dict) else None
-                            _c_sig = _pdepth.get("reaction_formation_index") if isinstance(_pdepth, dict) else None
-                            _s_sig = _faudit.get("engagement_quality_score") if isinstance(_faudit, dict) else None
-                            _o_sig = _tfor.get("consistency_score") if isinstance(_tfor, dict) else None
-                            _det_metrics = LilithGrowthAgent.compute_neuro_formula(
-                                dopamine=_d_sig if isinstance(_d_sig, (int, float)) and _d_sig > 0 else 0.55,
-                                serotonin=_s_sig if isinstance(_s_sig, (int, float)) and _s_sig > 0 else 0.50,
-                                cortisol=_c_sig if isinstance(_c_sig, (int, float)) and _c_sig > 0 else 0.45,
-                                oxytocin=_o_sig if isinstance(_o_sig, (int, float)) and _o_sig > 0 else 0.50,
-                            )
+                        from agent_core.services.neuro_signals import neuro_inputs_from_engines
+
+                        _det_inputs = neuro_inputs_from_engines(
+                            input_data.get("psychodynamic_depth") or {},
+                            input_data.get("timing_forensics") or {},
+                            input_data.get("follower_audit") or {},
+                        )
+                        if _det_inputs is not None:
+                            _det_metrics = LilithGrowthAgent.compute_neuro_formula(**_det_inputs)
                             lilith_dump["neuro_metrics"] = _det_metrics.model_dump()
                             lilith_dump["metrics_source"] = "deterministic_engines"
+                        else:
+                            # Motor ölçümü eksik → metrics ÜRETİLMEZ (sabit yedek YOK).
+                            lilith_dump["metrics_source"] = "engine_signals_missing"
+                            lilith_dump["fallback_reason"] = (
+                                lilith_dump.get("fallback_reason") or "engine_signals_missing"
+                            )
                     else:
                         lilith_dump["metrics_source"] = "model_and_formula"
                     lilith_dump["_provenance"] = self._provenance_for(

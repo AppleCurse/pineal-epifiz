@@ -22,6 +22,8 @@ import re
 from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urlsplit
 
+from agent_core.capabilities.state import flag_enabled
+
 logger = logging.getLogger(__name__)
 
 SUPPORTED_PLATFORMS = ("instagram", "x", "cross")
@@ -60,7 +62,7 @@ def effective_scraper_type(url: str, requested: Optional[str] = None) -> str:
     if host in ("x.com", "twitter.com") or host.endswith((".x.com", ".twitter.com")):
         return "x"
 
-    if os.getenv("ENABLE_CROSS_PLATFORM", "false").lower() == "true":
+    if flag_enabled("ENABLE_CROSS_PLATFORM"):
         from agent_core.services.profile_router import (
             PLATFORM_LINKEDIN,
             PLATFORM_SOCIAL,

@@ -25,19 +25,34 @@ class PreflightPayload(BaseModel):
     scraper_type: str = Field(default="cross", max_length=32)
 
 
+def _single_source_flag_env(name: str) -> bool:
+    """Tek kaynak env kapısı okuma (``agent_core.capabilities.state.flag_enabled``)."""
+    from agent_core.capabilities.state import flag_enabled
+
+    try:
+        return bool(flag_enabled(name))
+    except Exception:  # fail-closed + görünür
+        return False
+
+
 def register_preflight_routes(
     app: Any,
     *,
     get_room: Callable[[str], dict],
     check_vault_interlock: Callable[[str], bool],
-    flag_env: Callable[[str], bool],
+    flag_env: Callable[[str], bool] | None = None,
 ) -> None:
-    """``POST /api/target/preflight`` rotasını kaydeder."""
+    """``POST /api/target/preflight`` rotasını kaydeder.
+
+    ``flag_env`` verilmezse tek kaynak (``flag_enabled``) kullanılır — üçüncü
+    bir bağımsız okuma üretilmez (K1 · 2026-11-21).
+    """
+    flag_reader = flag_env if callable(flag_env) else _single_source_flag_env
 
     @app.post("/api/target/preflight")
     async def api_target_preflight(req: PreflightPayload):
         raw_url = (req.url or "").strip()
-        cross_enabled = bool(flag_env("ENABLE_CROSS_PLATFORM"))
+        cross_enabled = bool(flag_reader("ENABLE_CROSS_PLATFORM"))
         vault_unlocked = bool(check_vault_interlock(req.client_id))
         room = get_room(req.client_id)
         vault = room.get("vault") or {}

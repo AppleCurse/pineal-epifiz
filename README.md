@@ -4,7 +4,7 @@
 
 **Atlas Epifiz; kişiler ve kurumlar için kanıta dayalı dijital maruziyet istihbaratı, stratejik profil analizi, dijital iz temizliği (kül) ve yeni kimlik inşası (sedef) sunan özel bir gözlem ve operasyon merkezidir.**
 
-Bu bir hacker aracı veya sahte ahlakçı noter kapısı değildir. Şifre kırmaz, gizli hesaplara girmez; kamuya açık dijital ayak izlerini toplar, **7 dalga motoruyla** ve **13 görev ajanıyla** matematiksel ölçümlerle inceler, her iddianın arkasına kriptografik kanıt mühürler.
+Bu bir hacker aracı veya sahte ahlakçı noter kapısı değildir. Şifre kırmaz, gizli hesaplara girmez; kamuya açık dijital ayak izlerini toplar, **7 dalga motoruyla** ve **14 görev ajanıyla** matematiksel ölçümlerle inceler, her iddianın arkasına kriptografik kanıt mühürler.
 
 ```
                        ╔═══════════════════════════════════════════╗
@@ -60,7 +60,7 @@ Bir Instagram (veya X) profilinin **herkese açık** sayfasını alırsın. Sist
    sonuçları, varsa e-posta/kullanıcı adı ayak izleri.
 2. **Ölçer** — 7 dalga motoru zaman serisini ve metni **deterministik formüllerle** inceler
    (yapay zeka tahmini değil; FFT/Lomb-Scargle, istatistik, sözlük ölçümleri).
-3. **Ajanlarla derinleştirir** — 13 görev ajanı sırayla çalışır; her biri kanıtını
+3. **Ajanlarla derinleştirir** — 14 görev ajanı sırayla çalışır; her biri kanıtını
    üretir, kararını ve güven puanını yazar.
 4. **Doğrular** — iddialar dış kaynaklarla teyit edilir, yerel jüri oylar.
 5. **Anlatır** — Aspasia seninle konuşur, Kontrol Paneli her şeyi canlı gösterir.
@@ -80,7 +80,7 @@ sen: "https://instagram.com/kullanici/ hesabını incele"
   ├─ POST /api/initiate         → görev başlar (kasa açık olmalı)
   │     ├─ yetenek omurgası: IG/X/web/e-posta/kullanıcı adı (her şey kasa kapısından)
   │     ├─ 7 dalga motoru → zaman serisi + metin ölçümleri
-  │     ├─ 13 ajan sırayla çalışır → her ajan kanıt + karar + güven yazar
+  │     ├─ 14 ajan sırayla çalışır → her ajan kanıt + karar + güven yazar
   │     └─ WS /ws/{client_id} → her an "ne oluyor" akışı
   │
   └─ GET /api/aspasia/state     → denetim görünümü (bütçe, kota, çağrı izi, anomali)
@@ -98,43 +98,21 @@ Toplanan biyografi/gönderi adresleri (`detected_urls`) görev yürütücüsünd
 
 ## 4 · Ekranda ne görürsün
 
-Uygulamanın **dört** görünümü var; görünüm seçici düğmelerle geçiş yapılır
-(`frontend/src/App.svelte` → `$activeViewMode`). Varsayılan açılış görünümü
-`spiderfoot`'tur (`frontend/src/store.ts`).
+Uygulama tek sayfa; `frontend/src/App.svelte` iki dal çizer:
 
-> [2026-10-23 · KUSUR] SpiderFoot kokpiti bir süre **import edilmiş ama hiç
-> render edilmemişti**: `store.ts` varsayılanı `spiderfoot` yapmış, `App.svelte`
-> ise o mod için dal açmadığından açılışta `AtlasPinealCockpit` gösteriyordu.
-> Dal eklendi; `tests/unit/test_claims_are_runtime_proven.py` artık her import
-> edilen görünüm bileşeninin markup'ta **render edildiğini** doğrular
-> (`dead_code_audit` bunu yakalayamaz — import "kullanım" sayılır).
+* **`cockpit`** (`UnifiedPinealCockpit.svelte`) — ana operasyon kokpiti: kasa
+  mandalı, agent rafı, Aspasia komut/sohbet katmanı ve canlı görev/kanal
+  durumu. Kokpitte `NeuralTelemetryBoard.svelte` (telemetri panosu, açılıp
+  kapatılabilir) ve `SupportPanel.svelte` (açık talepler) ile birlikte render
+  edilir.
+* **Diğer tüm kipler** — `AtlasPortal.svelte` hizmet portalı. Varsayılan açılış
+  görünümü `observatory`'dir (`frontend/src/store.ts`; `localStorage`
+  `pineal_view_mode` ile değiştirilebilir) ve portaldaki "TEKNİK KOKPİT'E GEÇ"
+  düğmesi `cockpit`'e geçer.
 
-**SPIDERFOOT KOKPİTİ** (`SpiderFootCockpit.svelte`, ~1570 satır) — ana operasyon
-kokpiti: canlı boru hattı, etkileşimli düğüm grafiği, kanal/ajan durumu; aynı
-SoT'tan (WS + `/api/aspasia/state`) beslenir.
-
-**MUHAREBE MASASI** (`TacticalWarRoom.svelte`) — adli teftiş masası. Ajanların
-durum pilleri, tespit edilen profiller, seçili ajanın dört sekmeli Röntgeni
-(bulgular / girdi / güven-karar / ham JSON) ve kara kutu log akışı.
-
-**KONTROL PANELİ** (`LiveControlPanel.svelte`, 920 satır) — "hangi modül şu an
-çalışıyor, nerede çalışıyor, sırada kim var, kimi kazıyor, muhakemesi ne, toplanan
-bilgi ne" sorularının canlı cevabı. Altı blok:
-
-| Blok | Ne gösterir |
-|---|---|
-| 1 · AJAN HATTI | Kim sırada, kim çalışıyor, süresi, kanıt/çağrı sayısı |
-| 2 · ANLIK KANNEL | Hangi kanal (IG, X, web, arama…) ne durumda · **sıradaki ajan** · **canlı ajan şu an hangi URL'yi kazıyor** |
-| 3 · MUHAKEME | Karar var mı, güven yüzdesi, hangi model, sorumluluk, çağrı kimlikleri ve **ajan çıktısı satır satır** |
-| 4 · TOPLANAN BİLGİ | Toplam kanıt kimliği, ajan→kanıt akışı, **kanıt zinciri** (ajan→kanıt gruplu), kanal yapısı |
-| 5 · ÇAĞRI İZİ | Her LLM çağrısının kimliği, ajanı, modeli, süresi, maliyeti; bütçe, kota, anomali; **sayfalı geçmiş** |
-| 6 · AJAN DETAYI | Seçili ajanın tam dökümü (girdi, kanıt kimlikleri, sorumluluk, uyarı, hata) |
-
-Ayrıca metin + durum **filtresi** ve ajan seçimi vardır. Ölçüm yoksa panel
-`YETERSİZ KANIT` yazar ve **nedenini** söyler; örnek veri hiçbir yerde yoktur.
-
-**KOKPİT** (`AtlasPinealCockpit.svelte`) — yaşayan epifiz gözü, hologram rezonans
-ağı, Aspasia'nın CRT terminali, kasa mandalı ve 12 yuvalı canlı ajan rafı.
+`store.ts` içindeki `ViewMode` tipi gelecek/legacy kipleri de listeler, ama
+`App.svelte`'in çizdiği yalnız yukarıdaki iki daldır — listelenmeyen kipler
+için ayrı ekran YOKTUR.
 
 **ASPASIA** — seninle konuşan katman (`POST /api/aspasia/chat`). Normal dille soru
 sorarsın, sistem durumu anlatır. Kokpitin serbest metin kutusu önce
@@ -181,7 +159,7 @@ canlılık işaretidir, analiz yapmaz.)
 | `resonance_synthesizer` | İlk temas ve rezonans köprüsü sentezi |
 | `depth_analyst` | 7 sütunlu derinlik çıktısının adli analizi |
 | `shadow_executor` | Gölge arketip ve bastırılmış motivasyon (kanıt zinciri dışı strateji hattı) |
-| `lilith_growth` | 360° profil + deterministik motor çıktılarından nörobilişsel strateji ve karşı-hamle paketi (`status.lilith_report`, kanıt zincirini kirletmez) |
+| `lilith_growth` | 360° profil + motor çıktılarından nörobilişsel strateji ve karşı-hamle paketi; nöro formülü yalnız motor ölçümü eksiksizse üretilir, motor sinyali yoksa `metrics_source="engine_signals_missing"` yazılır ve sabit değer UYDURULMAZ (`status.lilith_report`, kanıt zincirini kirletmez) |
 
 `ENABLE_INTERPRETER=true` ile 15. ajan (`interpreter`) devreye girer.
 `LilithGrowthAgent` hem `run_lilith.py` CLI'si hem de `PinealExecutor` + `POST /api/lilith/strategy` hattından tek kaynak olarak çalışır.
@@ -344,7 +322,7 @@ karşı** koşturur ve ham çıktıyı basar: `0` kanıtlandı · `1` döngü k�
 | **P3** | Lilith hat dışı (CLI-only) — kanıt zincirine karışmaz |
 | **P4** | Mühür/kanıt kaydı düzeltmeleri; reddedilen taramalar da kayda bağlanır |
 | **P5** | Kapanış denetimi: her düzeltmenin testi + revert-doğrulama kırmızıya döner |
-| **P6** | Ölü kod dedektörü (`scripts/dead_code_audit.py`, CI'da kapı); 12 ölü arayüz dosyası silindi; 13 ajanın 13'ü canlı |
+| **P6** | Ölü kod dedektörü (`scripts/dead_code_audit.py`, CI'da kapı); 12 ölü arayüz dosyası silindi; 14 kayıtlı ajanın tamamı canlı |
 | **P7** | Aspasia komut döngüsü (`/api/aspasia/command`) + **ilk canlı kontrol paneli** + çağrı kimliği bağı |
 | **P8** | Panelin "en donanımlı" sürümü (6 blok, filtre, ajan detayı, kanıt zinciri gruplama), çağrı izi **sayfalaması**, `scripts/verify_command_loop.py` doğrulayıcısı, `api.py` satır tavanı 5772 → **5760** |
 | **P9** | README baştan yazıldı (15 bölüm, düz dil) + `docs/envanter.html` sisteme bağlandı + `tests/unit/test_readme_claims.py` sayıları koddan ölçer |
@@ -362,19 +340,19 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 | Ne | Ölçüm |
 |---|---|
 | API ayakta | `/health` → **200** · `/api/telemetry` → **200** (28 yetenek) |
-| Kayıtlı ajanlar | `/api/aspasia/state` → **13** ajan |
+| Kayıtlı ajanlar | `/api/aspasia/state` → **14** ajan (kayıtlı `executor.agents`; `ENABLE_INTERPRETER=true` ile +1 opsiyonel `interpreter`) |
 | Kasa kilidi | Kilitliyken `POST /api/initiate` → **423 VAULT_LOCKED** |
 | WebSocket akışı | Yerel istemciyle **63 kare** alındı |
-| Test tabanı | CI'ın kendi komutu (`pytest -q --cov=agent_core --cov=backend --cov-fail-under=80`) → **3249 passed, 6 skipped, 2 xfailed**, kapsam **%85.71** |
+| Test tabanı | CI'ın kendi komutu (`pytest -q --cov=agent_core --cov=backend --cov-fail-under=80`) → **3283 passed, 6 skipped, 2 xfailed**, kapsam **%85.86** |
 | Kod kalitesi | `ruff check .` → **All checks passed!** · `npm run check` → **0 hata / 0 uyarı** · `npm test` (vitest sözleşme testleri) → **6/6** · `npm run build` → ✓ |
 | Denetim bekçileri | `audit_regression.py` → **✓ BEKÇİ GEÇTİ** · `dead_code_audit.py` → **0/0/0/0/0/0/0** (C1/C1b/C2/C3/C4/C5/C6) |
-| Ölçülebilir ilerleme | `backend/api.py` **5470** satır (tavan 5760, düşürülmüş) |
+| Ölçülebilir ilerleme | `backend/api.py` **5493** satır (tavan 5760) |
 | Revert-doğrulama | `scripts/revert_verification_p*.py` → **43/43** düzeltme geri alınınca test kırmızıya döndü (p0 7/7 · p1 6/6 · p2 3/3 · p3 4/4 · p4 5/5 · p8 10/10 · p9 8/8; her koşum dosyayı `finally` ile geri yükler) |
 | Komut döngüsü | `scripts/verify_command_loop.py` → erişilemeyen API'de `rc=2` + sebep; kırık döngüde `rc=1` + sebep |
 | Onay kablosu | Onay yok → `sensor.ig.instagrapi` / `sensor.x.twscrape` **`policy:gate_disabled`**; onay var → kapı **açık**, dürüst sebep `dependency_missing:*` (birim testi, sahte çalıştırıcı) |
 | Bio/gönderi adres kablosu | Sahte `twscrape` → `bio` → `x_target_profile_update` → `detected_urls` → `merge_detected_profile_urls` zinciri uçtan uca koşuyor (çevrimdışı) |
 | IG gönderi tavanı | Ham HTML yolunda 20 sahte gönderi → **20 post**; `PINEAL_IG_MAX_POSTS=5` → **5 post** (sabit 12 yok) |
-| 13 ajan GERÇEKTEN koşuyor | Gerçek `CognitiveRouter` + gerçek `PinealExecutor` ile görev koşuldu, her ajanın `execute/analyze` çağrısı kaydedildi → **13/13** (rota 10, yürütücü 3 ayrı çağrı). Test: `tests/unit/test_claims_are_runtime_proven.py` |
+| Ajan rotası | `CognitiveRouter` rota seti koşula bağımlıdır (hedef/kullanıcı kanıtı, goal seti, görsel kanıt); kayıtlı 14 ajanın tamamı varsayılan rotada koşmaz — rota **hedef/kullanıcı/görsel-kanıt koşullarına** göre daralır |
 | 28 yetenek erişilebilir | `availability()` 28/28 **istisnasız** yanıt verdi (5 açık: socid, dil, handle_probe, phone_probe, rapor metni; 23'ü kapı/bağımlılık sebebiyle kapalı). Her kimliğin adaptör dışı çağrı yeri var; 3 web çıkarıcısı `WEB_EXTRACTION_ORDER` zinciriyle çağrılıyor (`web_research.py`) |
 | Çağrı yeri olmayan uçlar | 81 benzersiz HTTP yolu: **25**'i UI/edge worker'dan, **77**'si testlerden çağrılıyor; **2**'sinin çağrı yeri yok (`/api/vault/lock`, `/api/tasks/{task_id}/changes`). Ölçüm `tests/unit/test_http_endpoint_call_sites.py` ile kilitli |
 | Panelin görsel doğrulaması | Headless Playwright Chromium (`chrome-win64`) ile 1920×1080 çözünürlükte tam ekran görüntüsü alındı (`cockpit_live_visual.png`), pikselleriyle kanıtlandı |
@@ -398,19 +376,19 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 
 | Klasör | İçinde ne var |
 |---|---|
-| `backend/` | HTTP + WS yüzeyi (`api.py` 5470 satır), uç modülleri (`routes/`), servisler (`services/`), güvenlik (`security/`) |
+| `backend/` | HTTP + WS yüzeyi (`api.py` 5493 satır), uç modülleri (`routes/`), servisler (`services/`), güvenlik (`security/`) |
 | `agent_core/` | Çekirdek: görev yürütücü, ajanlar, 7 dalga motoru, yetenek omurgası, hafıza, gölge hat |
 | `frontend/src/` | Svelte arayüzü: 4 görünüm (Savaş Odası, Kontrol Paneli, SpiderFoot Kokpiti, Atlas Kokpiti) + ajan rafı + destek paneli |
 | `rust_core/` | Deneysel, opsiyonel Rust çekirdek (CI'da ayrı derlenir, ürün yoluna bağlı değildir) |
 | `android/` | Android istemcisi (CI'da lint + birim testi) |
 | `functions/` · `worker.ts` | Cloudflare Pages/Workers `/api` ve `/ws` edge vekilleri |
-| `tests/` | 298 test modülü (birim + entegrasyon) |
+| `tests/` | 302 test modülü (birim + entegrasyon) |
 | `scripts/` | Denetim ve doğrulama araçları: ölü kod denetimi, regresyon bekçisi, envanter üreteci, revert doğrulamaları, 9Router ön kontrolü |
 | `docs/` | Tüzük, sözleşmeler, mimari, aktif sözleşmeler ve **tam envanter sayfası** |
 | `config/` | Yönlendirme, sağlayıcı kataloğu, karar yapılandırması, RTK politikası |
 
 **Tam ve aranabilir harita:** **[docs/envanter.html](docs/envanter.html)** —
-821 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
+824 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
 ile yenilenir, CI `--check` ile bayatlamayı yakalar.
 
 **Ayrıca:** [ARCHITECTURE.md](ARCHITECTURE.md) · [README_TECHNICAL.md](README_TECHNICAL.md) ·
@@ -421,7 +399,7 @@ ile yenilenir, CI `--check` ile bayatlamayı yakalar.
 ## 15 · Testler ve kalite kapıları
 
 ```bash
-.venv/bin/python -m pytest tests -q --cov --cov-fail-under=80   # 3249 passed
+.venv/bin/python -m pytest tests -q --cov --cov-fail-under=80   # 3283 passed
 .venv/bin/ruff check .                                           # temiz
 cd frontend && npm run check && npm run build                    # 0/0 + derleme
 .venv/bin/python scripts/dead_code_audit.py                      # ölü kod yok

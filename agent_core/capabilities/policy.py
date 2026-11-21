@@ -31,6 +31,7 @@ __all__ = [
     "MANAGED_GATE_FLAGS",
     "LOCAL_CORE_FLAGS",
     "EXTERNAL_KEYED_FLAGS",
+    "CONSENT_ONLY_FLAGS",
 ]
 
 
@@ -88,8 +89,13 @@ MANAGED_GATE_FLAGS: tuple[str, ...] = (
 #: Profil 1 — Anahtarsız / Yerel Çekirdek kapıları.
 #: Harici ücretli API anahtarı veya operatör hesap şifresi istemeyen,
 #: `PINEAL_CAPABILITY_PROFILE=local_core` ile tek şalterde açılabilen modüller.
+#: DİKKAT: "anahtarsız" ≠ "ağsız" — bunların tamamı ağı kullanır (bkz. .env.example
+#: UYARI). Kasa (vault) yine de sürgüdür: kapı açık olsa bile dış-çıkış kapısı
+#: kilitliyse hiçbiri koşmaz.
+#: `ENABLE_CROSS_PLATFORM` BİLEREK bu profilden çıkarılmıştır: çapraz platform
+#: yoklaması, görevi o görevi veren operatörün AÇIK ONAYINA bağlıdır
+#: (`with_operator_consent`); tek şalterle veya profille açılamaz.
 LOCAL_CORE_FLAGS: tuple[str, ...] = (
-    "ENABLE_CROSS_PLATFORM",
     "ENABLE_COMPANY_TARGETING",
     "ENABLE_REPORT_FACTORY",
     "ENABLE_MAIGRET",
@@ -97,6 +103,13 @@ LOCAL_CORE_FLAGS: tuple[str, ...] = (
     "ENABLE_CRAWL4AI",
     "ENABLE_SCRAPLING",
     "ENABLE_MEDIA_FORENSICS",
+)
+
+#: Profil dışı, YALNIZCA açık operatör onayıyla açılabilen kapılar.
+#: Profil mekanizması bu bayraklara DOKUNAMAZ; yalnız env'de açık `true` ya da
+#: görev bazlı oda onayı (`with_operator_consent`) açar.
+CONSENT_ONLY_FLAGS: tuple[str, ...] = (
+    "ENABLE_CROSS_PLATFORM",
 )
 
 #: Profil 2 — Hesap / Harici Servis / Yerel Model / Kod Çalıştırma kapıları.
