@@ -123,7 +123,12 @@ def capability_profile_summary(env: Mapping[str, str] | None = None) -> dict[str
         "profile": profile,
         "profile_env": CAPABILITY_PROFILE_ENV,
         "local_core": {
-            "label": "Anahtarsız / Yerel Çekirdek",
+            "label": "Anahtarsız / Yerel Çekirdek (kasa açılınca dış ağa / egress çıkar)",
+            "egress_warning": (
+                "Anahtarsız ≠ ağsız: kasa kilitliyken dış çıkış olmaz, ancak kasa "
+                "açıldığında bu modüller dış ağa (egress) istek atar. Kapalı tutmak için "
+                "PINEAL_CAPABILITY_PROFILE=strict kullanın."
+            ),
             "active_count": sum(1 for v in local_core.values() if v),
             "total_count": len(local_core),
             "flags": local_core,
