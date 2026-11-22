@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "ATLAS PINEAL",
+  "productName": "ATLAS EPİFİZ",
   "version": "3.0.0-rc.2",
   "identifier": "com.pineal.heretic",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "ATLAS PINEAL OBSERVATORY - HERETIC v5.0 [NATIVE GPU]",
+        "title": "ATLAS EPİFİZ OBSERVATORY - HERETIC v5.0 [NATIVE GPU]",
         "width": 1920,
         "height": 1080,
         "minWidth": 1280,
