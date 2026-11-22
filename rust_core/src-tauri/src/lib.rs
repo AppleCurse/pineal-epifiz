@@ -248,7 +248,7 @@ fn gpu_probe() -> serde_json::Value {
 #[tauri::command]
 async fn get_system_info() -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({
-        "product": "ATLAS PINEAL OBSERVATORY",
+        "product": "ATLAS EPİFİZ OBSERVATORY",
         // [AUDIT 2026-10-07 · Madde 2] Sabit "5.0.0" yazılıydı ve kök VERSION
         // dosyasıyla (3.0.0-rc.2) çelişiyordu. Sürüm artık crate'ten gelir;
         // crate sürümü de VERSION ile senkron tutulur (bkz. identity testi).
@@ -341,7 +341,7 @@ pub fn run() {
             }
 
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window.set_title("ATLAS PINEAL OBSERVATORY - HERETIC v5.0 [NATIVE GPU]");
+                let _ = window.set_title("ATLAS EPİFİZ OBSERVATORY - HERETIC v5.0 [NATIVE GPU]");
                 let _ = window.center();
                 let _ = window.set_focus();
             }

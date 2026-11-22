@@ -12,4 +12,4 @@
 export const APP_VERSION = '3.0.0-rc.2'
 
 /** İmza dizesi (CI: `grep -q "PINEAL-HERETIC" dist/assets/*.js` ile doğrular). */
-export const APP_SIGNATURE = `PINEAL-HERETIC v${APP_VERSION} - ATLAS PINEAL OBSERVATORY`
+export const APP_SIGNATURE = `PINEAL-HERETIC v${APP_VERSION} - ATLAS EPİFİZ OBSERVATORY`
