@@ -17,6 +17,3 @@ restartPolicyMaxRetries = 3
 # Persistent volumes — Railway dashboard'da ayrıca tanımlanmalıdır:
 # Service → Volumes → Mount Path: /app/memory  (kritik: kanıt zinciri)
 # Service → Volumes → Mount Path: /app/cache   (opsiyonel: response cache)
-[deploy.volumes]
-memory = "/app/memory"
-vault = "/app/vault-data"
