@@ -74,7 +74,6 @@ RUN groupadd --system --gid 10001 app \
     && chown -R app:app /app
 USER app
 
-VOLUME ["/app/memory", "/app/cache"]
 
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s \
