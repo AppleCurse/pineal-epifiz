@@ -18,8 +18,8 @@
   // --- 1. SOVEREIGNS (ASPASIA & LILITH) ---
   const SOVEREIGNS = [
     {
-      id: 'aspasia', name: 'ASPASIA PRIME', short: 'ASPASIA',
-      role: 'Bilinç & Baş Stratejist',
+      id: 'aspasia', name: 'ASPASIA', short: 'ASPASIA',
+      role: 'Stratejik Fikir Lideri',
       title: 'Sokratik Retorik, Hakikat Aynası ve Empatik Strateji',
       glyph: '◈', accent: '#10b981', badge: 'BİLİNÇ',
       presets: [
@@ -29,10 +29,10 @@
       ]
     },
     {
-      id: 'lilith', name: 'LILITH GROWTH', short: 'LILITH',
-      role: 'Bilinçdışı Gölge & Nörobilim',
-      title: 'Dopamin Kancası, Amigdala Uyarımı, Maske Yırtıcı ve Viralite',
-      glyph: '✦', accent: '#ec4899', badge: 'GÖLGE',
+      id: 'lilith', name: 'BÜYÜME ANALİZİ', short: 'LILITH',
+      role: 'Davranış & Büyüme Analizi',
+      title: 'Davranış Kalıpları, Büyüme Dinamikleri ve Viralite Analizi',
+      glyph: '★', accent: '#ec4899', badge: 'GÖLGE',
       presets: [
         'Dopaminerjik ödül tahmin hatasıyla beklenti kırıcı viral kanca kurgula',
         'Hedefin vitrindeki duruşu ile bastırılmış narsistik dürtüleri analiz et',
@@ -43,29 +43,29 @@
 
   // --- 2. 12 SAHA AJANI ---
   const FIELD_AGENTS = [
-    { id: 'osint_investigator', name: 'OSINT INVESTIGATOR', short: 'OSINT', glyph: '⌖', color: '#8b5cf6', desc: 'Açık kaynak, web ve dijital ayak izi taraması', preset: 'Tüm web platformlarında çapraz kullanıcı adı ve dijital parmak izi tara' },
-    { id: 'depth_analyst', name: 'DEPTH ANALYST', short: 'DEPTH', glyph: '◬', color: '#eab308', desc: 'Gerçeklik endeksi ve kişilik derinliği analizi', preset: 'Kişilik özgünlüğü ve sosyal medyadaki yapay maskeyi derinlemesine incele' },
+    { id: 'osint_investigator', name: 'OSINT INVESTIGATOR', short: 'OSINT', glyph: '◎', color: '#8b5cf6', desc: 'Açık kaynak, web ve dijital ayak izi taraması', preset: 'Tüm web platformlarında çapraz kullanıcı adı ve dijital parmak izi tara' },
+    { id: 'depth_analyst', name: 'DEPTH ANALYST', short: 'DEPTH', glyph: '▽', color: '#eab308', desc: 'Gerçeklik endeksi ve kişilik derinliği analizi', preset: 'Kişilik özgünlüğü ve sosyal medyadaki yapay maskeyi derinlemesine incele' },
     { id: 'human_behavior', name: 'HUMAN BEHAVIOR', short: 'BEHAVIOR', glyph: '◈', color: '#f59e0b', desc: 'Dijital cold reading ve akıl tendonu analizi', preset: 'Hedefin alışkanlıklarını, ritüellerini ve zayıf hassasiyet noktasını çıkar' },
     { id: 'friction_detector', name: 'FRICTION & BOUNDS', short: 'FRICTION', glyph: '▲', color: '#ef4444', desc: 'Sınırlar, hassasiyet ve sürtünme dedektörü', preset: 'Konuşulmaması gereken kırmızı çizgileri ve sürtünme tetikleyicilerini belirle' },
-    { id: 'pattern_interrupt', name: 'PATTERN INTERRUPT', short: 'PATTERN', glyph: '⟳', color: '#dc2626', desc: 'Beklenti kırma ve temas stratejisi', preset: 'Sıradan mesajların ötesinde ezber bozan bir kalıp kırıcı ilk cümle kur' },
+    { id: 'pattern_interrupt', name: 'PATTERN INTERRUPT', short: 'PATTERN', glyph: '↻', color: '#dc2626', desc: 'Beklenti kırma ve temas stratejisi', preset: 'Sıradan mesajların ötesinde ezber bozan bir kalıp kırıcı ilk cümle kur' },
     { id: 'passion_mapper', name: 'PASSION MAPPER', short: 'PASSION', glyph: '◆', color: '#eab308', desc: 'Tutku, neşe ve akış tetikleyicileri haritası', preset: 'Hedefin gözlerini parlatan, gerçek tutkularını ve akış alanlarını haritala' },
-    { id: 'cognitive_profiler', name: 'COGNITIVE PROFILER', short: 'COGNITIVE', glyph: '⯁', color: '#06b6d4', desc: 'Bilişsel dil, üslup ve tonlama profili', preset: 'Hedefin kelime dağarcığını, resmiyet derecesini ve iletişim ritmini modelle' },
+    { id: 'cognitive_profiler', name: 'COGNITIVE PROFILER', short: 'COGNITIVE', glyph: '◆', color: '#06b6d4', desc: 'Bilişsel dil, üslup ve tonlama profili', preset: 'Hedefin kelime dağarcığını, resmiyet derecesini ve iletişim ritmini modelle' },
     { id: 'mirror_truth', name: 'MIRROR TRUTH', short: 'MIRROR', glyph: '◇', color: '#10b981', desc: 'İç-z-frekans yansıtma ve kullanıcı uyumu', preset: 'Kullanıcının ritmeleri ile hedefin profili arasındaki doğal frekans bağını test et' },
-    { id: 'autonomous_verifier', name: 'AUTONOMOUS VERIFIER', short: 'VERIFIER', glyph: '⟐', color: '#a855f7', desc: 'Otonom çapraz doğrulama ve hakem paneli', preset: 'Takipçi/beğeni oranlarındaki bot veya manipülasyon şüphesini denetle' },
-    { id: 'resonance_calculator', name: 'RESONANCE CALC', short: 'CALC', glyph: '⟡', color: '#3b82f6', desc: 'Numpy vektörel rezonans ve açı hesaplaması', preset: 'Çok boyutlu semantik uzayda rezonans ve uyum açısını matematiksel hesapla' },
-    { id: 'authenticity_auditor', name: 'AUTHENTICITY AUDITOR', short: 'AUTH', glyph: '✷', color: '#14b8a6', desc: 'Orijinallik ve güvenilirlik denetimi', preset: 'Gönderilerin doğallığı ile alıntı/kurgu oranını ölçerek maske puanı çıkar' },
-    { id: 'resonance_synthesizer', name: 'RESONANCE SYNTH', short: 'SYNTH', glyph: '✦', color: '#ec4899', desc: 'Sahici köprü sentezi ve önerilen ilk mesaj', preset: 'Tüm bulguları sentezleyerek hedefe ulaşacak en etkili ve zarif köprüyü inşa et' },
+    { id: 'autonomous_verifier', name: 'AUTONOMOUS VERIFIER', short: 'VERIFIER', glyph: '◇', color: '#a855f7', desc: 'Otonom çapraz doğrulama ve hakem paneli', preset: 'Takipçi/beğeni oranlarındaki bot veya manipülasyon şüphesini denetle' },
+    { id: 'resonance_calculator', name: 'RESONANCE CALC', short: 'CALC', glyph: '○', color: '#3b82f6', desc: 'Numpy vektörel rezonans ve açı hesaplaması', preset: 'Çok boyutlu semantik uzayda rezonans ve uyum açısını matematiksel hesapla' },
+    { id: 'authenticity_auditor', name: 'AUTHENTICITY AUDITOR', short: 'AUTH', glyph: '☆', color: '#14b8a6', desc: 'Orijinallik ve güvenilirlik denetimi', preset: 'Gönderilerin doğallığı ile alıntı/kurgu oranını ölçerek maske puanı çıkar' },
+    { id: 'resonance_synthesizer', name: 'RESONANCE SYNTH', short: 'SYNTH', glyph: '★', color: '#ec4899', desc: 'Sahici köprü sentezi ve önerilen ilk mesaj', preset: 'Tüm bulguları sentezleyerek hedefe ulaşacak en etkili ve zarif köprüyü inşa et' },
   ];
 
   // --- 3. 7 ADLİ SÜTUN ---
   const PILLARS = [
     { id: 'follower',  label: 'FOLLOWER',  tr: 'TAKİPÇİ',  icon: '◈', color: '#8b5cf6' },
     { id: 'timing',    label: 'TIMING',    tr: 'ZAMAN',    icon: '⏱', color: '#f59e0b' },
-    { id: 'depth',     label: 'DEPTH',     tr: 'DERİNLİK', icon: '◬', color: '#ec4899' },
+    { id: 'depth',     label: 'DEPTH',     tr: 'DERİNLİK', icon: '▽', color: '#ec4899' },
     { id: 'visual',    label: 'VISUAL',    tr: 'GÖRSEL',   icon: '◉', color: '#06b6d4' },
-    { id: 'shadow',    label: 'SHADOW',    tr: 'GÖLGE',    icon: '✦', color: '#a855f7' },
-    { id: 'osint',     label: 'OSINT',     tr: 'OSINT',    icon: '⌖', color: '#10b981' },
-    { id: 'resonance', label: 'RESONANCE', tr: 'REZONANS', icon: '⟡', color: '#ec4899' },
+    { id: 'shadow',    label: 'SHADOW',    tr: 'GÖLGE',    icon: '★', color: '#a855f7' },
+    { id: 'osint',     label: 'OSINT',     tr: 'OSINT',    icon: '◎', color: '#10b981' },
+    { id: 'resonance', label: 'RESONANCE', tr: 'REZONANS', icon: '○', color: '#ec4899' },
   ];
 
   // --- STATE ---
@@ -85,7 +85,11 @@
   let reportStatusLoading = false;
   let reportStatusData: any = null;
   let reportListData: any[] = [];
-  let reportTitle = 'Pineal Adli Analiz Raporu';
+  const demoReports = [
+    { title: 'Kurumsal Marka Örneği', subject: '@ornek_marka', created_at: 'Hazır demo', evidence_count: 12, confidence: 0.91, summary: 'Marka görünürlüğü, içerik tutarlılığı ve etkileşim özeti.' },
+    { title: 'İçerik Üreticisi Örneği', subject: '@ornek_uretici', created_at: 'Hazır demo', evidence_count: 9, confidence: 0.87, summary: 'İçerik performansı, kitle uyumu ve büyüme fırsatları özeti.' }
+  ];
+  let reportTitle = 'Pineal Analiz Raporu';
   let reportSubject = '';
   let reportFormats: Record<string, boolean> = { markdown: true, pdf: true, diagram: true, video: false };
   let reportBuilding = false;
@@ -101,6 +105,7 @@
   let vaultKnown = false;
   let vaultBusy = false;
   let vaultError = '';
+  let launchNotice = '';
 
   // Ayarlar & Çoklu LLM Kasası + Ajan-Model Haritası
   let showSettingsModal = false;
@@ -484,12 +489,15 @@
 
   async function launchAnalysis() {
     const url = targetUrl.trim();
+    launchNotice = '';
     if (!url || $isProcessing) return;
     if (!$armEngaged) {
+      launchNotice = 'Analiz başlatılamadı: Lütfen önce üst paneldeki ● ARM şalterini açın.';
       chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: 'Müşteri, operasyon başlatılamaz: ARM şalteri kapalı. Lütfen üst konsoldan ARM anahtarını açın.' }];
       return;
     }
     if (!isAdultDeclared) {
+      launchNotice = 'Hedefin 18 yaşından büyük (reşit) olduğu beyan edilmelidir.';
       chatMessages = [...chatMessages, {
         ts: nowTime(),
         sender: 'Aspasia',
@@ -514,6 +522,10 @@
           scraper_type: 'cross',
         }),
       });
+      if (isAuthFailure(pfRes)) {
+        launchNotice = 'Sunucu yetki hatası (401). API ANAHTARLARI panelinden PINEAL_TOKEN girin.';
+        return;
+      }
       if (pfRes.ok) {
         const pf = await pfRes.json();
         preflightResult = pf;
@@ -559,7 +571,7 @@
         })
       });
       if (!res.ok) {
-        if (isAuthFailure(res)) throw new Error('PINEAL_TOKEN yetki hatası');
+        if (isAuthFailure(res)) throw new Error('Sunucu yetki anahtarı gerekli. Ayarlar panelinden PINEAL_TOKEN girin.');
         if (res.status === 423) throw new Error('KASA KİLİTLİ (423): Lütfen üst paneldeki Kasa mandalını açın.');
         const errJson = await res.json().catch(() => ({}));
         throw new Error(errJson?.error?.message || errJson?.detail || `HTTP ${res.status}`);
@@ -580,6 +592,7 @@
     } catch (e: any) {
       isProcessing.set(false);
       playHalt();
+      launchNotice = `Görev başlatılamadı: ${e?.message || e}`;
       chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: `Görev başlatılamadı: ${e?.message || e}` }];
     }
   }
@@ -601,7 +614,7 @@
     chatMessages = [...chatMessages, {
       ts: nowTime(),
       sender: 'OSINT İSTİHBARAT',
-      text: `✦ Telefon numarası analiz ediliyor: [${phone}] (Operatör, şebeke ve mesajlaşma protokolleri taranıyor...)`
+      text: `★ Telefon numarası analiz ediliyor: [${phone}] (Operatör, şebeke ve mesajlaşma protokolleri taranıyor...)`
     }];
 
     try {
@@ -622,7 +635,7 @@
       chatMessages = [...chatMessages, {
         ts: nowTime(),
         sender: 'OSINT İSTİHBARAT',
-        text: `✦ [${m.e164 || phone}] Şebeke: ${m.carrier_name || 'Bilinmiyor'} | Bölge: ${m.country_name} | Tür: ${m.line_type}. WhatsApp ve Telegram doğrudan linkleri hazırlandı.`
+        text: `★ [${m.e164 || phone}] Şebeke: ${m.carrier_name || 'Bilinmiyor'} | Bölge: ${m.country_name} | Tür: ${m.line_type}. WhatsApp ve Telegram doğrudan linkleri hazırlandı.`
       }];
     } catch (e: any) {
       playHalt();
@@ -642,6 +655,7 @@
     try {
       const cid = $clientId || 'default';
       const res = await apiFetch(`/api/tasks?client_id=${encodeURIComponent(cid)}`);
+      if (isAuthFailure(res)) throw new Error('Sunucu yetki anahtarı gerekli.');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       taskHistoryList = Array.isArray(data.tasks) ? data.tasks : [];
@@ -748,7 +762,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           client_id: $clientId || 'default',
-          title: (reportTitle || 'Pineal Adli Analiz Raporu').trim(),
+          title: (reportTitle || 'Pineal Analiz Raporu').trim(),
           subject: (reportSubject || targetUrl || $activeTargetUrl || '').trim(),
           evidence: evidenceItems,
           formats: selectedFormats,
@@ -801,7 +815,7 @@
 
       chatMessages = [...chatMessages, {
         ts: nowTime(),
-        sender: 'KOMUTAN MÜDAHALESİ',
+        sender: 'MANUEL KANIT GİRİŞİ',
         text: `Kanıt kaydedildi [${injectType.toUpperCase()}]; ajana veya göreve aktarım henüz bağlı değil.`
       }];
       injectValue = '';
@@ -990,7 +1004,7 @@
       return state.locked as boolean;
     } catch (error: any) {
       vaultKnown = false;
-      vaultError = `Kasa durumu doğrulanamadı: ${error?.message || 'ağ hatası'}`;
+      vaultError = 'Sunucu yetki anahtarı gerekli (PINEAL_TOKEN).' ;
       return null;
     }
   }
@@ -1031,7 +1045,7 @@
     <div class="hud-brand">
       <span class="pulse-beacon" class:active={$isProcessing}></span>
       <div class="brand-titles">
-        <h1 class="brand-title">PINEAL EPİFİZ</h1>
+        <h1 class="brand-title">PINEAL</h1>
         <span class="live-status-badge">{plainLiveStatus}</span>
         <p class="intro-help">Pineal, erişilebilen açık kaynak verilerini araştırmanıza yardımcı olur. Başlamak için hedef girin, ARM kilidini açın ve analizi başlatın. Kullanılabilir kaynaklar kurulum ve platforma göre değişir.</p>
       </div>
@@ -1040,12 +1054,12 @@
     <!-- Orta: Hedef Kaseti -->
     <div class="target-cassette-bar">
       <div class="cassette-input-wrap">
-        <span class="cassette-icon">⌖</span>
+        <span class="cassette-icon">◎</span>
         <input
           type="text"
           class="cassette-text-input"
           bind:value={targetUrl}
-          placeholder="Hedef Profil URL, @kullanıcı veya Telefon (örn: (552) 956-87-63)..."
+          placeholder="Hedef Profil URL veya @kullanıcı..."
           disabled={$isProcessing || isProbingPhone}
           on:keydown={(e) => {
             if (e.key === 'Enter') {
@@ -1063,7 +1077,7 @@
           disabled={isProbingPhone}
           title="Numarayı OSINT Sensörleriyle Tara"
         >
-          {isProbingPhone ? '✦ TARANIYOR...' : '✦ NUMARAYI SORGULA'}
+          {isProbingPhone ? '★ TARANIYOR...' : '★ NUMARAYI SORGULA'}
         </button>
       {/if}
       <label class="adult-consent-badge" title="Hedef kişinin 18 yaşından büyük (reşit) olduğu beyanıdır.">
@@ -1085,7 +1099,7 @@
         on:click={() => showContextInputs = !showContextInputs}
         title="Kullanıcı Ritüelleri, Çalma Listesi ve Derin Hedef Bağlamını Ekle"
       >
-        {showContextInputs ? '▼ BAĞLAMI KAPAT' : '✦ BAĞLAM (RİTÜEL / MÜZİK / HEDEF)'}
+        {showContextInputs ? '▼ BAĞLAMI KAPAT' : '★ BAĞLAM (RİTÜEL / MÜZİK / HEDEF)'}
       </button>
       {#if showContextInputs}
         <div class="context-inputs-flyout">
@@ -1108,6 +1122,9 @@
             placeholder="Derin Hedef / Arzu (örn: Sahici ve derin bağ kurmak)..."
           />
         </div>
+      {/if}
+      {#if launchNotice}
+        <div class="launch-notice" role="alert">{launchNotice}</div>
       {/if}
       {#if platformWarning}
         <div class="platform-warning" role="status">{platformWarning}</div>
@@ -1143,7 +1160,7 @@
           class:engaged={$recordEngaged}
           aria-pressed={$recordEngaged}
           on:click={() => { playClick(480, 35); recordEngaged.update(v => !v); }}
-          title="Adli Kayıt ve Loglama"
+          title="Analiz Kayıt ve Loglama"
         >
           <span class="switch-dot"></span>REC
         </button>
@@ -1183,7 +1200,7 @@
         (appTitle, active, vaultSaving, liveStatus, playlistPlaceholder, confidence,
         runningBtn, system, resonanceScore, statusRunning). Tablo eski yerleşim için
         yazılmış: örn. `initiateBtn="ANALİZİ BAŞLAT"` ama ekrandaki düğme
-        "KAZIYI BAŞLAT". Düğme bu hâliyle `currentLang`'ı değiştiriyor, ekranda
+        "ANALİZİ BAŞLAT". Düğme bu hâliyle `currentLang`'ı değiştiriyor, ekranda
         değişen tek şey düğmenin kendi harfleri oluyordu — Tüzük §3.3'ün
         yasakladığı "çalışır görünen kontrol".
         Gerçek iki dillilik ayrı bir iştir: 94 anahtarın güncellenmesi + eksik
@@ -1199,7 +1216,7 @@
         title={!vaultKnown ? 'Kasa durumu bilinmiyor — yeniden kontrol et' : $vaultLocked ? 'Kasa kilitli — açmayı dene' : 'Kasa açık — kilitle'}
       >
         <span class="vault-dot"></span>
-        <span class="vault-label">{!vaultKnown ? 'KASA DURUMU BİLİNMİYOR' : $vaultLocked ? 'KASA KİLİTLİ' : 'KASA AÇIK'}</span>
+        <span class="vault-label">{!vaultKnown ? (vaultError.includes('yetki') ? 'ERİŞİM ANAHTARI GEREKLİ' : 'KASA DURUMU BİLİNMİYOR') : $vaultLocked ? 'KASA KİLİTLİ' : 'KASA AÇIK'}</span>
       </button>
     </div>
     {#if vaultError}<span role="alert" class="vault-error">{vaultError}</span>{/if}
@@ -1208,14 +1225,14 @@
   <!-- ==================== 2. ANA 3 SÜTUNLU GÖVDE ==================== -->
   <div class="master-grid-container">
 
-    <!-- SÜTUN 1: SOVEREIGNS & KOMUTAN MÜDAHALESİ (Sol - 28%) -->
+    <!-- SÜTUN 1: STRATEJİ & DANIŞMANLARN MÜDAHALESİ (Sol - 28%) -->
     <section class="column-deck col-left">
       <div class="deck-title-ribbon">
         <span class="ribbon-icon">◈</span>
-        <h2>SOVEREIGNS & KOMUTA</h2>
+        <h2>STRATEJİ & DANIŞMANLAR</h2>
       </div>
 
-      <!-- ASPASIA PRIME -->
+      <!-- ASPASIA -->
       <div
         class="sovereign-station aspasia-station {selectedAgentId === 'aspasia' ? 'selected' : ''}"
         role="button"
@@ -1227,22 +1244,22 @@
         <div class="station-header">
           <span class="station-glyph" style="color: #10b981;">◈</span>
           <div>
-            <h3 class="station-name">ASPASIA PRIME</h3>
-            <span class="station-role">Bilinç & Baş Stratejist</span>
+            <h3 class="station-name">ASPASIA</h3>
+            <span class="station-role">Stratejik Fikir Lideri</span>
           </div>
           <span class="station-badge badge-green">BİLİNÇ</span>
         </div>
-        <p class="station-desc">Sokratik Retorik, Hakikat Aynası, Taktiksel Sentez ve Empatik Strateji</p>
+        <p class="station-desc">Sokratik Yöntem, Hakikat Aynası ve Empatik Strateji</p>
         <div class="station-presets">
           {#each SOVEREIGNS[0].presets as p}
             <button class="preset-btn" on:click|stopPropagation={() => { selectAgent('aspasia'); inputMessage = formatPresetWithTarget(p); }}>
-              ◈ {p.slice(0, 36)}...
+              ◈ {p}
             </button>
           {/each}
         </div>
       </div>
 
-      <!-- LILITH GROWTH -->
+      <!-- BÜYÜME ANALİZİ -->
       <div
         class="sovereign-station lilith-station {selectedAgentId === 'lilith' ? 'selected' : ''}"
         role="button"
@@ -1252,18 +1269,18 @@
         on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectAgent('lilith'); } }}
       >
         <div class="station-header">
-          <span class="station-glyph" style="color: #ec4899;">✦</span>
+          <span class="station-glyph" style="color: #ec4899;">★</span>
           <div>
-            <h3 class="station-name">LILITH GROWTH</h3>
-            <span class="station-role">Bilinçdışı Gölge & Nörobilim</span>
+            <h3 class="station-name">BÜYÜME ANALİZİ</h3>
+            <span class="station-role">Davranış & Büyüme Analizi</span>
           </div>
           <span class="station-badge badge-pink">GÖLGE</span>
         </div>
-        <p class="station-desc">Dopamin Kancası, Amigdala Uyarımı, Maske Yırtıcı ve Viralite</p>
+        <p class="station-desc">Davranış Kalıpları, Büyüme Dinamikleri ve Viralite Analizi</p>
         <div class="station-presets">
           {#each SOVEREIGNS[1].presets as p}
             <button class="preset-btn btn-pink" on:click|stopPropagation={() => { selectAgent('lilith'); inputMessage = formatPresetWithTarget(p); }}>
-              ✦ {p.slice(0, 36)}...
+              ★ {p.slice(0, 36)}...
             </button>
           {/each}
         </div>
@@ -1273,7 +1290,7 @@
       <div class="commander-override-box">
         <div class="box-header">
           <span class="box-icon">▲</span>
-          <h3>KOMUTAN MÜDAHALESİ ("işte bu da onun!")</h3>
+          <h3>MANUEL KANIT GİRİŞİ</h3>
         </div>
         <p class="box-sub">Kanıtları kaydedin. Ajanlara veya aktif göreve aktarım henüz bağlı değil; hedef seçimi yalnızca kayıt bilgisidir.</p>
 
@@ -1281,7 +1298,7 @@
           <div class="form-dual-fields">
             <select bind:value={injectType} class="select-field">
               <option value="twin_url">Eş Profil URL (Twin URL)</option>
-              <option value="phone">✦ Telefon Numarası / GSM</option>
+              <option value="phone">★ Telefon Numarası / GSM</option>
               <option value="bio_fact">Gerçek Biyo / Meslek Bilgisi</option>
               <option value="ground_truth">Kesin Gerçeklik (Ground Truth)</option>
               <option value="note">Kritik Taktik Not</option>
@@ -1311,7 +1328,7 @@
             on:click={injectCommanderEvidence}
             disabled={isInjecting || !injectValue.trim()}
           >
-            {isInjecting ? '▲ KAYDEDİLİYOR...' : '✦ KANITI KAYDET'}
+            {isInjecting ? '▲ KAYDEDİLİYOR...' : '★ KANITI KAYDET'}
           </button>
         </div>
 
@@ -1330,11 +1347,11 @@
       </div>
     </section>
 
-    <!-- SÜTUN 2: 12 SAHA AJANI & CANLI MUHAKEME (Orta - 44%) -->
+    <!-- SÜTUN 2: 12 ANALİZ AJANI & CANLI MUHAKEME (Orta - 44%) -->
     <section class="column-deck col-center">
       <div class="deck-title-ribbon">
         <span class="ribbon-icon">▲</span>
-        <h2>12 SAHA AJANI & CANLI MUHAKEME (CHAIN-OF-THOUGHT)</h2>
+        <h2>12 ANALİZ AJANI & CANLI MUHAKEME (CHAIN-OF-THOUGHT)</h2>
       </div>
 
       <!-- GÖREVDE GERÇEKTEN ÇALIŞAN AJANLAR -->
@@ -1382,7 +1399,7 @@
       {:else}
         <div class="cot-empty" style="margin-bottom: 0.5rem;">
           <p>Bu görevde henüz çalışmış ajan yok.</p>
-          <small>Hedef girip KAZIYI BAŞLAT dediğinizde yalnızca bu görevde gerçekten koşan ajanlar burada görünür.</small>
+          <small>Hedef girip ANALİZİ BAŞLAT dediğinizde yalnızca bu görevde gerçekten koşan ajanlar burada görünür.</small>
         </div>
       {/if}
 
@@ -1435,7 +1452,7 @@
       <div class="sovereign-pulse-section">
         <div class="pulse-header">
           <span class="pulse-icon">≈</span>
-          <h3>SOVEREIGN SENKRONİZASYON (ASPASIA ↔ LILITH)</h3>
+          <h3>STRATEJİ SENKRONİZASYONU</h3>
         </div>
         <div class="pulse-waveform" aria-label="Senkronizasyon dalgaformu">
           <svg viewBox="0 0 400 60" preserveAspectRatio="none">
@@ -1469,7 +1486,7 @@
           </svg>
           <div class="pulse-metrics">
             <span class="pulse-metric"><strong>ASPASIA</strong> ◈</span>
-            <span class="pulse-metric"><strong>LILITH</strong> ✦</span>
+            <span class="pulse-metric"><strong>LILITH</strong> ★</span>
             <span class="pulse-metric">FREKANS: <span class="freq-val">{$taskStatus?.resonance_result?.frequency_hz ? `${$taskStatus.resonance_result.frequency_hz} Hz` : ($isProcessing ? 'Ölçülüyor...' : 'Beklemede')}</span></span>
             <span class="pulse-metric">SENKRON: <span class="sync-val">{$taskStatus?.resonance_score != null ? `${Math.round($taskStatus.resonance_score * 100)}%` : ($isProcessing ? 'Hesaplanıyor...' : '—')}</span></span>
           </div>
@@ -1485,7 +1502,7 @@
               <span class="pod-title">TELEFON OSINT İSTİHBARATI</span>
               <strong class="pod-num">{phoneProbeResult.metadata?.e164 || phoneProbeResult.phone_input}</strong>
             </div>
-            <button type="button" class="pod-close-btn" on:click={() => { phoneProbeResult = null; }} aria-label="Telefon kartını kapat">✕</button>
+            <button type="button" class="pod-close-btn" on:click={() => { phoneProbeResult = null; }} aria-label="Telefon kartını kapat">×</button>
           </div>
 
           <div class="pod-grid">
@@ -1531,7 +1548,7 @@
                     on:click={() => { targetUrl = handle; launchAnalysis(); }}
                     title="Bu kullanıcı adını doğrudan kazıya al"
                   >
-                    @{handle} ➔ [KAZIYA AL]
+                    @{handle} ➔ [ANALİZE AL]
                   </button>
                 {/each}
               </div>
@@ -1568,7 +1585,7 @@
       <!-- CANLI KANIT ZİNCİRİ (BACKEND evidence_chain) -->
       <div class="chain-of-thought-section">
         <div class="cot-header">
-          <span class="cot-icon">⟐</span>
+          <span class="cot-icon">◇</span>
           <h3>CANLI KANIT ZİNCİRİ (evidence_chain — {evidenceChain.length})</h3>
           <button
             type="button"
@@ -1603,7 +1620,7 @@
             </div>
           {:else}
             <div class="cot-empty">
-              <span class="empty-glyph">⟐</span>
+              <span class="empty-glyph">◇</span>
               <p>Henüz mühürlenmiş kanıt zinciri yok.</p>
               <small>Operasyon başlatın veya Geçmiş &amp; Raporlar üzerinden önceki bir görevi yükleyin.</small>
             </div>
@@ -1638,8 +1655,8 @@
     <section class="column-deck col-right">
       <div class="deck-title-ribbon deck-title-stack">
         <div class="ribbon-row">
-          <span class="ribbon-icon">⟐</span>
-          <h2>7 ADLİ KANIT KATEGORİSİ — RADAR</h2>
+          <span class="ribbon-icon">◇</span>
+          <h2>7 ANALİZ KATEGORİSİ — RADAR</h2>
         </div>
         <small class="pillars-sub">Ajanlar + 7 deterministik dalga motoru (Frequency, Seismos, Void, Strata, Gravity, Pulse, Key) bulgularını toplar</small>
       </div>
@@ -1744,7 +1761,7 @@
             disabled={isSending}
           />
           <button class="chat-send-btn" on:click={sendAspasiaMessage} disabled={isSending || !inputMessage.trim()}>
-            {isSending ? '▲' : '✦'}
+            {isSending ? '▲' : '★'}
           </button>
         </div>
       </div>
@@ -1814,7 +1831,7 @@
       <div class="cockpit-modal-card">
         <div class="cockpit-modal-head">
           <h3>📜 GÖREV GEÇMİŞİ &amp; RAPOR FABRİKASI</h3>
-          <button class="modal-close-btn" on:click={() => showHistoryModal = false}>✕</button>
+          <button class="modal-close-btn" on:click={() => showHistoryModal = false}>×</button>
         </div>
 
         <div class="cockpit-modal-tabs">
@@ -1830,7 +1847,7 @@
           {#if historyTab === 'tasks'}
             <div class="modal-section-box">
               <div class="history-toolbar">
-                <h4>Kayıtlı Görevler (GET /api/tasks)</h4>
+                <h4>Kayıtlı Görevler (<code class="endpoint-code" lang="en">GET /api/tasks</code>)</h4>
                 <button type="button" class="modal-cancel-btn" on:click={loadTaskHistory} disabled={tasksLoading}>
                   {tasksLoading ? 'Yükleniyor...' : '↻ Yenile'}
                 </button>
@@ -1897,7 +1914,7 @@
               <div class="provider-grid" style="margin-top: 0.6rem;">
                 <label class="provider-field">
                   <span>Rapor Başlığı</span>
-                  <input type="text" bind:value={reportTitle} placeholder="Pineal Adli Analiz Raporu" />
+                  <input type="text" bind:value={reportTitle} placeholder="Pineal Analiz Raporu" />
                 </label>
                 <label class="provider-field">
                   <span>Konu / Hedef</span>
@@ -1932,13 +1949,22 @@
 
             <div class="modal-section-box">
               <div class="history-toolbar">
-                <h4>Geçmiş Raporlar (GET /api/report/list)</h4>
+                <h4>Geçmiş Raporlar (<code class="endpoint-code" lang="en">GET /api/report/list</code>)</h4>
                 <button type="button" class="modal-cancel-btn" on:click={loadReportCenter} disabled={reportStatusLoading}>
                   ↻ Yenile
                 </button>
               </div>
               {#if reportListData.length === 0}
-                <p class="routing-note">Henüz üretilmiş rapor paketi bulunamadı.</p>
+                <div class="demo-report-grid" aria-label="Hazır demo raporları">
+                  {#each demoReports as demo}
+                    <article class="report-history-card demo-report-card">
+                      <div class="rh-head"><strong>{demo.title}</strong><span>{demo.created_at}</span></div>
+                      <div class="rh-meta">Hedef: {demo.subject} · Kanıt: {demo.evidence_count} · Güven: {Math.round(demo.confidence * 100)}%</div>
+                      <p>{demo.summary}</p>
+                      <button type="button" class="mini-action-btn" on:click={() => { reportTitle = demo.title; reportSubject = demo.subject; }}>ÖRNEĞİ İNCELE</button>
+                    </article>
+                  {/each}
+                </div>
               {:else}
                 <div class="report-history-list">
                   {#each reportListData as rep}
@@ -1981,7 +2007,7 @@
             <h3>⚙️ AYARLAR, ÇOKLU LLM KASASI & AJAN MODEL HARİTASI</h3>
             <p class="cockpit-modal-sub">Her sağlayıcıya doğrudan anahtar girin; sistemdeki her ajan/özellik kendi uzman modelini kullanır.</p>
           </div>
-          <button class="modal-x-btn" on:click={() => (showSettingsModal = false)} aria-label="Kapat">✕</button>
+          <button class="modal-x-btn" on:click={() => (showSettingsModal = false)} aria-label="Kapat">×</button>
         </div>
 
         <div class="cockpit-modal-tabs">
@@ -2214,7 +2240,7 @@
     color: var(--emerald); background: rgba(16,185,129,0.12);
     border: 1px solid rgba(16,185,129,0.35); border-radius: 3px;
     font-family: 'JetBrains Mono', monospace;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 480px;
+    white-space: normal; overflow: visible; max-width: none; line-height: 1.4;
   }
 
   /* Target Cassette */
@@ -2335,7 +2361,7 @@
 
   .station-desc { font-size: 0.7rem; color: var(--text-muted); line-height: 1.4; margin-bottom: 0.75rem; }
   .station-presets { display: flex; flex-direction: column; gap: 0.4rem; }
-  .preset-btn { text-align: left; padding: 0.45rem 0.6rem; font-family: inherit; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.04em; color: var(--text-dim); background: rgba(8,10,15,0.8); border: 1px solid var(--border-dim); border-radius: 3px; cursor: pointer; transition: all 0.15s; }
+  .preset-btn { text-align: left; white-space: normal; overflow-wrap: anywhere; line-height: 1.35; padding: 0.45rem 0.6rem; font-family: inherit; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.04em; color: var(--text-dim); background: rgba(8,10,15,0.8); border: 1px solid var(--border-dim); border-radius: 3px; cursor: pointer; transition: all 0.15s; }
   .preset-btn:hover { color: var(--text-primary); border-color: var(--accent, var(--emerald)); background: rgba(16,185,129,0.08); }
   .preset-btn.btn-pink:hover { border-color: var(--magenta); background: rgba(236,72,153,0.08); }
 
@@ -2658,7 +2684,7 @@
     display: flex; align-items: center; justify-content: center; padding: 1rem;
   }
   .cockpit-modal-card {
-    width: min(880px, 96vw); max-height: 90vh;
+    width: min(880px, 96vw); max-height: calc(100dvh - 2rem);
     background: #0a0e17; border: 1px solid rgba(6, 182, 212, 0.45);
     border-radius: 10px; display: flex; flex-direction: column; overflow: hidden;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
@@ -2686,7 +2712,7 @@
   .cockpit-modal-tabs button.active {
     color: #02140a; background: var(--cyan); border-color: var(--cyan);
   }
-  .cockpit-modal-body { padding: 1rem 1.25rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1rem; }
+  .cockpit-modal-body { padding: 1rem 1.25rem 2.5rem; overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: 1rem; }
   .modal-section-box {
     background: rgba(15, 20, 32, 0.7); border: 1px solid var(--border-dim);
     border-radius: 8px; padding: 0.85rem;
@@ -2727,6 +2753,9 @@
     padding: 0.45rem 1rem; font-family: inherit; font-size: 0.7rem; font-weight: 800;
     background: linear-gradient(135deg, var(--emerald), #059669); color: #02140a; border: none; border-radius: 5px; cursor: pointer;
   }
+
+  .launch-notice { width: 100%; margin-top: 0.35rem; padding: 0.45rem 0.75rem; color: #fca5a5; background: rgba(239,68,68,0.16); border: 1px solid rgba(239,68,68,0.5); border-radius: 4px; font-size: 0.72rem; font-weight: 700; }
+  .endpoint-code { text-transform: none; font-family: 'JetBrains Mono', monospace; }
   .platform-warning {
     width: 100%;
     margin-top: 0.35rem;

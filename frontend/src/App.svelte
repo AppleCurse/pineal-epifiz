@@ -427,19 +427,7 @@
 </script>
 
 <main class="fullscreen-cockpit-viewport">
-  <UnifiedPinealCockpit />
-
-  <button
-    class="telemetry-toggle"
-    on:click={() => (telemetryVisible = !telemetryVisible)}
-    aria-expanded={telemetryVisible}
-    aria-controls="neural-telemetry-panel"
-    title="Nöral telemetri panosunu göster / gizle"
-  >
-    {telemetryVisible ? '▼ TELEMETRİYİ GİZLE' : '▲ TELEMETRİYİ GÖSTER'}
-  </button>
-
-  {#if telemetryVisible}
+  <UnifiedPinealCockpit />`n{#if telemetryVisible}
     <div class="telemetry-panel" id="neural-telemetry-panel">
       <NeuralTelemetryBoard telemetry={telemetryData} />
     </div>
@@ -480,24 +468,5 @@
     height: min(220px, 28vh);
   }
 
-  .telemetry-toggle {
-    position: fixed;
-    right: 420px;
-    bottom: 14px;
-    z-index: 46;
-    padding: 5px 10px;
-    font-family: 'JetBrains Mono', 'Courier New', monospace;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    color: #d4af37;
-    background: rgba(3, 5, 10, 0.88);
-    border: 1px solid rgba(212, 175, 55, 0.35);
-    border-radius: 6px;
-    cursor: pointer;
-  }
 
-  .telemetry-toggle:hover {
-    border-color: rgba(212, 175, 55, 0.75);
-  }
 </style>
