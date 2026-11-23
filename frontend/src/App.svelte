@@ -10,7 +10,6 @@
   } from './store';
   import { uplinkState } from './lib/telemetry';
   import UnifiedPinealCockpit from './components/UnifiedPinealCockpit.svelte';
-  import AtlasPortal from './components/AtlasPortal.svelte';
   import NeuralTelemetryBoard from './components/visualizers/NeuralTelemetryBoard.svelte';
   import SupportPanel from './components/SupportPanel.svelte';
 
@@ -428,30 +427,26 @@
 </script>
 
 <main class="fullscreen-cockpit-viewport">
-  {#if $activeViewMode === 'cockpit'}
-    <UnifiedPinealCockpit />
+  <UnifiedPinealCockpit />
 
-    <button
-      class="telemetry-toggle"
-      on:click={() => (telemetryVisible = !telemetryVisible)}
-      aria-expanded={telemetryVisible}
-      aria-controls="neural-telemetry-panel"
-      title="Nöral telemetri panosunu göster / gizle"
-    >
-      {telemetryVisible ? '▼ TELEMETRİYİ GİZLE' : '▲ TELEMETRİYİ GÖSTER'}
-    </button>
+  <button
+    class="telemetry-toggle"
+    on:click={() => (telemetryVisible = !telemetryVisible)}
+    aria-expanded={telemetryVisible}
+    aria-controls="neural-telemetry-panel"
+    title="Nöral telemetri panosunu göster / gizle"
+  >
+    {telemetryVisible ? '▼ TELEMETRİYİ GİZLE' : '▲ TELEMETRİYİ GÖSTER'}
+  </button>
 
-    {#if telemetryVisible}
-      <div class="telemetry-panel" id="neural-telemetry-panel">
-        <NeuralTelemetryBoard telemetry={telemetryData} />
-      </div>
-    {/if}
-
-    <!-- [B0] Destek & güvenli devam kokpiti — açık talepler görünür ve yanıtlanabilir -->
-    <SupportPanel />
-  {:else}
-    <AtlasPortal />
+  {#if telemetryVisible}
+    <div class="telemetry-panel" id="neural-telemetry-panel">
+      <NeuralTelemetryBoard telemetry={telemetryData} />
+    </div>
   {/if}
+
+  <!-- [B0] Destek & güvenli devam kokpiti — açık talepler görünür ve yanıtlanabilir -->
+  <SupportPanel />
 </main>
 
 <style>

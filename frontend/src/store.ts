@@ -126,9 +126,7 @@ if (typeof localStorage !== 'undefined') {
 // [P6 · CANLI PANEL] Üçüncü görünüm: 'control' → LiveControlPanel (canlı
 // kontrol paneli). 'warroom' | 'cockpit' | 'control'.
 export type ViewMode = 'observatory' | 'atlas' | 'warroom' | 'cockpit' | 'control' | 'spiderfoot';
-export const activeViewMode = writable<ViewMode>(
-  (typeof localStorage !== 'undefined' && (localStorage.getItem('pineal_view_mode') as ViewMode)) || 'observatory'
-);
+export const activeViewMode = writable<ViewMode>('cockpit');
 export const inspectedAgentId = writable<string | null>(null);
 export const activeTargetUrl = writable<string>('');
 export const missionElapsed = writable<string>('00:00');

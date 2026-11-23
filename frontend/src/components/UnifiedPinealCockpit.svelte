@@ -1031,7 +1031,7 @@
     <div class="hud-brand">
       <span class="pulse-beacon" class:active={$isProcessing}></span>
       <div class="brand-titles">
-        <h1 class="brand-title">ATLAS EPİFİZ // PINEAL OBSERVATORY</h1>
+        <h1 class="brand-title">PINEAL EPİFİZ</h1>
         <span class="live-status-badge">{plainLiveStatus}</span>
         <p class="intro-help">Pineal, erişilebilen açık kaynak verilerini araştırmanıza yardımcı olur. Başlamak için hedef girin, ARM kilidini açın ve analizi başlatın. Kullanılabilir kaynaklar kurulum ve platforma göre değişir.</p>
       </div>
@@ -1160,16 +1160,6 @@
         <span class="hm-icon">⏱</span>
         <span class="hm-val">{missionElapsedStr}</span>
       </div>
-      <button
-        class="settings-gear-btn"
-        on:click={() => {
-          activeViewMode.set('observatory');
-          if (typeof localStorage !== 'undefined') localStorage.setItem('pineal_view_mode', 'observatory');
-        }}
-        title="Atlas Portalına / Sade Karşılama Ekranına Dön"
-      >
-        🏛️ ATLAS PORTALI
-      </button>
       <button
         class="settings-gear-btn history-hub-btn"
         data-testid="open-history-btn"

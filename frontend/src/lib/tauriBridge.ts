@@ -99,7 +99,7 @@ export async function getSystemInfo(): Promise<any> {
   try {
     if (!isTauri()) {
       return {
-        product: 'ATLAS EPİFİZ OBSERVATORY',
+        product: 'PINEAL EPİFİZ',
         version: APP_VERSION,
         build: 'web',
         // Tarayıcı kabuğunda GPU durumu ÖLÇÜLEMEZ: `false` bir ölçüm
@@ -110,7 +110,7 @@ export async function getSystemInfo(): Promise<any> {
     }
     return await tauriInvoke<any>('get_system_info');
   } catch {
-    return { product: 'ATLAS EPİFİZ', version: APP_VERSION, build: 'unknown' };
+    return { product: 'PINEAL EPİFİZ', version: APP_VERSION, build: 'unknown' };
   }
 }
 
