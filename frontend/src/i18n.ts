@@ -30,7 +30,7 @@ export const t = {
     pinealTokenLabel: "API ERİŞİM ANAHTARI (PINEAL_TOKEN)",
     pinealTokenPlaceholder: "Backend'de tanımlıysa buraya girin...",
     saveTokenBtn: "TOKEN'I KAYDET",
-    tokenActiveBadge: "TOKEN: KAYITLI ✓",
+    tokenActiveBadge: "TOKEN: KAYITLI",
     tokenInactiveBadge: "TOKEN: YOK — backend kimlik istiyorsa 401/1008 alırsınız",
 
     // Center Panel: Target Input & Controls
@@ -80,7 +80,7 @@ export const t = {
     resonanceScore: "Rezonans",
     openingTopic: "Önerilen Açılış Konusu:",
     copyBtn: "📋 METNİ KOPYALA",
-    copiedBtn: "✓ KOPYALANDI",
+    copiedBtn: "KOPYALANDI",
 
     // 4 Damga & Forensics
     followerAuditTitle: "🔍 TAKİPÇİ VE BOT DENETİMİ",
@@ -139,7 +139,7 @@ export const t = {
     pinealTokenLabel: "API ACCESS TOKEN (PINEAL_TOKEN)",
     pinealTokenPlaceholder: "Enter it if defined on the backend...",
     saveTokenBtn: "SAVE TOKEN",
-    tokenActiveBadge: "TOKEN: SAVED ✓",
+    tokenActiveBadge: "TOKEN: SAVED",
     tokenInactiveBadge: "TOKEN: NONE — if backend requires auth you'll get 401/1008",
 
     // Center Panel: Target Input & Controls
@@ -189,7 +189,7 @@ export const t = {
     resonanceScore: "Resonance",
     openingTopic: "Suggested Opening Topic:",
     copyBtn: "📋 COPY MESSAGE",
-    copiedBtn: "✓ COPIED",
+    copiedBtn: "COPIED",
 
     // 4 Damga & Forensics
     followerAuditTitle: "🔍 FOLLOWER & BOT AUDIT",

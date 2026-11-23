@@ -198,5 +198,5 @@ export function crossProfileSignalText(signal: string): string {
 export function crossProfileText(row: CrossProfileMatch): string {
   const signals = (row.signals || []).map(crossProfileSignalText).join(' + ');
   const scope = row.confidence_label || 'kapsam';
-  return `${row.source_platform}/@${row.source_handle} ↔ ${row.target_platform}/@${row.target_handle} · ${signals || 'eşleşme'} · ${scope} ${row.coverage.toFixed(2)}`;
+  return `${row.source_platform}/@${row.source_handle} > ${row.target_platform}/@${row.target_handle} · ${signals || 'eşleşme'} · ${scope} ${row.coverage.toFixed(2)}`;
 }

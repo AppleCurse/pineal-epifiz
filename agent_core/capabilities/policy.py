@@ -6,7 +6,17 @@ hangi kapılardan geçtiğini okumadı" senaryosunu yapısal olarak imkânsız k
 
 Kapı sözlüğü:
     ``vault``    — kasa mandalı açık olmalı (kilitliyken dış ağa çıkış yok)
-    (hedef rızası diye bir kapı YOKTUR — karar mercii operatördür)
+    ``consent``  — kişisel veri işleyen yetenekler için AÇIK RIZA beyanı.
+                   [KVKK uyumu · 2026-11-23] Eskiden bu satırda "hedef rızası
+                   diye bir kapı YOKTUR — karar mercii operatördür" yazıyordu.
+                   Bu ifade 6698 sayılı KVKK md.5/6 (özel nitelikli kişisel
+                   veri) ve md.4 (açık rıza) ile uyumlu değildi: rıza, kodun
+                   gözlemleyebileceği bir gerçek DEĞİLDİR, dolayısıyla çekirdek
+                   onu doğrulayamaz — ama bu, rızayı yok saymak için bir gerekçe
+                   olamaz. Doğru tasarım: çekirdek, operatörün **beyanını**
+                   taşır (`PolicyState.subject_consent`) ve beyan yoksa
+                   **fail-closed** reddeder. Beyanın doğruluğu hukuki sorumluluk
+                   olarak operatörde kalır (bkz. `agent_core/legal/notice.py`).
     ``budget``   — görev bütçesi aşılmamış olmalı
     ``rate``     — hız durumu biliniyor ve izin veriyor olmalı (bilinmiyorsa RET)
     ``ENABLE_*`` — env anahtarı açık olmalı (örn. ``ENABLE_MAIGRET``); anahtar
@@ -36,7 +46,7 @@ __all__ = [
 
 
 #: Çekirdeğin bildiği yapısal kapılar. Bunun dışındaki her şey fail-closed reddedilir.
-BUILTIN_GATES = frozenset({"vault", "budget", "rate"})
+BUILTIN_GATES = frozenset({"vault", "consent", "budget", "rate"})
 
 #: YÖNETİLEN env kapıları — TEK KAYNAK BURASIDIR (denetim 2026-10-14, bulgu B1/B2).
 #: ``agent_core.capabilities.state`` bu listeyi yeniden ihraç eder; ikinci bir liste
@@ -156,6 +166,13 @@ class PolicyState:
     #: Çocuk vakası bağlamı. subject_is_minor=True ise runner, politika
     #: kapılarından ÖNCE çocuk kilidini uygular (küresel, istisnasız).
     minor_case: Any | None = None
+    #: [KVKK · 2026-11-23] Hedef kişinin açık rızasının operatör tarafından
+    #: BEYAN edilip edilmediği. Üç durum:
+    #:   True  → rıza beyan edildi (yasal sorumluluk operatörde)
+    #:   False → rıza yok / reddedildi → ``consent`` kapısı RET
+    #:   None  → beyan hiç taşınmadı → ``consent`` kapısı RET (fail-closed;
+    #:           "unutuldu" asla "varsayıldı" gibi görünmez)
+    subject_consent: bool | None = None
 
 
 class PolicyKernel:
@@ -170,7 +187,7 @@ class PolicyKernel:
     #: hız → env bayrakları. Önemli: kasa kilidi, env bayrağı kapalı olsa bile
     #: ÖNCE reddedilir; aksi halde denetim izinde "gate_disabled" görünür ve
     #: kasa ihlali maskelenir (Tüzük Md.4.1: kasa istisnasızdır).
-    _GATE_ORDER = {"vault": 1, "budget": 2, "rate": 3}
+    _GATE_ORDER = {"vault": 1, "consent": 2, "budget": 3, "rate": 4}
 
     @classmethod
     def _gate_rank(cls, gate: str) -> int:
@@ -202,6 +219,15 @@ class PolicyKernel:
 
             if gate == "vault" and state.vault_locked:
                 return PolicyDecision.deny(gate, "vault_locked")
+
+            if gate == "consent":
+                # Fail-closed: beyan yoksa (None) veya ret ise kapı kapalıdır.
+                # Kasa mandalından SONRA gelir: kasa ihlali denetim izinde
+                # maskelenmesin (Tüzük Md.4.1 sırası korunur).
+                if state.subject_consent is None:
+                    return PolicyDecision.deny(gate, "consent_not_declared")
+                if not state.subject_consent:
+                    return PolicyDecision.deny(gate, "consent_missing")
 
             if gate == "budget":
                 if state.budget_usd is not None and state.spent_usd >= state.budget_usd:

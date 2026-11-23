@@ -55,6 +55,7 @@ import importlib
 import shutil
 import os
 import hashlib
+import re
 import time
 
 logger = logging.getLogger("backend.api")
@@ -440,6 +441,37 @@ def _openai_upstream_error_details(status_code: Any) -> tuple[int, str, str, str
     return 502, "Upstream provider failed to complete the request", "server_error", "upstream_provider_error"
 
 
+# [P0 · DOĞRULAMA 2026-11-23] HERKESE AÇIK SALT-OKUNUR KATMAN.
+# Neden: `auth_middleware` tüm /api/* yollarına uygulanıyordu ve hiçbir istisna
+# yoktu. Ziyaretçi siteyi açar açmaz telemetri yoklaması 401 yiyordu; kasa
+# göstergesi "bilinmiyor" a düşüyor ve tek bir yetenek bile açılamıyordu.
+# Bu allowlist yalnızca GET/HEAD ve yalnızca aşağıdaki sabit yollar için geçerli.
+#
+# GÜVENLİK: prefix eşleşmesi YAPILMAZ. `/api/public/demo-reports/../api/vault/status`
+# gibi bir yol, prefix kontrolüyle auth'suz geçebilirdi (path traversal auth
+# bypass). Bu yüzden: (a) liste/notice uçları TAM eşleşme, (b) detay ucu için
+# ek olarak id'nin `[a-z0-9-]` slug'ı olması zorunlu — `..`, `/`, `%2e` reddedilir.
+_PUBLIC_EXACT_PATHS: tuple[str, ...] = (
+    "/api/public/demo-reports",
+    "/api/public/notice",
+)
+_PUBLIC_DETAIL_PREFIX = "/api/public/demo-reports/"
+# 80 karakter tavanı: id'ler sabit ve kısadır; uzun giriş zaten eşleşmez.
+_PUBLIC_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,79}$")
+
+
+def _is_public_get(path: str, method: str) -> bool:
+    """Yol, token'sız erişilebilecek bir SALT-OKUNUR public uç mu?"""
+    if method not in ("GET", "HEAD"):
+        return False
+    if path in _PUBLIC_EXACT_PATHS:
+        return True
+    if path.startswith(_PUBLIC_DETAIL_PREFIX):
+        report_id = path[len(_PUBLIC_DETAIL_PREFIX):]
+        return bool(_PUBLIC_ID_RE.match(report_id))
+    return False
+
+
 def _secure_path(request: Request) -> str:
     """Güvenlik kararları için TEK GERÇEK kaynak: ham ASGI path.
 
@@ -481,6 +513,26 @@ async def auth_middleware(request: Request, call_next):
             scheme, separator, bearer = authorization.partition(" ")
             if separator and scheme.lower() == "bearer" and bearer:
                 presented_token = bearer
+
+        # [P0 · 2026-11-23] Public salt-okunur uçlar token İSTEMEZ.
+        # Not: posture kontrolü (güvenli başlangıç yapılandırması) yukarıda
+        # yapıldı ve burada ATLANMAZ — bozuk bir üretim yapılandırması public
+        # vitrinde bile 503 vermeye devam eder (fail-closed korunur).
+        if _is_public_get(path, request.method):
+            public_identity = presented_token or client_ip(
+                forwarded_for=request.headers.get("x-forwarded-for"),
+                socket_host=request.client.host if request.client else None,
+            )
+            request.state.rate_identity = hashlib.sha256(
+                public_identity.encode("utf-8")
+            ).hexdigest()[:16]
+            request.state.principal = principal_of_request(presented_token)
+            _public_token = _set_principal(request.state.principal)
+            try:
+                return await call_next(request)
+            finally:
+                _reset_principal(_public_token)
+
         if posture["auth_required"] and not token_matches(presented_token):
             body = (
                 _openai_error(
@@ -788,6 +840,7 @@ from backend.security.principal import (  # noqa: F401  (geriye dönük ihracat)
 # semantik oda mührüyle birebir aynıdır (kayıt yoksa ilk erişen sahiplenir).
 from backend.routes.preflight import register_preflight_routes
 from backend.routes.reports import ReportBuildPayload, register_report_routes  # noqa: E402,F401
+from backend.routes.public_demo import register_public_routes  # noqa: E402
 from backend.routes.tasks import delete_task, get_task_detail, list_visible_tasks; from backend.routes.support import register_support_routes  # noqa: E702,E401
 from backend.routes.language import (  # noqa: E402,F401 (API-BÖLME 2: yeniden ihraç, dış sözleşme)
     LanguageDetectPayload,
@@ -5473,6 +5526,11 @@ register_preflight_routes(
     check_vault_interlock=_check_vault_interlock,
     flag_env=_flag_env,
 )
+
+# [P0 · DOĞRULAMA 2026-11-23] Token'sız vitrin: 2 örnek rapor + yasal uyarı.
+# `auth_middleware` içindeki `_is_public_get` allowlist'iyle aynı yolları
+# paylaşır; oraya eklenmeden 401 almaya devam eder (fail-closed).
+register_public_routes(app)
 
 
 # [2026-11-21] Statik arayüz YALNIZ frontend/dist'ten sunulur. Eskiden dist

@@ -118,7 +118,11 @@ class PhoneProbeCapability(BaseCapability):
     id = "sensor.identity.phone_probe"
     kind = CapabilityKind.SENSOR
     license = "native"
-    gates = frozenset({"vault"})
+    # [KVKK · 2026-11-23] `consent` kapısı eklendi. Telefon numarası KVKK
+    # md.6'daki "kişisel veri" tanımına girer; işlenmesi için md.4 uyarınca
+    # AÇIK RIZA gerekir. Eskiden tek kapı `vault` idi: kasa açıksa rızasız
+    # numara sorgusu çalışabiliyordu. Şimdi beyan yoksa fail-closed ret.
+    gates = frozenset({"vault", "consent"})
     timeout_seconds = 30.0
     description = (
         "Telefon numarasını E.164 standardına çevirir, operatör/şebeke ve hat türünü "

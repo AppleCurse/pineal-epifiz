@@ -69,7 +69,15 @@ def test_endpoint_runs_registered_capability(monkeypatch):
                               gateway_provider=lambda: None,
                               require_minor_clearance=lambda *args, **kwargs: None,
                               require_vault_open=lambda _: None)
-    response = TestClient(app).post("/api/commander/phone-probe", json={"phone": "+12025550123"})
+    # [KVKK · 2026-11-23] Açık rıza beyanı artık zorunlu: beyansız istek 423 verir.
+    denied = TestClient(app).post("/api/commander/phone-probe", json={"phone": "+12025550123"})
+    assert denied.status_code == 423, denied.text
+    assert denied.json()["error"]["code"] == "CONSENT_REQUIRED"
+
+    response = TestClient(app).post(
+        "/api/commander/phone-probe",
+        json={"phone": "+12025550123", "subject_consent": True},
+    )
     assert response.status_code == 200, response.text
     result = response.json()
     assert result["metadata"]["is_valid"] is True
@@ -89,7 +97,7 @@ def test_candidate_evidence_is_inconclusive(monkeypatch):
     bootstrap()
     result = asyncio.run(run_capability("sensor.identity.phone_probe",
                                        CapabilityContext(subject="+12025550123"),
-                                       state=policy_state(vault_locked=False)))
+                                       state=policy_state(vault_locked=False, subject_consent=True)))
     evidence = next(item for item in result.items if item.source_engine == "phone_probe_web")
     assert evidence.epistemic_type == "inference"
     assert evidence.source_status == EvidenceStatus.INCONCLUSIVE

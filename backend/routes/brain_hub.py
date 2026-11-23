@@ -56,6 +56,9 @@ class BrainRoutePayload(BaseModel):
     client_id: str = Field(default="default", max_length=64)
     message: str = Field(default="", max_length=4000)
     mode: str = Field(default="auto", max_length=32)  # auto|lilith|aspasia|company|memory|graph|phone|profile
+    # [KVKK · 2026-11-23] Telefon rotası kişisel veri işler; açık rıza beyanı
+    # taşınmazsa `consent` kapısı fail-closed ret verir (sebep: consent_not_declared).
+    subject_consent: bool = Field(default=False)
     task_id: Optional[str] = Field(default=None, max_length=128)
     target: Optional[str] = Field(default=None, max_length=256)
     intent: str = Field(default="pattern_interrupt", max_length=64)
@@ -398,6 +401,7 @@ def register_brain_hub_routes(
                 state=policy_state(
                     vault_locked=not bool(check_vault_interlock(payload.client_id)),
                     rate_ok=True,
+                    subject_consent=payload.subject_consent,
                 ),
             )
             return {

@@ -10,7 +10,7 @@ Telefon numarasını E.164 standardına çevirir, operatör/şebeke ve hat tür�
 - **Yetenek kimliği:** `sensor.identity.phone_probe`
 - **Tür:** `sensor`
 - **Lisans:** native
-- **Kapılar:** vault
+- **Kapılar:** consent, vault
 
 ## Girdi şeması
 
