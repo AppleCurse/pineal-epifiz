@@ -1,5 +1,5 @@
 import { writable, get } from 'svelte/store';
-import { apiFetch, clientId, vaultLocked } from '../store';
+import { apiFetch, clientId, vaultLocked, isAuthFailure } from '../store';
 
 // ============================================================
 // CANLI SİSTEM TELEMETRİSİ — göstergelerin DÜRÜST veri kaynağı.
@@ -11,6 +11,12 @@ import { apiFetch, clientId, vaultLocked } from '../store';
 
 export type UplinkState = 'ONLINE' | 'OFFLINE';
 export const uplinkState = writable<UplinkState>('OFFLINE');
+
+// [P0 · DOĞRULAMA 2026-11-23] Sunucu "token gerekli" mi diyor, yoksa gerçekten
+// ulaşılamıyor mu? Eskiden ikisi de aynı `catch` bloğuna düşüyordu; sonuç:
+// token'sız ziyaretçi "KASA DURUMU BİLİNMİYOR" görüyordu — oysa kasa hakkında
+// hiçbir şey bilinmiyordu, durum "erişim yok" idi. Bu store ikisini ayırır.
+export const apiAuthRequired = writable(false);
 
 export interface HealthSnapshot {
   ok: boolean;
@@ -109,7 +115,14 @@ async function pollOnce() {
     // 2) /api/telemetry — geçit/kazıyıcı/harcama bayrakları
     try {
       const res = await apiFetch(`/api/telemetry?client_id=${get(clientId)}`);
+      if (isAuthFailure(res)) {
+        // 401/403 = kimlik doğrulama sorunu, AĞ hatası değil.
+        apiAuthRequired.set(true);
+        sysTelemetry.update((s) => ({ ...s, ok: false }));
+        return;
+      }
       if (!res.ok) throw new Error('http ' + res.status);
+      apiAuthRequired.set(false);
       const t = await res.json();
       sysTelemetry.set({
         ok: true,

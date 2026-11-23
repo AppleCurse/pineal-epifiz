@@ -3,6 +3,7 @@
   export let telemetry: any = null;
   // [P0 · DENETİM 2026-10-16] Yetenek tablosu: kapalı yetenek + SEBEP.
   import { channelLabel, reasonLabel, type CapabilityRow } from '../../lib/channelStatus';
+  import Icon from '../Icon.svelte';
   $: capabilityRows = ((telemetry?.capabilities || []) as CapabilityRow[]);
   $: unavailableCapabilities = capabilityRows.filter((c) => c && !c.available);
 
@@ -79,7 +80,7 @@
   {#if !isOnline}
     <div class="offline-overlay" role="alert">
       <div class="offline-card">
-        <span class="offline-icon">⚠️</span>
+        <span class="offline-icon"><Icon name="warning" size={1.4} /></span>
         <div class="offline-text-group">
           <div class="offline-headline">TELEMETRY OFFLINE // SİNYAL YOK</div>
           <div class="offline-subtext">
@@ -224,7 +225,7 @@
 
     <!-- LLM Engine -->
     <div class="cyber-node" style="left: 60%; top: 75%;">
-      <div class="node-icon" class:active={isOnline && activeNodes.has('llm')}>🔥</div>
+      <div class="node-icon" class:active={isOnline && activeNodes.has('llm')}><Icon name="flame" size={1.2} /></div>
       <div class="node-label">LLM ENGINE</div>
       {#if isOnline && activeNodes.has('llm')}
         <div class="mini-hud stream-text">SYNTHESIZING...</div>
@@ -233,7 +234,7 @@
 
     <!-- Output -->
     <div class="cyber-node" style="left: 90%; top: 50%;">
-      <div class="node-icon" class:active={isOnline && activeNodes.has('gateway')}>✅</div>
+      <div class="node-icon" class:active={isOnline && activeNodes.has('gateway')}><Icon name="check" size={1.2} /></div>
       <div class="node-label">CLIENT RESPONSE</div>
     </div>
 
@@ -244,7 +245,7 @@
         <div class="cap-title">ÇALIŞMAYAN YETENEKLER ({unavailableCapabilities.length})</div>
         {#each unavailableCapabilities as cap}
           <div class="cap-line">
-            <span class="cap-mark">⛔</span>
+            <span class="cap-mark"><Icon name="stop" size={0.95} /></span>
             <span class="cap-name">{channelLabel(cap.id)}</span>
             <span class="cap-reason">{reasonLabel(cap.reason || cap.policy_reason)}</span>
           </div>

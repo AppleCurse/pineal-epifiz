@@ -190,6 +190,14 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
     await fireEvent.input(targetInput, { target: { value: '+905551112233' } });
 
     const probeBtn = await screen.findByRole('button', { name: /NUMARAYI SORGULA/i });
+    // [KVKK · 2026-11-23] Açık rıza beyanı olmadan düğme kilitli ve istek gitmez.
+    expect((probeBtn as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.click(probeBtn);
+    expect(calls.some((c) => c.method === 'POST' && c.path === '/api/commander/phone-probe')).toBe(false);
+
+    const consentBox = screen.getByRole('checkbox', { name: /AÇIK RIZA ALINDI/i });
+    await fireEvent.click(consentBox);
+    await waitFor(() => expect((probeBtn as HTMLButtonElement).disabled).toBe(false));
     await fireEvent.click(probeBtn);
 
     await waitFor(() => {
@@ -254,7 +262,7 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
       expect((post?.body as any)?.provider_keys?.deepseek).toBe('sk-deepseek-real-123456');
     });
 
-    const routingTab = screen.getByRole('button', { name: /Ajan → Model Haritası/i });
+    const routingTab = screen.getByRole('button', { name: /Ajan > Model Haritası/i });
     await fireEvent.click(routingTab);
     expect(await screen.findByText(/anthropic\/claude-sonnet-5/i)).toBeTruthy();
   });

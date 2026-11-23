@@ -266,14 +266,40 @@ def test_policy_budget():
     )
 
 
-def test_no_consent_gate_exists():
-    """Karar mercii operatördür: hedef rızası diye bir kapı YOKTUR.
-    Eski bir yetenek 'consent' bildirirse bilinmeyen kapı sayılır ve çalışmaz."""
+def test_consent_gate_exists_and_is_fail_closed():
+    """[KVKK · 2026-11-23] `consent` artık GERÇEK bir kapı ve fail-closed.
+
+    Eski sözleşme "hedef rızası diye bir kapı YOKTUR" diyordu; bu, 6698 sayılı
+    KVKK md.4/6 ile uyumlu değildi. Yeni sözleşme: çekirdek rızayı
+    DOĞRULAYAMAZ (rıza dünyada bir olgudur), ama operatörün BEYANINI taşır ve
+    beyan yoksa reddeder. Üç durum ayrı ayrı ölçülür.
+    """
     kernel = PolicyKernel()
-    assert "consent" not in kernel.KNOWN_GATES
-    decision = kernel.evaluate(frozenset({"consent"}), PolicyState())
-    assert decision.allowed is False
-    assert decision.reason == "unknown_gate"
+    assert "consent" in kernel.KNOWN_GATES
+
+    # a) Beyan hiç taşınmadı → ret (None = "unutuldu", asla "varsayıldı" değil)
+    missing = kernel.evaluate(frozenset({"consent"}), PolicyState())
+    assert missing.allowed is False
+    assert missing.reason == "consent_not_declared"
+
+    # b) Rıza REDDEDİLDİ → ret
+    denied = kernel.evaluate(frozenset({"consent"}), PolicyState(subject_consent=False))
+    assert denied.allowed is False
+    assert denied.reason == "consent_missing"
+
+    # c) Rıza beyan edildi → geç
+    granted = kernel.evaluate(frozenset({"consent"}), PolicyState(subject_consent=True))
+    assert granted.allowed is True
+
+    # d) Kasa kilidi yine de ÖNCE gelir (Tüzük Md.4.1 sırası bozulmadı)
+    both = kernel.evaluate(frozenset({"consent", "vault"}), PolicyState(vault_locked=True))
+    assert both.reason == "vault_locked"
+
+
+def test_consent_gate_order_keeps_vault_first():
+    """`consent` kasa ile bütçe arasında: kasa ihlali denetim izinde maskelenmesin."""
+    order = PolicyKernel._GATE_ORDER
+    assert order["vault"] < order["consent"] < order["budget"] < order["rate"]
 
 
 # ------------------------------------------------------------------ 3) koşucu
@@ -514,7 +540,11 @@ async def test_maigret_adapter_emits_reliable_absence_only_when_zero_errors(monk
 @pytest.mark.asyncio
 async def test_person_data_capabilities_carry_vault_gate():
     """Tüzük Madde 4: OPERATÖR mandalı (kasa) her kişi-verisi yeteneğinde zorunludur.
-    Hedef rızası kapısı YOKTUR — karar mercii operatördür."""
+
+    [KVKK · 2026-11-23] Değişen tek şey: kijset Verisi işleyen yetenekler
+    artık `consent` kapısı da TAŞIYABİLİR. Kasa zorunluluğu aynen duruyor;
+    `consent` ise kapının VARLIĞINI değil, beyanın ZORUNLUĞUĞUNU ifade eder.
+    """
     reg = CapabilityRegistry()
     bootstrap(reg)
     identity_caps = [
@@ -523,7 +553,10 @@ async def test_person_data_capabilities_carry_vault_gate():
     assert identity_caps, "kimlik yeteneği bulunamadı — test yanlış daralmış"
     for cap in identity_caps:
         assert "vault" in cap.gates, f"{cap.id}: kasa kapısı yok (Tüzük Md.4)"
-        assert "consent" not in cap.gates, f"{cap.id}: hedef rıza kapısı geri gelmiş"
+    # Telefon numarası KVKK md.6'da kişisel veridir → açık rıza kapısı zorunlu.
+    phone = next((c for c in identity_caps if c.id == "sensor.identity.phone_probe"), None)
+    assert phone is not None, "telefon yoklama yeteneği bulunamadı"
+    assert "consent" in phone.gates, "telefon yoklaması açık rıza kapısı taşımıyor"
 
 
 @pytest.mark.asyncio

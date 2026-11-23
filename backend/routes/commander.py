@@ -55,6 +55,11 @@ class CommanderPhoneProbePayload(BaseModel):
     client_id: str = Field(default="default")
     phone: str = Field(..., description="Telefon numarası (örn: (552) 956-87-63, 0552..., +90...)")
     auto_bridge_social: bool = Field(default=False, description="Eğer kullanıcı adı bulunursa sosyal medya yoklamasını tetikle")
+    # [KVKK · 2026-11-23] Telefon numarası kişisel veridir (KVKK md.6).
+    # İşlenmesi için hedefin AÇIK RIZASI gerekir (md.4). Varsayılan False:
+    # istemci beyan etmezse istek çalışmaz. Beyanın doğruluğu operatörün
+    # yasal sorumluluğudur; bu alan onu yerine getirmez, sadece taşır.
+    subject_consent: bool = Field(default=False, description="Hedef kişinin açık rızasının alındığı beyanı")
 
 
 @contextmanager
@@ -226,6 +231,22 @@ def register_commander_routes(
         raw_phone = payload.phone.strip()
         if not raw_phone:
             return JSONResponse({"error": {"message": "Telefon numarası boş olamaz."}}, status_code=400)
+        # [KVKK · 2026-11-23] Açık rıza beyanı yoksa SORGU BAŞLATILMAZ.
+        # Ret, politika çekirdeğinde de vardır (`consent` kapısı); buradaki
+        # açık kontrol sayesi operatöre SEBEBİ göstermek içindir.
+        if not payload.subject_consent:
+            return JSONResponse(
+                {
+                    "error": {
+                        "code": "CONSENT_REQUIRED",
+                        "message": (
+                            "Açık rıza beyanı gerekli: telefon numarası kişisel veridir. "
+                            "Hedef kişinin rızasının alındığını arayüzden beyan edin."
+                        ),
+                    }
+                },
+                status_code=423,
+            )
 
         from agent_core.capabilities import CapabilityContext, bootstrap, run_capability
         from agent_core.capabilities.state import policy_state
@@ -236,7 +257,7 @@ def register_commander_routes(
                 "sensor.identity.phone_probe",
                 CapabilityContext(subject=raw_phone, params={"auto_bridge": payload.auto_bridge_social}),
                 # Both request-level safety gates have already succeeded above.
-                state=policy_state(vault_locked=False),
+                state=policy_state(vault_locked=False, subject_consent=payload.subject_consent),
             )
             if not result.available or result.error or result.payload is None:
                 return JSONResponse({"error": {"message": "Telefon yoklaması kullanılamıyor.",

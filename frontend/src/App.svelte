@@ -11,6 +11,7 @@
   import { uplinkState } from './lib/telemetry';
   import UnifiedPinealCockpit from './components/UnifiedPinealCockpit.svelte';
   import NeuralTelemetryBoard from './components/visualizers/NeuralTelemetryBoard.svelte';
+  import Icon from './components/Icon.svelte';
   import SupportPanel from './components/SupportPanel.svelte';
 
   let ws: WebSocket | null = null;
@@ -436,7 +437,8 @@
     aria-controls="neural-telemetry-panel"
     title="Nöral telemetri panosunu göster / gizle"
   >
-    {telemetryVisible ? '▼ TELEMETRİYİ GİZLE' : '▲ TELEMETRİYİ GÖSTER'}
+    <Icon name={telemetryVisible ? 'chevron-down' : 'chevron-up'} size={0.8} />
+    {telemetryVisible ? 'TELEMETRİYİ GİZLE' : 'TELEMETRİYİ GÖSTER'}
   </button>
 
   {#if telemetryVisible}

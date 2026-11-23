@@ -188,6 +188,7 @@ def policy_state(
     budget_usd: float | None = None,
     spent_usd: float = 0.0,
     minor_case: Any | None = None,
+    subject_consent: bool | None = None,
     env: Mapping[str, str] | None = None,
 ) -> PolicyState:
     """Üretim çağrıları için standart `PolicyState`.
@@ -195,6 +196,11 @@ def policy_state(
     `vault_locked` çağıran taraf verir (kasa interlock'unun tek sahibi
     `backend/api.py::_check_vault_interlock`). `rate_ok=None` bilinçlidir:
     hız durumu BİLİNMİYORSA "rate" kapısı ret verir (fail-closed).
+
+    [KVKK · 2026-11-23] `subject_consent` aynı disiplindedir: varsayılan
+    `None` = beyan yok = ``consent`` kapısı RET. Kişisel veri işleyen
+    yetenekleri çağıran kod, rızayı AÇIKÇA beyan etmelidir; etmeyen
+    çağrı "unutuldu" yüzünden sessizce geçemez.
     """
     return PolicyState(
         vault_locked=bool(vault_locked),
@@ -203,4 +209,5 @@ def policy_state(
         rate_ok=rate_ok,
         enabled_flags=enabled_flags(env),
         minor_case=minor_case,
+        subject_consent=subject_consent,
     )

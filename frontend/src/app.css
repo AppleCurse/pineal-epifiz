@@ -21,7 +21,13 @@ html, body {
   padding: 0;
   overflow: hidden;
   background-color: #000000;
-  font-family: 'JetBrains Mono', monospace;
+  /* [P0 · DOĞRULAMA 2026-11-23] Yalnız 'JetBrains Mono' + genel monospace
+     zinciri, ✦ ◈ ▲ ⌖ ⟐ ◬ ⟡ ⯁ ◇ ◆ ✷ ◉ ↻ ⟳ ⬇ ⚠ ⛔ 🔑 📡 📱 🔥 ⚙ 🔒 📜 📄 ⏱
+     gibi glifleri içermez (fontTools ile ölçüldü: 30+ glif yok). Glifler artık
+     Icon.svelte ile SVG; bu zincir ise kalan sistem karakterleri (·, —, ›)
+     için yedek. Sıra: JetBrains → platform monospace → sembol fontları. */
+  font-family: 'JetBrains Mono', ui-monospace, 'Cascadia Mono', 'DejaVu Sans Mono',
+    'Liberation Mono', 'Segoe UI Symbol', 'Noto Sans Symbols 2', monospace;
   color: #f5f1e8;
   display: flex;
   align-items: center;
@@ -37,5 +43,5 @@ html, body {
 }
 
 .font-cinzel {
-  font-family: 'Cinzel', serif;
+  font-family: 'Cinzel', 'Times New Roman', Georgia, serif;
 }
