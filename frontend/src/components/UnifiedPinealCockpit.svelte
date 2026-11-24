@@ -19,10 +19,10 @@
   // --- 1. SOVEREIGNS (ASPASIA & LILITH) ---
   const SOVEREIGNS = [
     {
-      id: 'aspasia', name: 'ASPASIA PRIME', short: 'ASPASIA',
-      role: 'Bilinç & Baş Stratejist',
+      id: 'aspasia', name: 'ASPASIA', short: 'ASPASIA',
+      role: 'Baş Stratejist & Argüman Analisti',
       title: 'Sokratik Retorik, Hakikat Aynası ve Empatik Strateji',
-      icon: 'diamond', accent: '#10b981', badge: 'BİLİNÇ',
+      icon: 'diamond', accent: '#10b981', badge: 'STRATEJİ',
       presets: [
         'Hedefle olan uyumu ve rezonansını stratejik olarak özetle',
         'Hedefin kalkanını kırmadan sahici bir temas stratejisi kur',
@@ -30,10 +30,10 @@
       ]
     },
     {
-      id: 'lilith', name: 'LILITH GROWTH', short: 'LILITH',
-      role: 'Bilinçdışı Gölge & Nörobilim',
+      id: 'lilith', name: 'LILITH', short: 'LILITH',
+      role: 'Büyüme & Nörobilim',
       title: 'Dopamin Kancası, Amigdala Uyarımı, Maske Yırtıcı ve Viralite',
-      icon: 'sparkle', accent: '#ec4899', badge: 'GÖLGE',
+      icon: 'sparkle', accent: '#ec4899', badge: 'BÜYÜME',
       presets: [
         'Dopaminerjik ödül tahmin hatasıyla beklenti kırıcı viral kanca kurgula',
         'Hedefin vitrindeki duruşu ile bastırılmış narsistik dürtüleri analiz et',
@@ -519,7 +519,7 @@
     armEngaged.set(false);
 
     if (!taskId) {
-      chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: 'ACİL STOP tetiklendi: ARM şalteri kapatıldı (aktif görev ID bulunamadı).' }];
+      chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: 'ACİL DUR tetiklendi: ARM şalteri kapatıldı (aktif görev ID bulunamadı).' }];
       return;
     }
 
@@ -537,9 +537,9 @@
         throw new Error(err?.error?.message || `HTTP ${res.status}`);
       }
       taskStatus.update(s => s ? { ...s, status: 'halted' } : s);
-      chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: `ACİL STOP uygulandı (${taskId}). Görev durduruldu ve ARM kapatıldı.` }];
+      chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: `ACİL DUR uygulandı (${taskId}). Görev durduruldu ve ARM kapatıldı.` }];
     } catch (e: any) {
-      chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: `ACİL STOP sunucu uyarısı: ${e?.message || e}. Yerel ARM kapatıldı.` }];
+      chatMessages = [...chatMessages, { ts: nowTime(), sender: 'Aspasia', text: `ACİL DUR sunucu uyarısı: ${e?.message || e}. Yerel ARM kapatıldı.` }];
     }
   }
 
@@ -891,7 +891,7 @@
 
       chatMessages = [...chatMessages, {
         ts: nowTime(),
-        sender: 'KOMUTAN MÜDAHALESİ',
+        sender: 'MANUEL KANIT GİRİŞİ',
         text: `Kanıt kaydedildi [${injectType.toUpperCase()}]; ajana veya göreve aktarım henüz bağlı değil.`
       }];
       injectValue = '';
@@ -908,7 +908,7 @@
     const parts: string[] = [];
     const lilith = data?.lilith || {};
     const neuro = data?.neuro_metrics || lilith?.neuro_metrics;
-    if (lilith.hook) parts.push(`KANCA: ${lilith.hook}`);
+    if (lilith.hook) parts.push(`ETKİLEŞİM: ${lilith.hook}`);
     if (lilith.psychological_angle) parts.push(`AÇI: ${lilith.psychological_angle}`);
     if (neuro) {
       const vc = neuro.viral_coefficient_score ?? '?';
@@ -918,10 +918,10 @@
     }
     const hookStudio = data?.hook_studio || {};
     if (hookStudio.evidence_verification_status) {
-      parts.push(`KANCA KANITI: ${hookStudio.evidence_verification_status}${hookStudio.data_confidence ? ' (doğrulandı)' : ' (doğrulanmadı)'}`);
+      parts.push(`ETKİLEŞİM DOĞRULAMASI: ${hookStudio.evidence_verification_status}${hookStudio.data_confidence ? ' (doğrulandı)' : ' (doğrulanmadı)'}`);
     }
     if (data?.shadow?.strategy) {
-      parts.push(`GÖLGE STRATEJİSİ: ${data.shadow.strategy}`);
+      parts.push(`BÜYÜME STRATEJİSİ: ${data.shadow.strategy}`);
     }
     const moves = Array.isArray(data?.counter_moves) ? data.counter_moves : [];
     if (moves.length > 0) {
@@ -1197,10 +1197,10 @@
         class="context-toggle-btn"
         class:is-open={showContextInputs}
         on:click={() => showContextInputs = !showContextInputs}
-        title="Kullanıcı Ritüelleri, Çalma Listesi ve Derin Hedef Bağlamını Ekle"
+        title="Kişisel alışkanlıklar, çalma listesi ve hedef bağlamını ekle"
       >
         <Icon name={showContextInputs ? 'chevron-down' : 'sparkle'} size={0.85} />
-        {showContextInputs ? 'BAĞLAMI KAPAT' : 'BAĞLAM (RİTÜEL / MÜZİK / HEDEF)'}
+        {showContextInputs ? 'BAĞLAMI KAPAT' : 'BAĞLAM (ALIŞKANLIK / MÜZİK / HEDEF)'}
       </button>
       {#if showContextInputs}
         <div class="context-inputs-flyout">
@@ -1208,7 +1208,7 @@
             type="text"
             class="context-mini-input"
             bind:value={contextRituals}
-            placeholder="Kişisel Ritüeller (örn: Gece okumaları, felsefe, çay)..."
+            placeholder="Kişisel alışkanlıklar (örn: Gece okumaları, felsefe, çay)..."
           />
           <input
             type="text"
@@ -1247,9 +1247,9 @@
           class:engaged={$powerEngaged}
           aria-pressed={$powerEngaged}
           on:click={() => { playClick(520, 35); powerEngaged.update(v => !v); }}
-          title="Ana Uplink / Güç Şalteri"
+          title="Bağlantı ve güç durumu"
         >
-          <span class="switch-dot"></span>PWR
+          <span class="switch-dot"></span>GÜÇ
         </button>
         <button
           type="button"
@@ -1257,9 +1257,9 @@
           class:engaged={$armEngaged}
           aria-pressed={$armEngaged}
           on:click={() => { playClick(620, 40); armEngaged.update(v => !v); }}
-          title="Operasyon Silahlandırma (ARM) — gösterge; analizi başlatmak için zorunlu değildir"
+          title="Hazır durumu göstergesi — analizi başlatmak için zorunlu değildir"
         >
-          <span class="switch-dot"></span>ARM
+          <span class="switch-dot"></span>HAZIR
         </button>
         <button
           type="button"
@@ -1267,17 +1267,17 @@
           class:engaged={$recordEngaged}
           aria-pressed={$recordEngaged}
           on:click={() => { playClick(480, 35); recordEngaged.update(v => !v); }}
-          title="Adli Kayıt ve Loglama"
+          title="Kayıt ve loglama"
         >
-          <span class="switch-dot"></span>REC
+          <span class="switch-dot"></span>KAYIT
         </button>
         <button
           type="button"
           class="emergency-stop-btn"
           on:click={emergencyStop}
-          title="Aktif görevi acil durdur ve ARM şalterini kapat"
+          title="Aktif görevi acil durdur ve hazır durumunu kapat"
         >
-          <Icon name="stop" size={0.9} /> ACİL STOP
+          <Icon name="stop" size={0.9} /> ACİL DUR
         </button>
       </div>
       <div class="hud-meter-box" title="Geçen Görev Süresi">
@@ -1351,14 +1351,14 @@
   <!-- ==================== 2. ANA 3 SÜTUNLU GÖVDE ==================== -->
   <div class="master-grid-container">
 
-    <!-- SÜTUN 1: SOVEREIGNS & KOMUTAN MÜDAHALESİ (Sol - 28%) -->
+    <!-- SÜTUN 1: DANIŞMAN AJANLAR (Sol - 28%) -->
     <section class="column-deck col-left">
       <div class="deck-title-ribbon">
         <span class="ribbon-icon"><Icon name="diamond" /></span>
-        <h2>SOVEREIGNS & KOMUTA</h2>
+        <h2>DANIŞMAN AJANLAR</h2>
       </div>
 
-      <!-- ASPASIA PRIME -->
+      <!-- ASPASIA -->
       <div
         class="sovereign-station aspasia-station {selectedAgentId === 'aspasia' ? 'selected' : ''}"
         role="button"
@@ -1370,12 +1370,12 @@
         <div class="station-header">
           <span class="station-glyph" style="color: #10b981;"><Icon name="diamond" /></span>
           <div>
-            <h3 class="station-name">ASPASIA PRIME</h3>
-            <span class="station-role">Bilinç & Baş Stratejist</span>
+            <h3 class="station-name">ASPASIA</h3>
+            <span class="station-role">Baş Stratejist & Argüman Analisti</span>
           </div>
-          <span class="station-badge badge-green">BİLİNÇ</span>
+          <span class="station-badge badge-green">STRATEJİ</span>
         </div>
-        <p class="station-desc">Sokratik Retorik, Hakikat Aynası, Taktiksel Sentez ve Empatik Strateji</p>
+        <p class="station-desc">Sokratik sorgulama, argüman analizi, stratejik sentez ve empatik yaklaşım</p>
         <div class="station-presets">
           {#each SOVEREIGNS[0].presets as p}
             <button class="preset-btn" on:click|stopPropagation={() => { selectAgent('aspasia'); inputMessage = formatPresetWithTarget(p); }}>
@@ -1385,7 +1385,7 @@
         </div>
       </div>
 
-      <!-- LILITH GROWTH -->
+      <!-- LILITH -->
       <div
         class="sovereign-station lilith-station {selectedAgentId === 'lilith' ? 'selected' : ''}"
         role="button"
@@ -1397,12 +1397,12 @@
         <div class="station-header">
           <span class="station-glyph" style="color: #ec4899;"><Icon name="sparkle" /></span>
           <div>
-            <h3 class="station-name">LILITH GROWTH</h3>
-            <span class="station-role">Bilinçdışı Gölge & Nörobilim</span>
+            <h3 class="station-name">LILITH</h3>
+            <span class="station-role">Büyüme & Nörobilim</span>
           </div>
-          <span class="station-badge badge-pink">GÖLGE</span>
+          <span class="station-badge badge-pink">BÜYÜME</span>
         </div>
-        <p class="station-desc">Dopamin Kancası, Amigdala Uyarımı, Maske Yırtıcı ve Viralite</p>
+        <p class="station-desc">Dopamin döngüsü, amigdala tepkisi, içerik viralliği ve büyüme taktikleri</p>
         <div class="station-presets">
           {#each SOVEREIGNS[1].presets as p}
             <button class="preset-btn btn-pink" on:click|stopPropagation={() => { selectAgent('lilith'); inputMessage = formatPresetWithTarget(p); }}>
@@ -1412,11 +1412,11 @@
         </div>
       </div>
 
-      <!-- KOMUTAN MÜDAHALESİ -->
+      <!-- MANUEL KANIT GİRİŞİ -->
       <div class="commander-override-box">
         <div class="box-header">
           <span class="box-icon"><Icon name="triangle-up" /></span>
-          <h3>KOMUTAN MÜDAHALESİ ("işte bu da onun!")</h3>
+          <h3>MANUEL KANIT GİRİŞİ</h3>
         </div>
         <p class="box-sub">Kanıtları kaydedin. Ajanlara veya aktif göreve aktarım henüz bağlı değil; hedef seçimi yalnızca kayıt bilgisidir.</p>
 
@@ -1425,13 +1425,13 @@
             <select bind:value={injectType} class="select-field">
               <option value="twin_url">Eş Profil URL (Twin URL)</option>
               <option value="phone">Telefon Numarası / GSM</option>
-              <option value="bio_fact">Gerçek Biyo / Meslek Bilgisi</option>
-              <option value="ground_truth">Kesin Gerçeklik (Ground Truth)</option>
-              <option value="note">Kritik Taktik Not</option>
+              <option value="bio_fact">Biyografi / Meslek Bilgisi</option>
+              <option value="ground_truth">Doğrulanmış Bilgi (Ground Truth)</option>
+              <option value="note">Kritik Not</option>
             </select>
             <select bind:value={injectTargetAgent} class="select-field">
               <option value="all">Tümü (kayıt etiketi)</option>
-              <option value="lilith">Lilith (Gölge & Kanca)</option>
+              <option value="lilith">Lilith (Büyüme & Etkileşim)</option>
               <option value="osint_investigator">OSINT Investigator</option>
               <option value="depth_analyst">Depth Analyst</option>
             </select>
@@ -1446,7 +1446,7 @@
             type="text"
             class="input-field"
             bind:value={injectNote}
-            placeholder="Ek taktik not (opsiyonel)..."
+            placeholder="Ek not (opsiyonel)..."
           />
           <button
             class="override-submit-btn"
@@ -1478,7 +1478,7 @@
     <section class="column-deck col-center">
       <div class="deck-title-ribbon">
         <span class="ribbon-icon"><Icon name="triangle-up" /></span>
-        <h2>12 SAHA AJANI & CANLI MUHAKEME (CHAIN-OF-THOUGHT)</h2>
+        <h2>12 ANALİZ AJANI & CANLI MUHAKEME (CHAIN-OF-THOUGHT)</h2>
       </div>
 
       <!-- GÖREVDE GERÇEKTEN ÇALIŞAN AJANLAR -->
@@ -1526,7 +1526,7 @@
       {:else}
         <div class="cot-empty" style="margin-bottom: 0.5rem;">
           <p>Bu görevde henüz çalışmış ajan yok.</p>
-          <small>Hedef girip KAZIYI BAŞLAT dediğinizde yalnızca bu görevde gerçekten koşan ajanlar burada görünür.</small>
+          <small>Hedef girip ANALİZİ BAŞLAT dediğinizde yalnızca bu görevde gerçekten koşan ajanlar burada görünür.</small>
         </div>
       {/if}
 
@@ -1579,7 +1579,7 @@
       <div class="sovereign-pulse-section">
         <div class="pulse-header">
           <span class="pulse-icon"><Icon name="approx" /></span>
-          <h3>SOVEREIGN SENKRONİZASYON (ASPASIA / LILITH)</h3>
+          <h3>AJAN SENKRONİZASYONU (ASPASIA / LILITH)</h3>
         </div>
         <div class="pulse-waveform" aria-label="Senkronizasyon dalgaformu">
           <svg viewBox="0 0 400 60" preserveAspectRatio="none">
@@ -1673,9 +1673,9 @@
                     type="button"
                     class="pod-handle-btn"
                     on:click={() => { targetUrl = handle; launchAnalysis(); }}
-                    title="Bu kullanıcı adını doğrudan kazıya al"
+                    title="Bu kullanıcı adını doğrudan analize al"
                   >
-                    @{handle} — [KAZIYA AL]
+                    @{handle} — [ANALİZE AL]
                   </button>
                 {/each}
               </div>
@@ -1704,7 +1704,7 @@
               injectCommanderEvidence();
             }}
           >
-            <Icon name="flame" size={0.9} /> Bu Numarayı Komutan Kanıtı Olarak Mühürle
+            <Icon name="flame" size={0.9} /> Bu Numarayı Kanıt Olarak Kaydet
           </button>
         </div>
       {/if}
@@ -1764,7 +1764,7 @@
             <span class="detail-glyph" style="color: {FIELD_AGENTS.find(a => a.id === selectedAgentId)?.color || SOVEREIGNS.find(s => s.id === selectedAgentId)?.accent}">
               <Icon name={FIELD_AGENTS.find(a => a.id === selectedAgentId)?.icon || SOVEREIGNS.find(s => s.id === selectedAgentId)?.icon || 'sparkle'} size={1.4} />
             </span>
-            <h3>{selectedAgentId.toUpperCase()} — CANLI KOŞU &amp; KANIT ({selChain.length})</h3>
+            <h3>{selectedAgentId.toUpperCase()} — CANLI ANALİZ &amp; KANIT ({selChain.length})</h3>
           </div>
           <div class="detail-output">
             {#if selRun}
@@ -1783,7 +1783,7 @@
       <div class="deck-title-ribbon deck-title-stack">
         <div class="ribbon-row">
           <span class="ribbon-icon"><Icon name="triangle-down" /></span>
-          <h2>7 ADLİ KANIT KATEGORİSİ — RADAR</h2>
+          <h2>7 ANALİZ KATEGORİSİ — RADAR</h2>
         </div>
         <small class="pillars-sub">Ajanlar + 7 deterministik dalga motoru (Frequency, Seismos, Void, Strata, Gravity, Pulse, Key) bulgularını toplar</small>
       </div>
@@ -1948,7 +1948,7 @@
   <footer class="data-pool-footer">
     <div class="pool-header">
       <span class="pool-icon"><Icon name="chevron-down" /></span>
-      <h3>CANLI VERİ HAVUZU — SON 30 LOG</h3>
+      <h3>CANLI VERİ AKIŞI — SON 30 KAYIT</h3>
     </div>
     <div class="pool-logs">
       {#each scraperLogs as log}
@@ -2294,7 +2294,7 @@
           {#if settingsTab !== 'routing'}
             <button class="modal-save-btn" on:click={saveMultiVaultSettings} disabled={settingsSaving}>
               <Icon name="lock" size={0.85} />
-              {settingsSaving ? 'KAYDEDİLİYOR...' : 'KASAYA MÜHÜRLE VE UYGULA'}
+              {settingsSaving ? 'KAYDEDİLİYOR...' : 'KAYDET VE UYGULA'}
             </button>
           {/if}
         </div>
