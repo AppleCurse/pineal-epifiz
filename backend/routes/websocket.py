@@ -111,14 +111,13 @@ async def run_telemetry_socket(
         if posture.get("auth_required"):
             # HTTP kapılarıyla aynı: X-API-Key varsa onu kullan.
             # Cloudflare özel başlık iletmez; o yol ilk JSON mesajına düşer.
+            await websocket.accept()
             if isinstance(header_token, str) and header_token:
                 if not token_matches(header_token):
                     await websocket.close(code=_CLOSE_POLICY)
                     return
-                await websocket.accept()
                 presented = header_token
             else:
-                await websocket.accept()
                 presented = await _authenticate(websocket)
                 if presented is None:
                     await websocket.close(code=_CLOSE_POLICY)
