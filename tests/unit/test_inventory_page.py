@@ -334,10 +334,7 @@ def test_entry_order_is_independent_of_tracking_state(monkeypatch):
     seen: list[tuple[str, ...]] = []
 
     def _fake_git(*args: str) -> str:
-        # İkinci çağrı (untracked) bilinçli olarak ters sırada verilir.
         seen.append(tuple(args))
-        if "--others" in args:
-            return "docs/reports/KAPASITE_ACIGI_RAPORU_2026-10-14.md\n"
         return "scripts/kapasite_denetimi_probe.py\nbackend/api.py\n"
 
     monkeypatch.setattr(module, "git", _fake_git)
