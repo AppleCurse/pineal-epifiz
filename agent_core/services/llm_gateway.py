@@ -539,7 +539,7 @@ class LLMGateway:
         # $0.15/$0.60 okundu. Nous indirimli kanal ROUTES'ta $0.03/$0.12 kalır;
         # bu tablo BULUT (OR) maliyetini taşır.
         "upstage/solar-pro4": {"in": 0.15, "out": 0.6},
-        "inclusionai/ling-3.0-flash": {"in": 0.06, "out": 0.18},
+        "inclusionai/ling-3.0-flash": {"in": 0.021, "out": 0.063},
         # 2026-09-08 araştırma düzeltmesi: OR kataloğu deepseek-v4-flash'i
         # $0.09/$0.18 gösteriyordu (eski $0.0679/$0.168 iki tarafla da uyuşmuyordu).
         # [2026-10-14 · canlı teyit] Gerçek fiyat $0.091/$0.182 (2 ondalığa
