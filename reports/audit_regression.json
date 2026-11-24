@@ -405,9 +405,9 @@
       "check_kind": "static",
       "status": "closed",
       "evidence": [
-        "frontend/src/components/UnifiedPinealCockpit.svelte:304: const INSUFFICIENT_EVIDENCE = 'YETERSİZ KANIT';",
+        "frontend/src/components/UnifiedPinealCockpit.svelte:46: const INSUFFICIENT_EVIDENCE = 'YETERSİZ KANIT';",
         "frontend/src/lib/evidence.ts:64: export function hasEvidence(val: any): boolean {",
-        "`INSUFFICIENT_EVIDENCE` kullanımı → 1 satır",
+        "`INSUFFICIENT_EVIDENCE` kullanımı → 2 satır",
         "`hasEvidence(...)` kapısı → 6 satır",
         "CANLI dolgu kalıbı (yorum olmayan satırda) → 0 (yok)",
         "kalıbın geçtiği tek yer: kaldırılmış kusuru anlatan AÇIKLAMA YORUMU → 0 satır"

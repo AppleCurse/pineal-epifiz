@@ -453,63 +453,69 @@
 
 <style>
   .fullscreen-cockpit-viewport {
-    width: 100vw;
+    width: 100%;
     height: 100vh;
     display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    background: #000;
-    overflow-y: auto;
-    overflow-x: hidden;
+    flex-direction: column;
+    background: var(--bg-app);
+    color: var(--text-primary);
+    overflow: hidden;
   }
 
-  @media (max-width: 1300px) {
-    .fullscreen-cockpit-viewport { height: 100dvh; width: 100%; display: block; overflow-y: auto; overflow-x: hidden; }
+  @media (max-width: 1024px) {
+    .fullscreen-cockpit-viewport {
+      height: auto;
+      min-height: 100dvh;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
   }
 
-  /* [AUDIT 2026-10-07 · Madde 6] Telemetri panosu ve açma/kapama düğmesi.
-     Sol üst köşede kompakt konumlandırıldı — alttaki Aspasia sohbet ekranını ASLA kapatmaz. */
   .telemetry-panel {
     position: fixed;
-    right: 14px;
-    bottom: 46px;
-    width: min(380px, 30vw);
+    right: 16px;
+    bottom: 54px;
+    width: min(400px, 92vw);
     z-index: 45;
+    box-shadow: var(--shadow-md);
+    border-radius: 10px;
+    overflow: hidden;
   }
 
-  /* Pano kompakt yükseklikte; sohbet ve ana kontrolleri örtmez. */
   .telemetry-panel :global(.telemetry-board) {
-    height: min(220px, 28vh);
+    height: min(230px, 30vh);
   }
 
   .telemetry-toggle {
-    /* [2026-11-24] Eskiden bottom: 14px / right: 420px idi; kokpitin 180px'lik
-       alt barının (CANLI VERİ AKIŞI) ÜSTÜNE biniyordu. Alt barın kendi başlık
-       şeridi ~35px, yani 145-180px bandı boş: düğme oraya alındı. Böylece
-       ne log satırlarını ne de alt barı örtüyor. */
     position: fixed;
-    right: 14px;
-    bottom: 150px;
+    right: 16px;
+    bottom: 12px;
     z-index: 46;
-    padding: 5px 10px;
-    font-family: 'JetBrains Mono', 'Courier New', monospace;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    color: #d4af37;
-    background: rgba(3, 5, 10, 0.88);
-    border: 1px solid rgba(212, 175, 55, 0.35);
-    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-primary);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    box-shadow: var(--shadow-sm);
     cursor: pointer;
   }
 
-  /* Dar ekranda kokpit kendi yüksekliğinde akıyor; sabit düğme içeriklerin
-     üzerine düşer. Akışa bırakılıyor (örtüşme yok). */
-  @media (max-width: 1300px) {
-    .telemetry-toggle { position: static; display: block; margin: 6px auto; }
+  @media (max-width: 1024px) {
+    .telemetry-toggle {
+      position: static;
+      align-self: flex-end;
+      margin: 8px 16px 14px;
+    }
   }
 
   .telemetry-toggle:hover {
-    border-color: rgba(212, 175, 55, 0.75);
+    border-color: var(--accent);
+    color: var(--accent);
   }
 </style>

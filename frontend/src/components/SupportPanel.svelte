@@ -131,53 +131,55 @@
     position: fixed;
     right: 18px;
     bottom: 62px;
-    width: min(420px, 34vw);
+    width: min(420px, 92vw);
     max-height: min(60vh, 560px);
     overflow: auto;
     z-index: 62;
-    padding: 10px 12px;
-    font-family: 'JetBrains Mono', 'Courier New', monospace;
-    font-size: 11px;
-    color: #d9e6f2;
-    background: rgba(3, 5, 10, 0.94);
-    border: 1px solid rgba(212, 175, 55, 0.5);
-    border-radius: 6px;
+    padding: 12px 14px;
+    font-family: inherit;
+    font-size: 12px;
+    color: var(--text-primary);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-strong);
+    border-radius: 10px;
+    box-shadow: var(--shadow-md);
   }
   header {
     display: flex;
     justify-content: space-between;
     gap: 8px;
-    color: #d4af37;
+    color: var(--gold);
     margin-bottom: 8px;
   }
   header .task { opacity: 0.75; overflow: hidden; text-overflow: ellipsis; }
   article {
-    border: 1px solid rgba(120, 140, 170, 0.35);
-    border-radius: 4px;
-    padding: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    border-radius: 8px;
+    padding: 9px 10px;
     margin-bottom: 8px;
   }
   article.resolved { opacity: 0.6; }
   .row { display: flex; justify-content: space-between; gap: 6px; margin-bottom: 4px; }
-  .sid { color: #8fb7e0; overflow: hidden; text-overflow: ellipsis; }
-  .badge { color: #666; }
-  .badge.open { color: #ffb347; font-weight: 700; }
-  .field { margin: 2px 0; line-height: 1.35; word-break: break-word; }
-  .field > span { color: #9ab2c8; }
+  .sid { color: var(--accent-2); overflow: hidden; text-overflow: ellipsis; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+  .badge { color: var(--text-muted); }
+  .badge.open { color: var(--warning); font-weight: 700; }
+  .field { margin: 2px 0; line-height: 1.4; word-break: break-word; color: var(--text-secondary); }
+  .field > span { color: var(--text-muted); font-weight: 600; }
   .field.muted { opacity: 0.65; }
   button {
     margin-top: 6px;
     width: 100%;
-    padding: 6px 8px;
+    padding: 7px 10px;
     font: inherit;
-    font-weight: 700;
-    color: #0b0e14;
-    background: #d4af37;
+    font-weight: 600;
+    color: var(--accent-contrast);
+    background: var(--gold);
     border: none;
-    border-radius: 4px;
+    border-radius: 7px;
     cursor: pointer;
   }
   button:disabled { opacity: 0.55; cursor: wait; }
-  button.resume { background: #57c785; margin-top: 4px; }
-  footer .notice { margin-top: 6px; color: #ffb347; }
+  button.resume { background: var(--accent); margin-top: 4px; }
+  footer .notice { margin-top: 6px; color: var(--warning); }
 </style>

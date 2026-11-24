@@ -79,11 +79,21 @@
 </section>
 
 <style>
-  .task-evidence { flex-shrink: 0; border: 1px solid #304156; border-radius: 6px; padding: .8rem; color: #d4ddea; font-size: .75rem; line-height: 1.5; overflow-wrap: anywhere; }
-  h3 { color: #e8eef8; font-size: .85rem; }
-  h4 { margin-top: .8rem; color: #a9d9e4; }
-  p { margin-top: .4rem; }
-  ul { padding-left: 1.1rem; margin-top: .4rem; }
-  li { margin: .35rem 0; }
-  .evidence-record { border-top: 1px solid #304156; padding-top: .4rem; }
+  .task-evidence {
+    flex-shrink: 0;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    border-radius: 10px;
+    padding: 12px 14px;
+    color: var(--text-secondary);
+    font-size: 12.5px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+  h3 { color: var(--text-primary); font-size: 14px; font-weight: 700; }
+  h4 { margin-top: 10px; color: var(--accent); font-size: 12.5px; font-weight: 600; }
+  p { margin-top: 5px; }
+  ul { padding-left: 18px; margin-top: 5px; }
+  li { margin: 5px 0; }
+  .evidence-record { border-top: 1px solid var(--border); padding-top: 6px; }
 </style>
