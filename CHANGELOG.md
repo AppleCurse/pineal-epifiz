@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased — 2026-11-23 — SAF ÇÖP TEMİZLİĞİ (hiçbir özellik değişmedi)
+
+- **21 ölü dosya silindi** (hiçbir kod, test ya da CI adımı onları kullanmıyordu):
+  - Ön yüz varlıkları: `frontend/public/atlas_epifiz_observatory.jpg`,
+    `frontend/public/icons.svg`, `frontend/src/assets/cockpit-v10-reference.webp`,
+    `frontend/README.md` (Vite şablonunun varsayılan dosyası).
+  - Eski raporlar: `UX_Kullanılabilirlik_Raporu.md`, `docs/smoke-2026-11-11/`,
+    `docs/reports/DENETIM_2026-10-16.md`, `DUZELTME_FAZ2_KAPANIS_2026-10-18.md`,
+    `UC_REPO_KARSILASTIRMA_2026-11-08.md`, `RESEARCH/` (5 dosya).
+  - Eski dönem doğrulama betikleri: `scripts/revert_verification_p0…p4.py`, `p8.py`,
+    `scripts/apply_p1_fixes.py`.
+- **Bırakıldı (bir teste ya da çalışan koda bağlı):** `living_pineal_disk.png`
+  (envanter testi sabit yolu), `revert_verification_p9.py` (sözleşme testi),
+  `docs/reports/API_MONOLITH_SPLIT_PLAN.md` (ratchet testi okuyor),
+  `JULES_DENETIM_2026-10-06.md` (`audit_regression.py` okuyor, CI'da koşuyor),
+  `RELEASE_EVIDENCE.md` (release-gates.yml geçiş kriteri), `REMEDIYASYON.md`
+  (`requirements-blocked.txt` yönlendiriyor), kök `scraper.py` (B4 sözleşme testi).
+- `scripts/generate_inventory_page.py`: B listesindeki `revert_verification_p8.py`
+  satırı, aynı işin yaşayan temsilcisi `revert_verification_p9.py` ile değiştirildi
+  (`test_inventory_page.py` bu listeyi en az 26 dosyaya kilitliyor); README'deki
+  envanter sayısı ve rapor sayısı güncellendi.
+
 ## Unreleased — 2026-10-24 — P10: GÖLGE DENETİMİ (hiçbir şey gölgede kalmasın)
 
 - **Yeni betik: `scripts/golge_denetimi.py`** — ürünün TAMAMINI tek koşuda

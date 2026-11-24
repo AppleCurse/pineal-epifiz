@@ -148,7 +148,7 @@ CATEGORY_B = [
     "backend/security/task_access.py",
     "backend/services/aspasia_state.py",
     "scripts/verify_command_loop.py",
-    "scripts/revert_verification_p8.py",
+    "scripts/revert_verification_p9.py",
     "scripts/smoke_test_browser.py", "scripts/generate_routing_shadows.py",
     "scripts/audit_regression.py", "scripts/verify_openrouter_catalog.py",
     "scripts/preflight_9router.py", "scripts/export_skills.py", "scripts/run_task.py",
