@@ -65,7 +65,8 @@
     loadingOverview = true;
     const cid = encodeURIComponent($clientId || 'default');
     try {
-      const [capRes, healthRes, mcpRes, juryRes, minorRes, calRes] = await Promise.all([
+      const [telRes, capRes, healthRes, mcpRes, juryRes, minorRes, calRes] = await Promise.all([
+        apiFetch(`/api/telemetry?client_id=${cid}`),
         apiFetch(`/api/brain/capabilities?client_id=${cid}`),
         apiFetch('/api/health/detail'),
         apiFetch(`/api/mcp/status?client_id=${cid}`),
@@ -73,10 +74,15 @@
         apiFetch(`/api/minor/state?client_id=${cid}`),
         apiFetch('/api/calibration?scope=general'),
       ]);
-      if (capRes.ok) {
-        const d = await capRes.json();
-        capabilitiesList = Array.isArray(d) ? d : d.capabilities || [];
-      }
+      const telData = telRes.ok ? await telRes.json().catch(() => null) : null;
+      const capData = capRes.ok ? await capRes.json().catch(() => null) : null;
+      const telCaps = Array.isArray(telData?.capabilities) ? telData.capabilities : [];
+      const fallbackCaps = Array.isArray(capData)
+        ? capData
+        : Array.isArray(capData?.capabilities)
+          ? capData.capabilities
+          : [];
+      capabilitiesList = telCaps.length ? telCaps : fallbackCaps;
       if (healthRes.ok) healthDetail = await healthRes.json();
       if (mcpRes.ok) mcpStatus = await mcpRes.json();
       if (juryRes.ok) juryStatus = await juryRes.json();
