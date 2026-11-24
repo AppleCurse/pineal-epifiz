@@ -636,11 +636,11 @@
           playlist: contextPlaylist.trim(),
           envies: contextEnvies.trim(),
           scraper_type: 'cross',
+          subject_consent: isAdultDeclared,
         })
       });
       if (!res.ok) {
         if (isAuthFailure(res)) throw new Error('PINEAL_TOKEN yetki hatası');
-        if (res.status === 423) throw new Error('KASA KİLİTLİ (423): Lütfen üst paneldeki Kasa mandalını açın.');
         const errJson = await res.json().catch(() => ({}));
         throw new Error(errJson?.error?.message || errJson?.detail || `HTTP ${res.status}`);
       }
@@ -987,6 +987,7 @@
             mode: 'auto',
             task_id: activeTaskId,
             target: targetHint,
+            subject_consent: isAdultDeclared,
           })
         });
         if (!bRes.ok) {
@@ -1051,7 +1052,7 @@
       const detail = e?.message ? ` (${e.message})` : '';
       let text: string;
       if (status === 423) {
-        text = `Kasa kilitli — dış dünyaya hiçbir istek çıkamaz. Anahtarı girip kasayı açın, sonra tekrar deneyin.${detail}`;
+        text = e?.message || 'İstek kilitli (423). Kasa veya açık rıza kontrol edin.';
       } else if (status === 451) {
         text = `Reşitlik kapısı — bu hedef için çalışma yapılamaz (çocuk kilidi).${detail}`;
       } else if (status === 429) {

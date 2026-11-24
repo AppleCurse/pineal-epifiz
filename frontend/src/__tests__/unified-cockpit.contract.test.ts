@@ -268,9 +268,15 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
   });
 
   it('does not claim agents are in the field before /api/initiate succeeds and logs task_id after acceptance', async () => {
+    let initiateBody: Record<string, unknown> | null = null;
     installFetch((path, init) => {
       if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: false });
       if (path === '/api/initiate' && init?.method === 'POST') {
+        try {
+          initiateBody = JSON.parse(String(init.body || '{}'));
+        } catch {
+          initiateBody = {};
+        }
         return jsonResponse({ task_id: 'tsk-honest-42', status: 'queued' });
       }
       return undefined;
@@ -289,6 +295,7 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
 
     expect(await screen.findByText(/Görev kabul edildi \(ID: tsk-honest-42\)/i)).toBeTruthy();
     expect(screen.queryByText(/12 kişilik ajan timi ve kazıyıcı sensörler sahada/i)).toBeNull();
+    expect(initiateBody?.subject_consent).toBe(true);
   });
 
   it('warns when a non-IG/X URL is entered while cross_platform_enabled is false', async () => {
