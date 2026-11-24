@@ -295,7 +295,7 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
 
     expect(await screen.findByText(/Görev kabul edildi \(ID: tsk-honest-42\)/i)).toBeTruthy();
     expect(screen.queryByText(/12 kişilik ajan timi ve kazıyıcı sensörler sahada/i)).toBeNull();
-    expect(initiateBody?.subject_consent).toBe(true);
+    expect(initiateBody && initiateBody["subject_consent"]).toBe(true);
   });
 
   it('warns when a non-IG/X URL is entered while cross_platform_enabled is false', async () => {
