@@ -130,6 +130,6 @@ def test_websocket_header_auth_and_reject_wrong_key(monkeypatch):
             msg = websocket.receive_json()
             assert msg["type"] == "auth_ok"
         with pytest.raises(WebSocketDisconnect) as raised:
-            with client.websocket_connect("/ws/ws_bad", headers={"X-API-Key": "wrong"}):
-                pass
+            with client.websocket_connect("/ws/ws_bad", headers={"X-API-Key": "wrong"}) as websocket:
+                websocket.receive_json()
         assert raised.value.code == 1008
