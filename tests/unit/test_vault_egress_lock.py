@@ -260,7 +260,7 @@ def test_initiate_is_gated_by_the_shared_helper(monkeypatch, tmp_path):
     with TestClient(app) as client:
         r = client.post(
             "/api/initiate",
-            json={"client_id": cid, "url": "https://www.instagram.com/hedef/"},
+            json={"client_id": cid, "url": "https://www.instagram.com/hedef/", "subject_consent": True},
         )
     assert r.status_code == 423
     assert r.json()["error"]["code"] == "VAULT_LOCKED"

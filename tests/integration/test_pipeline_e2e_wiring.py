@@ -216,7 +216,7 @@ def test_zero_mock_fastapi_vault_lilith_and_brain_hub_end_to_end(tmp_path, monke
     # 4. Gerçek /api/brain/route → Lilith / Graph / Memory / Company (kapalı kapı dürüst bildirimi)
     br_lilith = client.post(
         "/api/brain/route",
-        json={"client_id": room_id, "message": "Lilith buna karşı hamle hazırla", "target": "mimar_deniz"},
+        json={"client_id": room_id, "message": "Lilith buna karşı hamle hazırla", "target": "mimar_deniz", "subject_consent": True},
     )
     assert br_lilith.status_code == 200
     assert br_lilith.json()["route"] == "lilith"
@@ -224,14 +224,14 @@ def test_zero_mock_fastapi_vault_lilith_and_brain_hub_end_to_end(tmp_path, monke
 
     br_graph = client.post(
         "/api/brain/route",
-        json={"client_id": room_id, "message": "İlişki grafını çiz"},
+        json={"client_id": room_id, "message": "İlişki grafını çiz", "subject_consent": True},
     )
     assert br_graph.status_code == 200
     assert br_graph.json()["route"] == "graph"
 
     br_company = client.post(
         "/api/brain/route",
-        json={"client_id": room_id, "message": "denizstudio.com şirket taraması yap"},
+        json={"client_id": room_id, "message": "denizstudio.com şirket taraması yap", "subject_consent": True},
     )
     assert br_company.status_code == 200
     comp_body = br_company.json()
@@ -252,7 +252,7 @@ def test_zero_mock_aspasia_command_enforces_minor_and_vault_gates(tmp_path, monk
     # 1. Çocuk vakası beyan edilmişse (şartsız) → 451 (kasa kapısından bile ÖNCE reddeder)
     minor_set = client.post(
         "/api/minor/case",
-        json={"client_id": room_id, "subject_is_minor": True},
+        json={"client_id": room_id, "subject_is_minor": True, "case_type": "missing_or_harm"},
     )
     assert minor_set.status_code == 200, minor_set.text
     blocked_minor = client.post(

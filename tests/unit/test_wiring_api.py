@@ -77,6 +77,7 @@ def test_x_initiate_reports_sensor_state_over_ws():
                         "aggressiveness": 1.0,
                         "evidence_th": 3,
                         "scraper_type": "x",
+                        "subject_consent": True,
                     },
                 )
                 assert r.status_code == 200

@@ -131,8 +131,7 @@ def test_critical_cross_stack_happy_path_without_method_mocks(
                 "url": "",
                 "rituals": "çay, kitap",
                 "playlist": "Neşet Ertaş",
-                "envies": "derin bağlantı",
-            })
+                "envies": "derin bağlantı", "subject_consent": True})
             assert started.status_code == 200
             task_id = started.json()["task_id"]
 
@@ -209,8 +208,7 @@ def test_running_task_can_be_cancelled_idempotently(local_llm, monkeypatch, tmp_
                 "url": "",
                 "rituals": "çay",
                 "playlist": "müzik",
-                "envies": "bağlantı",
-            })
+                "envies": "bağlantı", "subject_consent": True})
             task_id = started.json()["task_id"]
             cancelled = client.post(
                 f"/api/tasks/{task_id}/cancel",

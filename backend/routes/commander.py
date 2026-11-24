@@ -99,8 +99,9 @@ class EvidenceIdempotencyConflict(ValueError):
     """An idempotency key is already bound to another request."""
 
 
-def _store_evidence(entry: dict, key: str) -> None:
-    mem_path = os.path.join(".pineal_memory", "learnings.json")
+def _store_evidence(entry: dict, key: str, mem_path: str | None = None) -> None:
+    mem_path = mem_path or os.path.join(".pineal_memory", "learnings.json")
+    os.makedirs(os.path.dirname(mem_path) or ".", exist_ok=True)
     with locked_learnings(mem_path):
         existing = []
         if os.path.exists(mem_path):
@@ -207,13 +208,35 @@ def register_commander_routes(
                  "message": "Kanıt kaydedilemedi; ajana aktarılmadı."}}, status_code=500
             )
 
+        applied = False
+        if get_executor is not None:
+            try:
+                executor = get_executor(payload.client_id)
+                mem_dir = getattr(getattr(executor, "memory", None), "storage_path", None)
+                if mem_dir:
+                    dest = os.path.join(str(mem_dir), "learnings.json")
+                    await asyncio.to_thread(_store_evidence, dict(entry), key, dest)
+                    applied = True
+                bucket = getattr(executor, "injected_evidence", None)
+                if bucket is None:
+                    executor.injected_evidence = [entry]
+                elif isinstance(bucket, list):
+                    bucket.append(entry)
+                applied = True
+            except Exception:
+                logger.warning("Komutan kanıtı ajan hafızasına yazılamadı", exc_info=True)
+
         return {
             "status": "stored",
-            "applied_to_agent": False,
+            "applied_to_agent": applied,
             "evidence_type": ev_type,
             "evidence_value": val,
             "target_agent": target_agent,
-            "message": "Kanıt dosyaya kaydedildi; ajana veya göreve aktarım henüz bağlı değil.",
+            "message": (
+                "Kanıt ajan hafızasına yazıldı."
+                if applied
+                else "Kanıt dosyaya kaydedildi; ajana aktarım bağlanamadı."
+            ),
             "ts": datetime.now().isoformat(),
         }
 

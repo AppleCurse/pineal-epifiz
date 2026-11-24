@@ -324,7 +324,7 @@ def test_initiate_records_the_owner_before_evidence_exists(client, prod_posture,
         "/api/initiate",
         params={},
         headers=_headers(ALICE_TOKEN),
-        json={"client_id": ALICE_ROOM, "url": "", "rituals": "", "playlist": "", "envies": ""},
+        json={"client_id": ALICE_ROOM, "url": "", "rituals": "", "playlist": "", "envies": "", "subject_consent": True},
     )
     assert r.status_code == 200, r.text
     task_id = r.json()["task_id"]
@@ -338,7 +338,7 @@ def _declare_minor(client: TestClient, room: str, token: str, **extra):
     payload = {
         "client_id": room,
         "subject_is_minor": True,
-        "case_type": "missing",
+        "case_type": "missing_or_harm",
         "family_notified": True,
         "reason": "kayip vakasi - aile haberdar",
         "verified": True,

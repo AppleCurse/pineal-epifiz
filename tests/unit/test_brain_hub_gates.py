@@ -85,7 +85,7 @@ def _make_app(*, room_owner=None, minor_blocks=False, vault_locked=False):
 def test_graph_minor_block_precedes_vault():
     app, _, _ = _make_app(minor_blocks=True, vault_locked=True)
     client = TestClient(app)
-    resp = client.post("/api/brain/route", json={"client_id": "room-a", "message": "ilişki", "mode": "graph"})
+    resp = client.post("/api/brain/route", json={"client_id": "room-a", "message": "ilişki", "mode": "graph", "subject_consent": True})
     assert resp.status_code == 451
     assert resp.json()["error"]["code"] == "MINOR_BLOCKED"
 
@@ -93,7 +93,7 @@ def test_graph_minor_block_precedes_vault():
 def test_graph_vault_locked_after_minor_passes():
     app, _, _ = _make_app(minor_blocks=False, vault_locked=True)
     client = TestClient(app)
-    resp = client.post("/api/brain/route", json={"client_id": "room-a", "message": "ilişki", "mode": "graph"})
+    resp = client.post("/api/brain/route", json={"client_id": "room-a", "message": "ilişki", "mode": "graph", "subject_consent": True})
     assert resp.status_code == 423
     assert resp.json()["error"]["code"] == "VAULT_LOCKED"
 
@@ -101,18 +101,18 @@ def test_graph_vault_locked_after_minor_passes():
 def test_memory_gate_order_minor_then_vault():
     app, _, _ = _make_app(minor_blocks=True, vault_locked=True)
     client = TestClient(app)
-    resp = client.post("/api/brain/route", json={"client_id": "room-a", "message": "@hedef1 hafıza", "mode": "memory"})
+    resp = client.post("/api/brain/route", json={"client_id": "room-a", "message": "@hedef1 hafıza", "mode": "memory", "subject_consent": True})
     assert resp.status_code == 451
     app2, _, _ = _make_app(minor_blocks=False, vault_locked=True)
     client2 = TestClient(app2)
-    resp2 = client2.post("/api/brain/route", json={"client_id": "room-a", "message": "@hedef1 hafıza", "mode": "memory"})
+    resp2 = client2.post("/api/brain/route", json={"client_id": "room-a", "message": "@hedef1 hafıza", "mode": "memory", "subject_consent": True})
     assert resp2.status_code == 423
 
 
 def test_company_vault_locked_blocks_capability():
     app, _, _ = _make_app(minor_blocks=False, vault_locked=True)
     client = TestClient(app)
-    resp = client.post("/api/brain/route", json={"client_id": "room-a", "message": "x.com kurum", "mode": "company", "target": "example.com"})
+    resp = client.post("/api/brain/route", json={"client_id": "room-a", "message": "x.com kurum", "mode": "company", "target": "example.com", "subject_consent": True})
     assert resp.status_code == 423
 
 
@@ -123,7 +123,7 @@ def test_graph_foreign_room_seal_yields_403_without_room_name():
     token = bind_principal("operator-a")
     try:
         client = TestClient(app)
-        resp = client.post("/api/brain/route", json={"client_id": "room-a", "message": "graf", "mode": "graph"})
+        resp = client.post("/api/brain/route", json={"client_id": "room-a", "message": "graf", "mode": "graph", "subject_consent": True})
         assert resp.status_code == 403
         body = resp.json()
         assert body["error"]["code"] == "ROOM_FORBIDDEN"
@@ -137,7 +137,7 @@ def test_graph_memory_room_seal_403():
     token = bind_principal("operator-a")
     try:
         client = TestClient(app)
-        resp = client.post("/api/brain/route", json={"client_id": "room-a", "message": "@hedef1 hafıza", "mode": "memory"})
+        resp = client.post("/api/brain/route", json={"client_id": "room-a", "message": "@hedef1 hafıza", "mode": "memory", "subject_consent": True})
         assert resp.status_code == 403
         assert "room-a" not in str(resp.json())
     finally:
@@ -147,7 +147,7 @@ def test_graph_memory_room_seal_403():
 def test_graph_missing_task_returns_404_and_never_reaches_memory():
     app, _, executor = _make_app(vault_locked=False)
     client = TestClient(app)
-    resp = client.post("/api/brain/route", json={"client_id": "room-a", "message": "graf", "mode": "graph", "task_id": "no_such_task_xyz"})
+    resp = client.post("/api/brain/route", json={"client_id": "room-a", "message": "graf", "mode": "graph", "task_id": "no_such_task_xyz", "subject_consent": True})
     assert resp.status_code == 404
     assert resp.json()["error"]["code"] == "TASK_NOT_FOUND"
 
@@ -159,7 +159,7 @@ def test_graph_foreign_task_yields_403(monkeypatch):
     executor.tasks = {"task_foreign": {"evidence_chain": [], "task_id": "task_foreign"}}
     monkeypatch.setattr(brain_hub_module, "task_access", lambda task_id, principal: "forbidden")
     client = TestClient(app)
-    resp = client.post("/api/brain/route", json={"client_id": "room-a", "message": "graf", "mode": "graph", "task_id": "task_foreign"})
+    resp = client.post("/api/brain/route", json={"client_id": "room-a", "message": "graf", "mode": "graph", "task_id": "task_foreign", "subject_consent": True})
     assert resp.status_code == 403
     body = resp.json()
     assert body["error"]["code"] == "TASK_FORBIDDEN"
@@ -170,7 +170,7 @@ def test_graph_allowed_task_returns_graph():
     app, _, executor = _make_app(vault_locked=False)
     executor.tasks = {"task_own": {"evidence_chain": [], "task_id": "task_own"}}
     client = TestClient(app)
-    resp = client.post("/api/brain/route", json={"client_id": "room-a", "message": "graf", "mode": "graph", "task_id": "task_own"})
+    resp = client.post("/api/brain/route", json={"client_id": "room-a", "message": "graf", "mode": "graph", "task_id": "task_own", "subject_consent": True})
     assert resp.status_code == 200
     assert resp.json()["route"] == "graph"
 
@@ -247,21 +247,21 @@ def _make_hook_app(*, rate_ok=True, minor_blocks=False, vault_locked=False):
 def test_hook_generate_rate_limit_precedes_everything():
     app = _make_hook_app(rate_ok=False, minor_blocks=True, vault_locked=True)
     client = TestClient(app)
-    resp = client.post("/api/hook/generate", json={"client_id": "room-a", "custom_goal": "test"})
+    resp = client.post("/api/hook/generate", json={"client_id": "room-a", "custom_goal": "test", "subject_consent": True})
     assert resp.status_code == 429
 
 
 def test_hook_generate_minor_precedes_vault():
     app = _make_hook_app(rate_ok=True, minor_blocks=True, vault_locked=True)
     client = TestClient(app)
-    resp = client.post("/api/hook/generate", json={"client_id": "room-a", "custom_goal": "test", "target_username": "@kid"})
+    resp = client.post("/api/hook/generate", json={"client_id": "room-a", "custom_goal": "test", "target_username": "@kid", "subject_consent": True})
     assert resp.status_code == 451
 
 
 def test_hook_generate_vault_locked_after_minor_passes():
     app = _make_hook_app(rate_ok=True, minor_blocks=False, vault_locked=True)
     client = TestClient(app)
-    resp = client.post("/api/hook/generate", json={"client_id": "room-a", "custom_goal": "test"})
+    resp = client.post("/api/hook/generate", json={"client_id": "room-a", "custom_goal": "test", "subject_consent": True})
     assert resp.status_code == 423
 
 
@@ -269,5 +269,5 @@ def test_hook_generate_vault_locked_blocked_without_target():
     # Hedef/reşitlik alanı olmadan da kasa kapısı geçerlidir (hedefsiz çağrı bile kasa ister).
     app = _make_hook_app(rate_ok=True, minor_blocks=False, vault_locked=True)
     client = TestClient(app)
-    resp = client.post("/api/hook/generate", json={"client_id": "room-a"})
+    resp = client.post("/api/hook/generate", json={"client_id": "room-a", "subject_consent": True})
     assert resp.status_code == 423

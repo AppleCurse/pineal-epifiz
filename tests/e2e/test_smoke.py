@@ -12,6 +12,7 @@ import uuid
 
 from fastapi.testclient import TestClient
 
+from backend import api
 from backend.api import app
 
 
@@ -42,8 +43,10 @@ def test_telemetry_endpoint_reports_honest_state():
 
 def test_aspasia_chat_endpoint_200():
     with TestClient(app) as client:
+        cid = f"smoke_{uuid.uuid4().hex[:6]}"
+        api.get_room(cid)["vault"]["or_key"] = True
         r = client.post("/api/aspasia/chat", json={
-            "client_id": f"smoke_{uuid.uuid4().hex[:6]}",
+            "client_id": cid,
             "user_message": "Sistem ayakta mı?",
         })
     assert r.status_code == 200
@@ -58,6 +61,7 @@ def test_ws_initiate_produces_result():
                 "client_id": cid, "url": "",
                 "rituals": "çay", "playlist": "neşet ertaş", "envies": "bağ",
                 "aggressiveness": 1.0, "evidence_th": 3,
+                "subject_consent": True,
             })
             assert r.status_code == 200
             saw_result = False

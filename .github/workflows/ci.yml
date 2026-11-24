@@ -205,7 +205,8 @@ jobs:
           uvicorn backend.api:app --port 8000 &
           for i in $(seq 1 30); do curl -sf "http://127.0.0.1:8000/api/telemetry?client_id=ci" && break || sleep 1; done
           curl -sf "http://127.0.0.1:8000/" | grep -q 'id="app"'
-          curl -s -o /dev/null -w "%{http_code}" -X POST "http://127.0.0.1:8000/api/aspasia/chat" -H 'Content-Type: application/json' -d '{"client_id":"ci","user_message":"hi"}' | grep -q 200
+          # Kasa kilitliyken 423 (VAULT_LOCKED); açıkken 200. İkisi de canlı kapı.
+          curl -s -o /dev/null -w "%{http_code}" -X POST "http://127.0.0.1:8000/api/aspasia/chat" -H 'Content-Type: application/json' -d '{"client_id":"ci","user_message":"hi"}' | grep -qE '200|423'
           curl -sf "http://127.0.0.1:8000/health" | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d['status'] in ('ready','degraded') else 1)"
       - name: WebSocket handshake smoke
         # [2026-11-21] websockets requirements.lock'a girdi; /ws artık CI'da

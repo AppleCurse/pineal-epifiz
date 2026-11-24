@@ -252,6 +252,20 @@ def register_brain_hub_routes(
             )
 
         route = detect_brain_route(payload.message, payload.mode, payload.target)
+        if payload.subject_consent is not True:
+            return JSONResponse(
+                {
+                    "error": {
+                        "code": "CONSENT_REQUIRED",
+                        "message": (
+                            "Açık rıza beyanı gerekli: beyin yönlendirmesi "
+                            "kişisel veri işleyebilir. Hedef kişinin rızasının "
+                            "alındığını arayüzden beyan edin."
+                        ),
+                    }
+                },
+                status_code=423,
+            )
         room = get_room(payload.client_id)
         executor = get_executor(payload.client_id)
 
@@ -424,6 +438,8 @@ def register_brain_hub_routes(
                 cmd_res = await aspasia.commands.submit(payload.message, client_id=payload.client_id)
                 return {"route": "profile", "result": cmd_res.model_dump()}
 
+        if (locked := require_vault_open(payload.client_id)) is not None:
+            return locked
         if not aspasia:
             return JSONResponse(
                 {"error": {"code": "ASPASIA_UNAVAILABLE", "message": "Aspasia kullanılamıyor."}},

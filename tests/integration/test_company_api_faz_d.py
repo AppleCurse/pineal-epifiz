@@ -76,14 +76,11 @@ class TestScanGates:
     def test_vault_locked_blocks_every_mode(self, client, monkeypatch):
         monkeypatch.setenv("ENABLE_COMPANY_TARGETING", "1")
         api.get_room("kurum")["vault"].pop("or_key", None)
-        payload = client.post(
+        r = client.post(
             "/api/company/scan", json={"domain": "ornek.com", "client_id": "kurum"}
-        ).json()
-        assert payload["domain"] == "ornek.com"
-        for mode_result in payload["modes"].values():
-            assert mode_result["denied_by"] == "vault"
-            assert mode_result["evidence"] == []
-        assert payload["evidence_total"] == 0
+        )
+        assert r.status_code == 423
+        assert r.json()["error"]["code"] == "VAULT_LOCKED"
 
     def test_closed_gate_blocks_every_mode(self, client, vault):
         payload = client.post(

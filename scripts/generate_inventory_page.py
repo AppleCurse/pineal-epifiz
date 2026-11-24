@@ -509,14 +509,10 @@ ROOT_MD = set()
 def build_entries() -> list:
     global ROOT_MD
     tracked = git("ls-files").splitlines()
-    untracked = git("ls-files", "--others", "--exclude-standard").splitlines()
-    #: [DENETİM 2026-10-14 · B16] TEK, DETERMİNİST sıra: eskiden `tracked +
-    #: untracked` idi; yeni bir dosya commit'lendiği anda listeye alfabetik
-    #: değil SONA ekleniyordu → sayfa içeriği yalnız `git add` yüzünden
-    #: değişiyor ve `--check` "bayat" diyordu (CI kırmızısı; üretim yolu
-    #: kirli ağaçta üretilip temiz ağaçta doğrulanıyordu). Sıra artık
-    #: izleme durumundan BAĞIMSIZ: yalnız yola göre sıralanır.
-    files = sorted(set(tracked + untracked))
+    #: Yalnız izlenen dosyalar. Test koşumu (CI) `memory/reports` gibi
+    #: çalışma anı dosyası bırakırsa `--check` kirli ağaç yüzünden kırmızı
+    #: yanmasın; sayfa commit'teki evreni gösterir.
+    files = sorted(set(tracked))
     ROOT_MD = {f for f in files if f.endswith(".md") and "/" not in f}
     entries = []
     for rel in files:

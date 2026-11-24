@@ -99,18 +99,32 @@ async def run_telemetry_socket(
         await websocket.close(code=_CLOSE_TRY_AGAIN)
         return
 
-    await websocket.accept()
-
     principal: Optional[str] = None
     principal_token = None
     try:
+        header_token = None
+        try:
+            header_token = (getattr(websocket, "headers", None) or {}).get("x-api-key")
+        except Exception:
+            header_token = None
+
         if posture.get("auth_required"):
-            presented = await _authenticate(websocket)
-            if presented is None:
-                await websocket.close(code=_CLOSE_POLICY)
-                return
-            # (2) Token -> OPERATÖR KİMLİĞİ. Oda sahipliği bunu okur.
+            # HTTP kapılarıyla aynı: X-API-Key varsa onu kullan.
+            # Cloudflare özel başlık iletmez; o yol ilk JSON mesajına düşer.
+            await websocket.accept()
+            if isinstance(header_token, str) and header_token:
+                if not token_matches(header_token):
+                    await websocket.close(code=_CLOSE_POLICY)
+                    return
+                presented = header_token
+            else:
+                presented = await _authenticate(websocket)
+                if presented is None:
+                    await websocket.close(code=_CLOSE_POLICY)
+                    return
             principal = resolve_principal(presented)
+        else:
+            await websocket.accept()
 
         # Kimlik doğrulama kapalıysa principal None kalır ve mühür uygulanmaz
         # (development). Production'da auth zorunlu olduğundan daima doludur.

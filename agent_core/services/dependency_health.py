@@ -96,6 +96,18 @@ def check_startup_dependencies(
         try:
             importer(requirement.module)
         except Exception as exc:
+            # Zorunlu paket yoksa/bozuksa süreç ÇÖKER. Şalterle açılan
+            # (configured) paket yoksa sunucu diğer kapılarla açılır; o
+            # kapı çağrılınca dürüst "paket eksik" döner. Kurulu ama bozuk
+            # şalterli paket hâlâ fail-closed (açılışta patlar).
+            if requirement.feature_flag is not None and isinstance(exc, ModuleNotFoundError):
+                statuses.append({
+                    "dependency": requirement.name,
+                    "status": "missing",
+                    "feature_flag": requirement.feature_flag,
+                    "error_code": "OPTIONAL_DEPENDENCY_MISSING",
+                })
+                continue
             raise _classify_import_failure(requirement, exc) from exc
         statuses.append({
             "dependency": requirement.name,
