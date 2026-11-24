@@ -99,7 +99,7 @@ REQUIRED_OPENROUTTER = {
     # değil. İkisi bilinçli olarak farklı kanallardır.
     # [2026-10-23 · CI 39881245895] Canlı katalog solar-pro4 için $0.15/$0.60 okudu.
     "upstage/solar-pro4": (0.15, 0.6),
-    "inclusionai/ling-3.0-flash": (0.06, 0.18),
+    "inclusionai/ling-3.0-flash": (0.021, 0.063),
     # [2026-10-15 · CI 38662205946] Çıktı son ölçümde $4.40/1M (önceki $7.00).
     # [2026-10-15 · CI 38664381599] Girdi son ölçümde $0.037/1M.
     # [2026-10-15 · CI 38665669314 + 38665674379] Çıktı yeniden $7/1M.

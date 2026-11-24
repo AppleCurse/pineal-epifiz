@@ -295,8 +295,8 @@ karşı** koşturur ve ham çıktıyı basar: `0` kanıtlandı · `1` döngü k�
 | **P9** | README baştan yazıldı (15 bölüm, düz dil) + `docs/envanter.html` sisteme bağlandı + `tests/unit/test_readme_claims.py` sayıları koddan ölçer |
 | **P10** | Çapraz arama **kablosu**: IG bio ve X gönderi/biyografi adresleri `detected_urls` → derin tarama; operatör onayı X/IG sensörlerini o görev için açar; `holehe` iddiaları `inference` olarak etiketlendi; tek IG gönderi tavanı (`PINEAL_IG_MAX_POSTS`); Android koç sohbeti sunucuya taşındı (`/api/mobile/coach`); noktalı modül yoklaması (`agent_core/utils/optional_deps.py`) |
 
-Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
-`docs/reports/` (56 tarihli rapor).
+Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · dokümanlar:
+`docs/reports/` (4 dosya: API bölme planı, JULES denetimi, release kanıtı, REMEDIYASYON kılavuzu).
 
 ---
 
@@ -314,7 +314,7 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 | Kod kalitesi | `ruff check .` → **All checks passed!** · `npm run check` → **0 hata / 0 uyarı** · `npm test` (vitest sözleşme testleri) → **6/6** · `npm run build` → ✓ |
 | Denetim bekçileri | `audit_regression.py` → **✓ BEKÇİ GEÇTİ** · `dead_code_audit.py` → **0/0/0/0/0/0/0** (C1/C1b/C2/C3/C4/C5/C6) |
 | Ölçülebilir ilerleme | `backend/api.py` **5493** satır (tavan 5760) |
-| Revert-doğrulama | `scripts/revert_verification_p*.py` → **43/43** düzeltme geri alınınca test kırmızıya döndü (p0 7/7 · p1 6/6 · p2 3/3 · p3 4/4 · p4 5/5 · p8 10/10 · p9 8/8; her koşum dosyayı `finally` ile geri yükler) |
+| Revert-doğrulama | `scripts/revert_verification_p9.py` → **8/8** düzeltme geri alınınca test kırmızıya döner (her koşum dosyayı `finally` ile geri yükler). Eski dönem betikleri (p0–p4, p8) 2026-11-23 temizliğinde kaldırıldı; hiçbir test ya da CI adımı onları kullanmıyordu |
 | Komut döngüsü | `scripts/verify_command_loop.py` → erişilemeyen API'de `rc=2` + sebep; kırık döngüde `rc=1` + sebep |
 | Onay kablosu | Onay yok → `sensor.ig.instagrapi` / `sensor.x.twscrape` **`policy:gate_disabled`**; onay var → kapı **açık**, dürüst sebep `dependency_missing:*` (birim testi, sahte çalıştırıcı) |
 | Bio/gönderi adres kablosu | Sahte `twscrape` → `bio` → `x_target_profile_update` → `detected_urls` → `merge_detected_profile_urls` zinciri uçtan uca koşuyor (çevrimdışı) |
@@ -355,7 +355,7 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · denetim raporları:
 | `config/` | Yönlendirme, sağlayıcı kataloğu, karar yapılandırması, RTK politikası |
 
 **Tam ve aranabilir harita:** **[docs/envanter.html](docs/envanter.html)** —
-826 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
+805 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
 ile yenilenir, CI `--check` ile bayatlamayı yakalar.
 
 **Ayrıca:** [ARCHITECTURE.md](ARCHITECTURE.md) · [README_TECHNICAL.md](README_TECHNICAL.md) ·
