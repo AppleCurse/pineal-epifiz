@@ -83,7 +83,7 @@ REQUIRED_OPENROUTTER = {
     # ölçüm (promo bitiş/başlangıç salınımı). Ölçülen değere hizalandı
     # (tahminle değil, ölçümle).
     # CI 41398881323 and 41398888412: measured $1.60/$3.20 per 1M.
-    "deepseek/deepseek-v4-pro": (0.9, 1.5),
+    "deepseek/deepseek-v4-pro": (1.28, 2.56),
     "anthropic/claude-sonnet-5": (2.0, 10.0),
     # [2026-10-14 · kapsam turu 2] Katalogun `openrouter` bölümünde beyan edilmiş
     # ama hiç canlı kontrol edilmemiş dört kayıt daha: katalog bunların OR fiyatı
@@ -99,7 +99,7 @@ REQUIRED_OPENROUTTER = {
     # değil. İkisi bilinçli olarak farklı kanallardır.
     # [2026-10-23 · CI 39881245895] Canlı katalog solar-pro4 için $0.15/$0.60 okudu.
     "upstage/solar-pro4": (0.15, 0.6),
-    "inclusionai/ling-3.0-flash": (0.021, 0.063),
+    "inclusionai/ling-3.0-flash": (0.06, 0.18),
     # [2026-10-15 · CI 38662205946] Çıktı son ölçümde $4.40/1M (önceki $7.00).
     # [2026-10-15 · CI 38664381599] Girdi son ölçümde $0.037/1M.
     # [2026-10-15 · CI 38665669314 + 38665674379] Çıktı yeniden $7/1M.
@@ -113,7 +113,7 @@ REQUIRED_OPENROUTTER = {
     # okundu (girdi $0.037'de kaldı) → YENİ bir fiyat durumu. İki günde dört
     # ayrı değer okundu; ölçülen son değere hizalandı (tahminle değil, ölçümle).
     # CI 41398881323 and 41398888412: measured $0.006/$6.80 per 1M.
-    "z-ai/glm-5.2": (0.006, 6.8),
+    "z-ai/glm-5.2": (0.62, 2.42),
     "x-ai/grok-4.6": (2.0, 6.0),
 }
 
@@ -230,13 +230,17 @@ OBSERVED_OPENROUTER_STATES: dict[str, tuple[tuple[float, float], ...]] = {
         # kademe-3 (rejim) kuralı bu yüzden haklı olarak kırmızı verdi.
         # Yeni durum tam-eşleşme listesine alındı, banda GİRMEZ.
         (0.9, 1.5),
+        # CI 45326377916 (2026-11-24) → $1.28/$2.56. Oran yine 0.5000 (1:2).
+        # Rejim dışı kaldığı için kademe-3 kırmızı verdi; tam-eşleşme listesine
+        # alındı, banda GİRMEZ (EXACT_ONLY).
+        (1.28, 2.56),
     ),
 }
 
 # New measured endpoints are exact-only: adding them must not silently widen
 # the historical interpolation regime or grant an unobserved price ±2% jitter.
 EXACT_ONLY_OBSERVED_OPENROUTER_STATES = {
-    "deepseek/deepseek-v4-pro": frozenset({(1.6, 3.2), (0.9, 1.5)}),
+    "deepseek/deepseek-v4-pro": frozenset({(1.6, 3.2), (0.9, 1.5), (1.28, 2.56)}),
     "z-ai/glm-5.2": frozenset({(0.006, 6.8), (0.007, 6.8)}),
 }
 

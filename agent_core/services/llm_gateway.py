@@ -539,7 +539,7 @@ class LLMGateway:
         # $0.15/$0.60 okundu. Nous indirimli kanal ROUTES'ta $0.03/$0.12 kalır;
         # bu tablo BULUT (OR) maliyetini taşır.
         "upstage/solar-pro4": {"in": 0.15, "out": 0.6},
-        "inclusionai/ling-3.0-flash": {"in": 0.021, "out": 0.063},
+        "inclusionai/ling-3.0-flash": {"in": 0.06, "out": 0.18},
         # 2026-09-08 araştırma düzeltmesi: OR kataloğu deepseek-v4-flash'i
         # $0.09/$0.18 gösteriyordu (eski $0.0679/$0.168 iki tarafla da uyuşmuyordu).
         # [2026-10-14 · canlı teyit] Gerçek fiyat $0.091/$0.182 (2 ondalığa
@@ -560,7 +560,7 @@ class LLMGateway:
         # ölçüme hizalandı. Modelde fiyat SALINIYOR; ölçülmüş durum kümesi
         # scripts/verify_openrouter_catalog.py içinde kayıtlı.
         # CI 41398881323 and 41398888412 measured $0.006/$6.80 per 1M.
-        "z-ai/glm-5.2": {"in": 0.006, "out": 6.8},
+        "z-ai/glm-5.2": {"in": 0.62, "out": 2.42},
         # [2026-10-14..15] Ölçülen geçmiş: $0.4679/$0.9358 ->
         # $0.386976/$0.773952 -> $0.95526/$1.91052.
         # [2026-10-15 · PR CI 38787820334] $0.395328/$0.790656; sonraki
@@ -568,7 +568,7 @@ class LLMGateway:
         # [2026-10-16 · CI 38833598719 + 38840573018 + 38843226709] Canlı katalog
         # yeniden $0.95526/$1.91052'ye döndü (üç koşuda birebir aynı ölçüm).
         # CI 41398881323 and 41398888412 measured $1.60/$3.20 per 1M.
-        "deepseek/deepseek-v4-pro": {"in": 0.9, "out": 1.5},
+        "deepseek/deepseek-v4-pro": {"in": 1.28, "out": 2.56},
         "google/gemini-3.7-flash": {"in": 0.75, "out": 3.75},
         # 2026-09-02 karar matrisi: Sonnet 5 $2/$10 (promo), Grok 4.6 $2/$6.
         # 2026-09-08 notu: Sonnet 5 promo'su 31.08.2026'da sona erdi; Anthropic

@@ -483,9 +483,13 @@
   }
 
   .telemetry-toggle {
+    /* [2026-11-24] Eskiden bottom: 14px / right: 420px idi; kokpitin 180px'lik
+       alt barının (CANLI VERİ AKIŞI) ÜSTÜNE biniyordu. Alt barın kendi başlık
+       şeridi ~35px, yani 145-180px bandı boş: düğme oraya alındı. Böylece
+       ne log satırlarını ne de alt barı örtüyor. */
     position: fixed;
-    right: 420px;
-    bottom: 14px;
+    right: 14px;
+    bottom: 150px;
     z-index: 46;
     padding: 5px 10px;
     font-family: 'JetBrains Mono', 'Courier New', monospace;
@@ -497,6 +501,12 @@
     border: 1px solid rgba(212, 175, 55, 0.35);
     border-radius: 6px;
     cursor: pointer;
+  }
+
+  /* Dar ekranda kokpit kendi yüksekliğinde akıyor; sabit düğme içeriklerin
+     üzerine düşer. Akışa bırakılıyor (örtüşme yok). */
+  @media (max-width: 1300px) {
+    .telemetry-toggle { position: static; display: block; margin: 6px auto; }
   }
 
   .telemetry-toggle:hover {

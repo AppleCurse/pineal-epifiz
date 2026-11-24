@@ -56,16 +56,16 @@ beforeEach(() => {
 });
 
 describe('UnifiedPinealCockpit controls and honesty', () => {
-  it('renders PWR, ARM, REC switches and toggles stores', async () => {
+  it('renders GÜÇ, HAZIR, KAYIT switches and toggles stores', async () => {
     installFetch((path) => {
       if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: true });
       return undefined;
     });
 
     render(UnifiedPinealCockpit);
-    const armBtn = screen.getByRole('button', { name: /ARM/i });
-    const pwrBtn = screen.getByRole('button', { name: /PWR/i });
-    const recBtn = screen.getByRole('button', { name: /REC/i });
+    const armBtn = screen.getByRole('button', { name: /HAZIR/i });
+    const pwrBtn = screen.getByRole('button', { name: /GÜÇ/i });
+    const recBtn = screen.getByRole('button', { name: /KAYIT/i });
 
     expect(get(armEngaged)).toBe(false);
     await fireEvent.click(armBtn);
@@ -78,7 +78,7 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
     expect(get(recordEngaged)).toBe(false);
   });
 
-  it('ACİL STOP calls /api/tasks/{id}/halt and disarms ARM', async () => {
+  it('ACİL DUR calls /api/tasks/{id}/halt and disarms HAZIR', async () => {
     const calls = installFetch((path) => {
       if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: true });
       if (path === '/api/tasks/op_test_123/halt') return jsonResponse({ status: 'halted' });
@@ -90,7 +90,7 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
     taskStatus.set({ task_id: 'op_test_123', status: 'processing' });
 
     render(UnifiedPinealCockpit);
-    const stopBtn = screen.getByRole('button', { name: /ACİL STOP/i });
+    const stopBtn = screen.getByRole('button', { name: /ACİL DUR/i });
     await fireEvent.click(stopBtn);
 
     await waitFor(() => {
@@ -253,7 +253,7 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
     const deepseekInput = screen.getByLabelText(/DeepSeek/i);
     await fireEvent.input(deepseekInput, { target: { value: 'sk-deepseek-real-123456' } });
 
-    const saveBtn = screen.getByRole('button', { name: /KASAYA MÜHÜRLE VE UYGULA/i });
+    const saveBtn = screen.getByRole('button', { name: /KAYDET VE UYGULA/i });
     await fireEvent.click(saveBtn);
 
     await waitFor(() => {
@@ -277,7 +277,7 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
     });
 
     const { container } = render(UnifiedPinealCockpit);
-    const armBtn = screen.getByRole('button', { name: /ARM/i });
+    const armBtn = screen.getByRole('button', { name: /HAZIR/i });
     await fireEvent.click(armBtn);
 
     const targetInput = screen.getByPlaceholderText(/Hedef Profil URL/i);
@@ -414,7 +414,7 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
     });
 
     const { container } = render(UnifiedPinealCockpit);
-    const armBtn = screen.getByRole('button', { name: /ARM/i });
+    const armBtn = screen.getByRole('button', { name: /HAZIR/i });
     await fireEvent.click(armBtn);
 
     const targetInput = screen.getByPlaceholderText(/Hedef Profil URL/i);
@@ -435,7 +435,7 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
     });
 
     const { container } = render(UnifiedPinealCockpit);
-    const armBtn = screen.getByRole('button', { name: /ARM/i });
+    const armBtn = screen.getByRole('button', { name: /HAZIR/i });
     await fireEvent.click(armBtn);
 
     const targetInput = screen.getByPlaceholderText(/Hedef Profil URL/i);

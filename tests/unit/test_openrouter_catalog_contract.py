@@ -522,9 +522,11 @@ def test_observed_states_are_positive_pairs():
 
 def test_known_measured_state_passes_even_when_it_is_not_the_pin(monkeypatch):
     """BİLİNEN ölçülmüş durum → kapı KIRMIZI değil (yalnız uyarı yazılır)."""
+    # [2026-11-24] Pin artık $0.62/$2.42'ye hizalandığı için uyarıyı hâlâ
+    # tetikleyen BAŞKA bir bilinen durum kullanılıyor ($0.037/$7.00, CI 38821301808).
     monkeypatch.setattr(
         oc.urllib.request, "urlopen",
-        lambda *a, **k: _Response(_payload({"z-ai/glm-5.2": (0.62, 2.42)})),
+        lambda *a, **k: _Response(_payload({"z-ai/glm-5.2": (0.037, 7.0)})),
     )
     failures, warnings, unverified = oc.verify_live_openrouter("key")
     assert unverified is None
@@ -707,8 +709,8 @@ def test_current_ci_observed_prices_are_consistent_across_catalog_and_accounting
         # [2026-11-11] CI 43841655576 canlı katalogda v4-pro için $0.9/$1.5
         # (girdi/çıktı oranı 1:2 DEĞİL, 0.6) ve v4-flash için $0.09/$0.18
         # okudu; üç yer (pin · katalog · harcama tablosu) birlikte güncellendi.
-        "deepseek/deepseek-v4-pro": (0.9, 1.5),
-        "z-ai/glm-5.2": (0.006, 6.8),
+        "deepseek/deepseek-v4-pro": (1.28, 2.56),
+        "z-ai/glm-5.2": (0.62, 2.42),
     }
     catalog = oc._catalog_models(oc._load_catalog())
     for model, price in expected.items():
