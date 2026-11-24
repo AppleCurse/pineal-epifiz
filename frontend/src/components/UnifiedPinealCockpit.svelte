@@ -1076,7 +1076,12 @@
         // hatası değil, ERİŞİM sorunu. Eski mesaj "Kasa durumu doğrulanamadı:
         // HTTP 401" idi ve kullanıcı kasayı açmaya çalışıyordu.
         apiAuthRequired.set(true);
-        throw new Error('yetki gerekli (PINEAL_TOKEN)');
+        // Nötr durum: kırmızı "doğrulanamadı" uyarısı basılmaz. Kasa düğmesi
+        // zaten "ERİŞİM: YETKİ GEREKLİ" diyor; bu bir arıza değil, kurulum
+        // bilgisi — açılışta kırmızı alarm kullanıcıyı yanıltıyordu.
+        vaultKnown = false;
+        vaultError = '';
+        return null;
       }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const state = await res.json();
@@ -1797,7 +1802,7 @@
           {@const hasData = getPillarHasData(p.id) || Boolean(summary?.hasData)}
           <div class="pillar-column {hasData ? 'has-data' : ''} {p.id}-pillar" style="--pillar-color: {p.color};">
             <div class="pillar-header">
-              <span class="pillar-icon">{p.icon}</span>
+              <span class="pillar-icon"><Icon name={p.icon} size={0.95} /></span>
               <span class="pillar-label">{p.label}</span>
               <span class="pillar-badge">{hasData ? 'ÖZET VERİ' : 'VERİ YOK'}</span>
               <span class="pillar-badge">{hasData ? `KANIT (${summary?.evidenceCount ?? 0})` : 'YETERSİZ / YOK'}</span>
@@ -2479,18 +2484,18 @@
     background: radial-gradient(ellipse at center, transparent 40%, rgba(3,3,5,0.85) 100%);
   }
 
-  .command-deck { display: grid; grid-template-rows: auto 1fr auto; height: 100vh; width: 100vw; position: relative; z-index: 1; }
+  .command-deck { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; height: 100vh; width: 100vw; position: relative; z-index: 1; }
 
   /* ==================== 1. MASTER HUD HEADER ==================== */
   .master-hud-header {
-    display: grid; grid-template-columns: 1fr auto 1fr; gap: 1.5rem;
+    display: flex; flex-wrap: wrap; gap: 1rem 1.5rem;
     align-items: center; padding: 1rem 2rem; position: relative; z-index: 10;
     background: linear-gradient(180deg, rgba(8,10,15,0.95) 0%, rgba(3,3,5,0.98) 100%);
     border-bottom: 1px solid var(--border-dim);
     box-shadow: 0 4px 40px -10px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.02);
   }
 
-  .hud-brand { display: flex; align-items: center; gap: 1rem; }
+  .hud-brand { display: flex; align-items: center; gap: 1rem; flex: 1 1 240px; min-width: 0; }
   .pulse-beacon {
     width: 14px; height: 14px; border-radius: 50%;
     background: var(--emerald); box-shadow: 0 0 12px var(--emerald), 0 0 24px var(--emerald);
@@ -2517,7 +2522,7 @@
   }
 
   /* Target Cassette */
-  .target-cassette-bar { display: flex; align-items: center; gap: 0.75rem; }
+  .target-cassette-bar { display: flex; align-items: center; gap: 0.75rem; flex: 2 1 460px; min-width: 0; flex-wrap: wrap; }
   .cassette-input-wrap { position: relative; display: flex; align-items: center; }
   .cassette-icon { font-size: 1.1rem; color: var(--cyan); margin-right: 0.5rem; text-shadow: 0 0 8px var(--cyan); }
   .cassette-text-input {
@@ -2583,7 +2588,7 @@
   }
 
   /* Hud Meters */
-  .hud-meters { display: flex; align-items: center; gap: 1rem; justify-content: flex-end; }
+  .hud-meters { display: flex; align-items: center; gap: 1rem; justify-content: flex-end; flex: 1 1 340px; min-width: 0; flex-wrap: wrap; }
   .hud-meter-box { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.8rem; background: rgba(8,10,15,0.8); border: 1px solid var(--border-dim); border-radius: 4px; }
   .hm-icon { font-size: 1rem; color: var(--cyan); }
   .hm-val { font-family: 'JetBrains Mono', monospace; font-size: 1rem; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; }
@@ -2598,7 +2603,7 @@
 
   /* ==================== 2. MASTER GRID ==================== */
   .master-grid-container {
-    display: grid; grid-template-columns: 28% 44% 28%; gap: 1rem; padding: 1rem; height: calc(100vh - 140px - 180px); min-height: 0; position: relative; z-index: 5;
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.57fr) minmax(0, 1fr); gap: 1rem; padding: 1rem; height: 100%; min-height: 0; position: relative; z-index: 5;
   }
 
   .column-deck {
@@ -2753,13 +2758,13 @@
   .detail-output { font-size: 0.7rem; color: var(--text-primary); line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
 
   /* ==================== PILLARS GRID ==================== */
-  .pillars-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.4rem; flex: 0 0 auto; }
+  .pillars-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 0.4rem; flex: 0 0 auto; }
   .pillar-column { display: flex; flex-direction: column; background: rgba(8,10,15,0.85); border: 1px solid var(--border-dim); border-radius: 6px; padding: 0.6rem; transition: all 0.2s; position: relative; }
   .pillar-column::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--pillar-color); opacity: 0.6; border-radius: 6px 6px 0 0; }
   .pillar-column.has-data { border-color: var(--pillar-color); box-shadow: 0 0 0 1px var(--pillar-color), 0 4px 20px -8px var(--pillar-color); }
   .pillar-column.has-data::before { opacity: 1; }
   .pillar-header { display: flex; flex-direction: column; align-items: center; gap: 0.2rem; text-align: center; margin-bottom: 0.5rem; }
-  .pillar-icon { font-size: 1.2rem; color: var(--pillar-color); filter: drop-shadow(0 0 6px var(--pillar-color)); }
+  .pillar-icon { display: inline-flex; align-items: center; justify-content: center; color: var(--pillar-color); filter: drop-shadow(0 0 6px var(--pillar-color)); }
   .pillar-label { font-size: 0.55rem; font-weight: 800; letter-spacing: 0.06em; color: var(--text-primary); text-transform: uppercase; }
   .pillar-badge { font-size: 0.5rem; font-weight: 800; letter-spacing: 0.04em; padding: 0.1rem 0.4rem; border-radius: 2px; text-transform: uppercase; }
   .pillar-column.has-data .pillar-badge { background: rgba(16,185,129,0.18); color: var(--emerald); border: 1px solid rgba(16,185,129,0.35); }
@@ -2922,14 +2927,13 @@
 
   /* ==================== RESPONSIVE ==================== */
   @media (max-width: 1600px) {
-    .master-grid-container { grid-template-columns: 30% 40% 30%; }
-    .pillars-grid { grid-template-columns: repeat(7, 1fr); }
+    .master-grid-container { grid-template-columns: minmax(0, 1fr) minmax(0, 1.33fr) minmax(0, 1fr); }
     .field-matrix-grid { grid-template-columns: repeat(3, 1fr); }
   }
   @media (max-width: 1300px) {
     .command-deck { height: auto; min-height: 100vh; width: 100%; }
     .column-deck { overflow: visible; }
-    .master-hud-header { grid-template-columns: 1fr; gap: 1rem; text-align: center; }
+    .master-hud-header { gap: 1rem; text-align: center; }
     .target-cassette-bar { justify-content: center; flex-wrap: wrap; }
     .hud-meters { justify-content: center; }
     .master-grid-container { grid-template-columns: 1fr; grid-template-rows: auto auto auto; height: auto; min-height: calc(100vh - 140px - 180px); }
