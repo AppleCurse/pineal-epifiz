@@ -70,6 +70,12 @@
   ];
 
   // --- STATE ---
+  let cockpitTheme: 'dark' | 'light' = 'dark';
+  function setCockpitTheme(theme: 'dark' | 'light') {
+    cockpitTheme = theme;
+    try { localStorage.setItem('pineal-cockpit-theme', theme); } catch (_e) { /* optional */ }
+  }
+
   let targetUrl = '';
   let contextRituals = '';
   let contextPlaylist = '';
@@ -476,6 +482,10 @@
   }
 
   onMount(() => {
+    try {
+      const savedTheme = localStorage.getItem('pineal-cockpit-theme');
+      if (savedTheme === 'light' || savedTheme === 'dark') cockpitTheme = savedTheme;
+    } catch (_e) { /* optional */ }
     void loadPublicShowcase();
     void refreshVaultState();
     void loadRoutingSnapshot();
@@ -1133,7 +1143,7 @@
   }
 </script>
 
-<main class="command-deck">
+<main class="command-deck" class:theme-light={cockpitTheme === "light"}>
   <!-- ==================== 1. MASTER HUD HEADER ==================== -->
   <header class="master-hud-header">
     <!-- Sol: Marka + Canlı Durum -->
@@ -1146,6 +1156,10 @@
         {#if legalNotice?.headline}
           <p class="intro-notice">{legalNotice.headline}</p>
         {/if}
+        <button type="button" class="theme-switch" on:click={() => setCockpitTheme(cockpitTheme === 'dark' ? 'light' : 'dark')} aria-label={cockpitTheme === 'dark' ? 'Açık temaya geç' : 'Koyu temaya geç'}>
+          <Icon name={cockpitTheme === 'dark' ? 'sun' : 'moon'} size={0.85} />
+          {cockpitTheme === 'dark' ? 'GÜNDÜZ' : 'GECE'} GÖRÜNÜMÜ
+        </button>
       </div>
     </div>
 
@@ -3239,4 +3253,79 @@
   .ch-name { font-family: 'JetBrains Mono', monospace; font-weight: 700; }
   .ch-badge { font-size: 0.58rem; padding: 0.08rem 0.35rem; border-radius: 3px; background: rgba(255,255,255,0.08); }
   .ch-reason { color: var(--text-dim); font-size: 0.6rem; }
+
+  /* PINEAL COCKPIT / VISUAL REBUILD — presentation layer only */
+  .command-deck {
+    --void: #08090c; --panel: rgba(17,19,24,.92); --line: rgba(198,174,119,.17);
+    --ink: #eee9de; --metal: #c9b27b;
+    width: 100%; min-height: 100vh; height: auto; overflow: visible;
+    padding: clamp(14px,2vw,30px); gap: 18px;
+    color: var(--ink);
+    background: radial-gradient(ellipse at 50% -18%,rgba(174,145,86,.13),transparent 42%),radial-gradient(ellipse at 0% 45%,rgba(63,85,82,.10),transparent 32%),var(--void);
+    font-family: Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  }
+  .master-hud-header {
+    display: grid; grid-template-columns: minmax(250px,.9fr) minmax(420px,1.6fr) auto;
+    align-items: center; gap: 18px; padding: 22px 24px;
+    border: 1px solid var(--line); border-radius: 18px;
+    background: linear-gradient(145deg,rgba(25,26,29,.97),rgba(11,12,15,.94));
+    box-shadow: 0 18px 55px rgba(0,0,0,.28),inset 0 1px rgba(255,255,255,.035);
+  }
+  .hud-brand { min-width: 0; align-items: flex-start; }
+  .brand-title { font-size: clamp(1.25rem,2vw,1.8rem); letter-spacing: .19em; font-weight: 750; color: #f1ead9; }
+  .brand-titles { gap: 7px; }
+  .intro-help { max-width: 420px; line-height: 1.55; font-size: .78rem; color: #a9a395; text-transform: none; letter-spacing: 0; }
+  .live-status-badge { border-color: rgba(201,178,123,.35); color: #d7c59b; background: rgba(201,178,123,.08); }
+  .theme-switch {
+    display: inline-flex; align-items: center; gap: 8px; width: fit-content;
+    padding: 8px 11px; margin-top: 7px; border: 1px solid var(--line);
+    border-radius: 999px; color: var(--metal); background: rgba(201,178,123,.07);
+    font: 700 .63rem/1 inherit; letter-spacing: .1em; cursor: pointer; transition: .2s ease;
+  }
+  .theme-switch:hover { background: rgba(201,178,123,.15); transform: translateY(-1px); }
+  .target-cassette-bar { justify-content: center; gap: 9px; }
+  .cassette-input-wrap { min-height: 48px; border: 1px solid rgba(201,178,123,.27); border-radius: 12px; background: rgba(5,6,8,.68); box-shadow: inset 0 1px 6px rgba(0,0,0,.35); }
+  .cassette-text-input { min-width: 220px; font-size: .83rem; color: #f0ebdf; }
+  .cassette-launch-btn,.phone-launch-btn { min-height: 44px; border-radius: 10px; letter-spacing: .07em; background: linear-gradient(135deg,#d7c18c,#a88d53); color: #17140d; box-shadow: 0 7px 22px rgba(171,141,79,.16); }
+  .master-grid-container { display: grid; grid-template-columns: minmax(260px,.86fr) minmax(430px,1.42fr) minmax(285px,.92fr); align-items: start; gap: 16px; height: auto; min-height: 0; }
+  .column-deck { min-width: 0; height: auto; min-height: 0; overflow: visible; padding: 15px; border: 1px solid var(--line); border-radius: 16px; background: linear-gradient(160deg,rgba(23,25,30,.95),rgba(12,13,17,.96)); box-shadow: 0 14px 40px rgba(0,0,0,.18); }
+  .deck-title-ribbon { padding: 4px 2px 13px; margin-bottom: 12px; border-bottom: 1px solid var(--line); color: #d6c59e; letter-spacing: .16em; font-size: .68rem; }
+  .sovereign-station,.commander-override-box,.phone-osint-dossier-card,.chain-of-thought-section,.selected-agent-detail,.aspasia-chat-section,.telemetry-section,.channel-status-box,.pillar-column { border-radius: 12px; border-color: var(--line); background-color: var(--panel); box-shadow: inset 0 1px rgba(255,255,255,.025); }
+  .sovereign-station { padding: 15px; margin-bottom: 12px; }
+  .sovereign-station.selected { border-color: rgba(201,178,123,.65); box-shadow: 0 0 0 1px rgba(201,178,123,.12),0 10px 30px rgba(0,0,0,.2); }
+  .field-matrix-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }
+  .agent-tile { min-height: 98px; padding: 12px; border: 1px solid rgba(255,255,255,.07); border-radius: 11px; background: linear-gradient(145deg,rgba(30,32,38,.95),rgba(15,16,20,.95)); }
+  .agent-tile:hover,.agent-tile.selected { border-color: rgba(201,178,123,.55); transform: translateY(-2px); }
+  .pillars-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }
+  .pillar-column { min-height: 125px; padding: 11px; }
+  .aspasia-chat-section { padding: 13px; margin-top: 14px; }
+  .chat-header { padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  .chat-messages { min-height: 210px; max-height: 360px; }
+  .chat-input-area { border-radius: 11px; border-color: var(--line); background: rgba(4,5,7,.72); }
+  .chat-input { min-height: 44px; }
+  .data-pool-footer { height: 190px; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: rgba(14,15,18,.94); }
+  .pool-header { padding: 12px 16px; } .pool-logs { padding: 10px 16px; } .pool-log { padding: 6px 9px; border-radius: 6px; }
+  .settings-gear-btn,.context-toggle-btn,.telemetry-toggle { border-radius: 9px; border-color: var(--line); letter-spacing: .06em; }
+  .cockpit-modal-card { border-radius: 16px; border-color: rgba(201,178,123,.32); background: #111318; }
+  .cockpit-modal-head h3 { color: #d6c59e; }
+  .master-hud-header button:focus-visible,.command-deck button:focus-visible,.command-deck input:focus-visible { outline: 2px solid #c9b27b; outline-offset: 3px; }
+  .command-deck.theme-light { --void:#e9e7e1; --panel:rgba(255,255,255,.92); --line:rgba(93,78,48,.20); --ink:#24231f; --metal:#8b6e35; color:#24231f; background:radial-gradient(ellipse at 50% -18%,rgba(174,145,86,.16),transparent 42%),#e9e7e1; }
+  .theme-light .master-hud-header,.theme-light .column-deck,.theme-light .data-pool-footer { background:linear-gradient(145deg,rgba(255,255,255,.98),rgba(241,239,232,.98)); color:#24231f; box-shadow:0 12px 36px rgba(54,46,30,.08); }
+  .theme-light .brand-title,.theme-light .cassette-text-input,.theme-light .chat-input,.theme-light .command-deck h2,.theme-light .command-deck h3,.theme-light .command-deck h4 { color:#29271f; }
+  .theme-light .intro-help,.theme-light .pillars-sub,.theme-light .command-deck p,.theme-light .command-deck label { color:#625e54; }
+  .theme-light .sovereign-station,.theme-light .commander-override-box,.theme-light .phone-osint-dossier-card,.theme-light .chain-of-thought-section,.theme-light .selected-agent-detail,.theme-light .aspasia-chat-section,.theme-light .telemetry-section,.theme-light .channel-status-box,.theme-light .pillar-column { background:rgba(255,255,255,.88); color:#29271f; }
+  .theme-light .agent-tile { background:linear-gradient(145deg,#fff,#f2f0e9); color:#29271f; }
+  .theme-light .cassette-input-wrap,.theme-light .chat-input-area { background:#fff; }
+  .theme-light .pool-log { background:rgba(255,255,255,.72); } .theme-light .pool-empty,.theme-light .pl-msg { color:#5d594f; }
+  @media (max-width:1180px) { .master-hud-header { grid-template-columns:1fr; } .master-grid-container { grid-template-columns:minmax(0,1fr) minmax(0,1fr); } .col-center { grid-column:1/-1; grid-row:1; } }
+  @media (max-width:760px) {
+    .command-deck { padding:10px; gap:10px; } .master-hud-header { padding:16px; border-radius:13px; }
+    .target-cassette-bar { display:flex; flex-direction:column; align-items:stretch; }
+    .cassette-input-wrap,.cassette-text-input { width:100%; max-width:none; }
+    .master-grid-container { display:flex; flex-direction:column; }
+    .column-deck { width:100%; padding:12px; } .col-center { order:0; } .col-left { order:1; } .col-right { order:2; }
+    .field-matrix-grid,.pillars-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .data-pool-footer { height:170px; }
+  }
+  @media (max-width:420px) { .field-matrix-grid,.pillars-grid { grid-template-columns:1fr; } .hud-switches { flex-wrap:wrap; } }
+
 </style>
