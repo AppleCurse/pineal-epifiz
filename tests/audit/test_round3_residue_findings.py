@@ -135,8 +135,7 @@ def test_initiate_rejected_when_room_saturated_of_active():
                     room["_active_tasks_ts"][snap.task_id] = time.monotonic()
                 r = client.post("/api/initiate", json={
                     "client_id": "n1-503", "url": "https://www.instagram.com/x",
-                    "rituals": "", "playlist": "", "envies": "",
-                })
+                    "rituals": "", "playlist": "", "envies": "", "subject_consent": True})
                 assert r.status_code == 503, f"doymuş oda 503 vermedi: {r.status_code} {r.text[:80]}"
                 assert r.json()["error"]["code"] == "ACTIVE_TASKS_FULL"
 

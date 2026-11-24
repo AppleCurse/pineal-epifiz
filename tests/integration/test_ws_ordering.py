@@ -22,8 +22,7 @@ def _collect_for_client(client: TestClient, client_id: str) -> tuple[list, list]
             "playlist": "neşet ertaş",
             "envies": "derin bağlantılar",
             "aggressiveness": 1.0,
-            "evidence_th": 3,
-        })
+            "evidence_th": 3, "subject_consent": True})
         assert r.status_code == 200
 
         types = []

@@ -2389,6 +2389,8 @@ class InitiatePayload(BaseModel):
     # kaynagi CognitiveRouter.GOAL_FOCUS. Bos = eski davranis (compat).
     aspasia_goals: List[str] = Field(default_factory=list, max_length=64)
     outreach_intent: str = Field(default="", max_length=32_000)
+    # Kişisel veri (profil URL'si) işlenir; beyan yoksa kapı 423.
+    subject_consent: bool = False
     # [037] fix: aggressiveness/evidence_th kabul ediliyordu ama HİÇBİR davranışa
     # bağlanmamıştı (ölü API sözleşmesi). Kaldırıldı; eşik ayarı gerekiyorsa
     # DecisionConfig üzerinden gerçek davranışla bağlanmalı. Eski istemcilerin
@@ -2921,6 +2923,8 @@ async def api_initiate(req: InitiatePayload, request: Request):
     # istek gövdesi çalışmaz (çocuk kilidi istisnasızdır).
     if (blocked := _require_minor_clearance(req.client_id, subject=req.url)) is not None:
         return blocked
+    if (denied := _require_subject_consent(req.subject_consent, "hedef profili / URL kişisel veridir")) is not None:
+        return denied
     # VAULT INTERLOCK: anahtar çevrilmeden dünyaya OSINT/Scraper isteği yok.
     # [KASA MANDALI] Artık elle yazılmış ikinci bir kopya değil, tüm
     # dış-çıkış uçlarının paylaştığı TEK kapı (`_require_vault_open`).
@@ -3367,8 +3371,8 @@ async def api_vault_status_toggle(payload: VaultStatusPayload):
 async def api_vault_lock(payload: VaultStatusPayload):
     """Vault'u kilitle - dis dunya erisimini durdur"""
     room = get_room(payload.client_id)
-    # Vault'u temizle
-    room["vault"] = {}
+    # Anahtar silinmez: yalnız dış-çıkış mandalı kapanır. Unlock aynı
+    # malzemeyle tekrar açabilmeli.
     room["vault_manually_locked"] = True
     broadcast_log(payload.client_id, "WARNING", "VAULT KILITLENDI: Dis dunya erisimi durduruldu, OSINT/Scraper bloklandi")
     return {"status": "locked", "message": "Kasa kilitlendi, dis dunya erisimi durduruldu"}
@@ -3561,6 +3565,7 @@ VAULT_EGRESS_ROUTES: frozenset = frozenset({
     # ENABLE_INTERPRETER kapalıyken zaten 403; kasa kilitliyken 423.
     "/api/experimental/interpreter/execute",
     "/api/scraper/authorize-alternative",
+    "/api/experimental/shadow/analyze",
 })
 
 #: Bilinçli muafiyetler — denetimde GÖRÜNÜR olsun diye isim isim yazıldı.
@@ -3573,7 +3578,6 @@ VAULT_EGRESS_EXEMPT_ROUTES: frozenset = frozenset({
     # TETİKLEMEZ (kendi docstring'i de bunu beyan eder).
     "/api/experimental/stealth",
     # Yerel hesaplama / LLM yönlendirme; dış OSINT veya tarayıcı yok.
-    "/api/experimental/shadow/analyze",
     "/api/experimental/shadow/generate",
     "/api/experimental/chat/respond",
 })
@@ -3586,6 +3590,24 @@ def _vault_locked_response(client_id: str) -> JSONResponse:
             "error": {"code": "VAULT_LOCKED", "message": VAULT_LOCKED_MESSAGE},
             "vault_locked": True,
             "client_id": client_id,
+        },
+        status_code=423,
+    )
+
+
+def _require_subject_consent(declared: object, what: str) -> Optional[JSONResponse]:
+    """Açık rıza yoksa 423. Yalnız True geçer; None/False ret."""
+    if declared is True:
+        return None
+    return JSONResponse(
+        {
+            "error": {
+                "code": "CONSENT_REQUIRED",
+                "message": (
+                    f"Açık rıza beyanı gerekli: {what}. "
+                    "Hedef kişinin rızasının alındığını arayüzden beyan edin."
+                ),
+            }
         },
         status_code=423,
     )
@@ -3851,12 +3873,15 @@ async def api_minor_case_register(req: MinorCasePayload):
     case = coerce_minor_case(req.model_dump())
     if case is None:
         case = MinorCaseContext(subject_is_minor=bool(req.subject_is_minor))
-    app.state.minor_cases[req.client_id] = case
     decision = MinorGate().evaluate(case)
+    # Geçersiz vaka tipi kilit KAPAMAZ: reddedilen beyan odaya yazılmaz.
+    persisted = decision.reason_code != "case_type_not_allowed"
+    if persisted:
+        app.state.minor_cases[req.client_id] = case
     _minor_ledger_record(case, decision, client_id=req.client_id)
     return {
         "client_id": req.client_id,
-        "declared": True,
+        "declared": persisted,
         "subject_is_minor": case.subject_is_minor,
         "allowed": decision.allowed,
         "reason_code": decision.reason_code,
@@ -4174,6 +4199,10 @@ async def shadow_analyze(profile: dict):
     # taşımaz: any-mod (beyan edilmiş çözülmemiş vaka varsa ret).
     if (blocked := _require_minor_clearance(None)) is not None:
         return blocked
+    declared_room = profile.get("client_id") if isinstance(profile, dict) else None
+    room_id = declared_room if isinstance(declared_room, str) and declared_room else "default"
+    if (locked := _require_vault_open(room_id)) is not None:
+        return locked
     if shadow_executor is None:
         # [E5] "Modül yüklü değil" 200 dönmez: çalışmayan bir çağrı başarılı
         # görünmesin (Md.1).
@@ -4261,9 +4290,10 @@ async def chat_respond(payload: ChatPayload, request: Request):
                     "detail": type(e).__name__,
                 },
                 "available": False,
+                "reason": type(e).__name__,
                 "task_id": payload.task_id,
             },
-            status_code=502,
+            status_code=200,
         )
 
 class AspasiaChatPayload(BaseModel):
@@ -4386,6 +4416,8 @@ async def aspasia_state(
 @app.post("/api/aspasia/chat")
 async def aspasia_chat(payload: AspasiaChatPayload, request: Request):
     """Aspasia Kokpit Şefi ile canlı Sokratik diyalog"""
+    if (locked := _require_vault_open(payload.client_id)) is not None:
+        return locked
     if not rate_limit(f"aspasia:{_rate_identity(request)}", "aspasia"):
         return JSONResponse(
             {"error": {"code": "RATE_LIMITED", "message": "Aspasia yoğun; kısa bir mola verin."}},
@@ -5070,7 +5102,13 @@ async def api_calibration_record(req: CalibrationObservationPayload):
             },
             status_code=409,
         )
-    return {"status": "recorded", "observation": obs.model_dump()}
+    dumped = obs.model_dump()
+    return {
+        "status": "recorded",
+        "id": obs.observation_id,
+        "observation_id": obs.observation_id,
+        "observation": dumped,
+    }
 
 
 @app.post("/api/calibration/adjudicate")
@@ -5489,6 +5527,7 @@ register_company_routes(
     check_vault_interlock=_check_vault_interlock,
     broadcast_log=broadcast_log,
     flag_env=_flag_env,
+    require_vault_open=_require_vault_open,
 )
 
 
@@ -5518,6 +5557,7 @@ register_report_routes(
     check_vault_interlock=_check_vault_interlock,
     broadcast_log=broadcast_log,
     flag_env=_flag_env,
+    require_vault_open=_require_vault_open,
 )
 
 register_preflight_routes(

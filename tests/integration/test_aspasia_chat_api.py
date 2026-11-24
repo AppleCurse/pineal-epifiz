@@ -11,6 +11,7 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 from unittest.mock import AsyncMock
 
+from backend import api as api_mod
 from backend.api import app
 
 
@@ -24,6 +25,7 @@ def _payload(client_id: str, **overrides) -> dict:
 async def test_aspasia_chat_http_200_fallback():
     """LLM anahtarı yok: endpoint yine de 200 + fallback mesaj dönmeli (500 DEĞİL)."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        api_mod.get_room("c_http_fix_1")["vault"]["or_key"] = True
         r = await ac.post("/api/aspasia/chat", json=_payload("c_http_fix_1"))
     assert r.status_code == 200, f"chat() imza kayması geri gelebilir: {r.text[:300]}"
     data = r.json()
@@ -34,6 +36,7 @@ async def test_aspasia_chat_http_200_fallback():
 @pytest.mark.asyncio
 async def test_aspasia_chat_with_image_data_http_200():
     """image_data (base64) ile çağrı: eski imza hatasının tetiklendiği vaka."""
+    api_mod.get_room("c_http_fix_2")["vault"]["or_key"] = True
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         r = await ac.post(
             "/api/aspasia/chat",
@@ -51,6 +54,7 @@ async def test_aspasia_chat_mocked_llm_high(monkeypatch):
         LLMGateway, "query",
         AsyncMock(return_value="Tamam, sistem ayakta. Şu an ajanlar sırayla çalışıyor."),
     )
+    api_mod.get_room("c_http_fix_3")["vault"]["or_key"] = True
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         r = await ac.post("/api/aspasia/chat", json=_payload("c_http_fix_3"))
     assert r.status_code == 200

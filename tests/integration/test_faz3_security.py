@@ -58,8 +58,7 @@ def test_initiate_rate_limit_429(monkeypatch):
     with TestClient(app) as client:
         codes = [client.post("/api/initiate", json={
             "client_id": cid, "url": "", "rituals": "a", "playlist": "b",
-            "envies": "c", "aggressiveness": 1.0, "evidence_th": 3,
-        }).status_code for _ in range(3)]
+            "envies": "c", "aggressiveness": 1.0, "evidence_th": 3, "subject_consent": True}).status_code for _ in range(3)]
     assert codes == [200, 200, 429]
 
 
@@ -67,7 +66,9 @@ def test_experimental_paths_renamed():
     """D5: shadow/chat/interpreter yolları /api/experimental/* altında; eski yollar kapalı."""
     with TestClient(app) as client:
         old = client.post("/api/shadow/analyze", json={})
-        new = client.post("/api/experimental/shadow/analyze", json={"posts": [], "bio": ""})
+        from backend import api as api_mod
+        api_mod.get_room("default")["vault"]["or_key"] = True
+        new = client.post("/api/experimental/shadow/analyze", json={"posts": [], "bio": "", "client_id": "default"})
     # Eski yol kapalı: API rotası yok -> statik mount 405/404 döner, işleme ALINMAZ
     assert old.status_code in (404, 405)
     assert new.status_code == 200
@@ -79,6 +80,8 @@ def test_error_model_consistent(monkeypatch):
     monkeypatch.setitem(RATE_LIMITS, "aspasia", (1, 60))
     cid = _cid("em")
     with TestClient(app) as client:
+        from backend import api as api_mod
+        api_mod.get_room(cid)["vault"]["or_key"] = True
         for _ in range(2):
             r = client.post("/api/aspasia/chat", json={"client_id": cid, "user_message": "x"})
     assert r.status_code == 429

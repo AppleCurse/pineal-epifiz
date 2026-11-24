@@ -126,11 +126,12 @@ class TestEndpoints:
 
     def test_vault_locked_blocks_build(self, client):
         api.get_room("rapor")["vault"].pop("or_key", None)
-        payload = client.post(
+        r = client.post(
             "/api/report/build",
             json={"title": "Rapor", "client_id": "rapor", "evidence": EVIDENCE, "formats": ["pdf"]},
-        ).json()
-        assert payload["formats"]["pdf"]["denied_by"] == "vault"
+        )
+        assert r.status_code == 423
+        assert r.json()["error"]["code"] == "VAULT_LOCKED"
 
     def test_closed_gate_blocks_build(self, client):
         client.get("/api/telemetry?client_id=rapor")
@@ -167,6 +168,7 @@ class TestEndpoints:
 
     def test_unknown_format_is_rejected(self, client, monkeypatch):
         monkeypatch.setenv("ENABLE_REPORT_FACTORY", "1")
+        api.get_room("rapor")["vault"]["or_key"] = True
         response = client.post(
             "/api/report/build",
             json={"title": "Rapor", "client_id": "rapor", "formats": ["exe"]},

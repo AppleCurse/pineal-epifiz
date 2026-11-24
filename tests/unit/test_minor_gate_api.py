@@ -91,7 +91,7 @@ def _isolated_state(monkeypatch, tmp_path):
 
 #: Kapıdan geçmesi beklenen dış-çıkış çağrıları (beyanlı oda → 451).
 EGRESS_CALLS = [
-    ("post", "/api/initiate", lambda c: {"client_id": c, "url": "https://example.com"}),
+    ("post", "/api/initiate", lambda c: {"client_id": c, "url": "https://example.com", "subject_consent": True}),
     ("post", "/api/browser/open", lambda c: {"client_id": c, "url": "https://www.instagram.com/"}),
     ("get", "/api/browser/shot", lambda c: {"client_id": c}),
     ("get", "/api/browser/state", lambda c: {"client_id": c}),
@@ -447,13 +447,13 @@ def test_register_endpoint_refuses_to_claim_approval_when_case_incomplete():
             )
         assert r.status_code == 200, r.text[:200]
         payload = r.json()
-        assert payload["declared"] is True
+        assert payload["declared"] is False
         assert payload["allowed"] is False
-        assert payload["reason_code"]
+        assert payload["reason_code"] == "case_type_not_allowed"
 
         with TestClient(app) as client:
             r2 = client.post("/api/experimental/maigret/scan", json={"username": "x", "client_id": cid})
-        assert r2.status_code == 451
+        assert r2.status_code != 451
     finally:
         _cleanup(cid)
 
@@ -498,7 +498,10 @@ def test_register_then_clear_restores_flow():
     cid = _cid()
     try:
         with TestClient(app) as client:
-            assert client.post("/api/minor/case", json={"client_id": cid}).json()["allowed"] is False
+            assert client.post(
+                "/api/minor/case",
+                json={"client_id": cid, "case_type": "missing_or_harm", "subject_is_minor": True},
+            ).json()["allowed"] is False
             assert client.get("/api/minor/state", params={"client_id": cid}).json()["cleared"] is False
             cleared = client.post("/api/minor/clear", json={"client_id": cid}).json()
             state = client.get("/api/minor/state", params={"client_id": cid}).json()

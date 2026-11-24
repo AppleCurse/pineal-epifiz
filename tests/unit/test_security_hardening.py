@@ -276,8 +276,10 @@ def test_experimental_rate_limit_is_bounded(monkeypatch):
     api._rate_buckets.clear()
 
     with TestClient(api.app) as client:
-        first = client.post("/api/experimental/shadow/analyze", json={})
-        second = client.post("/api/experimental/shadow/analyze", json={})
+        room = api.get_room("default")
+        room["vault"]["or_key"] = True
+        first = client.post("/api/experimental/shadow/analyze", json={"client_id": "default"})
+        second = client.post("/api/experimental/shadow/analyze", json={"client_id": "default"})
 
     assert first.status_code == 200
     assert second.status_code == 429

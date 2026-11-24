@@ -111,6 +111,7 @@ def register_report_routes(
     check_vault_interlock: Callable[[str], bool],
     broadcast_log: Callable[[str, str, str], None],
     flag_env: Callable[[str], bool],
+    require_vault_open: Callable[[str], Any] | None = None,
 ) -> None:
     def _record_package_owner(room: dict, manifest_path: str, artifacts: list[dict[str, Any]]) -> None:
         if manifest_path:
@@ -145,6 +146,10 @@ def register_report_routes(
         from agent_core.capabilities.registry import bootstrap
         from agent_core.capabilities.runner import CapabilityRunner
 
+        if require_vault_open is not None:
+            locked = require_vault_open(req.client_id)
+            if locked is not None:
+                return locked
         if not rate_limit(f"report:{req.client_id}", "report"):
             return JSONResponse(
                 {"error": {"code": "RATE_LIMITED", "message": "Çok fazla rapor isteği"}},

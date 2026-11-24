@@ -39,6 +39,7 @@ def register_company_routes(
     check_vault_interlock: Callable[[str], bool],
     broadcast_log: Callable[[str, str, str], None],
     flag_env: Callable[[str], bool],
+    require_vault_open: Callable[[str], Any] | None = None,
 ) -> None:
     @app.get("/api/company/status")
     async def api_company_status():
@@ -75,6 +76,10 @@ def register_company_routes(
         from agent_core.capabilities.runner import CapabilityRunner
         from agent_core.services import company_recon
 
+        if require_vault_open is not None:
+            locked = require_vault_open(req.client_id)
+            if locked is not None:
+                return locked
         if not rate_limit(f"company:{req.client_id}", "company"):
             return JSONResponse(
                 {"error": {"code": "RATE_LIMITED", "message": "Çok fazla kurum taraması"}},

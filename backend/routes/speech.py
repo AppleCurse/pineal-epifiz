@@ -259,6 +259,13 @@ def build_speech_router(
                 )
         except Exception:
             pass
-        raise HTTPException(status_code=503, detail="TTS_UNAVAILABLE")
+        return JSONResponse(
+            {
+                "available": False,
+                "reason": "TTS_UNAVAILABLE",
+                "error": {"code": "TTS_UNAVAILABLE", "message": "Ses motoru hazır değil."},
+            },
+            status_code=200,
+        )
 
     return router

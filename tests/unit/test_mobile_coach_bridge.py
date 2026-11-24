@@ -148,9 +148,10 @@ def test_endpoint_reports_gateway_failure_without_swallowing(client, monkeypatch
 
     monkeypatch.setattr(fake, "query_chain", _boom)
     response = test_client.post("/api/mobile/coach", json={"user_message": "merhaba"})
-    assert response.status_code == 502
+    assert response.status_code == 200
     detail = response.json()["error"]
     assert detail["code"] == "COACH_UNAVAILABLE"
+    assert response.json().get("available") is False
     assert "kota bitti" in detail["reason"], "hata sebebi gizlendi"
 
 
@@ -162,8 +163,9 @@ def test_endpoint_rejects_empty_answer(client, monkeypatch):
 
     monkeypatch.setattr(fake, "query_chain", _empty)
     response = test_client.post("/api/mobile/coach", json={"user_message": "merhaba"})
-    assert response.status_code == 502
+    assert response.status_code == 200
     assert response.json()["error"]["code"] == "EMPTY_ANSWER"
+    assert response.json().get("available") is False
 
 
 def test_endpoint_validates_payload(client):

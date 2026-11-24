@@ -103,5 +103,4 @@ def test_orphan_endpoints_are_exactly_the_documented_ones():
     _, _, _, orphans = _partition()
     assert orphans == [
         "/api/tasks/{task_id}/changes",
-        "/api/vault/lock",
     ], f"çağrı yeri olmayan uçlar değişti: {orphans}"

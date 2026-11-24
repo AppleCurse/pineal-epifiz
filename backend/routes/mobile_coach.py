@@ -123,16 +123,20 @@ def register_mobile_coach_routes(
                         "code": "COACH_UNAVAILABLE",
                         "message": "Model yanıtı alınamadı.",
                         "reason": f"{type(exc).__name__}: {str(exc)[:160]}",
-                    }
+                    },
+                    "available": False,
                 },
-                status_code=502,
+                status_code=200,
             )
 
         text = (answer or "").strip()
         if not text:
             return JSONResponse(
-                {"error": {"code": "EMPTY_ANSWER", "message": "Model boş yanıt döndürdü."}},
-                status_code=502,
+                {
+                    "error": {"code": "EMPTY_ANSWER", "message": "Model boş yanıt döndürdü."},
+                    "available": False,
+                },
+                status_code=200,
             )
 
         return {

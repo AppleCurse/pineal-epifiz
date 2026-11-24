@@ -900,6 +900,7 @@ def test_rate_limit_identity_is_server_derived_not_client_supplied(monkeypatch):
     codes = [
         client.post("/api/initiate", json={
             "client_id": f"cli{uuid.uuid4().hex[:9]}",
+            "subject_consent": True,
             "url": "https://www.instagram.com/ornek/",
             "rituals": "x", "playlist": "y", "envies": "z",
         }).status_code
