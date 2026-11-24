@@ -3280,7 +3280,7 @@
     display: inline-flex; align-items: center; gap: 8px; width: fit-content;
     padding: 8px 11px; margin-top: 7px; border: 1px solid var(--line);
     border-radius: 999px; color: var(--metal); background: rgba(201,178,123,.07);
-    font: 700 .63rem/1 inherit; letter-spacing: .1em; cursor: pointer; transition: .2s ease;
+    font-family: inherit; font-size: .63rem; font-weight: 700; line-height: 1; letter-spacing: .1em; cursor: pointer; transition: .2s ease;
   }
   .theme-switch:hover { background: rgba(201,178,123,.15); transform: translateY(-1px); }
   .target-cassette-bar { justify-content: center; gap: 9px; }
