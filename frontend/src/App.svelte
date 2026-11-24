@@ -11,6 +11,7 @@
   import { uplinkState } from './lib/telemetry';
   import UnifiedPinealCockpit from './components/UnifiedPinealCockpit.svelte';
   import NeuralTelemetryBoard from './components/visualizers/NeuralTelemetryBoard.svelte';
+  import CapabilityAtlas from './components/CapabilityAtlas.svelte';
   import Icon from './components/Icon.svelte';
   import SupportPanel from './components/SupportPanel.svelte';
 
@@ -444,6 +445,7 @@
   {#if telemetryVisible}
     <div class="telemetry-panel" id="neural-telemetry-panel">
       <NeuralTelemetryBoard telemetry={telemetryData} />
+      <CapabilityAtlas telemetry={telemetryData} />
     </div>
   {/if}
 
