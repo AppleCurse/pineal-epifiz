@@ -4,6 +4,7 @@
     { id: 'strategy', label: 'Aspasia / Lilith' },
     { id: 'browser', label: 'Tarayıcı' },
     { id: 'evidence', label: 'Kanıt' },
+    { id: 'jury', label: 'Jüri' },
     { id: 'agents', label: 'Ajanlar' },
     { id: 'cross-scan', label: 'Çapraz Tarama' },
     { id: 'company', label: 'Şirket' },
