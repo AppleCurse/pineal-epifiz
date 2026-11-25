@@ -55,7 +55,7 @@
   function typeIntoPage() {
     return run(async () => { const r = await request('/api/browser/type', { text: typedText }); updateState(await r.json()); typedText=''; });
   }
-  function pressKey() { return run(async () => { const r = await request('/api/browser/press', { key }); updateState(await r.json()); await takeShot(); }); }
+  function pressKey() { return run(async () => { const r = await request('/api/browser/press', { key }); updateState(await r.json()); await fetchShotDirect(); }); }
   function clickPoint() { return run(async () => { const r = await request('/api/browser/click', { x: Number(x), y: Number(y) }); updateState(await r.json()); await takeShot(); }); }
 </script>
 
@@ -76,7 +76,7 @@
     <aside class="browser-controls">
       <div class="state-card"><small>OTURUM DURUMU</small><strong>{state ? (state.is_open || state.open ? 'AÇIK' : 'YANIT ALINDI') : 'SORGULANMADI'}</strong><span>{state?.saved_session === true ? 'Kayıtlı oturum mevcut' : state?.saved_session === false ? 'Kayıtlı oturum yok' : 'Durum verisi bekleniyor'}</span></div>
       <label>Sayfaya metin yaz<input bind:value={typedText} maxlength="500" placeholder="Metin..." /></label><button on:click={typeIntoPage} disabled={busy || !typedText.trim()}>METNİ YAZ</button>
-      <label>Tuş gönder<select bind:value={key}><option>ENTER</option><option>TAB</option><option>ESC</option><option>BACKSPACE</option><option>ARROWDOWN</option><option>ARROWUP</option></select></label><button on:click={pressKey} disabled={busy}>TUŞA BAS</button>
+      <label>Tuş gönder<select bind:value={key}><option value="Enter">Enter</option><option value="Tab">Tab</option><option value="Escape">Escape</option><option value="Backspace">Backspace</option><option value="ArrowDown">ArrowDown</option><option value="ArrowUp">ArrowUp</option></select></label><button on:click={pressKey} disabled={busy}>TUŞA BAS</button>
       <div class="coords"><label>X<input bind:value={x} inputmode="numeric" /></label><label>Y<input bind:value={y} inputmode="numeric" /></label></div><button on:click={clickPoint} disabled={busy || !Number.isFinite(Number(x)) || !Number.isFinite(Number(y))}>KOORDİNATA TIKLA</button>
     </aside>
   </div>
