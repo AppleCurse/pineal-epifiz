@@ -14,6 +14,7 @@
   import CapabilityAtlas from './components/CapabilityAtlas.svelte';
   import SovereignStudio from './components/SovereignStudio.svelte';
   import BrowserWorkspace from './components/BrowserWorkspace.svelte';
+  import EvidenceWorkspace from './components/EvidenceWorkspace.svelte';
   import Icon from './components/Icon.svelte';
   import SupportPanel from './components/SupportPanel.svelte';
 
@@ -433,6 +434,7 @@
 <main class="fullscreen-cockpit-viewport">
   <SovereignStudio clientId={$clientId} />
   <BrowserWorkspace clientId={$clientId} />
+  <EvidenceWorkspace />
   <UnifiedPinealCockpit />
 
   <button
