@@ -31,7 +31,7 @@
     return data.status || data.error?.code || 'Yanıt alındı, durum alanı yok';
   }
 </script>
-<section class="cross-scan" aria-label="Çapraz kaynak tarama">
+<section id="cross-scan" class="cross-scan" aria-label="Çapraz kaynak tarama">
   <header><div><span class="kicker">PINEAL · ÇAPRAZ KAYNAK</span><h2>Çapraz Tarama Masası</h2><p>Kullanıcı adı, e-posta ve profil adresi için ayrı motorlar.</p></div><span class="gate">KASA AÇIK OLMALI</span></header>
   <div class="scan-grid">
     <article><span class="number">01</span><h3>Kullanıcı adı · Maigret</h3><p>Herkese açık platformlardaki kullanıcı adı eşleşmelerini arar.</p><input bind:value={username} placeholder="kullanici_adi" aria-label="Kullanıcı adı" /><button on:click={() => scan('maigret')} disabled={!!busy || !username.trim()}>{busy === 'maigret' ? 'TARANIYOR…' : 'KULLANICI ADINI TARA'}</button><div class="result"><strong>{statusText(results.maigret)}</strong>{#if errors.maigret}<small class="error">{errors.maigret}</small>{:else if results.maigret}<pre>{JSON.stringify(results.maigret, null, 2)}</pre>{/if}</div></article>
