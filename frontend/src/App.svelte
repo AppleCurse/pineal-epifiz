@@ -17,6 +17,7 @@
   import EvidenceWorkspace from './components/EvidenceWorkspace.svelte';
   import AgentLab from './components/AgentLab.svelte';
   import CrossScanWorkspace from './components/CrossScanWorkspace.svelte';
+  import CompanyWorkspace from './components/CompanyWorkspace.svelte';
   import Icon from './components/Icon.svelte';
   import SupportPanel from './components/SupportPanel.svelte';
 
@@ -440,6 +441,7 @@
   <EvidenceWorkspace />
   <AgentLab clientId={$clientId} />
   <CrossScanWorkspace clientId={$clientId} />
+  <CompanyWorkspace clientId={$clientId} />
 
   <button
     class="telemetry-toggle"
