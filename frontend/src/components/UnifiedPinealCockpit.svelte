@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import TaskEvidence from './TaskEvidence.svelte';
+  import ReportFactoryWorkspace from './ReportFactoryWorkspace.svelte';
   import Icon from './Icon.svelte';
   import { get } from 'svelte/store';
   import {
@@ -83,21 +84,8 @@
   let showContextInputs = false;
   let telemetryVisible = true;
   let selectedAgentId: string | null = 'aspasia';
-  // Task History & Report Factory Modal
+  // Task history and report state live in ReportFactoryWorkspace.
   let showHistoryModal = false;
-  let historyTab: 'tasks' | 'reports' = 'tasks';
-  let tasksLoading = false;
-  let tasksError = '';
-  let taskHistoryList: any[] = [];
-  let reportStatusLoading = false;
-  let reportStatusData: any = null;
-  let reportListData: any[] = [];
-  let reportTitle = 'Pineal Adli Analiz Raporu';
-  let reportSubject = '';
-  let reportFormats: Record<string, boolean> = { markdown: true, pdf: true, diagram: true, video: false };
-  let reportBuilding = false;
-  let reportBuildResult: any = null;
-  let reportBuildError = '';
 
   // Commander Override
   let injectType = 'twin_url';
@@ -736,135 +724,8 @@
     }
   }
 
-  async function loadTaskHistory() {
-    tasksLoading = true;
-    tasksError = '';
-    try {
-      const cid = $clientId || 'default';
-      const res = await apiFetch(`/api/tasks?client_id=${encodeURIComponent(cid)}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      taskHistoryList = Array.isArray(data.tasks) ? data.tasks : [];
-    } catch (e: any) {
-      tasksError = e?.message || 'Görev geçmişi alınamadı';
-    } finally {
-      tasksLoading = false;
-    }
-  }
-
-  async function loadPastTaskIntoCockpit(taskId: string) {
-    tasksError = '';
-    try {
-      const cid = $clientId || 'default';
-      const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}?client_id=${encodeURIComponent(cid)}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const detail = await res.json();
-      taskStatus.set({
-        task_id: detail.task_id,
-        status: detail.status || 'completed',
-        confidence: detail.confidence,
-        target_profile: detail.target_profile || null,
-        evidence_chain: Array.isArray(detail.evidence_chain) ? detail.evidence_chain : [],
-        runs: {},
-      });
-      if (detail.target_profile?.url) {
-        reportSubject = detail.target_profile.url;
-      } else if (detail.target_profile?.username) {
-        reportSubject = `@${detail.target_profile.username}`;
-      }
-      reportTitle = `Pineal Rapor — ${detail.task_id}`;
-      showHistoryModal = false;
-      chatMessages = [...chatMessages, {
-        ts: nowTime(),
-        sender: 'Aspasia',
-        text: `Geçmiş görev yüklendi: ${detail.task_id} (${detail.evidence_count ?? 0} kanıt kaydı).`
-      }];
-    } catch (e: any) {
-      tasksError = e?.message || 'Görev detayı yüklenemedi';
-    }
-  }
-
-  async function deletePastTask(taskId: string) {
-    tasksError = '';
-    try {
-      const cid = $clientId || 'default';
-      const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}?client_id=${encodeURIComponent(cid)}`, {
-        method: 'DELETE',
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      await loadTaskHistory();
-    } catch (e: any) {
-      tasksError = e?.message || 'Görev silinemedi';
-    }
-  }
-
-  async function loadReportCenter() {
-    reportStatusLoading = true;
-    try {
-      const cid = $clientId || 'default';
-      const [sRes, lRes] = await Promise.all([
-        apiFetch('/api/report/status'),
-        apiFetch(`/api/report/list?client_id=${encodeURIComponent(cid)}`),
-      ]);
-      if (sRes.ok) reportStatusData = await sRes.json();
-      if (lRes.ok) {
-        const lJson = await lRes.json();
-        reportListData = Array.isArray(lJson.reports) ? lJson.reports : [];
-      }
-    } catch {
-      // non-fatal
-    } finally {
-      reportStatusLoading = false;
-    }
-  }
-
-  function openHistoryModal(tab: 'tasks' | 'reports' = 'tasks') {
-    historyTab = tab;
+  function openHistoryModal(_tab: 'tasks' | 'reports' = 'tasks') {
     showHistoryModal = true;
-    if (!reportSubject) {
-      reportSubject = targetUrl || $activeTargetUrl || $taskStatus?.target_profile?.url || '';
-    }
-    void loadTaskHistory();
-    void loadReportCenter();
-  }
-
-  async function buildReportFromCockpit() {
-    if (reportBuilding) return;
-    reportBuilding = true;
-    reportBuildError = '';
-    reportBuildResult = null;
-    const selectedFormats = Object.entries(reportFormats)
-      .filter(([, on]) => on)
-      .map(([fmt]) => fmt);
-    if (selectedFormats.length === 0) {
-      reportBuildError = 'En az bir çıktı formatı seçin.';
-      reportBuilding = false;
-      return;
-    }
-    const evidenceItems = evidenceChainToReportItems($taskStatus);
-    try {
-      const res = await apiFetch('/api/report/build', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          client_id: $clientId || 'default',
-          title: (reportTitle || 'Pineal Adli Analiz Raporu').trim(),
-          subject: (reportSubject || targetUrl || $activeTargetUrl || '').trim(),
-          evidence: evidenceItems,
-          formats: selectedFormats,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data?.error?.message || `HTTP ${res.status}`);
-      }
-      reportBuildResult = data;
-      await loadReportCenter();
-    } catch (e: any) {
-      reportBuildError = e?.message || 'Rapor üretilemedi';
-    } finally {
-      reportBuilding = false;
-    }
   }
 
   async function injectCommanderEvidence() {
@@ -1983,169 +1844,19 @@
     </div>
   </footer>
 
-  {#if showHistoryModal}
-    <div class="cockpit-modal-backdrop" role="dialog" aria-modal="true" aria-label="Görev Geçmişi ve Rapor Fabrikası">
-      <div class="cockpit-modal-card">
-        <div class="cockpit-modal-head">
-          <h3><Icon name="scroll" size={0.95} /> GÖREV GEÇMİŞİ &amp; RAPOR FABRİKASI</h3>
-          <button class="modal-close-btn" on:click={() => showHistoryModal = false} aria-label="Kapat"><Icon name="close" size={0.9} /></button>
-        </div>
-
-        <div class="cockpit-modal-tabs">
-          <button class:active={historyTab === 'tasks'} on:click={() => { historyTab = 'tasks'; void loadTaskHistory(); }}>
-            Görev Geçmişi ({taskHistoryList.length})
-          </button>
-          <button class:active={historyTab === 'reports'} on:click={() => { historyTab = 'reports'; void loadReportCenter(); }}>
-            Rapor Fabrikası &amp; Geçmiş Raporlar ({reportListData.length})
-          </button>
-        </div>
-
-        <div class="cockpit-modal-body">
-          {#if historyTab === 'tasks'}
-            <div class="modal-section-box">
-              <div class="history-toolbar">
-                <h4>Kayıtlı Görevler <code class="endpoint-path">GET /api/tasks</code></h4>
-                <button type="button" class="modal-cancel-btn" on:click={loadTaskHistory} disabled={tasksLoading}>
-                  {tasksLoading ? 'Yükleniyor...' : 'Yenile'}
-                </button>
-              </div>
-              {#if tasksError}
-                <div class="modal-alert err">{tasksError}</div>
-              {/if}
-              {#if tasksLoading && taskHistoryList.length === 0}
-                <p class="routing-note">Görev geçmişi yükleniyor...</p>
-              {:else if taskHistoryList.length === 0}
-                <p class="routing-note">Bu oda için henüz kayıtlı görev yok.</p>
-              {:else}
-                <div class="routing-table-wrap">
-                  <table class="routing-table">
-                    <thead>
-                      <tr>
-                        <th>Görev ID</th>
-                        <th>Durum</th>
-                        <th>Kanıt</th>
-                        <th>Güven</th>
-                        <th>Tarih</th>
-                        <th>İşlem</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {#each taskHistoryList as t}
-                        <tr>
-                          <td class="rt-agent">{t.task_id}</td>
-                          <td>{t.status || t.memory_state || '-'}</td>
-                          <td>{t.evidence_count ?? 0}</td>
-                          <td>{typeof t.confidence === 'number' ? Math.round(t.confidence * 100) + '%' : '-'}</td>
-                          <td>{t.last_updated || '-'}</td>
-                          <td class="history-actions">
-                            <button type="button" class="mini-action-btn" on:click={() => loadPastTaskIntoCockpit(t.task_id)}>YÜKLE</button>
-                            <button type="button" class="mini-action-btn danger" on:click={() => deletePastTask(t.task_id)}>SİL</button>
-                          </td>
-                        </tr>
-                      {/each}
-                    </tbody>
-                  </table>
-                </div>
-              {/if}
-            </div>
-          {:else}
-            <div class="modal-section-box">
-              <h4>Rapor Fabrikası — Kanıttan Rapor Üret (POST /api/report/build)</h4>
-              {#if reportStatusData}
-                <p class="routing-note">
-                  Kapı: <code>{reportStatusData.gate}</code> · Dizin: <code>{reportStatusData.report_dir}</code>
-                </p>
-                <div class="format-chips">
-                  {#each reportStatusData.formats || [] as fmt}
-                    <label class="format-chip" class:disabled={!fmt.available}>
-                      <input type="checkbox" bind:checked={reportFormats[fmt.format]} />
-                      <span>{fmt.format.toUpperCase()}</span>
-                      <small>({fmt.available ? 'hazır' : fmt.reason || 'yok'})</small>
-                    </label>
-                  {/each}
-                </div>
-              {:else if reportStatusLoading}
-                <p class="routing-note">Rapor fabrikası durumu kontrol ediliyor...</p>
-              {/if}
-
-              <div class="provider-grid" style="margin-top: 0.6rem;">
-                <label class="provider-field">
-                  <span>Rapor Başlığı</span>
-                  <input type="text" bind:value={reportTitle} placeholder="Pineal Adli Analiz Raporu" />
-                </label>
-                <label class="provider-field">
-                  <span>Konu / Hedef</span>
-                  <input type="text" bind:value={reportSubject} placeholder="https://instagram.com/..." />
-                </label>
-              </div>
-              <p class="routing-note" style="margin-top: 0.45rem;">
-                Aktif kanıt zincirinden taşınacak satır: <strong>{evidenceChainToReportItems($taskStatus).length}</strong>
-              </p>
-              <div style="margin-top: 0.5rem;">
-                <button type="button" class="modal-save-btn" on:click={buildReportFromCockpit} disabled={reportBuilding}>
-                  {reportBuilding ? 'ÜRETİLİYOR...' : 'RAPOR PAKETİ ÜRET'}
-                </button>
-              </div>
-
-              {#if reportBuildError}
-                <div class="modal-alert err" style="margin-top: 0.5rem;">{reportBuildError}</div>
-              {/if}
-              {#if reportBuildResult}
-                <div class="modal-alert ok" style="margin-top: 0.5rem;">
-                  <strong>Rapor sonucu ({reportBuildResult.title}):</strong>
-                  {#each Object.entries(reportBuildResult.formats || {}) as [fmtName, fmtRes]}
-                    {@const r = fmtRes as any}
-                    <div class="report-res-row">
-                      <code>{fmtName}</code>: {r.available ? 'ÜRETİLDİ' : `ENGELLENDİ / YOK (${r.denied_by || r.reason || 'bilinmiyor'})`}
-                      {#if r.manifest_sha256} · sha256: <code>{r.manifest_sha256.slice(0, 12)}…</code>{/if}
-                    </div>
-                  {/each}
-                </div>
-              {/if}
-            </div>
-
-            <div class="modal-section-box">
-              <div class="history-toolbar">
-                <h4>Geçmiş Raporlar (GET /api/report/list)</h4>
-                <button type="button" class="modal-cancel-btn" on:click={loadReportCenter} disabled={reportStatusLoading}>
-                  <Icon name="refresh" size={0.85} /> Yenile
-                </button>
-              </div>
-              {#if reportListData.length === 0}
-                <p class="routing-note">Henüz üretilmiş rapor paketi bulunamadı.</p>
-              {:else}
-                <div class="report-history-list">
-                  {#each reportListData as rep}
-                    <div class="report-history-card">
-                      <div class="rh-head">
-                        <strong>{rep.title}</strong>
-                        <span>{rep.created_at || '-'}</span>
-                      </div>
-                      <div class="rh-meta">
-                        Hedef: {rep.subject || '-'} · Kanıt: {rep.evidence_count} · Manifest: <code>{(rep.manifest_sha256 || '').slice(0, 12)}…</code>
-                      </div>
-                      <div class="rh-links">
-                        {#each rep.artifacts || [] as art}
-                          {#if art.download_url}
-                            <a class="report-dl-link" href={`${art.download_url}?client_id=${encodeURIComponent($clientId || "default")}`} target="_blank" rel="noopener">
-                              <Icon name="download" size={0.85} /> {art.kind} ({art.bytes} B)
-                            </a>
-                          {/if}
-                        {/each}
-                        {#if rep.manifest_url}
-                          <a class="report-dl-link" href={`${rep.manifest_url}?client_id=${encodeURIComponent($clientId || "default")}`} target="_blank" rel="noopener"><Icon name="download" size={0.85} /> manifest.json</a>
-                        {/if}
-                      </div>
-                    </div>
-                  {/each}
-                </div>
-              {/if}
-            </div>
-          {/if}
-        </div>
-      </div>
-    </div>
-  {/if}
+  <ReportFactoryWorkspace
+    open={showHistoryModal}
+    targetUrl={targetUrl}
+    on:close={() => showHistoryModal = false}
+    on:taskloaded={(event) => {
+      const detail = event.detail;
+      chatMessages = [...chatMessages, {
+        ts: nowTime(),
+        sender: 'Aspasia',
+        text: `Geçmiş görev yüklendi: ${detail.task_id} (${detail.evidence_count ?? 0} kanıt kaydı).`
+      }];
+    }}
+  />
 
   {#if showSettingsModal}
     <div class="cockpit-modal-backdrop" role="presentation" on:click|self={() => (showSettingsModal = false)}>
