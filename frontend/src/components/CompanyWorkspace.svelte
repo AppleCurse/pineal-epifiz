@@ -36,7 +36,7 @@
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   {#if result}
     <div class="result-head"><strong>{result.domain || domain}</strong><span>{result.evidence_total ?? 0} kayıt döndü</span></div>
-    <div class="results">{#each Object.entries(result.modes || {}) as [id, data]}<article><strong>{modeLabels[id] || id}</strong><span>{data.available ? 'KULLANILABİLİR' : 'KULLANILAMADI'}</span><small>{data.reason || data.denied_by || (data.available ? 'Motor yanıt verdi' : 'Gerekçe bildirilmedi')}</small><small>{data.counts?.evidence ?? 0} kanıt</small>{#if data.evidence?.length}<pre>{data.evidence.map((x: any) => x.content).join('\n\n')}</pre>{/if}</article>{/each}</div>
+    <div class="results">{#each Object.entries((result.modes || {}) as Record<string, any>) as [id, data]}<article><strong>{modeLabels[id] || id}</strong><span>{data.available ? 'KULLANILABİLİR' : 'KULLANILAMADI'}</span><small>{data.reason || data.denied_by || (data.available ? 'Motor yanıt verdi' : 'Gerekçe bildirilmedi')}</small><small>{data.counts?.evidence ?? 0} kanıt</small>{#if data.evidence?.length}<pre>{data.evidence.map((x: any) => x.content).join('\n\n')}</pre>{/if}</article>{/each}</div>
   {/if}
   <footer>Sunucunun kapı ve yetenek kararları esas alınır. Boş sonuç, taranan kurumda bilgi bulunmadığının kesin kanıtı değildir.</footer>
 </section>
