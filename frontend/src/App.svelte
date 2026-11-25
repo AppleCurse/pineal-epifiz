@@ -10,6 +10,7 @@
   } from './store';
   import { uplinkState } from './lib/telemetry';
   import UnifiedPinealCockpit from './components/UnifiedPinealCockpit.svelte';
+  import WorkspaceNav from './components/WorkspaceNav.svelte';
   import NeuralTelemetryBoard from './components/visualizers/NeuralTelemetryBoard.svelte';
   import CapabilityAtlas from './components/CapabilityAtlas.svelte';
   import SovereignStudio from './components/SovereignStudio.svelte';
@@ -437,7 +438,8 @@
 </script>
 
 <main class="fullscreen-cockpit-viewport">
-  <UnifiedPinealCockpit />
+  <WorkspaceNav />
+  <div id="cockpit" class="workspace-anchor"><UnifiedPinealCockpit /></div>
   <SovereignStudio clientId={$clientId} />
   <BrowserWorkspace clientId={$clientId} />
   <EvidenceWorkspace />
