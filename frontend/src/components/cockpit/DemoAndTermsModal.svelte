@@ -146,12 +146,17 @@
     max-width: 700px;
     max-height: 86vh;
     background: var(--bg-surface);
+    backdrop-filter: blur(18px);
     border: 1px solid var(--border-strong);
     border-radius: 14px;
     box-shadow: var(--shadow-md);
     display: flex;
     flex-direction: column;
     overflow: hidden;
+  }
+
+  :global([data-theme='dark']) .modal-dialog {
+    background: rgba(30, 14, 11, 0.92);
   }
 
   .modal-header {

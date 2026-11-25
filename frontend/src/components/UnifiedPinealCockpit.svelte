@@ -1140,11 +1140,11 @@
 
   :global([data-theme='dark']) .cockpit-app {
     background-image:
-      linear-gradient(180deg, rgba(16, 12, 10, 0.72), rgba(16, 12, 10, 0.90)),
+      radial-gradient(ellipse at 70% 15%, rgba(62, 24, 18, 0.08), rgba(14, 6, 5, 0.36) 85%),
       url('/atelier/ground.webp');
     background-size: cover;
     background-position: center;
-    background-attachment: fixed;
+    background-repeat: no-repeat;
   }
 
   .cockpit-workspace {
