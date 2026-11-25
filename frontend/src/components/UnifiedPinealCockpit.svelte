@@ -130,7 +130,7 @@
   ];
 
   const DIAGNOSTIC_PROVIDERS = [
-    { id: 'anthropic', label: 'Anthropic (Tanı / OpenRouter)', placeholder: 'sk-ant-...' },
+    { id: 'anthropic', label: 'Anthropic Claude (Yalnızca Tanı — 9Router üzerinden bağlayın)', placeholder: 'sk-ant-...' },
     { id: 'openai', label: 'OpenAI (Tanı / OpenRouter)', placeholder: 'sk-...' },
     { id: 'xai', label: 'xAI Grok (Tanı / OpenRouter)', placeholder: 'xai-...' },
     { id: 'cohere', label: 'Cohere (Tanı / OpenRouter)', placeholder: '...' },

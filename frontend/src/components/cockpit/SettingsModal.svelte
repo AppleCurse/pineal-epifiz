@@ -96,17 +96,17 @@
 
               <label class="field-label key-card">
                 <div class="key-title-row">
-                  <span>OpenRouter Ana Anahtarı</span>
+                  <span>9Router / OpenRouter Ana Anahtarı</span>
                   {#if routingData?.has_openrouter}
                     <span class="pill pill-ok">Kayıtlı</span>
                   {/if}
                 </div>
-                <small class="key-hint">Tek anahtarla birden fazla yapay zekâya erişim sağlar.</small>
+                <small class="key-hint">Yerel 9Router (localhost:20128) veya OpenRouter anahtarınızı buraya girin; tüm uzman birimler buradan beslenir.</small>
                 <input
                   type="password"
                   class="field-input"
                   bind:value={openRouterInput}
-                  placeholder="sk-or-v1-..."
+                  placeholder="sk-..."
                   autocomplete="off"
                 />
               </label>
