@@ -48,6 +48,7 @@
   let localUrl = 'http://localhost:11434/v1';
   let localModel = 'dolphin-llama3:latest';
   let useLocal = false;
+  let localSettingTouched = false;
   let tavilyKey = '';
   let serpapiKey = '';
   let exaKey = '';
@@ -60,7 +61,11 @@
     settingsStatusMsg = '';
     settingsErrorMsg = '';
     appTokenInput = currentApiToken();
+    localSettingTouched = false;
     useLocal = typeof routingData?.use_local === 'boolean' ? routingData.use_local : false;
+  }
+  $: if (open && !localSettingTouched && typeof routingData?.use_local === 'boolean') {
+    useLocal = routingData.use_local;
   }
   $: if (!open) wasOpen = false;
 
@@ -169,7 +174,7 @@
           </section>
           <section class="sw-panel">
             <h4>Yerel LLM (Ollama / LM Studio)</h4>
-            <label class="sw-toggle"><input type="checkbox" bind:checked={useLocal} /> Yerel LLM Kullan (Bulut yerine yerel model)</label>
+            <label class="sw-toggle"><input type="checkbox" bind:checked={useLocal} on:change={() => localSettingTouched = true} /> Yerel LLM Kullan (Bulut yerine yerel model)</label>
             <div class="sw-grid">
               <label><span>Base URL</span><input type="text" bind:value={localUrl} placeholder="http://localhost:11434/v1" /></label>
               <label><span>Model Adı</span><input type="text" bind:value={localModel} placeholder="dolphin-llama3:latest" /></label>
