@@ -36,20 +36,19 @@
 
   function updateState(data: any) { state = data; }
   function openPage() {
-    return run(async () => { const r = await request('/api/browser/open', { url: url.trim() }); updateState(await r.json()); await takeShot(); });
+    return run(async () => { const r = await request('/api/browser/open', { url: url.trim() }); updateState(await r.json()); await fetchShotDirect(); });
   }
   function refreshState() {
     return run(async () => { const r = await request(`/api/browser/state?client_id=${encodeURIComponent(clientId || 'default')}`); updateState(await r.json()); });
   }
-  function takeShot() {
-    return run(async () => {
-      const r = await request(`/api/browser/shot?client_id=${encodeURIComponent(clientId || 'default')}`);
-      const next = URL.createObjectURL(await r.blob());
-      if (shotUrl) URL.revokeObjectURL(shotUrl);
-      shotUrl = next; screenshot = next;
-    });
+  async function fetchShotDirect() {
+    const r = await request(`/api/browser/shot?client_id=${encodeURIComponent(clientId || 'default')}`);
+    const next = URL.createObjectURL(await r.blob());
+    if (shotUrl) URL.revokeObjectURL(shotUrl);
+    shotUrl = next; screenshot = next;
   }
-  function back() { return run(async () => { const r = await request('/api/browser/back', {}); updateState(await r.json()); await takeShot(); }); }
+  function takeShot() { return run(fetchShotDirect); }
+  function back() { return run(async () => { const r = await request('/api/browser/back', {}); updateState(await r.json()); await fetchShotDirect(); }); }
   function closeBrowser() {
     return run(async () => { const r = await request('/api/browser/close', {}); updateState(await r.json().catch(() => ({}))); if (shotUrl) URL.revokeObjectURL(shotUrl); shotUrl=''; screenshot=''; });
   }
