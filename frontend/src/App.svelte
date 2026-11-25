@@ -474,12 +474,15 @@
 <style>
   .workspace-anchor, .fullscreen-cockpit-viewport :global(section[id]) { scroll-margin-top: 72px; }
 
+  .workspace-anchor { width: 100%; min-width: 0; }
+
   .fullscreen-cockpit-viewport {
     width: 100vw;
     height: 100vh;
     display: flex;
-    align-items: flex-start;
-    justify-content: center;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
     background: #000;
     overflow-y: auto;
     overflow-x: hidden;
