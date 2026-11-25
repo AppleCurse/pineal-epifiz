@@ -25,7 +25,7 @@
     finally { busy = false; }
   }
 </script>
-<section class="media-workspace" aria-label="Medya ve konuşma analizi">
+<section id="media" class="media-workspace" aria-label="Medya ve konuşma analizi">
   <header><div><span class="kicker">PINEAL · MEDYA ADLİ HATTI</span><h2>Medya Laboratuvarı</h2><p>Kaynak, kare, konuşma ve benzerlik modlarını ayrı ayrı çalıştır.</p></div><button on:click={loadStatus}>MOTOR DURUMU</button></header>
   {#if status}
     <div class="status-strip"><span>{status.gate}</span><span>{status.any_available ? 'En az bir mod hazır' : 'Hazır mod bildirilmedi'}</span><span>FFmpeg: {status.tools?.ffmpeg ? 'Var' : 'Yok'}</span><span>yt-dlp: {status.tools?.['yt-dlp'] ? 'Var' : 'Yok'}</span><span>OpenCV: {status.tools?.opencv ? 'Var' : 'Yok'}</span></div>
