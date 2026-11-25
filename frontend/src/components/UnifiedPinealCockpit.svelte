@@ -13,7 +13,7 @@
   } from '../store';
   import { uplinkState, health, sysTelemetry, apiAuthRequired, startHealthPoll, stopHealthPoll } from '../lib/telemetry';
   import { playClick, playHalt, playRunning } from '../lib/consoleAudio';
-  import { hasEvidence, buildPillarSummaries, evidenceChainToReportItems } from '../lib/evidence';
+  import { hasEvidence, buildPillarSummaries } from '../lib/evidence';
   import { taskRuns, taskRunLabel, rackAvailability } from '../lib/taskRunStatus';
   import { checkVaultStatus, vaultExists } from '../lib/tauriBridge';
 
