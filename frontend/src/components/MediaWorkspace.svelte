@@ -36,10 +36,10 @@
   <div class="params"><label>Kare aralığı (saniye)<input type="number" min="1" max="120" bind:value={sampleEvery} /></label><label>En yakın eşleşme sayısı<input type="number" min="1" max="20" bind:value={topK} /></label></div>
   <button class="run" on:click={analyze} disabled={busy || !source.trim() || !modes.length}>{busy ? 'ANALİZ SÜRÜYOR…' : 'MEDYA ANALİZİNİ BAŞLAT'}</button>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
-  {#if result?.results}
-    <div class="results">{#each Object.entries(result.results) as [id, data]}<article><strong>{labels[id] || id}</strong><span class:yes={data.available}>{data.available ? 'KULLANILABİLİR' : 'KULLANILAMADI'}</span><small>{data.reason || data.denied_by || 'Gerekçe bildirilmedi'}</small>{#each data.evidence || [] as ev}<p><b>{ev.epistemic_type || 'Kayıt'}</b> · {ev.content}</p>{/each}</article>{/each}</div>
+  {#if result?.modes}
+    <div class="results">{#each Object.entries(result.modes) as [id, data]}<article><strong>{labels[id] || id}</strong><span class:yes={data.available}>{data.available ? 'KULLANILABİLİR' : 'KULLANILAMADI'}</span><small>{data.reason || data.denied_by || 'Gerekçe bildirilmedi'}</small>{#each data.evidence || [] as ev}<p><b>{ev.epistemic_type || 'Kayıt'}</b> · {ev.content}</p>{/each}</article>{/each}</div>
   {/if}
-  <footer>Motor ve politika kapıları sunucuda uygulanır. Bir mod kapalıysa sonuç varmış gibi gösterilmez; boş çıktı, kaynağın içeriği hakkında kesin hüküm değildir.</footer>
+  {#if result}<div class="result-total">{result.evidence_total ?? 0} kanıt satırı döndü</div>{/if}\n  <footer>Motor ve politika kapıları sunucuda uygulanır. Bir mod kapalıysa sonuç varmış gibi gösterilmez; boş çıktı, kaynağın içeriği hakkında kesin hüküm değildir.</footer>
 </section>
 <style>
   .media-workspace{width:min(1500px,calc(100% - 28px));margin:0 auto 28px;padding:20px;color:#e9e3d7;background:linear-gradient(145deg,#151719,#090a0c);border:1px solid rgba(190,164,111,.2);border-radius:15px;box-shadow:0 20px 55px rgba(0,0,0,.22);font-family:inherit}
