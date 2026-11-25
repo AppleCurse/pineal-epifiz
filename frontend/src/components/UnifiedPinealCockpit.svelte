@@ -6,7 +6,7 @@
   import Icon from './Icon.svelte';
   import { get } from 'svelte/store';
   import {
-    apiToken, setApiToken, currentApiToken, apiFetch, isAuthFailure, clientId, wsUrl, logs, taskStatus,
+    apiFetch, isAuthFailure, clientId, wsUrl, logs, taskStatus,
     speechState, lastSpeech, voiceEnabled,
     isProcessing, powerEngaged, armEngaged, recordEngaged, agentStatuses, vaultLocked,
     activeViewMode, agentStatusSource, supportRequests, supportTaskId, refreshSupport, mergeTaskSnapshot,
