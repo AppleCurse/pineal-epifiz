@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import difflib
 import hashlib
 import html
 import json
@@ -1028,6 +1029,14 @@ def main() -> int:
         if current != page:
             print("BAYAT: docs/envanter.html yeniden üretilmeli "
                   "(python scripts/generate_inventory_page.py)", file=sys.stderr)
+            diff = difflib.unified_diff(
+                current.splitlines(), page.splitlines(),
+                fromfile="docs/envanter.html (depodaki)",
+                tofile="docs/envanter.html (üreticinin beklediği)",
+                lineterm="", n=2,
+            )
+            for line in diff:
+                print(line, file=sys.stderr)
             return 1
         print("GÜNCEL: docs/envanter.html kaynakla uyumlu")
         return 0
