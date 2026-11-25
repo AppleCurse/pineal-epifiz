@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import TaskEvidence from './TaskEvidence.svelte';
   import ReportFactoryWorkspace from './ReportFactoryWorkspace.svelte';
+  import SettingsWorkspace from './SettingsWorkspace.svelte';
   import Icon from './Icon.svelte';
   import { get } from 'svelte/store';
   import {
@@ -97,177 +98,29 @@
   let vaultBusy = false;
   let vaultError = '';
 
-  // Ayarlar & Çoklu LLM Kasası + Ajan-Model Haritası
+  // Provider settings state lives in SettingsWorkspace; routing snapshot remains here for live platform gates.
   let showSettingsModal = false;
-  let settingsTab: 'providers' | 'search' | 'routing' = 'providers';
-  let settingsSaving = false;
-  let settingsStatusMsg = '';
-  let settingsErrorMsg = '';
-  let routingLoading = false;
+  let settingsInitialTab: 'providers' | 'search' | 'routing' = 'providers';
   let routingData: any = null;
-  let appTokenInput = currentApiToken();
-  let openRouterInput = '';
-  let providerInputs: Record<string, string> = {
-    groq: '',
-    deepseek: '',
-    'google-gemini': '',
-    'google-gemini-backup': '',
-    mistral: '',
-    cerebras: '',
-    together: '',
-    fireworks: '',
-    perplexity: '',
-    sambanova: '',
-    'nvidia-nim': '',
-    deepinfra: '',
-    huggingface: '',
-    'nous-research': '',
-    'alibaba-dashscope': '',
-    anthropic: '',
-    openai: '',
-    xai: '',
-    cohere: '',
-    'azure-openai': '',
-    iflow: '',
-    'google-gemini-vertex': ''
-  };
-  let localUrl = 'http://localhost:11434/v1';
-  let localModel = 'dolphin-llama3:latest';
-  let useLocal = false;
-  let tavilyKey = '';
-  let serpapiKey = '';
-  let exaKey = '';
-  let xCookie = '';
-  let igCookie = '';
   let isAdultDeclared = false;
 
-  // llm_gateway._AGENT_DIRECT_PROVIDER_KEYS ile birebir uyumlu (aktif OpenAI-chat rotalı sağlayıcılar)
-  const DIRECT_PROVIDERS = [
-    { id: 'groq', label: 'Groq', placeholder: 'gsk_...' },
-    { id: 'deepseek', label: 'DeepSeek', placeholder: 'sk-...' },
-    { id: 'google-gemini', label: 'Google Gemini', placeholder: 'AIza...' },
-    { id: 'google-gemini-backup', label: 'Google Gemini (Yedek)', placeholder: 'AIza...' },
-    { id: 'mistral', label: 'Mistral AI', placeholder: '...' },
-    { id: 'cerebras', label: 'Cerebras', placeholder: '...' },
-    { id: 'together', label: 'Together AI', placeholder: '...' },
-    { id: 'fireworks', label: 'Fireworks AI', placeholder: '...' },
-    { id: 'perplexity', label: 'Perplexity', placeholder: 'pplx-...' },
-    { id: 'sambanova', label: 'SambaNova', placeholder: '...' },
-    { id: 'nvidia-nim', label: 'NVIDIA NIM', placeholder: 'nvapi-...' },
-    { id: 'deepinfra', label: 'DeepInfra', placeholder: '...' },
-    { id: 'huggingface', label: 'HuggingFace', placeholder: 'hf_...' },
-    { id: 'nous-research', label: 'Nous Research', placeholder: '...' },
-    { id: 'alibaba-dashscope', label: 'Alibaba DashScope', placeholder: 'sk-...' }
-  ];
-
-  // llm_gateway._DIAGNOSTIC_ONLY_PROVIDERS ile birebir uyumlu (doğrudan taşıyıcısı yok; yalnızca tanı/envanter)
-  const DIAGNOSTIC_PROVIDERS = [
-    { id: 'anthropic', label: 'Anthropic (Tanı / OpenRouter)', placeholder: 'sk-ant-...' },
-    { id: 'openai', label: 'OpenAI (Tanı / OpenRouter)', placeholder: 'sk-...' },
-    { id: 'xai', label: 'xAI Grok (Tanı / OpenRouter)', placeholder: 'xai-...' },
-    { id: 'cohere', label: 'Cohere (Tanı / OpenRouter)', placeholder: '...' },
-    { id: 'azure-openai', label: 'Azure OpenAI (Tanı)', placeholder: '...' },
-    { id: 'iflow', label: 'iFlow (Tanı)', placeholder: '...' },
-    { id: 'google-gemini-vertex', label: 'Google Gemini Vertex (Tanı)', placeholder: '...' }
-  ];
-
-  function routeInfo(agentId: string): any {
-    return routingData?.routing?.agents?.[agentId] || null;
-  }
-
-  function routeChain(agentId: string): string {
-    const info = routeInfo(agentId);
-    return Array.isArray(info?.chain) && info.chain.length ? info.chain.join(' > ') : 'Rota bilgisi yüklenmedi';
-  }
-
-  function routeTier(agentId: string): string {
-    const info = routeInfo(agentId);
-    return info?.tier || routingData?.routing?.tiers?.[agentId] || '—';
-  }
-
-  function routeSource(agentId: string): string {
-    return routeInfo(agentId)?.source || '—';
-  }
-
   async function loadRoutingSnapshot() {
-    routingLoading = true;
     try {
       const cid = get(clientId) || 'default';
       const res = await apiFetch(`/api/llm/routing?client_id=${encodeURIComponent(cid)}`);
-      if (res.ok) {
-        routingData = await res.json();
-        if (typeof routingData.use_local === 'boolean') useLocal = routingData.use_local;
-      }
+      if (res.ok) routingData = await res.json();
     } catch (_e) {
-      // Routing önizlemesi opsiyonel
-    } finally {
-      routingLoading = false;
+      // Routing önizlemesi opsiyonel.
     }
   }
 
   function openSettingsModal(tab: 'providers' | 'search' | 'routing' = 'providers') {
-    settingsTab = tab;
-    settingsStatusMsg = '';
-    settingsErrorMsg = '';
-    appTokenInput = currentApiToken();
+    settingsInitialTab = tab;
     showSettingsModal = true;
     void loadRoutingSnapshot();
     void refreshVaultState();
   }
 
-  async function saveMultiVaultSettings() {
-    if (settingsSaving) return;
-    settingsSaving = true;
-    settingsStatusMsg = '';
-    settingsErrorMsg = '';
-    try {
-      if (appTokenInput !== undefined && appTokenInput.trim()) {
-        setApiToken(appTokenInput.trim());
-      }
-      const cid = get(clientId) || 'default';
-      const cleanedProviders: Record<string, string> = {};
-      for (const [pid, val] of Object.entries(providerInputs)) {
-        if (val && val.trim()) cleanedProviders[pid] = val.trim();
-      }
-      const payload: Record<string, any> = {
-        client_id: cid,
-        use_local: useLocal,
-      };
-      if (openRouterInput.trim()) payload.api_key = openRouterInput.trim();
-      if (Object.keys(cleanedProviders).length > 0) payload.provider_keys = cleanedProviders;
-      if (useLocal || localUrl.trim()) payload.local_url = localUrl.trim();
-      if (useLocal || localModel.trim()) payload.local_model = localModel.trim();
-      if (tavilyKey.trim()) payload.tavily_key = tavilyKey.trim();
-      if (serpapiKey.trim()) payload.serpapi_key = serpapiKey.trim();
-      if (exaKey.trim()) payload.exa_key = exaKey.trim();
-      if (xCookie.trim()) payload.x_cookie = xCookie.trim();
-      if (igCookie.trim()) payload.ig_sessionid = igCookie.trim();
-
-      const res = await apiFetch('/api/vault', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data?.error?.message || data?.detail || `HTTP ${res.status}`);
-      }
-      settingsStatusMsg = 'Anahtarlar ve çoklu LLM yapılandırması kasaya mühürlendi.';
-      openRouterInput = '';
-      for (const k of Object.keys(providerInputs)) providerInputs[k] = '';
-      tavilyKey = '';
-      serpapiKey = '';
-      exaKey = '';
-      xCookie = '';
-      igCookie = '';
-      await refreshVaultState();
-      await loadRoutingSnapshot();
-    } catch (e: any) {
-      settingsErrorMsg = `Kayıt hatası: ${e?.message || 'bağlantı hatası'}`;
-    } finally {
-      settingsSaving = false;
-    }
-  }
   let injectHistory: Array<{ type: string; value: string; target: string; note: string; ts: string }> = [];
 
   // Phone OSINT
@@ -1858,180 +1711,13 @@
     }}
   />
 
-  {#if showSettingsModal}
-    <div class="cockpit-modal-backdrop" role="presentation" on:click|self={() => (showSettingsModal = false)}>
-      <div class="cockpit-modal-card" role="dialog" aria-modal="true" aria-label="Ayarlar ve Çoklu LLM Kasası">
-        <div class="cockpit-modal-head">
-          <div>
-            <h3><Icon name="gear" size={0.95} /> AYARLAR, ÇOKLU LLM KASASI &amp; AJAN MODEL HARİTASI</h3>
-            <p class="cockpit-modal-sub">Her sağlayıcıya doğrudan anahtar girin; sistemdeki her ajan/özellik kendi uzman modelini kullanır.</p>
-          </div>
-          <button class="modal-x-btn" on:click={() => (showSettingsModal = false)} aria-label="Kapat"><Icon name="close" size={0.9} /></button>
-        </div>
-
-        <div class="cockpit-modal-tabs">
-          <button class:active={settingsTab === 'providers'} on:click={() => (settingsTab = 'providers')}>Çoklu LLM Anahtarları</button>
-          <button class:active={settingsTab === 'search'} on:click={() => (settingsTab = 'search')}>Arama & Oturum (OSINT)</button>
-          <button class:active={settingsTab === 'routing'} on:click={() => { settingsTab = 'routing'; void loadRoutingSnapshot(); }}>Ajan &gt; Model Haritası ({routingData?.routing?.agents ? Object.keys(routingData.routing.agents).length : 21})</button>
-        </div>
-
-        <div class="cockpit-modal-body">
-          {#if settingsTab === 'providers'}
-            <div class="modal-section-box">
-              <h4>Doğrudan Aktif Rota Sağlayıcıları (llm_gateway)</h4>
-              <div class="provider-grid">
-                {#each DIRECT_PROVIDERS as prov}
-                  {@const isSet = (routingData?.provider_keys_set || []).includes(prov.id)}
-                  <label class="provider-field">
-                    <span class="pf-top">
-                      <span>{prov.label}</span>
-                      <span class="pf-badge" class:active={isSet}>{isSet ? 'AKTİF' : 'BOŞ'}</span>
-                    </span>
-                    <input type="password" placeholder={prov.placeholder} bind:value={providerInputs[prov.id]} />
-                  </label>
-                {/each}
-              </div>
-            </div>
-
-            <div class="modal-section-box">
-              <h4>Tanı / Envanter Sağlayıcıları (Doğrudan Taşıyıcı Yok — Claude/GPT/Grok OpenRouter Üzerinden Çalışır)</h4>
-              <div class="provider-grid">
-                {#each DIAGNOSTIC_PROVIDERS as prov}
-                  {@const isSet = (routingData?.provider_keys_set || []).includes(prov.id)}
-                  <label class="provider-field">
-                    <span class="pf-top">
-                      <span>{prov.label}</span>
-                      <span class="pf-badge" class:active={isSet}>{isSet ? 'KAYITLI (TANI)' : 'BOŞ'}</span>
-                    </span>
-                    <input type="password" placeholder={prov.placeholder} bind:value={providerInputs[prov.id]} />
-                  </label>
-                {/each}
-              </div>
-            </div>
-
-            <div class="modal-section-box">
-              <h4>OpenRouter Yedek Anahtarı & Yetki Tokenı</h4>
-              <div class="provider-grid">
-                <label class="provider-field">
-                  <span class="pf-top">
-                    <span>OpenRouter (Yedek / Çoklu Model Ağ Geçidi)</span>
-                    <span class="pf-badge" class:active={routingData?.has_openrouter}>{routingData?.has_openrouter ? 'AKTİF' : 'BOŞ'}</span>
-                  </span>
-                  <input type="password" placeholder="sk-or-v1-..." bind:value={openRouterInput} />
-                </label>
-                <label class="provider-field">
-                  <span class="pf-top"><span>PINEAL_TOKEN (Sunucu Yetki Anahtarı)</span></span>
-                  <input type="password" placeholder="Opsiyonel (üretim modu için)" bind:value={appTokenInput} />
-                </label>
-              </div>
-            </div>
-
-            <div class="modal-section-box">
-              <h4>Yerel LLM (Ollama / LM Studio)</h4>
-              <label class="local-toggle-row">
-                <input type="checkbox" bind:checked={useLocal} />
-                <span>Yerel LLM Kullan (Bulut yerine yerel model)</span>
-              </label>
-              <div class="provider-grid">
-                <label class="provider-field">
-                  <span class="pf-top"><span>Base URL</span></span>
-                  <input type="text" bind:value={localUrl} placeholder="http://localhost:11434/v1" />
-                </label>
-                <label class="provider-field">
-                  <span class="pf-top"><span>Model Adı</span></span>
-                  <input type="text" bind:value={localModel} placeholder="dolphin-llama3:latest" />
-                </label>
-              </div>
-            </div>
-          {:else if settingsTab === 'search'}
-            <div class="modal-section-box">
-              <h4>OSINT Arama Motoru Anahtarları & Sosyal Oturum</h4>
-              <div class="provider-grid">
-                <label class="provider-field">
-                  <span class="pf-top">
-                    <span>Tavily API Key</span>
-                    <span class="pf-badge" class:active={routingData?.has_tavily}>{routingData?.has_tavily ? 'AKTİF' : 'BOŞ'}</span>
-                  </span>
-                  <input type="password" placeholder="tvly-..." bind:value={tavilyKey} />
-                </label>
-                <label class="provider-field">
-                  <span class="pf-top">
-                    <span>SerpAPI Key</span>
-                    <span class="pf-badge" class:active={routingData?.has_serpapi}>{routingData?.has_serpapi ? 'AKTİF' : 'BOŞ'}</span>
-                  </span>
-                  <input type="password" placeholder="..." bind:value={serpapiKey} />
-                </label>
-                <label class="provider-field">
-                  <span class="pf-top">
-                    <span>Exa API Key</span>
-                    <span class="pf-badge" class:active={routingData?.has_exa}>{routingData?.has_exa ? 'AKTİF' : 'BOŞ'}</span>
-                  </span>
-                  <input type="password" placeholder="..." bind:value={exaKey} />
-                </label>
-                <label class="provider-field">
-                  <span class="pf-top"><span>Instagram Session / Cookie (sessionid)</span></span>
-                  <input type="password" placeholder="sessionid=... veya doğrudan sessionid" bind:value={igCookie} />
-                </label>
-                <label class="provider-field">
-                  <span class="pf-top"><span>X / Twitter Cookie (auth_token / ct0)</span></span>
-                  <input type="password" placeholder="auth_token=...; ct0=..." bind:value={xCookie} />
-                </label>
-              </div>
-            </div>
-          {:else}
-            <div class="modal-section-box">
-              <h4>Gerçek Ajan &amp; Özellik / Uzman Model Zinciri (llm_gateway)</h4>
-              <p class="routing-note">Bu tablo OpenRouter tekilleştirmesi değildir: her ajan kendi tier ve uzman zinciriyle çalışır. Kaynak <strong>9router_canonical</strong> görünüyorsa aktif 9Router overlay zinciri üstüne yazmaktadır.</p>
-              {#if routingData?.routing?.tier_violations && Object.keys(routingData.routing.tier_violations).length > 0}
-                <div class="routing-warning"><Icon name="warning" size={0.85} /> Tier uyarıları: {Object.entries(routingData.routing.tier_violations).map(([name, reason]) => `${name}: ${reason}`).join(' · ')}</div>
-              {/if}
-              {#if routingLoading && !routingData}
-                <p class="routing-note">Model haritası yükleniyor...</p>
-              {:else if routingData?.routing?.agents}
-                <div class="routing-table-wrap">
-                  <table class="routing-table">
-                    <thead>
-                      <tr>
-                        <th>Ajan / Özellik</th>
-                        <th>Tier</th>
-                        <th>Uzman Model Zinciri (Sırayla)</th>
-                        <th>Kaynak / Durum</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {#each Object.entries(routingData.routing.agents as Record<string, any>) as [agentName, info]}
-                        <tr>
-                          <td class="rt-agent">{agentName}</td>
-                          <td class="rt-tier">{info?.tier || routingData?.routing?.tiers?.[agentName] || '—'}</td>
-                          <td class="rt-chain">{Array.isArray(info?.chain) ? info.chain.join(' > ') : '—'}</td>
-                          <td class="rt-src">{info?.source || '—'}{routingData?.routing?.tier_violations?.[agentName] ? ` · ! ${routingData.routing.tier_violations[agentName]}` : ''}</td>
-                        </tr>
-                      {/each}
-                    </tbody>
-                  </table>
-                </div>
-              {:else}
-                <p class="routing-note">Model yönlendirme verisi alınamadı.</p>
-              {/if}
-            </div>
-          {/if}
-
-          {#if settingsStatusMsg}<div class="modal-alert ok">{settingsStatusMsg}</div>{/if}
-          {#if settingsErrorMsg}<div class="modal-alert err" role="alert">{settingsErrorMsg}</div>{/if}
-        </div>
-
-        <div class="cockpit-modal-foot">
-          <button class="modal-cancel-btn" on:click={() => (showSettingsModal = false)}>Kapat</button>
-          {#if settingsTab !== 'routing'}
-            <button class="modal-save-btn" on:click={saveMultiVaultSettings} disabled={settingsSaving}>
-              <Icon name="lock" size={0.85} />
-              {settingsSaving ? 'KAYDEDİLİYOR...' : 'KAYDET VE UYGULA'}
-            </button>
-          {/if}
-        </div>
-      </div>
-    </div>
-  {/if}
+  <SettingsWorkspace
+    open={showSettingsModal}
+    initialTab={settingsInitialTab}
+    routingData={routingData}
+    on:close={() => showSettingsModal = false}
+    on:saved={() => { void refreshVaultState(); void loadRoutingSnapshot(); }}
+  />
 
   <!-- ============ ÖRNEK RAPORLAR (token'sız vitrin) ============ -->
   {#if showDemoModal}
