@@ -71,7 +71,7 @@
   function clickPoint() { return run(async () => { const r = await request('/api/browser/click', { x: Number(x), y: Number(y) }); updateState(await r.json()); await fetchShotDirect(); }); }
 </script>
 
-<section class="browser-workspace" aria-label="Canlı tarayıcı çalışma alanı">
+<section id="browser" class="browser-workspace" aria-label="Canlı tarayıcı çalışma alanı">
   <header><div><span class="kicker">PINEAL · ETKİLEŞİMLİ OTURUM</span><h2>Canlı Tarayıcı</h2><p>Instagram ve Google giriş alanında sunucu tarayıcısını aç, görüntüle ve kontrollü biçimde kullan.</p></div><span class="lock-note">KASA + ÇOCUK KİLİDİNE TABİ</span></header>
   <div class="browser-toolbar">
     <input bind:value={url} placeholder="https://www.instagram.com/accounts/login/" aria-label="Açılacak adres" />
