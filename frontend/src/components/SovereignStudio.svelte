@@ -80,7 +80,7 @@
   }
 </script>
 
-<section class="sovereign-studio" aria-label="Strateji çalışma alanları">
+<section id="strategy" class="sovereign-studio" aria-label="Strateji çalışma alanları">
   <header class="studio-head">
     <div><span class="kicker">PINEAL · ÇALIŞMA ALANLARI</span><h2>Strateji Stüdyosu</h2><p>Mevcut API uçlarına bağlı üç ayrı çalışma masası. Yanıtlar sunucudan gelir.</p></div>
     <span class="studio-mark">01 / 03</span>
