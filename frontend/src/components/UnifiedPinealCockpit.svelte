@@ -3311,8 +3311,8 @@
   .master-hud-header button:focus-visible,.command-deck button:focus-visible,.command-deck input:focus-visible { outline: 2px solid #c9b27b; outline-offset: 3px; }
   .command-deck.theme-light { --void:#e9e7e1; --panel:rgba(255,255,255,.92); --line:rgba(93,78,48,.20); --ink:#24231f; --metal:#8b6e35; color:#24231f; background:radial-gradient(ellipse at 50% -18%,rgba(174,145,86,.16),transparent 42%),#e9e7e1; }
   .theme-light .master-hud-header,.theme-light .column-deck,.theme-light .data-pool-footer { background:linear-gradient(145deg,rgba(255,255,255,.98),rgba(241,239,232,.98)); color:#24231f; box-shadow:0 12px 36px rgba(54,46,30,.08); }
-  .theme-light .brand-title,.theme-light .cassette-text-input,.theme-light .chat-input,.theme-light .command-deck h2,.theme-light .command-deck h3,.theme-light .command-deck h4 { color:#29271f; }
-  .theme-light .intro-help,.theme-light .pillars-sub,.theme-light .command-deck p,.theme-light .command-deck label { color:#625e54; }
+  .theme-light .brand-title,.theme-light .cassette-text-input,.theme-light .chat-input,.command-deck.theme-light h2,.command-deck.theme-light h3,.command-deck.theme-light h4 { color:#29271f; }
+  .theme-light .intro-help,.theme-light .pillars-sub,.command-deck.theme-light p,.command-deck.theme-light label { color:#625e54; }
   .theme-light .sovereign-station,.theme-light .commander-override-box,.theme-light .phone-osint-dossier-card,.theme-light .chain-of-thought-section,.theme-light .selected-agent-detail,.theme-light .aspasia-chat-section,.theme-light .telemetry-section,.theme-light .channel-status-box,.theme-light .pillar-column { background:rgba(255,255,255,.88); color:#29271f; }
   .theme-light .agent-tile { background:linear-gradient(145deg,#fff,#f2f0e9); color:#29271f; }
   .theme-light .cassette-input-wrap,.theme-light .chat-input-area { background:#fff; }
