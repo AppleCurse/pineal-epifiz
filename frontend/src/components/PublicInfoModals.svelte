@@ -13,7 +13,7 @@
   const dispatch = createEventDispatcher();
 </script>
 
-<!-- ============ ÖRNEK RAPORLAR (token'sız vitrin) ============ -->
+
   {#if showDemo}
     <div class="cockpit-modal-backdrop" role="dialog" aria-modal="true" aria-label="Örnek analiz raporları">
       <div class="cockpit-modal-card demo-modal-card">
@@ -120,7 +120,7 @@
     </div>
   {/if}
 
-  <!-- ============ KULLANIM KOŞULLARI ============ -->
+  
   {#if showTerms}
     <div class="cockpit-modal-backdrop" role="dialog" aria-modal="true" aria-label="Sorumluluk reddi ve kullanım koşulları">
       <div class="cockpit-modal-card demo-modal-card">
@@ -190,13 +190,13 @@
   }
   .cockpit-modal-body {
     padding: 1rem 1.25rem;
-    /* [P0 · DOĞRULAMA 2026-11-23] flex:1 + min-height:0 EKSİKTİ. Kart
-       `display:flex; flex-direction:column; overflow:hidden; max-height:90vh`
-       olduğundan, gövdenin varsayılan `min-height:auto`'su onu içerik
-       yüksekliğinde tutuyor, kartı 90vh'nin üstüne zorluyor ve taşan kısım
-       `overflow:hidden` ile KESİLİYORDU — `overflow-y:auto` hiç devreye
-       girmiyordu. Ölçülen sonuç: Ayarlar modalındaki OpenRouter/PINEAL_TOKEN
-       kutusu (sıralamada 5. bölüm) alt barda görünmüyordu. */
+    
+
+
+
+
+
+
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto; display: flex; flex-direction: column; gap: 1rem;
@@ -206,10 +206,10 @@
     border-radius: 8px; padding: 0.85rem;
   }
   .modal-section-box h4 { font-size: 0.72rem; color: var(--cyan); margin: 0 0 0.65rem; text-transform: uppercase; }
-  /* [P0 · DOĞRULAMA 2026-11-23] `lang="tr"` + `text-transform:uppercase`
-     etkileşimi tarayıcıda Türkçe büyük harf kuralını uygulatır: "api" →
-     "APİ" (noktalı İ). Ölçülen hata: modal başlığında "GET /APİ/TASKS"
-     görünüyordu. Endpoint yolu bir kimliktir, büyük harfe çevrilmemelidir. */
+  
+
+
+
   .endpoint-path {
     text-transform: none;
     font-family: 'JetBrains Mono', ui-monospace, monospace;
@@ -225,9 +225,9 @@
     vertical-align: 0.05em;
     white-space: nowrap;
   }
-  /* [P0 · DOĞRULAMA 2026-11-23] `.modal-close-btn` sınıfının HİÇ stili yoktu:
-     düğme tarayıcı varsayılan butonuna düşüyor, koyu temada görünmüyordu.
-     (✕ glifi de JetBrains Mono'da yoktu → Icon ile değiştirildi.) */
+  
+
+
   .modal-close-btn {
     flex: 0 0 auto;
     display: inline-flex; align-items: center; justify-content: center;
@@ -280,7 +280,7 @@
     padding: 0.45rem 1rem; font-family: inherit; font-size: 0.7rem; font-weight: 800;
     background: linear-gradient(135deg, var(--emerald), #059669); color: #02140a; border: none; border-radius: 5px; cursor: pointer;
   }
-  /* ==================== ÖRNEK RAPORLAR / KULLANIM KOŞULLARI ==================== */
+  
   .demo-modal-card { width: min(1080px, 96vw); }
   .demo-body { gap: 0.75rem; }
   .demo-loading { color: var(--text-dim); font-size: 0.78rem; padding: 1rem 0; }
@@ -363,7 +363,7 @@
     background: rgba(120, 70, 0, 0.18); border: 1px solid rgba(251, 191, 36, 0.3);
   }
 
-  /* Kullanım koşulları */
+  
   .terms-headline {
     font-size: 0.82rem; font-weight: 800; color: var(--gold);
     padding: 0.65rem 0.8rem; border-radius: 5px;
