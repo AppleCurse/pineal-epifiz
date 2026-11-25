@@ -44,7 +44,7 @@
     catch(e:any){error=e?.message||'Ses durdurulamadı.';} finally{busy=false;}
   }
 </script>
-<section class="language-voice" aria-label="Dil ve ses çalışma alanı">
+<section id="language" class="language-voice" aria-label="Dil ve ses çalışma alanı">
   <header><div><span class="kicker">PINEAL · DİL VE SES</span><h2>Dil & Ses İstasyonu</h2><p>Dil tespiti, yerel çeviri ve sunucunun gerçek ses motoru.</p></div><button on:click={loadStatus} disabled={busy}>MOTOR DURUMU</button></header>
   <div class="language-grid">
     <article><h3>Dil ölçümü</h3><textarea bind:value={text} rows="5" placeholder="Dilini ölçmek veya çevirmek istediğin metni yaz..."></textarea><button on:click={detect} disabled={busy || !text.trim()}>DİLİ TESPİT ET</button>
