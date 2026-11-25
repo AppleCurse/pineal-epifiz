@@ -19,6 +19,7 @@
   import CrossScanWorkspace from './components/CrossScanWorkspace.svelte';
   import CompanyWorkspace from './components/CompanyWorkspace.svelte';
   import MediaWorkspace from './components/MediaWorkspace.svelte';
+  import LanguageVoiceWorkspace from './components/LanguageVoiceWorkspace.svelte';
   import Icon from './components/Icon.svelte';
   import SupportPanel from './components/SupportPanel.svelte';
 
@@ -444,6 +445,7 @@
   <CrossScanWorkspace clientId={$clientId} />
   <CompanyWorkspace clientId={$clientId} />
   <MediaWorkspace clientId={$clientId} />
+  <LanguageVoiceWorkspace clientId={$clientId} />
 
   <button
     class="telemetry-toggle"
