@@ -24,7 +24,7 @@
     finally { busy = false; }
   }
 </script>
-<section class="company-workspace" aria-label="Kurum ve şirket taraması">
+<section id="company" class="company-workspace" aria-label="Kurum ve şirket taraması">
   <header><div><span class="kicker">PINEAL · KURUMSAL İSTİHBARAT</span><h2>Şirket / Domain İnceleme</h2><p>Alan adı üzerinden üç yetenek hattını ayrı ayrı çalıştır.</p></div><button on:click={loadStatus}>YETENEK DURUMU</button></header>
   {#if status}
     <div class="cap-status"><span>Kapı: {status.gate}</span><span>{status.any_available ? 'En az bir mod kullanılabilir görünüyor' : 'Kullanılabilir mod bildirilmedi'}</span></div>
