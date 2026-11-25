@@ -37,7 +37,7 @@
   <button class="run" on:click={analyze} disabled={busy || !source.trim() || !modes.length}>{busy ? 'ANALİZ SÜRÜYOR…' : 'MEDYA ANALİZİNİ BAŞLAT'}</button>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   {#if result?.modes}
-    <div class="results">{#each Object.entries(result.modes) as [id, data]}<article><strong>{labels[id] || id}</strong><span class:yes={data.available}>{data.available ? 'KULLANILABİLİR' : 'KULLANILAMADI'}</span><small>{data.reason || data.denied_by || 'Gerekçe bildirilmedi'}</small>{#each data.evidence || [] as ev}<p><b>{ev.epistemic_type || 'Kayıt'}</b> · {ev.content}</p>{/each}</article>{/each}</div>
+    <div class="results">{#each Object.entries(result.modes as Record<string, any>) as [id, data]}<article><strong>{labels[id] || id}</strong><span class:yes={data.available}>{data.available ? 'KULLANILABİLİR' : 'KULLANILAMADI'}</span><small>{data.reason || data.denied_by || 'Gerekçe bildirilmedi'}</small>{#each data.evidence || [] as ev}<p><b>{ev.epistemic_type || 'Kayıt'}</b> · {ev.content}</p>{/each}</article>{/each}</div>
   {/if}
   {#if result}<div class="result-total">{result.evidence_total ?? 0} kanıt satırı döndü</div>{/if}\n  <footer>Motor ve politika kapıları sunucuda uygulanır. Bir mod kapalıysa sonuç varmış gibi gösterilmez; boş çıktı, kaynağın içeriği hakkında kesin hüküm değildir.</footer>
 </section>
