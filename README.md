@@ -321,7 +321,7 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · dokümanlar:
 | IG gönderi tavanı | Ham HTML yolunda 20 sahte gönderi → **20 post**; `PINEAL_IG_MAX_POSTS=5` → **5 post** (sabit 12 yok) |
 | Ajan rotası | `CognitiveRouter` rota seti koşula bağımlıdır (hedef/kullanıcı kanıtı, goal seti, görsel kanıt); kayıtlı 14 ajanın tamamı varsayılan rotada koşmaz — rota **hedef/kullanıcı/görsel-kanıt koşullarına** göre daralır |
 | 28 yetenek erişilebilir | `availability()` 28/28 **istisnasız** yanıt verdi (5 açık: socid, dil, handle_probe, phone_probe, rapor metni; 23'ü kapı/bağımlılık sebebiyle kapalı). Her kimliğin adaptör dışı çağrı yeri var; 3 web çıkarıcısı `WEB_EXTRACTION_ORDER` zinciriyle çağrılıyor (`web_research.py`) |
-| Çağrı yeri olmayan uçlar | 84 benzersiz HTTP yolu: **28**'i UI/edge worker'dan, **81**'si testlerden çağrılıyor; **1**'sinin çağrı yeri yok (`/api/tasks/{task_id}/changes`). Ölçüm `tests/unit/test_http_endpoint_call_sites.py` ile kilitli |
+| Çağrı yeri olmayan uçlar | 84 benzersiz HTTP yolu: **48**'i UI/edge worker'dan, **81**'si testlerden çağrılıyor; **1**'sinin çağrı yeri yok (`/api/tasks/{task_id}/changes`). Ölçüm `tests/unit/test_http_endpoint_call_sites.py` ile kilitli |
 | Panelin görsel doğrulaması | Headless Playwright Chromium (`chrome-win64`) ile 1920×1080 çözünürlükte tam ekran görüntüsü alındı (`cockpit_live_visual.png`), pikselleriyle kanıtlandı |
 
 **DOĞRULANMADI (sebebiyle):**
@@ -355,7 +355,7 @@ Ayrıntılı kayıt: **[CHANGELOG.md](CHANGELOG.md)** · dokümanlar:
 | `config/` | Yönlendirme, sağlayıcı kataloğu, karar yapılandırması, RTK politikası |
 
 **Tam ve aranabilir harita:** **[docs/envanter.html](docs/envanter.html)** —
-806 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
+815 dosya, klasör klasör, her dosyanın açıklaması; `python scripts/generate_inventory_page.py`
 ile yenilenir, CI `--check` ile bayatlamayı yakalar.
 
 **Ayrıca:** [ARCHITECTURE.md](ARCHITECTURE.md) · [README_TECHNICAL.md](README_TECHNICAL.md) ·
