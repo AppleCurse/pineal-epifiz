@@ -472,6 +472,8 @@
 </main>
 
 <style>
+  .workspace-anchor, .fullscreen-cockpit-viewport :global(section[id]) { scroll-margin-top: 72px; }
+
   .fullscreen-cockpit-viewport {
     width: 100vw;
     height: 100vh;
