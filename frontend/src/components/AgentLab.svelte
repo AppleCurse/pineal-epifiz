@@ -35,7 +35,7 @@
     return ({ redis_bus: 'Redis olay akışı', in_memory: 'Bellek içi olay akışı', fallback: 'Yedek kaynak', error: 'Kaynak hatası', unreachable: 'Erişilemiyor', none: 'Henüz okunmadı' } as Record<string,string>)[value] || value;
   }
 </script>
-<section class="agent-lab" aria-label="Ajan laboratuvarı">
+<section id="agents" class="agent-lab" aria-label="Ajan laboratuvarı">
   <header><div><span class="kicker">PINEAL · AJAN GÖZLEMLENEBİLİRLİĞİ</span><h2>Ajan Laboratuvarı</h2><p>Ajan durumu ve uzman model rotaları ayrı kaynaklardan okunur.</p></div><button on:click={refresh} disabled={busy}>{busy ? 'OKUNUYOR…' : 'ENVANTERİ YENİLE'}</button></header>
   <div class="source-row"><span>Durum kaynağı: <strong>{sourceLabel(source)}</strong></span><span>{updatedAt ? 'Son okuma: ' + updatedAt : 'Henüz okunmadı'}</span><span>{agents.length} ajan</span></div>
   <input class="search" bind:value={query} placeholder="Ajan ara..." aria-label="Ajan ara" />
