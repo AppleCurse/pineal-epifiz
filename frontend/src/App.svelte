@@ -10,7 +10,18 @@
   } from './store';
   import { uplinkState } from './lib/telemetry';
   import UnifiedPinealCockpit from './components/UnifiedPinealCockpit.svelte';
+  import WorkspaceNav from './components/WorkspaceNav.svelte';
   import NeuralTelemetryBoard from './components/visualizers/NeuralTelemetryBoard.svelte';
+  import CapabilityAtlas from './components/CapabilityAtlas.svelte';
+  import SovereignStudio from './components/SovereignStudio.svelte';
+  import BrowserWorkspace from './components/BrowserWorkspace.svelte';
+  import EvidenceWorkspace from './components/EvidenceWorkspace.svelte';
+  import JuryWorkspace from './components/JuryWorkspace.svelte';
+  import AgentLab from './components/AgentLab.svelte';
+  import CrossScanWorkspace from './components/CrossScanWorkspace.svelte';
+  import CompanyWorkspace from './components/CompanyWorkspace.svelte';
+  import MediaWorkspace from './components/MediaWorkspace.svelte';
+  import LanguageVoiceWorkspace from './components/LanguageVoiceWorkspace.svelte';
   import Icon from './components/Icon.svelte';
   import SupportPanel from './components/SupportPanel.svelte';
 
@@ -428,7 +439,17 @@
 </script>
 
 <main class="fullscreen-cockpit-viewport">
-  <UnifiedPinealCockpit />
+  <WorkspaceNav />
+  <div id="cockpit" class="workspace-anchor"><UnifiedPinealCockpit /></div>
+  <SovereignStudio clientId={$clientId} />
+  <BrowserWorkspace clientId={$clientId} />
+  <EvidenceWorkspace />
+  <JuryWorkspace />
+  <AgentLab clientId={$clientId} />
+  <CrossScanWorkspace clientId={$clientId} />
+  <CompanyWorkspace clientId={$clientId} />
+  <MediaWorkspace clientId={$clientId} />
+  <LanguageVoiceWorkspace clientId={$clientId} />
 
   <button
     class="telemetry-toggle"
@@ -444,6 +465,7 @@
   {#if telemetryVisible}
     <div class="telemetry-panel" id="neural-telemetry-panel">
       <NeuralTelemetryBoard telemetry={telemetryData} />
+      <CapabilityAtlas telemetry={telemetryData} />
     </div>
   {/if}
 
@@ -452,12 +474,17 @@
 </main>
 
 <style>
+  .workspace-anchor, .fullscreen-cockpit-viewport :global(section[id]) { scroll-margin-top: 72px; }
+
+  .workspace-anchor { width: 100%; min-width: 0; }
+
   .fullscreen-cockpit-viewport {
     width: 100vw;
     height: 100vh;
     display: flex;
-    align-items: flex-start;
-    justify-content: center;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
     background: #000;
     overflow-y: auto;
     overflow-x: hidden;

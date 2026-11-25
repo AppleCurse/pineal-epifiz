@@ -1,10 +1,13 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import TaskEvidence from './TaskEvidence.svelte';
+  import ReportFactoryWorkspace from './ReportFactoryWorkspace.svelte';
+  import SettingsWorkspace from './SettingsWorkspace.svelte';
+  import PublicInfoModals from './PublicInfoModals.svelte';
   import Icon from './Icon.svelte';
   import { get } from 'svelte/store';
   import {
-    apiToken, setApiToken, currentApiToken, apiFetch, isAuthFailure, clientId, wsUrl, logs, taskStatus,
+    apiFetch, isAuthFailure, clientId, wsUrl, logs, taskStatus,
     speechState, lastSpeech, voiceEnabled,
     isProcessing, powerEngaged, armEngaged, recordEngaged, agentStatuses, vaultLocked,
     activeViewMode, agentStatusSource, supportRequests, supportTaskId, refreshSupport, mergeTaskSnapshot,
@@ -12,7 +15,7 @@
   } from '../store';
   import { uplinkState, health, sysTelemetry, apiAuthRequired, startHealthPoll, stopHealthPoll } from '../lib/telemetry';
   import { playClick, playHalt, playRunning } from '../lib/consoleAudio';
-  import { hasEvidence, buildPillarSummaries, evidenceChainToReportItems } from '../lib/evidence';
+  import { hasEvidence, buildPillarSummaries } from '../lib/evidence';
   import { taskRuns, taskRunLabel, rackAvailability } from '../lib/taskRunStatus';
   import { checkVaultStatus, vaultExists } from '../lib/tauriBridge';
 
@@ -70,6 +73,12 @@
   ];
 
   // --- STATE ---
+  let cockpitTheme: 'dark' | 'light' = 'dark';
+  function setCockpitTheme(theme: 'dark' | 'light') {
+    cockpitTheme = theme;
+    try { localStorage.setItem('pineal-cockpit-theme', theme); } catch (_e) { /* optional */ }
+  }
+
   let targetUrl = '';
   let contextRituals = '';
   let contextPlaylist = '';
@@ -77,21 +86,8 @@
   let showContextInputs = false;
   let telemetryVisible = true;
   let selectedAgentId: string | null = 'aspasia';
-  // Task History & Report Factory Modal
+  // Task history and report state live in ReportFactoryWorkspace.
   let showHistoryModal = false;
-  let historyTab: 'tasks' | 'reports' = 'tasks';
-  let tasksLoading = false;
-  let tasksError = '';
-  let taskHistoryList: any[] = [];
-  let reportStatusLoading = false;
-  let reportStatusData: any = null;
-  let reportListData: any[] = [];
-  let reportTitle = 'Pineal Adli Analiz Raporu';
-  let reportSubject = '';
-  let reportFormats: Record<string, boolean> = { markdown: true, pdf: true, diagram: true, video: false };
-  let reportBuilding = false;
-  let reportBuildResult: any = null;
-  let reportBuildError = '';
 
   // Commander Override
   let injectType = 'twin_url';
@@ -103,79 +99,11 @@
   let vaultBusy = false;
   let vaultError = '';
 
-  // Ayarlar & Çoklu LLM Kasası + Ajan-Model Haritası
+  // Provider settings state lives in SettingsWorkspace; routing snapshot remains here for live platform gates.
   let showSettingsModal = false;
-  let settingsTab: 'providers' | 'search' | 'routing' = 'providers';
-  let settingsSaving = false;
-  let settingsStatusMsg = '';
-  let settingsErrorMsg = '';
-  let routingLoading = false;
+  let settingsInitialTab: 'providers' | 'search' | 'routing' = 'providers';
   let routingData: any = null;
-  let appTokenInput = currentApiToken();
-  let openRouterInput = '';
-  let providerInputs: Record<string, string> = {
-    groq: '',
-    deepseek: '',
-    'google-gemini': '',
-    'google-gemini-backup': '',
-    mistral: '',
-    cerebras: '',
-    together: '',
-    fireworks: '',
-    perplexity: '',
-    sambanova: '',
-    'nvidia-nim': '',
-    deepinfra: '',
-    huggingface: '',
-    'nous-research': '',
-    'alibaba-dashscope': '',
-    anthropic: '',
-    openai: '',
-    xai: '',
-    cohere: '',
-    'azure-openai': '',
-    iflow: '',
-    'google-gemini-vertex': ''
-  };
-  let localUrl = 'http://localhost:11434/v1';
-  let localModel = 'dolphin-llama3:latest';
-  let useLocal = false;
-  let tavilyKey = '';
-  let serpapiKey = '';
-  let exaKey = '';
-  let xCookie = '';
-  let igCookie = '';
   let isAdultDeclared = false;
-
-  // llm_gateway._AGENT_DIRECT_PROVIDER_KEYS ile birebir uyumlu (aktif OpenAI-chat rotalı sağlayıcılar)
-  const DIRECT_PROVIDERS = [
-    { id: 'groq', label: 'Groq', placeholder: 'gsk_...' },
-    { id: 'deepseek', label: 'DeepSeek', placeholder: 'sk-...' },
-    { id: 'google-gemini', label: 'Google Gemini', placeholder: 'AIza...' },
-    { id: 'google-gemini-backup', label: 'Google Gemini (Yedek)', placeholder: 'AIza...' },
-    { id: 'mistral', label: 'Mistral AI', placeholder: '...' },
-    { id: 'cerebras', label: 'Cerebras', placeholder: '...' },
-    { id: 'together', label: 'Together AI', placeholder: '...' },
-    { id: 'fireworks', label: 'Fireworks AI', placeholder: '...' },
-    { id: 'perplexity', label: 'Perplexity', placeholder: 'pplx-...' },
-    { id: 'sambanova', label: 'SambaNova', placeholder: '...' },
-    { id: 'nvidia-nim', label: 'NVIDIA NIM', placeholder: 'nvapi-...' },
-    { id: 'deepinfra', label: 'DeepInfra', placeholder: '...' },
-    { id: 'huggingface', label: 'HuggingFace', placeholder: 'hf_...' },
-    { id: 'nous-research', label: 'Nous Research', placeholder: '...' },
-    { id: 'alibaba-dashscope', label: 'Alibaba DashScope', placeholder: 'sk-...' }
-  ];
-
-  // llm_gateway._DIAGNOSTIC_ONLY_PROVIDERS ile birebir uyumlu (doğrudan taşıyıcısı yok; yalnızca tanı/envanter)
-  const DIAGNOSTIC_PROVIDERS = [
-    { id: 'anthropic', label: 'Anthropic (Tanı / OpenRouter)', placeholder: 'sk-ant-...' },
-    { id: 'openai', label: 'OpenAI (Tanı / OpenRouter)', placeholder: 'sk-...' },
-    { id: 'xai', label: 'xAI Grok (Tanı / OpenRouter)', placeholder: 'xai-...' },
-    { id: 'cohere', label: 'Cohere (Tanı / OpenRouter)', placeholder: '...' },
-    { id: 'azure-openai', label: 'Azure OpenAI (Tanı)', placeholder: '...' },
-    { id: 'iflow', label: 'iFlow (Tanı)', placeholder: '...' },
-    { id: 'google-gemini-vertex', label: 'Google Gemini Vertex (Tanı)', placeholder: '...' }
-  ];
 
   function routeInfo(agentId: string): any {
     return routingData?.routing?.agents?.[agentId] || null;
@@ -196,84 +124,22 @@
   }
 
   async function loadRoutingSnapshot() {
-    routingLoading = true;
     try {
       const cid = get(clientId) || 'default';
       const res = await apiFetch(`/api/llm/routing?client_id=${encodeURIComponent(cid)}`);
-      if (res.ok) {
-        routingData = await res.json();
-        if (typeof routingData.use_local === 'boolean') useLocal = routingData.use_local;
-      }
+      if (res.ok) routingData = await res.json();
     } catch (_e) {
-      // Routing önizlemesi opsiyonel
-    } finally {
-      routingLoading = false;
+      // Routing önizlemesi opsiyonel.
     }
   }
 
   function openSettingsModal(tab: 'providers' | 'search' | 'routing' = 'providers') {
-    settingsTab = tab;
-    settingsStatusMsg = '';
-    settingsErrorMsg = '';
-    appTokenInput = currentApiToken();
+    settingsInitialTab = tab;
     showSettingsModal = true;
     void loadRoutingSnapshot();
     void refreshVaultState();
   }
 
-  async function saveMultiVaultSettings() {
-    if (settingsSaving) return;
-    settingsSaving = true;
-    settingsStatusMsg = '';
-    settingsErrorMsg = '';
-    try {
-      if (appTokenInput !== undefined && appTokenInput.trim()) {
-        setApiToken(appTokenInput.trim());
-      }
-      const cid = get(clientId) || 'default';
-      const cleanedProviders: Record<string, string> = {};
-      for (const [pid, val] of Object.entries(providerInputs)) {
-        if (val && val.trim()) cleanedProviders[pid] = val.trim();
-      }
-      const payload: Record<string, any> = {
-        client_id: cid,
-        use_local: useLocal,
-      };
-      if (openRouterInput.trim()) payload.api_key = openRouterInput.trim();
-      if (Object.keys(cleanedProviders).length > 0) payload.provider_keys = cleanedProviders;
-      if (useLocal || localUrl.trim()) payload.local_url = localUrl.trim();
-      if (useLocal || localModel.trim()) payload.local_model = localModel.trim();
-      if (tavilyKey.trim()) payload.tavily_key = tavilyKey.trim();
-      if (serpapiKey.trim()) payload.serpapi_key = serpapiKey.trim();
-      if (exaKey.trim()) payload.exa_key = exaKey.trim();
-      if (xCookie.trim()) payload.x_cookie = xCookie.trim();
-      if (igCookie.trim()) payload.ig_sessionid = igCookie.trim();
-
-      const res = await apiFetch('/api/vault', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data?.error?.message || data?.detail || `HTTP ${res.status}`);
-      }
-      settingsStatusMsg = 'Anahtarlar ve çoklu LLM yapılandırması kasaya mühürlendi.';
-      openRouterInput = '';
-      for (const k of Object.keys(providerInputs)) providerInputs[k] = '';
-      tavilyKey = '';
-      serpapiKey = '';
-      exaKey = '';
-      xCookie = '';
-      igCookie = '';
-      await refreshVaultState();
-      await loadRoutingSnapshot();
-    } catch (e: any) {
-      settingsErrorMsg = `Kayıt hatası: ${e?.message || 'bağlantı hatası'}`;
-    } finally {
-      settingsSaving = false;
-    }
-  }
   let injectHistory: Array<{ type: string; value: string; target: string; note: string; ts: string }> = [];
 
   // Phone OSINT
@@ -476,6 +342,10 @@
   }
 
   onMount(() => {
+    try {
+      const savedTheme = localStorage.getItem('pineal-cockpit-theme');
+      if (savedTheme === 'light' || savedTheme === 'dark') cockpitTheme = savedTheme;
+    } catch (_e) { /* optional */ }
     void loadPublicShowcase();
     void refreshVaultState();
     void loadRoutingSnapshot();
@@ -726,135 +596,8 @@
     }
   }
 
-  async function loadTaskHistory() {
-    tasksLoading = true;
-    tasksError = '';
-    try {
-      const cid = $clientId || 'default';
-      const res = await apiFetch(`/api/tasks?client_id=${encodeURIComponent(cid)}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      taskHistoryList = Array.isArray(data.tasks) ? data.tasks : [];
-    } catch (e: any) {
-      tasksError = e?.message || 'Görev geçmişi alınamadı';
-    } finally {
-      tasksLoading = false;
-    }
-  }
-
-  async function loadPastTaskIntoCockpit(taskId: string) {
-    tasksError = '';
-    try {
-      const cid = $clientId || 'default';
-      const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}?client_id=${encodeURIComponent(cid)}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const detail = await res.json();
-      taskStatus.set({
-        task_id: detail.task_id,
-        status: detail.status || 'completed',
-        confidence: detail.confidence,
-        target_profile: detail.target_profile || null,
-        evidence_chain: Array.isArray(detail.evidence_chain) ? detail.evidence_chain : [],
-        runs: {},
-      });
-      if (detail.target_profile?.url) {
-        reportSubject = detail.target_profile.url;
-      } else if (detail.target_profile?.username) {
-        reportSubject = `@${detail.target_profile.username}`;
-      }
-      reportTitle = `Pineal Rapor — ${detail.task_id}`;
-      showHistoryModal = false;
-      chatMessages = [...chatMessages, {
-        ts: nowTime(),
-        sender: 'Aspasia',
-        text: `Geçmiş görev yüklendi: ${detail.task_id} (${detail.evidence_count ?? 0} kanıt kaydı).`
-      }];
-    } catch (e: any) {
-      tasksError = e?.message || 'Görev detayı yüklenemedi';
-    }
-  }
-
-  async function deletePastTask(taskId: string) {
-    tasksError = '';
-    try {
-      const cid = $clientId || 'default';
-      const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}?client_id=${encodeURIComponent(cid)}`, {
-        method: 'DELETE',
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      await loadTaskHistory();
-    } catch (e: any) {
-      tasksError = e?.message || 'Görev silinemedi';
-    }
-  }
-
-  async function loadReportCenter() {
-    reportStatusLoading = true;
-    try {
-      const cid = $clientId || 'default';
-      const [sRes, lRes] = await Promise.all([
-        apiFetch('/api/report/status'),
-        apiFetch(`/api/report/list?client_id=${encodeURIComponent(cid)}`),
-      ]);
-      if (sRes.ok) reportStatusData = await sRes.json();
-      if (lRes.ok) {
-        const lJson = await lRes.json();
-        reportListData = Array.isArray(lJson.reports) ? lJson.reports : [];
-      }
-    } catch {
-      // non-fatal
-    } finally {
-      reportStatusLoading = false;
-    }
-  }
-
-  function openHistoryModal(tab: 'tasks' | 'reports' = 'tasks') {
-    historyTab = tab;
+  function openHistoryModal(_tab: 'tasks' | 'reports' = 'tasks') {
     showHistoryModal = true;
-    if (!reportSubject) {
-      reportSubject = targetUrl || $activeTargetUrl || $taskStatus?.target_profile?.url || '';
-    }
-    void loadTaskHistory();
-    void loadReportCenter();
-  }
-
-  async function buildReportFromCockpit() {
-    if (reportBuilding) return;
-    reportBuilding = true;
-    reportBuildError = '';
-    reportBuildResult = null;
-    const selectedFormats = Object.entries(reportFormats)
-      .filter(([, on]) => on)
-      .map(([fmt]) => fmt);
-    if (selectedFormats.length === 0) {
-      reportBuildError = 'En az bir çıktı formatı seçin.';
-      reportBuilding = false;
-      return;
-    }
-    const evidenceItems = evidenceChainToReportItems($taskStatus);
-    try {
-      const res = await apiFetch('/api/report/build', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          client_id: $clientId || 'default',
-          title: (reportTitle || 'Pineal Adli Analiz Raporu').trim(),
-          subject: (reportSubject || targetUrl || $activeTargetUrl || '').trim(),
-          evidence: evidenceItems,
-          formats: selectedFormats,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data?.error?.message || `HTTP ${res.status}`);
-      }
-      reportBuildResult = data;
-      await loadReportCenter();
-    } catch (e: any) {
-      reportBuildError = e?.message || 'Rapor üretilemedi';
-    } finally {
-      reportBuilding = false;
-    }
   }
 
   async function injectCommanderEvidence() {
@@ -1133,7 +876,7 @@
   }
 </script>
 
-<main class="command-deck">
+<main class="command-deck" class:theme-light={cockpitTheme === "light"}>
   <!-- ==================== 1. MASTER HUD HEADER ==================== -->
   <header class="master-hud-header">
     <!-- Sol: Marka + Canlı Durum -->
@@ -1146,6 +889,10 @@
         {#if legalNotice?.headline}
           <p class="intro-notice">{legalNotice.headline}</p>
         {/if}
+        <button type="button" class="theme-switch" on:click={() => setCockpitTheme(cockpitTheme === 'dark' ? 'light' : 'dark')} aria-label={cockpitTheme === 'dark' ? 'Açık temaya geç' : 'Koyu temaya geç'}>
+          <Icon name={cockpitTheme === 'dark' ? 'sun' : 'moon'} size={0.85} />
+          {cockpitTheme === 'dark' ? 'GÜNDÜZ' : 'GECE'} GÖRÜNÜMÜ
+        </button>
       </div>
     </div>
 
@@ -1969,483 +1716,41 @@
     </div>
   </footer>
 
-  {#if showHistoryModal}
-    <div class="cockpit-modal-backdrop" role="dialog" aria-modal="true" aria-label="Görev Geçmişi ve Rapor Fabrikası">
-      <div class="cockpit-modal-card">
-        <div class="cockpit-modal-head">
-          <h3><Icon name="scroll" size={0.95} /> GÖREV GEÇMİŞİ &amp; RAPOR FABRİKASI</h3>
-          <button class="modal-close-btn" on:click={() => showHistoryModal = false} aria-label="Kapat"><Icon name="close" size={0.9} /></button>
-        </div>
+  <ReportFactoryWorkspace
+    open={showHistoryModal}
+    targetUrl={targetUrl}
+    on:close={() => showHistoryModal = false}
+    on:taskloaded={(event) => {
+      const detail = event.detail;
+      chatMessages = [...chatMessages, {
+        ts: nowTime(),
+        sender: 'Aspasia',
+        text: `Geçmiş görev yüklendi: ${detail.task_id} (${detail.evidence_count ?? 0} kanıt kaydı).`
+      }];
+    }}
+  />
 
-        <div class="cockpit-modal-tabs">
-          <button class:active={historyTab === 'tasks'} on:click={() => { historyTab = 'tasks'; void loadTaskHistory(); }}>
-            Görev Geçmişi ({taskHistoryList.length})
-          </button>
-          <button class:active={historyTab === 'reports'} on:click={() => { historyTab = 'reports'; void loadReportCenter(); }}>
-            Rapor Fabrikası &amp; Geçmiş Raporlar ({reportListData.length})
-          </button>
-        </div>
+  <SettingsWorkspace
+    open={showSettingsModal}
+    initialTab={settingsInitialTab}
+    routingData={routingData}
+    on:close={() => showSettingsModal = false}
+    on:saved={() => { void refreshVaultState(); void loadRoutingSnapshot(); }}
+  />
 
-        <div class="cockpit-modal-body">
-          {#if historyTab === 'tasks'}
-            <div class="modal-section-box">
-              <div class="history-toolbar">
-                <h4>Kayıtlı Görevler <code class="endpoint-path">GET /api/tasks</code></h4>
-                <button type="button" class="modal-cancel-btn" on:click={loadTaskHistory} disabled={tasksLoading}>
-                  {tasksLoading ? 'Yükleniyor...' : 'Yenile'}
-                </button>
-              </div>
-              {#if tasksError}
-                <div class="modal-alert err">{tasksError}</div>
-              {/if}
-              {#if tasksLoading && taskHistoryList.length === 0}
-                <p class="routing-note">Görev geçmişi yükleniyor...</p>
-              {:else if taskHistoryList.length === 0}
-                <p class="routing-note">Bu oda için henüz kayıtlı görev yok.</p>
-              {:else}
-                <div class="routing-table-wrap">
-                  <table class="routing-table">
-                    <thead>
-                      <tr>
-                        <th>Görev ID</th>
-                        <th>Durum</th>
-                        <th>Kanıt</th>
-                        <th>Güven</th>
-                        <th>Tarih</th>
-                        <th>İşlem</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {#each taskHistoryList as t}
-                        <tr>
-                          <td class="rt-agent">{t.task_id}</td>
-                          <td>{t.status || t.memory_state || '-'}</td>
-                          <td>{t.evidence_count ?? 0}</td>
-                          <td>{typeof t.confidence === 'number' ? Math.round(t.confidence * 100) + '%' : '-'}</td>
-                          <td>{t.last_updated || '-'}</td>
-                          <td class="history-actions">
-                            <button type="button" class="mini-action-btn" on:click={() => loadPastTaskIntoCockpit(t.task_id)}>YÜKLE</button>
-                            <button type="button" class="mini-action-btn danger" on:click={() => deletePastTask(t.task_id)}>SİL</button>
-                          </td>
-                        </tr>
-                      {/each}
-                    </tbody>
-                  </table>
-                </div>
-              {/if}
-            </div>
-          {:else}
-            <div class="modal-section-box">
-              <h4>Rapor Fabrikası — Kanıttan Rapor Üret (POST /api/report/build)</h4>
-              {#if reportStatusData}
-                <p class="routing-note">
-                  Kapı: <code>{reportStatusData.gate}</code> · Dizin: <code>{reportStatusData.report_dir}</code>
-                </p>
-                <div class="format-chips">
-                  {#each reportStatusData.formats || [] as fmt}
-                    <label class="format-chip" class:disabled={!fmt.available}>
-                      <input type="checkbox" bind:checked={reportFormats[fmt.format]} />
-                      <span>{fmt.format.toUpperCase()}</span>
-                      <small>({fmt.available ? 'hazır' : fmt.reason || 'yok'})</small>
-                    </label>
-                  {/each}
-                </div>
-              {:else if reportStatusLoading}
-                <p class="routing-note">Rapor fabrikası durumu kontrol ediliyor...</p>
-              {/if}
+  <PublicInfoModals
+    showDemo={showDemoModal}
+    showTerms={showTermsModal}
+    demoReports={demoReports}
+    demoSelected={demoSelected}
+    demoLoading={demoLoading}
+    demoError={demoError}
+    legalNotice={legalNotice}
+    on:close-demo={() => (showDemoModal = false)}
+    on:close-terms={() => (showTermsModal = false)}
+    on:select-demo={(event) => void loadDemoReport(event.detail.id)}
+  />
 
-              <div class="provider-grid" style="margin-top: 0.6rem;">
-                <label class="provider-field">
-                  <span>Rapor Başlığı</span>
-                  <input type="text" bind:value={reportTitle} placeholder="Pineal Adli Analiz Raporu" />
-                </label>
-                <label class="provider-field">
-                  <span>Konu / Hedef</span>
-                  <input type="text" bind:value={reportSubject} placeholder="https://instagram.com/..." />
-                </label>
-              </div>
-              <p class="routing-note" style="margin-top: 0.45rem;">
-                Aktif kanıt zincirinden taşınacak satır: <strong>{evidenceChainToReportItems($taskStatus).length}</strong>
-              </p>
-              <div style="margin-top: 0.5rem;">
-                <button type="button" class="modal-save-btn" on:click={buildReportFromCockpit} disabled={reportBuilding}>
-                  {reportBuilding ? 'ÜRETİLİYOR...' : 'RAPOR PAKETİ ÜRET'}
-                </button>
-              </div>
-
-              {#if reportBuildError}
-                <div class="modal-alert err" style="margin-top: 0.5rem;">{reportBuildError}</div>
-              {/if}
-              {#if reportBuildResult}
-                <div class="modal-alert ok" style="margin-top: 0.5rem;">
-                  <strong>Rapor sonucu ({reportBuildResult.title}):</strong>
-                  {#each Object.entries(reportBuildResult.formats || {}) as [fmtName, fmtRes]}
-                    {@const r = fmtRes as any}
-                    <div class="report-res-row">
-                      <code>{fmtName}</code>: {r.available ? 'ÜRETİLDİ' : `ENGELLENDİ / YOK (${r.denied_by || r.reason || 'bilinmiyor'})`}
-                      {#if r.manifest_sha256} · sha256: <code>{r.manifest_sha256.slice(0, 12)}…</code>{/if}
-                    </div>
-                  {/each}
-                </div>
-              {/if}
-            </div>
-
-            <div class="modal-section-box">
-              <div class="history-toolbar">
-                <h4>Geçmiş Raporlar (GET /api/report/list)</h4>
-                <button type="button" class="modal-cancel-btn" on:click={loadReportCenter} disabled={reportStatusLoading}>
-                  <Icon name="refresh" size={0.85} /> Yenile
-                </button>
-              </div>
-              {#if reportListData.length === 0}
-                <p class="routing-note">Henüz üretilmiş rapor paketi bulunamadı.</p>
-              {:else}
-                <div class="report-history-list">
-                  {#each reportListData as rep}
-                    <div class="report-history-card">
-                      <div class="rh-head">
-                        <strong>{rep.title}</strong>
-                        <span>{rep.created_at || '-'}</span>
-                      </div>
-                      <div class="rh-meta">
-                        Hedef: {rep.subject || '-'} · Kanıt: {rep.evidence_count} · Manifest: <code>{(rep.manifest_sha256 || '').slice(0, 12)}…</code>
-                      </div>
-                      <div class="rh-links">
-                        {#each rep.artifacts || [] as art}
-                          {#if art.download_url}
-                            <a class="report-dl-link" href={`${art.download_url}?client_id=${encodeURIComponent($clientId || "default")}`} target="_blank" rel="noopener">
-                              <Icon name="download" size={0.85} /> {art.kind} ({art.bytes} B)
-                            </a>
-                          {/if}
-                        {/each}
-                        {#if rep.manifest_url}
-                          <a class="report-dl-link" href={`${rep.manifest_url}?client_id=${encodeURIComponent($clientId || "default")}`} target="_blank" rel="noopener"><Icon name="download" size={0.85} /> manifest.json</a>
-                        {/if}
-                      </div>
-                    </div>
-                  {/each}
-                </div>
-              {/if}
-            </div>
-          {/if}
-        </div>
-      </div>
-    </div>
-  {/if}
-
-  {#if showSettingsModal}
-    <div class="cockpit-modal-backdrop" role="presentation" on:click|self={() => (showSettingsModal = false)}>
-      <div class="cockpit-modal-card" role="dialog" aria-modal="true" aria-label="Ayarlar ve Çoklu LLM Kasası">
-        <div class="cockpit-modal-head">
-          <div>
-            <h3><Icon name="gear" size={0.95} /> AYARLAR, ÇOKLU LLM KASASI &amp; AJAN MODEL HARİTASI</h3>
-            <p class="cockpit-modal-sub">Her sağlayıcıya doğrudan anahtar girin; sistemdeki her ajan/özellik kendi uzman modelini kullanır.</p>
-          </div>
-          <button class="modal-x-btn" on:click={() => (showSettingsModal = false)} aria-label="Kapat"><Icon name="close" size={0.9} /></button>
-        </div>
-
-        <div class="cockpit-modal-tabs">
-          <button class:active={settingsTab === 'providers'} on:click={() => (settingsTab = 'providers')}>Çoklu LLM Anahtarları</button>
-          <button class:active={settingsTab === 'search'} on:click={() => (settingsTab = 'search')}>Arama & Oturum (OSINT)</button>
-          <button class:active={settingsTab === 'routing'} on:click={() => { settingsTab = 'routing'; void loadRoutingSnapshot(); }}>Ajan &gt; Model Haritası ({routingData?.routing?.agents ? Object.keys(routingData.routing.agents).length : 21})</button>
-        </div>
-
-        <div class="cockpit-modal-body">
-          {#if settingsTab === 'providers'}
-            <div class="modal-section-box">
-              <h4>Doğrudan Aktif Rota Sağlayıcıları (llm_gateway)</h4>
-              <div class="provider-grid">
-                {#each DIRECT_PROVIDERS as prov}
-                  {@const isSet = (routingData?.provider_keys_set || []).includes(prov.id)}
-                  <label class="provider-field">
-                    <span class="pf-top">
-                      <span>{prov.label}</span>
-                      <span class="pf-badge" class:active={isSet}>{isSet ? 'AKTİF' : 'BOŞ'}</span>
-                    </span>
-                    <input type="password" placeholder={prov.placeholder} bind:value={providerInputs[prov.id]} />
-                  </label>
-                {/each}
-              </div>
-            </div>
-
-            <div class="modal-section-box">
-              <h4>Tanı / Envanter Sağlayıcıları (Doğrudan Taşıyıcı Yok — Claude/GPT/Grok OpenRouter Üzerinden Çalışır)</h4>
-              <div class="provider-grid">
-                {#each DIAGNOSTIC_PROVIDERS as prov}
-                  {@const isSet = (routingData?.provider_keys_set || []).includes(prov.id)}
-                  <label class="provider-field">
-                    <span class="pf-top">
-                      <span>{prov.label}</span>
-                      <span class="pf-badge" class:active={isSet}>{isSet ? 'KAYITLI (TANI)' : 'BOŞ'}</span>
-                    </span>
-                    <input type="password" placeholder={prov.placeholder} bind:value={providerInputs[prov.id]} />
-                  </label>
-                {/each}
-              </div>
-            </div>
-
-            <div class="modal-section-box">
-              <h4>OpenRouter Yedek Anahtarı & Yetki Tokenı</h4>
-              <div class="provider-grid">
-                <label class="provider-field">
-                  <span class="pf-top">
-                    <span>OpenRouter (Yedek / Çoklu Model Ağ Geçidi)</span>
-                    <span class="pf-badge" class:active={routingData?.has_openrouter}>{routingData?.has_openrouter ? 'AKTİF' : 'BOŞ'}</span>
-                  </span>
-                  <input type="password" placeholder="sk-or-v1-..." bind:value={openRouterInput} />
-                </label>
-                <label class="provider-field">
-                  <span class="pf-top"><span>PINEAL_TOKEN (Sunucu Yetki Anahtarı)</span></span>
-                  <input type="password" placeholder="Opsiyonel (üretim modu için)" bind:value={appTokenInput} />
-                </label>
-              </div>
-            </div>
-
-            <div class="modal-section-box">
-              <h4>Yerel LLM (Ollama / LM Studio)</h4>
-              <label class="local-toggle-row">
-                <input type="checkbox" bind:checked={useLocal} />
-                <span>Yerel LLM Kullan (Bulut yerine yerel model)</span>
-              </label>
-              <div class="provider-grid">
-                <label class="provider-field">
-                  <span class="pf-top"><span>Base URL</span></span>
-                  <input type="text" bind:value={localUrl} placeholder="http://localhost:11434/v1" />
-                </label>
-                <label class="provider-field">
-                  <span class="pf-top"><span>Model Adı</span></span>
-                  <input type="text" bind:value={localModel} placeholder="dolphin-llama3:latest" />
-                </label>
-              </div>
-            </div>
-          {:else if settingsTab === 'search'}
-            <div class="modal-section-box">
-              <h4>OSINT Arama Motoru Anahtarları & Sosyal Oturum</h4>
-              <div class="provider-grid">
-                <label class="provider-field">
-                  <span class="pf-top">
-                    <span>Tavily API Key</span>
-                    <span class="pf-badge" class:active={routingData?.has_tavily}>{routingData?.has_tavily ? 'AKTİF' : 'BOŞ'}</span>
-                  </span>
-                  <input type="password" placeholder="tvly-..." bind:value={tavilyKey} />
-                </label>
-                <label class="provider-field">
-                  <span class="pf-top">
-                    <span>SerpAPI Key</span>
-                    <span class="pf-badge" class:active={routingData?.has_serpapi}>{routingData?.has_serpapi ? 'AKTİF' : 'BOŞ'}</span>
-                  </span>
-                  <input type="password" placeholder="..." bind:value={serpapiKey} />
-                </label>
-                <label class="provider-field">
-                  <span class="pf-top">
-                    <span>Exa API Key</span>
-                    <span class="pf-badge" class:active={routingData?.has_exa}>{routingData?.has_exa ? 'AKTİF' : 'BOŞ'}</span>
-                  </span>
-                  <input type="password" placeholder="..." bind:value={exaKey} />
-                </label>
-                <label class="provider-field">
-                  <span class="pf-top"><span>Instagram Session / Cookie (sessionid)</span></span>
-                  <input type="password" placeholder="sessionid=... veya doğrudan sessionid" bind:value={igCookie} />
-                </label>
-                <label class="provider-field">
-                  <span class="pf-top"><span>X / Twitter Cookie (auth_token / ct0)</span></span>
-                  <input type="password" placeholder="auth_token=...; ct0=..." bind:value={xCookie} />
-                </label>
-              </div>
-            </div>
-          {:else}
-            <div class="modal-section-box">
-              <h4>Gerçek Ajan &amp; Özellik / Uzman Model Zinciri (llm_gateway)</h4>
-              <p class="routing-note">Bu tablo OpenRouter tekilleştirmesi değildir: her ajan kendi tier ve uzman zinciriyle çalışır. Kaynak <strong>9router_canonical</strong> görünüyorsa aktif 9Router overlay zinciri üstüne yazmaktadır.</p>
-              {#if routingData?.routing?.tier_violations && Object.keys(routingData.routing.tier_violations).length > 0}
-                <div class="routing-warning"><Icon name="warning" size={0.85} /> Tier uyarıları: {Object.entries(routingData.routing.tier_violations).map(([name, reason]) => `${name}: ${reason}`).join(' · ')}</div>
-              {/if}
-              {#if routingLoading && !routingData}
-                <p class="routing-note">Model haritası yükleniyor...</p>
-              {:else if routingData?.routing?.agents}
-                <div class="routing-table-wrap">
-                  <table class="routing-table">
-                    <thead>
-                      <tr>
-                        <th>Ajan / Özellik</th>
-                        <th>Tier</th>
-                        <th>Uzman Model Zinciri (Sırayla)</th>
-                        <th>Kaynak / Durum</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {#each Object.entries(routingData.routing.agents as Record<string, any>) as [agentName, info]}
-                        <tr>
-                          <td class="rt-agent">{agentName}</td>
-                          <td class="rt-tier">{info?.tier || routingData?.routing?.tiers?.[agentName] || '—'}</td>
-                          <td class="rt-chain">{Array.isArray(info?.chain) ? info.chain.join(' > ') : '—'}</td>
-                          <td class="rt-src">{info?.source || '—'}{routingData?.routing?.tier_violations?.[agentName] ? ` · ! ${routingData.routing.tier_violations[agentName]}` : ''}</td>
-                        </tr>
-                      {/each}
-                    </tbody>
-                  </table>
-                </div>
-              {:else}
-                <p class="routing-note">Model yönlendirme verisi alınamadı.</p>
-              {/if}
-            </div>
-          {/if}
-
-          {#if settingsStatusMsg}<div class="modal-alert ok">{settingsStatusMsg}</div>{/if}
-          {#if settingsErrorMsg}<div class="modal-alert err" role="alert">{settingsErrorMsg}</div>{/if}
-        </div>
-
-        <div class="cockpit-modal-foot">
-          <button class="modal-cancel-btn" on:click={() => (showSettingsModal = false)}>Kapat</button>
-          {#if settingsTab !== 'routing'}
-            <button class="modal-save-btn" on:click={saveMultiVaultSettings} disabled={settingsSaving}>
-              <Icon name="lock" size={0.85} />
-              {settingsSaving ? 'KAYDEDİLİYOR...' : 'KAYDET VE UYGULA'}
-            </button>
-          {/if}
-        </div>
-      </div>
-    </div>
-  {/if}
-
-  <!-- ============ ÖRNEK RAPORLAR (token'sız vitrin) ============ -->
-  {#if showDemoModal}
-    <div class="cockpit-modal-backdrop" role="dialog" aria-modal="true" aria-label="Örnek analiz raporları">
-      <div class="cockpit-modal-card demo-modal-card">
-        <div class="cockpit-modal-head">
-          <h3><Icon name="file" size={0.95} /> ÖRNEK ANALİZ RAPORLARI</h3>
-          <p class="cockpit-modal-sub">
-            Ürünün çıktı biçimini gösteren 2 SENTEİTİK örnek. Gerçek kişi/kurum taranmadı — token gerekmez.
-          </p>
-          <button class="modal-close-btn" on:click={() => (showDemoModal = false)} aria-label="Kapat">
-            <Icon name="close" size={0.9} />
-          </button>
-        </div>
-        <div class="cockpit-modal-body demo-body">
-          {#if demoError}
-            <div class="modal-alert err" role="alert">{demoError}</div>
-          {/if}
-          {#if demoLoading && !demoReports.length}
-            <div class="demo-loading">Yükleniyor...</div>
-          {/if}
-          <div class="demo-layout">
-            <div class="demo-index" role="tablist" aria-label="Örnek raporlar">
-              {#each demoReports as r (r.id)}
-                <button
-                  class="demo-index-item"
-                  class:active={demoSelected?.id === r.id}
-                  role="tab"
-                  aria-selected={demoSelected?.id === r.id}
-                  on:click={() => void loadDemoReport(r.id)}
-                >
-                  <span class="demo-index-title">{r.title}</span>
-                  <span class="demo-index-sub">{r.scenario}</span>
-                  <span class="demo-index-meta">{r.finding_count} bulgu · {r.evidence_count} kanıt</span>
-                </button>
-              {/each}
-            </div>
-
-            <div class="demo-report" role="tabpanel">
-              {#if demoSelected}
-                <div class="demo-report-head">
-                  <h4>{demoSelected.title}</h4>
-                  <div class="demo-subject">{demoSelected.subject_label}</div>
-                  <div class="demo-tags">
-                    <span class="demo-tag">SENTEİTİK</span>
-                    <span class="demo-tag">{demoSelected.engine}</span>
-                    <span class="demo-tag">{demoSelected.duration_seconds} sn</span>
-                  </div>
-                </div>
-
-                <div class="demo-confidence">
-                  <strong>{demoSelected.confidence?.label}</strong>
-                  <span>{demoSelected.confidence?.caveat}</span>
-                </div>
-
-                <h5>Bulgular</h5>
-                {#each demoSelected.findings as f (f.id)}
-                  <div class="demo-finding">
-                    <div class="demo-finding-head">
-                      <span class="demo-sev sev-{(f.severity || '').toLowerCase()}">{f.severity}</span>
-                      <strong>{f.title}</strong>
-                    </div>
-                    <blockquote>{f.quote}</blockquote>
-                    <div class="demo-finding-meta">
-                      Kanıt: {(f.evidence || []).join(', ')} · Güven: {f.confidence}
-                    </div>
-                  </div>
-                {/each}
-
-                <h5>Kanıt Zinciri</h5>
-                <ul class="demo-evidence">
-                  {#each demoSelected.evidence_chain as e, i (i)}
-                    <li>
-                      <strong>{e.agent}</strong> — {e.result?.claim}
-                      <span class="demo-ev-status">[{e.result?.verification || 'BİLİNMİYOR'}]</span>
-                    </li>
-                  {/each}
-                </ul>
-
-                <h5>Sütun Durumları</h5>
-                <div class="demo-pillars">
-                  {#each demoSelected.pillars as pl (pl.id)}
-                    <div class="demo-pillar st-{(pl.status || '').toLowerCase()}">
-                      <span class="demo-pillar-label">{pl.label}</span>
-                      <span class="demo-pillar-status">{pl.status}</span>
-                      <span class="demo-pillar-summary">{pl.summary}</span>
-                    </div>
-                  {/each}
-                </div>
-
-                <h5>Sınırlar</h5>
-                <ul class="demo-limits">
-                  {#each demoSelected.limitations as lim, i (i)}
-                    <li>{lim}</li>
-                  {/each}
-                </ul>
-
-                <p class="demo-note">{demoSelected.notice}</p>
-              {:else}
-                <div class="demo-loading">Soldan bir örnek seçin.</div>
-              {/if}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  {/if}
-
-  <!-- ============ KULLANIM KOŞULLARI ============ -->
-  {#if showTermsModal}
-    <div class="cockpit-modal-backdrop" role="dialog" aria-modal="true" aria-label="Sorumluluk reddi ve kullanım koşulları">
-      <div class="cockpit-modal-card demo-modal-card">
-        <div class="cockpit-modal-head">
-          <h3><Icon name="warning" size={0.95} /> SORUMLULUK REDDİ VE KULLANIM KOŞULLARI</h3>
-          <button class="modal-close-btn" on:click={() => (showTermsModal = false)} aria-label="Kapat">
-            <Icon name="close" size={0.9} />
-          </button>
-        </div>
-        <div class="cockpit-modal-body demo-body">
-          {#if legalNotice}
-            <div class="terms-headline">{legalNotice.headline}</div>
-            <p class="terms-par">{legalNotice.disclaimer}</p>
-            <h4>Açık Rıza Beyanı</h4>
-            <p class="terms-par">{legalNotice.consent_declaration}</p>
-            <h4>Kullanım Koşulları</h4>
-            <ul class="terms-list">
-              {#each legalNotice.usage_terms as t, i (i)}
-                <li>{t}</li>
-              {/each}
-            </ul>
-            <p class="terms-par terms-muted">{legalNotice.not_legal_advice}</p>
-            <p class="terms-par terms-muted">Yargı çevresi: {legalNotice.jurisdiction} · Dil: {legalNotice.language}</p>
-          {:else}
-            <div class="demo-loading">Metin yüklenemedi — sunucuya erişilemiyor.</div>
-          {/if}
-        </div>
-      </div>
-    </div>
-  {/if}
 </main>
 
 <style>
@@ -2964,133 +2269,6 @@
     transition: all 0.2s;
   }
   .settings-gear-btn:hover { background: rgba(6, 182, 212, 0.25); color: #fff; }
-  .cockpit-modal-backdrop {
-    position: fixed; inset: 0; z-index: 9999;
-    background: rgba(2, 4, 10, 0.85);
-    backdrop-filter: blur(8px);
-    display: flex; align-items: center; justify-content: center; padding: 1rem;
-  }
-  .cockpit-modal-card {
-    width: min(880px, 96vw); max-height: 90vh;
-    background: #0a0e17; border: 1px solid rgba(6, 182, 212, 0.45);
-    border-radius: 10px; display: flex; flex-direction: column; overflow: hidden;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
-  }
-  .cockpit-modal-head {
-    display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;
-    padding: 1rem 1.25rem; border-bottom: 1px solid var(--border-dim);
-  }
-  .cockpit-modal-head h3 { font-size: 0.9rem; color: var(--gold); margin: 0 0 0.25rem; }
-  .cockpit-modal-sub { font-size: 0.7rem; color: var(--text-dim); margin: 0; }
-  .modal-x-btn {
-    background: transparent; border: 1px solid var(--border-dim); color: var(--text-dim);
-    border-radius: 4px; padding: 0.25rem 0.55rem; cursor: pointer;
-  }
-  .cockpit-modal-tabs {
-    display: flex; gap: 0.5rem; padding: 0.65rem 1.25rem;
-    background: rgba(5, 7, 12, 0.8); border-bottom: 1px solid var(--border-dim);
-    flex-wrap: wrap;
-  }
-  .cockpit-modal-tabs button {
-    padding: 0.4rem 0.8rem; font-family: inherit; font-size: 0.7rem; font-weight: 700;
-    color: var(--text-dim); background: rgba(255,255,255,0.03);
-    border: 1px solid var(--border-dim); border-radius: 5px; cursor: pointer;
-  }
-  .cockpit-modal-tabs button.active {
-    color: #02140a; background: var(--cyan); border-color: var(--cyan);
-  }
-  .cockpit-modal-body {
-    padding: 1rem 1.25rem;
-    /* [P0 · DOĞRULAMA 2026-11-23] flex:1 + min-height:0 EKSİKTİ. Kart
-       `display:flex; flex-direction:column; overflow:hidden; max-height:90vh`
-       olduğundan, gövdenin varsayılan `min-height:auto`'su onu içerik
-       yüksekliğinde tutuyor, kartı 90vh'nin üstüne zorluyor ve taşan kısım
-       `overflow:hidden` ile KESİLİYORDU — `overflow-y:auto` hiç devreye
-       girmiyordu. Ölçülen sonuç: Ayarlar modalındaki OpenRouter/PINEAL_TOKEN
-       kutusu (sıralamada 5. bölüm) alt barda görünmüyordu. */
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto; display: flex; flex-direction: column; gap: 1rem;
-  }
-  .modal-section-box {
-    background: rgba(15, 20, 32, 0.7); border: 1px solid var(--border-dim);
-    border-radius: 8px; padding: 0.85rem;
-  }
-  .modal-section-box h4 { font-size: 0.72rem; color: var(--cyan); margin: 0 0 0.65rem; text-transform: uppercase; }
-  /* [P0 · DOĞRULAMA 2026-11-23] `lang="tr"` + `text-transform:uppercase`
-     etkileşimi tarayıcıda Türkçe büyük harf kuralını uygulatır: "api" →
-     "APİ" (noktalı İ). Ölçülen hata: modal başlığında "GET /APİ/TASKS"
-     görünüyordu. Endpoint yolu bir kimliktir, büyük harfe çevrilmemelidir. */
-  .endpoint-path {
-    text-transform: none;
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 0.68rem;
-    font-weight: 500;
-    letter-spacing: 0;
-    color: var(--text-dim);
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid var(--border-dim);
-    border-radius: 4px;
-    padding: 0.05rem 0.35rem;
-    margin-left: 0.4rem;
-    vertical-align: 0.05em;
-    white-space: nowrap;
-  }
-  /* [P0 · DOĞRULAMA 2026-11-23] `.modal-close-btn` sınıfının HİÇ stili yoktu:
-     düğme tarayıcı varsayılan butonuna düşüyor, koyu temada görünmüyordu.
-     (✕ glifi de JetBrains Mono'da yoktu → Icon ile değiştirildi.) */
-  .modal-close-btn {
-    flex: 0 0 auto;
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 1.85rem; height: 1.85rem;
-    background: transparent;
-    border: 1px solid var(--border-dim);
-    border-radius: 4px;
-    color: var(--text-dim);
-    cursor: pointer;
-    transition: color 0.15s, border-color 0.15s, background 0.15s;
-  }
-  .modal-close-btn:hover,
-  .modal-close-btn:focus-visible {
-    color: var(--gold);
-    border-color: var(--gold);
-    background: rgba(212, 175, 55, 0.08);
-  }
-  .provider-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.65rem; }
-  .provider-field { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.68rem; color: var(--text-dim); }
-  .pf-top { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
-  .pf-badge { font-size: 0.58rem; padding: 0.1rem 0.35rem; border-radius: 3px; background: rgba(255,255,255,0.08); color: var(--text-muted); }
-  .pf-badge.active { background: rgba(16, 185, 129, 0.2); color: var(--emerald); border: 1px solid rgba(16, 185, 129, 0.4); }
-  .provider-field input {
-    padding: 0.45rem 0.6rem; font-family: 'JetBrains Mono', monospace; font-size: 0.7rem;
-    color: var(--text-primary); background: #05080f; border: 1px solid var(--border-dim); border-radius: 4px;
-  }
-  .local-toggle-row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.7rem; color: var(--text-primary); margin-bottom: 0.6rem; }
-  .routing-table-wrap { max-height: 360px; overflow: auto; }
-  .routing-table { width: 100%; border-collapse: collapse; font-size: 0.66rem; }
-  .routing-table th, .routing-table td { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--border-dim); }
-  .routing-table th { color: var(--gold); font-weight: 800; }
-  .rt-agent { color: var(--cyan); font-weight: 700; font-family: 'JetBrains Mono', monospace; }
-  .rt-tier { color: var(--gold); font-weight: 700; }
-  .rt-chain { color: var(--text-primary); font-family: 'JetBrains Mono', monospace; }
-  .rt-src { color: var(--text-muted); }
-  .routing-warning { margin: .5rem 0; padding: .5rem; color: #fbbf24; background: rgba(120, 70, 0, .2); border: 1px solid rgba(251, 191, 36, .35); font-size: .68rem; }
-  .routing-note { font-size: 0.7rem; color: var(--text-dim); }
-  .modal-alert { padding: 0.55rem 0.75rem; border-radius: 5px; font-size: 0.72rem; }
-  .modal-alert.ok { background: rgba(16, 185, 129, 0.15); border: 1px solid var(--emerald); color: var(--emerald); }
-  .modal-alert.err { background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; color: #fca5a5; }
-  .cockpit-modal-foot {
-    display: flex; justify-content: flex-end; gap: 0.65rem;
-    padding: 0.85rem 1.25rem; border-top: 1px solid var(--border-dim);
-  }
-  .modal-cancel-btn {
-    padding: 0.45rem 0.9rem; font-family: inherit; font-size: 0.7rem;
-    background: transparent; color: var(--text-dim); border: 1px solid var(--border-dim); border-radius: 5px; cursor: pointer;
-  }
-  .modal-save-btn {
-    padding: 0.45rem 1rem; font-family: inherit; font-size: 0.7rem; font-weight: 800;
-    background: linear-gradient(135deg, var(--emerald), #059669); color: #02140a; border: none; border-radius: 5px; cursor: pointer;
-  }
   .platform-warning {
     width: 100%;
     margin-top: 0.35rem;
@@ -3133,98 +2311,6 @@
   }
   .launch-notice :global(.icon) { margin-top: 0.12rem; }
 
-  /* ==================== ÖRNEK RAPORLAR / KULLANIM KOŞULLARI ==================== */
-  .demo-modal-card { width: min(1080px, 96vw); }
-  .demo-body { gap: 0.75rem; }
-  .demo-loading { color: var(--text-dim); font-size: 0.78rem; padding: 1rem 0; }
-
-  .demo-layout { display: grid; grid-template-columns: 260px 1fr; gap: 1rem; min-height: 0; }
-  .demo-index { display: flex; flex-direction: column; gap: 0.5rem; }
-  .demo-index-item {
-    display: flex; flex-direction: column; gap: 0.25rem; text-align: left;
-    padding: 0.65rem 0.75rem; cursor: pointer; font-family: inherit;
-    background: rgba(15, 20, 32, 0.6); border: 1px solid var(--border-dim);
-    border-radius: 6px; color: var(--text-dim); transition: all 0.15s;
-  }
-  .demo-index-item:hover { border-color: var(--cyan); color: var(--text-primary); }
-  .demo-index-item.active { border-color: var(--emerald); background: rgba(16, 185, 129, 0.08); color: var(--text-primary); }
-  .demo-index-title { font-size: 0.78rem; font-weight: 800; letter-spacing: 0.02em; }
-  .demo-index-sub { font-size: 0.62rem; color: var(--text-muted); }
-  .demo-index-meta { font-size: 0.6rem; color: var(--cyan); }
-
-  .demo-report { min-width: 0; padding-right: 0.25rem; }
-  .demo-report-head h4 { font-size: 0.95rem; color: var(--gold); margin: 0 0 0.2rem; }
-  .demo-subject { font-size: 0.68rem; color: var(--cyan); margin-bottom: 0.4rem; }
-  .demo-tags { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.6rem; }
-  .demo-tag {
-    font-size: 0.58rem; font-weight: 700; letter-spacing: 0.06em;
-    padding: 0.1rem 0.4rem; border-radius: 3px;
-    background: rgba(255, 255, 255, 0.06); border: 1px solid var(--border-dim);
-    color: var(--text-dim); text-transform: uppercase;
-  }
-  .demo-confidence {
-    display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline;
-    padding: 0.5rem 0.65rem; margin-bottom: 0.6rem; border-radius: 5px;
-    background: rgba(6, 182, 212, 0.08); border: 1px solid rgba(6, 182, 212, 0.3);
-    font-size: 0.68rem;
-  }
-  .demo-confidence strong { color: var(--cyan); }
-  .demo-confidence span { color: var(--text-dim); }
-
-  .demo-report h5 {
-    font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase;
-    color: var(--text-muted); margin: 0.75rem 0 0.35rem;
-  }
-  .demo-finding {
-    padding: 0.5rem 0.65rem; margin-bottom: 0.4rem; border-radius: 5px;
-    background: rgba(15, 20, 32, 0.65); border-left: 2px solid var(--border-dim);
-  }
-  .demo-finding-head { display: flex; align-items: center; gap: 0.5rem; font-size: 0.74rem; }
-  .demo-finding blockquote {
-    margin: 0.3rem 0; padding-left: 0.6rem; border-left: 1px solid var(--border-dim);
-    font-size: 0.7rem; font-style: italic; color: var(--text-dim);
-  }
-  .demo-finding-meta { font-size: 0.6rem; color: var(--text-muted); }
-  .demo-sev { font-size: 0.58rem; font-weight: 800; padding: 0.08rem 0.35rem; border-radius: 3px; }
-  .demo-sev.sev-high { background: rgba(239, 68, 68, 0.18); color: #fca5a5; }
-  .demo-sev.sev-medium { background: rgba(251, 191, 36, 0.16); color: #fbbf24; }
-  .demo-sev.sev-low { background: rgba(16, 185, 129, 0.14); color: var(--emerald); }
-
-  .demo-evidence, .demo-limits, .terms-list {
-    margin: 0; padding-left: 1.1rem; font-size: 0.68rem; color: var(--text-dim);
-    display: flex; flex-direction: column; gap: 0.25rem;
-  }
-  .demo-evidence strong { color: var(--cyan); }
-  .demo-ev-status { color: var(--text-muted); margin-left: 0.25rem; }
-
-  .demo-pillars { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.4rem; }
-  .demo-pillar {
-    display: flex; flex-direction: column; gap: 0.15rem;
-    padding: 0.4rem 0.5rem; border-radius: 4px; font-size: 0.62rem;
-    background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-dim);
-  }
-  .demo-pillar-label { font-weight: 800; color: var(--text-primary); letter-spacing: 0.06em; }
-  .demo-pillar-status { font-size: 0.58rem; font-weight: 700; }
-  .demo-pillar.st-observed .demo-pillar-status { color: var(--emerald); }
-  .demo-pillar.st-partial .demo-pillar-status { color: var(--amber); }
-  .demo-pillar.st-no_data .demo-pillar-status { color: var(--text-muted); }
-  .demo-pillar-summary { color: var(--text-muted); line-height: 1.35; }
-
-  .demo-note {
-    margin-top: 0.6rem; padding: 0.5rem 0.65rem; border-radius: 5px;
-    font-size: 0.66rem; color: #fbbf24;
-    background: rgba(120, 70, 0, 0.18); border: 1px solid rgba(251, 191, 36, 0.3);
-  }
-
-  /* Kullanım koşulları */
-  .terms-headline {
-    font-size: 0.82rem; font-weight: 800; color: var(--gold);
-    padding: 0.65rem 0.8rem; border-radius: 5px;
-    background: rgba(212, 175, 55, 0.08); border: 1px solid rgba(212, 175, 55, 0.3);
-  }
-  .terms-par { font-size: 0.75rem; line-height: 1.6; color: var(--text-dim); margin: 0; }
-  .terms-muted { color: var(--text-muted); font-size: 0.68rem; }
-  .terms-list li { line-height: 1.5; }
   .ca-disabled-badge { color: #fbbf24; font-weight: 700; font-size: 0.62rem; }
   .deck-title-stack { flex-direction: column; align-items: flex-start; gap: 0.2rem; }
   .ribbon-row { display: flex; align-items: center; gap: 0.4rem; }
@@ -3239,4 +2325,79 @@
   .ch-name { font-family: 'JetBrains Mono', monospace; font-weight: 700; }
   .ch-badge { font-size: 0.58rem; padding: 0.08rem 0.35rem; border-radius: 3px; background: rgba(255,255,255,0.08); }
   .ch-reason { color: var(--text-dim); font-size: 0.6rem; }
+
+  /* PINEAL COCKPIT / VISUAL REBUILD — presentation layer only */
+  .command-deck {
+    --void: #08090c; --panel: rgba(17,19,24,.92); --line: rgba(198,174,119,.17);
+    --ink: #eee9de; --metal: #c9b27b;
+    width: 100%; min-height: 100vh; height: auto; overflow: visible;
+    padding: clamp(14px,2vw,30px); gap: 18px;
+    color: var(--ink);
+    background: radial-gradient(ellipse at 50% -18%,rgba(174,145,86,.13),transparent 42%),radial-gradient(ellipse at 0% 45%,rgba(63,85,82,.10),transparent 32%),var(--void);
+    font-family: Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  }
+  .master-hud-header {
+    display: grid; grid-template-columns: minmax(250px,.9fr) minmax(420px,1.6fr) auto;
+    align-items: center; gap: 18px; padding: 22px 24px;
+    border: 1px solid var(--line); border-radius: 18px;
+    background: linear-gradient(145deg,rgba(25,26,29,.97),rgba(11,12,15,.94));
+    box-shadow: 0 18px 55px rgba(0,0,0,.28),inset 0 1px rgba(255,255,255,.035);
+  }
+  .hud-brand { min-width: 0; align-items: flex-start; }
+  .brand-title { font-size: clamp(1.25rem,2vw,1.8rem); letter-spacing: .19em; font-weight: 750; color: #f1ead9; }
+  .brand-titles { gap: 7px; }
+  .intro-help { max-width: 420px; line-height: 1.55; font-size: .78rem; color: #a9a395; text-transform: none; letter-spacing: 0; }
+  .live-status-badge { border-color: rgba(201,178,123,.35); color: #d7c59b; background: rgba(201,178,123,.08); }
+  .theme-switch {
+    display: inline-flex; align-items: center; gap: 8px; width: fit-content;
+    padding: 8px 11px; margin-top: 7px; border: 1px solid var(--line);
+    border-radius: 999px; color: var(--metal); background: rgba(201,178,123,.07);
+    font-family: inherit; font-size: .63rem; font-weight: 700; line-height: 1; letter-spacing: .1em; cursor: pointer; transition: .2s ease;
+  }
+  .theme-switch:hover { background: rgba(201,178,123,.15); transform: translateY(-1px); }
+  .target-cassette-bar { justify-content: center; gap: 9px; }
+  .cassette-input-wrap { min-height: 48px; border: 1px solid rgba(201,178,123,.27); border-radius: 12px; background: rgba(5,6,8,.68); box-shadow: inset 0 1px 6px rgba(0,0,0,.35); }
+  .cassette-text-input { min-width: 220px; font-size: .83rem; color: #f0ebdf; }
+  .cassette-launch-btn,.phone-launch-btn { min-height: 44px; border-radius: 10px; letter-spacing: .07em; background: linear-gradient(135deg,#d7c18c,#a88d53); color: #17140d; box-shadow: 0 7px 22px rgba(171,141,79,.16); }
+  .master-grid-container { display: grid; grid-template-columns: minmax(260px,.86fr) minmax(430px,1.42fr) minmax(285px,.92fr); align-items: start; gap: 16px; height: auto; min-height: 0; }
+  .column-deck { min-width: 0; height: auto; min-height: 0; overflow: visible; padding: 15px; border: 1px solid var(--line); border-radius: 16px; background: linear-gradient(160deg,rgba(23,25,30,.95),rgba(12,13,17,.96)); box-shadow: 0 14px 40px rgba(0,0,0,.18); }
+  .deck-title-ribbon { padding: 4px 2px 13px; margin-bottom: 12px; border-bottom: 1px solid var(--line); color: #d6c59e; letter-spacing: .16em; font-size: .68rem; }
+  .sovereign-station,.commander-override-box,.phone-osint-dossier-card,.chain-of-thought-section,.selected-agent-detail,.aspasia-chat-section,.telemetry-section,.channel-status-box,.pillar-column { border-radius: 12px; border-color: var(--line); background-color: var(--panel); box-shadow: inset 0 1px rgba(255,255,255,.025); }
+  .sovereign-station { padding: 15px; margin-bottom: 12px; }
+  .sovereign-station.selected { border-color: rgba(201,178,123,.65); box-shadow: 0 0 0 1px rgba(201,178,123,.12),0 10px 30px rgba(0,0,0,.2); }
+  .field-matrix-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }
+  .agent-tile { min-height: 98px; padding: 12px; border: 1px solid rgba(255,255,255,.07); border-radius: 11px; background: linear-gradient(145deg,rgba(30,32,38,.95),rgba(15,16,20,.95)); }
+  .agent-tile:hover,.agent-tile.selected { border-color: rgba(201,178,123,.55); transform: translateY(-2px); }
+  .pillars-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }
+  .pillar-column { min-height: 125px; padding: 11px; }
+  .aspasia-chat-section { padding: 13px; margin-top: 14px; }
+  .chat-header { padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  .chat-messages { min-height: 210px; max-height: 360px; }
+  .chat-input-area { border-radius: 11px; border-color: var(--line); background: rgba(4,5,7,.72); }
+  .chat-input { min-height: 44px; }
+  .data-pool-footer { height: 190px; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: rgba(14,15,18,.94); }
+  .pool-header { padding: 12px 16px; } .pool-logs { padding: 10px 16px; } .pool-log { padding: 6px 9px; border-radius: 6px; }
+  .settings-gear-btn,.context-toggle-btn,.telemetry-toggle { border-radius: 9px; border-color: var(--line); letter-spacing: .06em; }
+  .cockpit-modal-card { border-radius: 16px; border-color: rgba(201,178,123,.32); background: #111318; }
+  .cockpit-modal-head h3 { color: #d6c59e; }
+  .master-hud-header button:focus-visible,.command-deck button:focus-visible,.command-deck input:focus-visible { outline: 2px solid #c9b27b; outline-offset: 3px; }
+  .command-deck.theme-light { --void:#e9e7e1; --panel:rgba(255,255,255,.92); --line:rgba(93,78,48,.20); --ink:#24231f; --metal:#8b6e35; color:#24231f; background:radial-gradient(ellipse at 50% -18%,rgba(174,145,86,.16),transparent 42%),#e9e7e1; }
+  .theme-light .master-hud-header,.theme-light .column-deck,.theme-light .data-pool-footer { background:linear-gradient(145deg,rgba(255,255,255,.98),rgba(241,239,232,.98)); color:#24231f; box-shadow:0 12px 36px rgba(54,46,30,.08); }
+  .theme-light .brand-title,.theme-light .cassette-text-input,.theme-light .chat-input,.command-deck.theme-light h2,.command-deck.theme-light h3,.command-deck.theme-light h4 { color:#29271f; }
+  .theme-light .intro-help,.theme-light .pillars-sub,.command-deck.theme-light p,.command-deck.theme-light label { color:#625e54; }
+  .theme-light .sovereign-station,.theme-light .commander-override-box,.theme-light .phone-osint-dossier-card,.theme-light .chain-of-thought-section,.theme-light .selected-agent-detail,.theme-light .aspasia-chat-section,.theme-light .telemetry-section,.theme-light .channel-status-box,.theme-light .pillar-column { background:rgba(255,255,255,.88); color:#29271f; }
+  .theme-light .agent-tile { background:linear-gradient(145deg,#fff,#f2f0e9); color:#29271f; }
+  .theme-light .cassette-input-wrap,.theme-light .chat-input-area { background:#fff; }
+  .theme-light .pool-log { background:rgba(255,255,255,.72); } .theme-light .pool-empty,.theme-light .pl-msg { color:#5d594f; }
+  @media (max-width:1180px) { .master-hud-header { grid-template-columns:1fr; } .master-grid-container { grid-template-columns:minmax(0,1fr) minmax(0,1fr); } .col-center { grid-column:1/-1; grid-row:1; } }
+  @media (max-width:760px) {
+    .command-deck { padding:10px; gap:10px; } .master-hud-header { padding:16px; border-radius:13px; }
+    .target-cassette-bar { display:flex; flex-direction:column; align-items:stretch; }
+    .cassette-input-wrap,.cassette-text-input { width:100%; max-width:none; }
+    .master-grid-container { display:flex; flex-direction:column; }
+    .column-deck { width:100%; padding:12px; } .col-center { order:0; } .col-left { order:1; } .col-right { order:2; }
+    .field-matrix-grid,.pillars-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .data-pool-footer { height:170px; }
+  }
+  @media (max-width:420px) { .field-matrix-grid,.pillars-grid { grid-template-columns:1fr; } .hud-switches { flex-wrap:wrap; } }
+
 </style>
