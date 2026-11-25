@@ -77,6 +77,7 @@
   export let routeSource: (id: string) => string = () => '';
 
   let guideOpen = true;
+  let guideStep: 1 | 2 | 3 = 1;
   let logsOpen = false;
   let manualOpen = false;
 
@@ -92,8 +93,18 @@
 
   function toggleGuide() {
     guideOpen = !guideOpen;
+    if (guideOpen) guideStep = 1;
     try {
       localStorage.setItem('pineal_guide_dismissed', guideOpen ? '0' : '1');
+    } catch {
+      /* sessizce geç */
+    }
+  }
+
+  function dismissGuide() {
+    guideOpen = false;
+    try {
+      localStorage.setItem('pineal_guide_dismissed', '1');
     } catch {
       /* sessizce geç */
     }
@@ -144,44 +155,90 @@
 </script>
 
 <div class="home-wrap">
-  <!-- 1. BAŞLANGIÇ REHBERİ (İlk defa kullanan biri için 3 net adım) -->
+  <!-- 1. BAŞLANGIÇ REHBERİ (İlk defa kullanan biri için 3 adımlı rehber) -->
   <section class="card guide-card" aria-label="Başlangıç rehberi">
     <div class="guide-head">
       <div class="guide-title-row">
-        <span class="pill pill-ok"><Icon name="help" size={0.85} /> Hızlı Başlangıç</span>
-        <span class="guide-sub">İlk kez kullanıyorsanız sadece şu 3 adımı izleyin:</span>
+        <span class="pill pill-ok"><Icon name="help" size={0.85} /> Hızlı Başlangıç (Adım {guideStep}/3)</span>
+        <span class="guide-sub">İlk kez kullanıyorsanız tek tek bu 3 adımı izleyin:</span>
       </div>
-      <button type="button" class="btn btn-ghost btn-sm" on:click={toggleGuide}>
-        {guideOpen ? 'Rehberi Gizle' : 'Rehberi Göster'}
-      </button>
+      <div class="guide-head-actions">
+        <div class="guide-step-dots" role="tablist" aria-label="Rehber adımları">
+          {#each [1, 2, 3] as s}
+            <button
+              type="button"
+              class="step-dot-btn"
+              class:active={guideOpen && guideStep === s}
+              on:click={() => {
+                guideOpen = true;
+                guideStep = s === 1 ? 1 : s === 2 ? 2 : 3;
+              }}
+              aria-label="Adım {s}"
+            >
+              {s}
+            </button>
+          {/each}
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" on:click={toggleGuide}>
+          {guideOpen ? 'Rehberi Gizle' : 'Rehberi Göster'}
+        </button>
+      </div>
     </div>
 
     {#if guideOpen}
-      <div class="guide-steps">
-        <div class="guide-step">
-          <span class="step-num">1</span>
-          <div>
-            <strong>Anahtarı ve Kasayı Açın</strong>
-            <p>
-              Sağ üstteki <button type="button" class="inline-link" on:click={openSettingsModal}>Ayarlar</button>
-              düğmesinden yapay zekâ anahtarınızı kaydedin. Şu an kasa:
-              <strong>{$vaultLocked ? 'Kilitli' : 'Açık'}</strong>.
-            </p>
+      <div class="guide-stage">
+        {#if guideStep === 1}
+          <div class="guide-step">
+            <span class="step-num">1</span>
+            <div>
+              <strong>Anahtarı ve Kasayı Açın</strong>
+              <p>
+                Sağ üstteki <button type="button" class="inline-link" on:click={openSettingsModal}>Ayarlar</button>
+                düğmesinden yapay zekâ anahtarınızı kaydedin. Şu an kasa:
+                <strong>{$vaultLocked ? 'Kilitli' : 'Açık'}</strong>. (Anahtar olmadan da yerel ücretsiz araçları kullanabilirsiniz.)
+              </p>
+            </div>
           </div>
-        </div>
-        <div class="guide-step">
-          <span class="step-num">2</span>
-          <div>
-            <strong>Hedefi Yazıp Onay Verin</strong>
-            <p>Aşağıdaki kutuya incelemek istediğiniz profil adresini, kullanıcı adını veya telefonu yazın; 18+ ve KVKK kutusunu işaretleyin.</p>
+        {:else if guideStep === 2}
+          <div class="guide-step">
+            <span class="step-num">2</span>
+            <div>
+              <strong>Hedefi Yazıp Onay Verin</strong>
+              <p>Aşağıdaki kutuya incelemek istediğiniz profil adresini, kullanıcı adını veya telefonu yazın; 18+ ve KVKK kutusunu işaretleyin.</p>
+            </div>
           </div>
-        </div>
-        <div class="guide-step">
-          <span class="step-num">3</span>
-          <div>
-            <strong>Analizi Başlatın</strong>
-            <p><strong>ANALİZİ BAŞLAT</strong>'a basın. Sonuçlar sağdaki kartlara ve Aspasia sohbetine canlı akar; soldaki menüden tüm araçlara ulaşabilirsiniz.</p>
+        {:else}
+          <div class="guide-step">
+            <span class="step-num">3</span>
+            <div>
+              <strong>Analizi Başlatın ve Odaları Gezin</strong>
+              <p><strong>ANALİZİ BAŞLAT</strong>'a basın. Sonuçlar sağdaki 7 kategoriye canlı akar; soldaki numaralı menüden sohbet, çapraz tarama ve diğer araçları açabilirsiniz.</p>
+            </div>
           </div>
+        {/if}
+
+        <div class="guide-nav">
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm"
+            disabled={guideStep === 1}
+            on:click={() => { guideStep = guideStep === 3 ? 2 : 1; }}
+          >
+            Önceki
+          </button>
+          {#if guideStep < 3}
+            <button
+              type="button"
+              class="btn btn-primary btn-sm"
+              on:click={() => { guideStep = guideStep === 1 ? 2 : 3; }}
+            >
+              Sonraki
+            </button>
+          {:else}
+            <button type="button" class="btn btn-primary btn-sm" on:click={dismissGuide}>
+              Anladım, Gizle
+            </button>
+          {/if}
         </div>
       </div>
     {/if}
@@ -199,6 +256,7 @@
   <section class="card hero-card">
     <div class="hero-top">
       <div>
+        <p class="atelier-kicker">MASA · BUGÜNKÜ İŞ</p>
         <h2 class="hero-title">Kimi veya hangi hesabı araştırmak istiyorsunuz?</h2>
         <p class="section-intro">
           Sosyal medya adresi, <span class="code-mono">@kullanıcı</span> veya telefon numarası yazın — sistem ne girdiğinizi otomatik tanır.
@@ -540,12 +598,17 @@
             <h3 class="block-title">Analiz Ajanları ({activeTaskAgentIds.length || FIELD_AGENTS.length})</h3>
             <p class="section-intro">Görev sırasında hangi uzmanın hangi modelle çalıştığını gerçek zamanlı izleyin.</p>
           </div>
-          <span class="pill" title="Sunucudaki ajan durum kaynağı">
-            KAYNAK: {sourceDescriptions[statusSourceText] || statusSourceText}
-            {#if rackSlotSummary.total > 0}
-              · {rackSlotSummary.active} aktif / {rackSlotSummary.ready} hazır
+          <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+            {#if routingData?.has_openrouter || (routingData?.provider_keys_set || []).length > 0 || routingData?.use_local}
+              <span class="pill pill-ok">Model Hattı Hazır</span>
             {/if}
-          </span>
+            <span class="pill" title="Sunucudaki ajan durum kaynağı">
+              KAYNAK: {sourceDescriptions[statusSourceText] || statusSourceText}
+              {#if rackSlotSummary.total > 0}
+                · {rackSlotSummary.active} aktif / {rackSlotSummary.ready} hazır
+              {/if}
+            </span>
+          </div>
         </div>
 
         {#if liveRunModels.length > 0}
@@ -699,6 +762,11 @@
             <div class="override-divider">
               <div class="context-heading">Doğrulanmış Operatör Notu Mühürle</div>
               <div class="manual-pair">
+                <select class="field-select" bind:value={overrideTag} aria-label="Not türü">
+                  <option value="operator_note">Genel Not</option>
+                  <option value="verified_fact">Doğrulanmış Bilgi</option>
+                  <option value="risk_warning">Dikkat Edilecek Sınır</option>
+                </select>
                 <input
                   type="text"
                   class="field-input"
@@ -897,6 +965,50 @@
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
+  }
+
+  .guide-head-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .guide-step-dots {
+    display: inline-flex;
+    gap: 5px;
+  }
+
+  .step-dot-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 1px solid var(--border-strong);
+    background: var(--bg-surface);
+    color: var(--text-muted);
+    font-size: 11.5px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .step-dot-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-contrast);
+  }
+
+  .guide-stage {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .guide-nav {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
   }
 
   .guide-sub {

@@ -99,8 +99,16 @@
     </button>
   </div>
 
+  <div class="atelier-crest">
+    <img src="/atelier/mark.webp" alt="Pineal Epifiz mührü" class="atelier-emblem" width="56" height="56" />
+    <div class="crest-copy">
+      <span class="crest-sign">Atelier Épifiz</span>
+      <span class="atelier-kicker crest-kicker">İÇİNDEKİLER</span>
+    </div>
+  </div>
+
   <nav class="nav-list">
-    {#each NAV_ITEMS as item (item.id)}
+    {#each NAV_ITEMS as item, idx (item.id)}
       <button
         type="button"
         class="nav-item"
@@ -108,12 +116,13 @@
         data-tab={item.id}
         on:click={() => selectTab(item.id)}
       >
+        <span class="nav-num code-mono">{String(idx + 1).padStart(2, '0')}</span>
         <span
           class="nav-icon"
           class:accent-pink={item.accent === 'pink'}
           class:accent-indigo={item.accent === 'indigo'}
         >
-          <Icon name={item.icon} size={1.1} />
+          <Icon name={item.icon} size={1.05} />
         </span>
         <span class="nav-text">
           <span class="nav-title">{item.title}</span>
@@ -146,15 +155,65 @@
   }
 
   .cockpit-sidebar {
-    width: 248px;
+    width: 262px;
     flex-shrink: 0;
     background: var(--bg-sidebar);
+    backdrop-filter: blur(16px);
     border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    padding: 12px 10px;
+    padding: 14px 12px;
     overflow-y: auto;
+  }
+
+  .atelier-crest {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 4px 6px 14px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .atelier-emblem {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: 1px solid var(--gold);
+    object-fit: cover;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+
+  .crest-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .crest-sign {
+    font-family: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
+    font-style: italic;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--gold);
+    letter-spacing: 0.04em;
+    line-height: 1.15;
+  }
+
+  .crest-kicker {
+    margin-bottom: 0;
+  }
+
+  .nav-num {
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--gold);
+    opacity: 0.8;
+    min-width: 18px;
+    flex-shrink: 0;
   }
 
   .sidebar-top-mobile {
@@ -202,7 +261,7 @@
 
   .nav-item.active {
     background: var(--accent-soft);
-    border-color: rgba(16, 185, 129, 0.35);
+    border-color: var(--border-strong);
     color: var(--text-primary);
   }
 

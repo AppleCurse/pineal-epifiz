@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Icon from '../Icon.svelte';
+  import JuryConsensusPanel from './JuryConsensusPanel.svelte';
   import { apiFetch, clientId } from '../../store';
   import { channelLabel, reasonLabel, type CapabilityRow } from '../../lib/channelStatus';
 
@@ -285,15 +286,35 @@
     refreshAllTools();
   });
 
+  let capQuery = '';
+  let capFilter: 'all' | 'ready' | 'missing' = 'all';
+
   $: readyCount = capabilitiesList.filter((c) => c.available).length;
+  $: missingCount = capabilitiesList.length - readyCount;
+  $: filteredCapabilities = capabilitiesList.filter((c) => {
+    if (capFilter === 'ready' && !c.available) return false;
+    if (capFilter === 'missing' && c.available) return false;
+    const q = capQuery.trim().toLocaleLowerCase('tr');
+    if (!q) return true;
+    const haystack = [
+      channelLabel(c.id),
+      c.id,
+      c.reason ? reasonLabel(c.reason) : '',
+      c.reason || '',
+    ]
+      .join(' ')
+      .toLocaleLowerCase('tr');
+    return haystack.includes(q);
+  });
 </script>
 
 <div class="tab-wrap">
   <div class="section-head">
     <div>
+      <p class="atelier-kicker">ATÖLYE · YETENEKLER VE DOĞRULAMA</p>
       <h2 class="section-title">Tüm Yetenekler &amp; Araç Kutusu</h2>
       <p class="section-intro">
-        Sistemdeki 28 yeteneğin hangilerinin kullanıma hazır olduğunu görün; çeviri, doğrulama jürisi ve diğer yardımcı araçları buradan kullanın.
+        Sistemdeki 28 yeteneğin hangilerinin kullanıma hazır olduğunu görün; jüri doğrulaması, çeviri ve diğer yardımcı araçları buradan kullanın.
       </p>
     </div>
     <div class="head-actions">
@@ -312,6 +333,9 @@
     </div>
   </div>
 
+  <!-- BAĞIMSIZ JÜRİ & UZLAŞMA PANELİ -->
+  <JuryConsensusPanel />
+
   <!-- 28 YETENEK TABLOSU -->
   <section class="card block-card">
     <div class="block-head">
@@ -326,11 +350,54 @@
       </span>
     </div>
 
+    {#if capabilitiesList.length > 0}
+      <div class="cap-toolbar">
+        <div class="search-box">
+          <Icon name="search" size={0.9} />
+          <input
+            type="search"
+            class="field-input"
+            bind:value={capQuery}
+            placeholder="Yetenek veya eksik nedeni ara..."
+            aria-label="Yetenek ara"
+          />
+        </div>
+        <div class="filter-pills" role="group" aria-label="Yetenek filtresi">
+          <button
+            type="button"
+            class="filter-pill"
+            class:active={capFilter === 'all'}
+            on:click={() => { capFilter = 'all'; }}
+          >
+            Tümü ({capabilitiesList.length})
+          </button>
+          <button
+            type="button"
+            class="filter-pill"
+            class:active={capFilter === 'ready'}
+            on:click={() => { capFilter = 'ready'; }}
+          >
+            Hazır ({readyCount})
+          </button>
+          <button
+            type="button"
+            class="filter-pill"
+            class:active={capFilter === 'missing'}
+            on:click={() => { capFilter = 'missing'; }}
+          >
+            Eksik ({missingCount})
+          </button>
+        </div>
+      </div>
+    {/if}
+
     {#if capabilitiesList.length === 0}
       <div class="empty-state">Yetenek listesi henüz yüklenemedi. "Tümünü Yenile" düğmesine basın.</div>
+    {:else if filteredCapabilities.length === 0}
+      <div class="empty-state">Aramanızla veya seçili filtreyle eşleşen yetenek yok.</div>
     {:else}
       <div class="cap-grid">
-        {#each capabilitiesList as row}
+        {#each filteredCapabilities as row}
           <div class="cap-card" class:cap-ready={row.available}>
             <div class="cap-top">
               <strong>{channelLabel(row.id)}</strong>
@@ -551,6 +618,51 @@
     line-height: 1.45;
   }
 
+  .cap-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .search-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1 1 240px;
+    color: var(--text-muted);
+  }
+
+  .filter-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .filter-pill {
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border-strong);
+    background: var(--bg-input);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.14s ease;
+  }
+
+  .filter-pill:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .filter-pill.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-contrast);
+  }
+
   .cap-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(235px, 1fr));
@@ -568,7 +680,7 @@
   }
 
   .cap-card.cap-ready {
-    border-color: rgba(16, 185, 129, 0.35);
+    border-color: rgba(138, 170, 114, 0.42);
   }
 
   .cap-top {
@@ -585,7 +697,7 @@
   }
 
   .cap-reason.ok-text {
-    color: var(--accent);
+    color: var(--accent-2);
   }
 
   .tools-grid {

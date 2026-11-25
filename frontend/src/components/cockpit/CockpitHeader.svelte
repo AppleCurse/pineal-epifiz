@@ -144,7 +144,7 @@
       title={$theme === 'dark' ? 'Açık (beyaz) temaya geç' : 'Koyu temaya geç'}
     >
       <Icon name={$theme === 'dark' ? 'sun' : 'moon'} size={0.95} />
-      <span class="hide-sm">{$theme === 'dark' ? 'Açık Tema' : 'Koyu Tema'}</span>
+      <span class="hide-sm">{$theme === 'dark' ? 'Gündüz' : 'Gece'}</span>
     </button>
 
     <button
@@ -215,6 +215,7 @@
     gap: 10px 14px;
     padding: 10px 18px;
     background: var(--bg-sidebar);
+    backdrop-filter: blur(16px);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
     z-index: 30;
@@ -251,9 +252,10 @@
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    font-size: 15px;
+    font-family: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
+    font-size: 19px;
     font-weight: 700;
-    letter-spacing: -0.01em;
+    letter-spacing: 0.06em;
     color: var(--text-primary);
     white-space: nowrap;
   }
@@ -301,7 +303,7 @@
   }
 
   .switch-pill.on {
-    border-color: rgba(16, 185, 129, 0.45);
+    border-color: var(--border-strong);
     background: var(--accent-soft);
     color: var(--text-primary);
   }

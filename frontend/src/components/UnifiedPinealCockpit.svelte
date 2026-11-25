@@ -86,18 +86,18 @@
 
   // --- 2. 12 UZMAN SAHA AJANI ---
   const FIELD_AGENTS = [
-    { id: 'osint_investigator', name: 'OSINT INVESTIGATOR', short: 'OSINT', icon: 'target', color: '#8b5cf6', desc: 'Açık kaynak, web ve dijital ayak izi taraması', preset: 'Tüm web platformlarında çapraz kullanıcı adı ve dijital parmak izi tara' },
-    { id: 'depth_analyst', name: 'DEPTH ANALYST', short: 'DEPTH', icon: 'layers', color: '#eab308', desc: 'Gerçeklik endeksi ve kişilik derinliği analizi', preset: 'Kişilik özgünlüğü ve sosyal medyadaki yapay maskeyi derinlemesine incele' },
-    { id: 'human_behavior', name: 'HUMAN BEHAVIOR', short: 'BEHAVIOR', icon: 'diamond', color: '#f59e0b', desc: 'Dijital cold reading ve akıl tendonu analizi', preset: 'Hedefin alışkanlıklarını, ritüellerini ve zayıf hassasiyet noktasını çıkar' },
-    { id: 'friction_detector', name: 'FRICTION & BOUNDS', short: 'FRICTION', icon: 'triangle-up', color: '#ef4444', desc: 'Sınırlar, hassasiyet ve sürtünme dedektörü', preset: 'Konuşulmaması gereken kırmızı çizgileri ve sürtünme tetikleyicilerini belirle' },
-    { id: 'pattern_interrupt', name: 'PATTERN INTERRUPT', short: 'PATTERN', icon: 'refresh', color: '#dc2626', desc: 'Beklenti kırma ve temas stratejisi', preset: 'Sıradan mesajların ötesinde ezber bozan bir kalıp kırıcı ilk cümle kur' },
-    { id: 'passion_mapper', name: 'PASSION MAPPER', short: 'PASSION', icon: 'square', color: '#eab308', desc: 'Tutku, neşe ve akış tetikleyicileri haritası', preset: 'Hedefin gözlerini parlatan, gerçek tutkularını ve akış alanlarını haritala' },
-    { id: 'cognitive_profiler', name: 'COGNITIVE PROFILER', short: 'COGNITIVE', icon: 'hexagon', color: '#06b6d4', desc: 'Bilişsel dil, üslup ve tonlama profili', preset: 'Hedefin kelime dağarcığını, resmiyet derecesini ve iletişim ritmini modelle' },
-    { id: 'mirror_truth', name: 'MIRROR TRUTH', short: 'MIRROR', icon: 'circle-hollow', color: '#10b981', desc: 'İç-z-frekans yansıtma ve kullanıcı uyumu', preset: 'Kullanıcının ritüelleri ile hedefin profili arasındaki doğal frekans bağını test et' },
-    { id: 'autonomous_verifier', name: 'AUTONOMOUS VERIFIER', short: 'VERIFIER', icon: 'triangle-down', color: '#a855f7', desc: 'Otonom çapraz doğrulama ve hakem paneli', preset: 'Takipçi/beğeni oranlarındaki bot veya manipülasyon şüphesini denetle' },
-    { id: 'resonance_calculator', name: 'RESONANCE CALC', short: 'CALC', icon: 'star', color: '#3b82f6', desc: 'Numpy vektörel rezonans ve açı hesaplaması', preset: 'Çok boyutlu semantik uzayda rezonans ve uyum açısını matematiksel hesapla' },
-    { id: 'authenticity_auditor', name: 'AUTHENTICITY AUDITOR', short: 'AUTH', icon: 'star', color: '#14b8a6', desc: 'Orijinallik ve güvenilirlik denetimi', preset: 'Gönderilerin doğallığı ile alıntı/kurgu oranını ölçerek maske puanı çıkar' },
-    { id: 'resonance_synthesizer', name: 'RESONANCE SYNTH', short: 'SYNTH', icon: 'sparkle', color: '#ec4899', desc: 'Sahici köprü sentezi ve önerilen ilk mesaj', preset: 'Tüm bulguları sentezleyerek hedefe ulaşacak en etkili ve zarif köprüyü inşa et' },
+    { id: 'osint_investigator', name: 'Açık Kaynak', short: 'OSINT', icon: 'target', color: '#8b5cf6', desc: 'Açık kaynak, web ve dijital ayak izi taraması', preset: 'Tüm web platformlarında çapraz kullanıcı adı ve dijital parmak izi tara' },
+    { id: 'depth_analyst', name: 'Derinlik', short: 'DEPTH', icon: 'layers', color: '#eab308', desc: 'Gerçeklik endeksi ve kişilik derinliği analizi', preset: 'Kişilik özgünlüğü ve sosyal medyadaki yapay maskeyi derinlemesine incele' },
+    { id: 'human_behavior', name: 'Davranış', short: 'BEHAVIOR', icon: 'diamond', color: '#f59e0b', desc: 'Dijital cold reading ve akıl tendonu analizi', preset: 'Hedefin alışkanlıklarını, ritüellerini ve zayıf hassasiyet noktasını çıkar' },
+    { id: 'friction_detector', name: 'Sınırlar', short: 'FRICTION', icon: 'triangle-up', color: '#ef4444', desc: 'Sınırlar, hassasiyet ve sürtünme dedektörü', preset: 'Konuşulmaması gereken kırmızı çizgileri ve sürtünme tetikleyicilerini belirle' },
+    { id: 'pattern_interrupt', name: 'Ezber Bozan', short: 'PATTERN', icon: 'refresh', color: '#dc2626', desc: 'Beklenti kırma ve temas stratejisi', preset: 'Sıradan mesajların ötesinde ezber bozan bir kalıp kırıcı ilk cümle kur' },
+    { id: 'passion_mapper', name: 'Tutku Haritası', short: 'PASSION', icon: 'square', color: '#eab308', desc: 'Tutku, neşe ve akış tetikleyicileri haritası', preset: 'Hedefin gözlerini parlatan, gerçek tutkularını ve akış alanlarını haritala' },
+    { id: 'cognitive_profiler', name: 'Dil ve Üslup', short: 'COGNITIVE', icon: 'hexagon', color: '#06b6d4', desc: 'Bilişsel dil, üslup ve tonlama profili', preset: 'Hedefin kelime dağarcığını, resmiyet derecesini ve iletişim ritmini modelle' },
+    { id: 'mirror_truth', name: 'Ayna', short: 'MIRROR', icon: 'circle-hollow', color: '#10b981', desc: 'İç-z-frekans yansıtma ve kullanıcı uyumu', preset: 'Kullanıcının ritüelleri ile hedefin profili arasındaki doğal frekans bağını test et' },
+    { id: 'autonomous_verifier', name: 'Doğrulayan', short: 'VERIFIER', icon: 'triangle-down', color: '#a855f7', desc: 'Otonom çapraz doğrulama ve hakem paneli', preset: 'Takipçi/beğeni oranlarındaki bot veya manipülasyon şüphesini denetle' },
+    { id: 'resonance_calculator', name: 'Uyum Hesabı', short: 'CALC', icon: 'star', color: '#3b82f6', desc: 'Numpy vektörel rezonans ve açı hesaplaması', preset: 'Çok boyutlu semantik uzayda rezonans ve uyum açısını matematiksel hesapla' },
+    { id: 'authenticity_auditor', name: 'Sahicilik', short: 'AUTH', icon: 'star', color: '#14b8a6', desc: 'Orijinallik ve güvenilirlik denetimi', preset: 'Gönderilerin doğallığı ile alıntı/kurgu oranını ölçerek maske puanı çıkar' },
+    { id: 'resonance_synthesizer', name: 'Köprü', short: 'SYNTH', icon: 'sparkle', color: '#ec4899', desc: 'Sahici köprü sentezi ve önerilen ilk mesaj', preset: 'Tüm bulguları sentezleyerek hedefe ulaşacak en etkili ve zarif köprüyü inşa et' },
   ];
 
   // --- 3. 7 ANA ANALİZ SÜTUNU ---
@@ -1134,8 +1134,17 @@
     width: 100%;
     height: 100%;
     min-height: 0;
-    background: var(--bg-app);
+    background-color: var(--bg-app);
     color: var(--text-primary);
+  }
+
+  :global([data-theme='dark']) .cockpit-app {
+    background-image:
+      linear-gradient(180deg, rgba(16, 12, 10, 0.72), rgba(16, 12, 10, 0.90)),
+      url('/atelier/ground.webp');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
   }
 
   .cockpit-workspace {

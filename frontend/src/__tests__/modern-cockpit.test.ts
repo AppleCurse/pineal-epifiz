@@ -209,4 +209,107 @@ describe('Modern modular cockpit', () => {
     });
     expect(await screen.findByText(/paylaştığın fotoğraf çok tanıdık geldi/i)).toBeTruthy();
   });
+
+  it('filters and searches capabilities in SystemToolsTab using /api/telemetry', async () => {
+    installFetch((path) => {
+      if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: false });
+      if (path.startsWith('/api/telemetry')) {
+        return jsonResponse({
+          capabilities: [
+            { id: 'sensor.identity.maigret', available: true, reason: null },
+            { id: 'voice.tts.local', available: false, reason: 'no_engine' },
+          ],
+        });
+      }
+      if (path.startsWith('/api/brain/capabilities')) return jsonResponse({ profiles: {}, wired_pipelines: {} });
+      return undefined;
+    });
+
+    const { container } = render(UnifiedPinealCockpit);
+    const sysBtn = container.querySelector<HTMLButtonElement>('button[data-tab="system"]');
+    await fireEvent.click(sysBtn!);
+
+    expect(await screen.findByText(/Tümü \(2\)/i)).toBeTruthy();
+    expect(screen.getByText(/Hazır \(1\)/i)).toBeTruthy();
+    expect(screen.getByText(/Eksik \(1\)/i)).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('button', { name: /Hazır \(1\)/i }));
+    expect(screen.queryByText(/no_engine/i)).toBeNull();
+    expect(container.querySelectorAll('.cap-card')).toHaveLength(1);
+
+    await fireEvent.click(screen.getByRole('button', { name: /Eksik \(1\)/i }));
+    expect((await screen.findAllByText(/no_engine/i)).length).toBeGreaterThanOrEqual(1);
+    expect(container.querySelectorAll('.cap-card')).toHaveLength(1);
+
+    await fireEvent.click(screen.getByRole('button', { name: /Tümü \(2\)/i }));
+    expect(container.querySelectorAll('.cap-card')).toHaveLength(2);
+    const searchInput = screen.getByPlaceholderText(/Yetenek veya eksik nedeni ara/i);
+    await fireEvent.input(searchInput, { target: { value: 'no_engine' } });
+    expect(screen.getAllByText(/no_engine/i).length).toBeGreaterThanOrEqual(1);
+    expect(container.querySelectorAll('.cap-card')).toHaveLength(1);
+  });
+
+  it('renders JuryConsensusPanel empty state and populated jury output', async () => {
+    installFetch((path) => {
+      if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: false });
+      if (path.startsWith('/api/telemetry')) return jsonResponse({ capabilities: [] });
+      return undefined;
+    });
+
+    const { container } = render(UnifiedPinealCockpit);
+    const sysBtn = container.querySelector<HTMLButtonElement>('button[data-tab="system"]');
+    await fireEvent.click(sysBtn!);
+
+    expect(await screen.findByText(/Henüz jüri raporu yayınlanmadı/i)).toBeTruthy();
+
+    taskStatus.set({
+      task_id: 'tsk-jury-1',
+      status: 'completed',
+      output_summary: {
+        status: 'verified',
+        confidence: 0.88,
+        data_confidence: true,
+        unknown_claims: 1,
+        jurors: ['juror-alpha', 'juror-beta'],
+        dropped_juror: ['juror-gamma'],
+        consensus: {
+          claims_audited: 4,
+          mismatches: 0,
+          quorum_met_claims: 4,
+          quorum_required: 2,
+          mean_strength: 0.91,
+          binding: true,
+          machine_note: 'Oy birliği sağlandı.',
+        },
+        vote_accounting: { evet: 2, hayir: 0 },
+        decision_rule: 'Çoğunluk esası',
+        verifications: [{ claim: 'Hesap aktif', verdict: 'verified', note: 'Son paylaşım güncel' }],
+      },
+    });
+
+    expect(await screen.findByText('juror-alpha')).toBeTruthy();
+    expect(screen.getByText('juror-gamma')).toBeTruthy();
+    expect(screen.getByText(/Oy birliği sağlandı/i)).toBeTruthy();
+    expect(screen.getByText(/Hesap aktif/i)).toBeTruthy();
+  });
+
+  it('advances through the 3-step onboarding guide and dismisses it', async () => {
+    installFetch((path) => {
+      if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: true });
+      return undefined;
+    });
+
+    render(UnifiedPinealCockpit);
+    expect(screen.getByText(/Anahtarı ve Kasayı Açın/i)).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Sonraki' }));
+    expect(await screen.findByText(/Hedefi Yazıp Onay Verin/i)).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Sonraki' }));
+    expect(await screen.findByText(/Analizi Başlatın ve Odaları Gezin/i)).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('button', { name: /Anladım, Gizle/i }));
+    expect(screen.queryByText(/Analizi Başlatın ve Odaları Gezin/i)).toBeNull();
+    expect(localStorage.getItem('pineal_guide_dismissed')).toBe('1');
+  });
 });
