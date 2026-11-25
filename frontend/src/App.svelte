@@ -432,10 +432,10 @@
 </script>
 
 <main class="fullscreen-cockpit-viewport">
+  <UnifiedPinealCockpit />
   <SovereignStudio clientId={$clientId} />
   <BrowserWorkspace clientId={$clientId} />
   <EvidenceWorkspace />
-  <UnifiedPinealCockpit />
 
   <button
     class="telemetry-toggle"
