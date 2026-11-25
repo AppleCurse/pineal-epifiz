@@ -9,7 +9,7 @@
   $: reportable = evidenceChainToReportItems(task);
   $: hasTask = Boolean(task?.task_id);
 </script>
-<section class="evidence-workspace" aria-label="Kanıt ve kaynak merkezi">
+<section id="evidence" class="evidence-workspace" aria-label="Kanıt ve kaynak merkezi">
   <header><div><span class="kicker">PINEAL · KAYNAK VE İZLENEBİLİRLİK</span><h2>Kanıt Merkezi</h2><p>Yedi sütun, görev kanıt zinciri ve rapora aktarılabilir kayıtlar.</p></div><div class="task-ref">{hasTask ? task.task_id : 'AKTİF GÖREV YOK'}</div></header>
   {#if !hasTask}
     <div class="empty">Henüz aktif görev bulunmuyor. Yeni bir analiz başlatıldığında görev kanıtları burada görünür.</div>
