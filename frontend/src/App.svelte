@@ -12,6 +12,7 @@
   import UnifiedPinealCockpit from './components/UnifiedPinealCockpit.svelte';
   import NeuralTelemetryBoard from './components/visualizers/NeuralTelemetryBoard.svelte';
   import CapabilityAtlas from './components/CapabilityAtlas.svelte';
+  import SovereignStudio from './components/SovereignStudio.svelte';
   import Icon from './components/Icon.svelte';
   import SupportPanel from './components/SupportPanel.svelte';
 
@@ -429,6 +430,7 @@
 </script>
 
 <main class="fullscreen-cockpit-viewport">
+  <SovereignStudio clientId={$clientId} />
   <UnifiedPinealCockpit />
 
   <button
