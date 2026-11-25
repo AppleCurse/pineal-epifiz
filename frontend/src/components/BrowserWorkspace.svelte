@@ -49,6 +49,18 @@
   }
   function takeShot() { return run(fetchShotDirect); }
   function back() { return run(async () => { const r = await request('/api/browser/back', {}); updateState(await r.json()); await fetchShotDirect(); }); }
+  function saveSession() {
+    return run(async () => {
+      const r = await request('/api/browser/save', {});
+      const data = await r.json();
+      message = data?.saved ? 'Instagram oturumu kasaya kaydedildi.' : (data?.hint || 'Kaydedilecek oturum bulunamadı.');
+      await refreshStateDirect();
+    });
+  }
+  async function refreshStateDirect() {
+    const r = await request(`/api/browser/state?client_id=${encodeURIComponent(clientId || 'default')}`);
+    updateState(await r.json());
+  }
   function closeBrowser() {
     return run(async () => { const r = await request('/api/browser/close', {}); updateState(await r.json().catch(() => ({}))); if (shotUrl) URL.revokeObjectURL(shotUrl); shotUrl=''; screenshot=''; });
   }
@@ -60,11 +72,11 @@
 </script>
 
 <section class="browser-workspace" aria-label="Canlı tarayıcı çalışma alanı">
-  <header><div><span class="kicker">PINEAL · ETKİLEŞİMLİ OTURUM</span><h2>Canlı Tarayıcı</h2><p>Sunucudaki tarayıcı oturumunu aç, görüntüle ve kontrollü biçimde kullan.</p></div><span class="lock-note">KASA + ÇOCUK KİLİDİNE TABİ</span></header>
+  <header><div><span class="kicker">PINEAL · ETKİLEŞİMLİ OTURUM</span><h2>Canlı Tarayıcı</h2><p>Instagram ve Google giriş alanında sunucu tarayıcısını aç, görüntüle ve kontrollü biçimde kullan.</p></div><span class="lock-note">KASA + ÇOCUK KİLİDİNE TABİ</span></header>
   <div class="browser-toolbar">
-    <input bind:value={url} placeholder="https://example.com" aria-label="Açılacak adres" />
+    <input bind:value={url} placeholder="https://www.instagram.com/accounts/login/" aria-label="Açılacak adres" />
     <button class="primary" on:click={openPage} disabled={busy || !url.trim()}>AÇ</button>
-    <button on:click={refreshState} disabled={busy}>DURUM</button><button on:click={takeShot} disabled={busy}>GÖRÜNTÜ</button><button on:click={back} disabled={busy}>GERİ</button><button class="close" on:click={closeBrowser} disabled={busy}>KAPAT</button>
+    <button on:click={refreshState} disabled={busy}>DURUM</button><button on:click={saveSession} disabled={busy}>OTURUMU KASAYA KAYDET</button><button on:click={takeShot} disabled={busy}>GÖRÜNTÜ</button><button on:click={back} disabled={busy}>GERİ</button><button class="close" on:click={closeBrowser} disabled={busy}>KAPAT</button>
   </div>
   {#if message}<p class="notice" role="alert">{message}</p>{/if}
   <div class="browser-grid">
