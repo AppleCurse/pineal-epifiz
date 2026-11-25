@@ -15,6 +15,7 @@
   import SovereignStudio from './components/SovereignStudio.svelte';
   import BrowserWorkspace from './components/BrowserWorkspace.svelte';
   import EvidenceWorkspace from './components/EvidenceWorkspace.svelte';
+  import AgentLab from './components/AgentLab.svelte';
   import Icon from './components/Icon.svelte';
   import SupportPanel from './components/SupportPanel.svelte';
 
@@ -436,6 +437,7 @@
   <SovereignStudio clientId={$clientId} />
   <BrowserWorkspace clientId={$clientId} />
   <EvidenceWorkspace />
+  <AgentLab clientId={$clientId} />
 
   <button
     class="telemetry-toggle"
