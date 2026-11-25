@@ -6,7 +6,7 @@
   let typedText = '';
   let x = '640';
   let y = '360';
-  let key = 'ENTER';
+  let key = 'Enter';
   let busy = false;
   let message = '';
   let state: any = null;
@@ -68,7 +68,7 @@
     return run(async () => { const r = await request('/api/browser/type', { text: typedText }); updateState(await r.json()); typedText=''; });
   }
   function pressKey() { return run(async () => { const r = await request('/api/browser/press', { key }); updateState(await r.json()); await fetchShotDirect(); }); }
-  function clickPoint() { return run(async () => { const r = await request('/api/browser/click', { x: Number(x), y: Number(y) }); updateState(await r.json()); await takeShot(); }); }
+  function clickPoint() { return run(async () => { const r = await request('/api/browser/click', { x: Number(x), y: Number(y) }); updateState(await r.json()); await fetchShotDirect(); }); }
 </script>
 
 <section class="browser-workspace" aria-label="Canlı tarayıcı çalışma alanı">
