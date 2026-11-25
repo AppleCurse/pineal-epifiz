@@ -104,6 +104,24 @@
   let routingData: any = null;
   let isAdultDeclared = false;
 
+  function routeInfo(agentId: string): any {
+    return routingData?.routing?.agents?.[agentId] || null;
+  }
+
+  function routeChain(agentId: string): string {
+    const info = routeInfo(agentId);
+    return Array.isArray(info?.chain) && info.chain.length ? info.chain.join(' > ') : 'Rota bilgisi yüklenmedi';
+  }
+
+  function routeTier(agentId: string): string {
+    const info = routeInfo(agentId);
+    return info?.tier || routingData?.routing?.tiers?.[agentId] || '—';
+  }
+
+  function routeSource(agentId: string): string {
+    return routeInfo(agentId)?.source || '—';
+  }
+
   async function loadRoutingSnapshot() {
     try {
       const cid = get(clientId) || 'default';
