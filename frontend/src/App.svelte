@@ -16,6 +16,7 @@
   import SovereignStudio from './components/SovereignStudio.svelte';
   import BrowserWorkspace from './components/BrowserWorkspace.svelte';
   import EvidenceWorkspace from './components/EvidenceWorkspace.svelte';
+  import JuryWorkspace from './components/JuryWorkspace.svelte';
   import AgentLab from './components/AgentLab.svelte';
   import CrossScanWorkspace from './components/CrossScanWorkspace.svelte';
   import CompanyWorkspace from './components/CompanyWorkspace.svelte';
@@ -443,6 +444,7 @@
   <SovereignStudio clientId={$clientId} />
   <BrowserWorkspace clientId={$clientId} />
   <EvidenceWorkspace />
+  <JuryWorkspace />
   <AgentLab clientId={$clientId} />
   <CrossScanWorkspace clientId={$clientId} />
   <CompanyWorkspace clientId={$clientId} />
