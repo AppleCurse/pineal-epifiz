@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Icon from '../Icon.svelte';
-  import { apiFetch, clientId } from '../../store';
+  import { apiFetch, clientId, formatApiError } from '../../store';
   import { reasonLabel } from '../../lib/channelStatus';
 
   export let targetUrl: string = '';
@@ -97,7 +97,7 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        scanError = data?.error?.message || data?.detail || `İşlem tamamlanamadı (${res.status}).`;
+        scanError = formatApiError(data, `İşlem tamamlanamadı (${res.status}).`);
       } else {
         scanResult = data;
       }

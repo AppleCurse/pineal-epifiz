@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Icon from '../Icon.svelte';
-  import { apiFetch, clientId, taskStatus } from '../../store';
+  import { apiFetch, clientId, formatApiError, taskStatus } from '../../store';
 
   export let pastTasks: any[] = [];
   export let taskHistoryLoading: boolean = false;
@@ -48,7 +48,7 @@
       const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}/${kind}?client_id=${cid}`);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        detailError = data?.error?.message || data?.detail || `Bilgi alınamadı (${res.status}).`;
+        detailError = formatApiError(data, `Bilgi alınamadı (${res.status}).`);
       } else {
         detailData = data;
       }
@@ -110,7 +110,7 @@
       const res = await apiFetch(endpoint);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        memoryError = data?.error?.message || data?.detail || `Hafıza okunamadı (${res.status}).`;
+        memoryError = formatApiError(data, `Hafıza okunamadı (${res.status}).`);
       } else {
         memoryResult = data;
       }

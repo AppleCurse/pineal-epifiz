@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Icon from '../Icon.svelte';
-  import { apiFetch, clientId } from '../../store';
+  import { apiFetch, clientId, formatApiError } from '../../store';
   import { reasonLabel } from '../../lib/channelStatus';
 
   export let targetUrl: string = '';
@@ -96,7 +96,7 @@
   async function parseResponse(res: Response) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error(data?.error?.message || data?.detail || `HTTP ${res.status}`);
+      throw new Error(formatApiError(data, `HTTP ${res.status}`));
     }
     return data;
   }

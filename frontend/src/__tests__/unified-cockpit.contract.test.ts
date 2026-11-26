@@ -78,10 +78,10 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
     expect(get(recordEngaged)).toBe(false);
   });
 
-  it('ACİL DUR calls /api/tasks/{id}/halt and disarms HAZIR', async () => {
+  it('ACİL DUR calls /api/tasks/{id}/halt with client_id and disarms HAZIR', async () => {
     const calls = installFetch((path) => {
       if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: true });
-      if (path === '/api/tasks/op_test_123/halt') return jsonResponse({ status: 'halted' });
+      if (path.startsWith('/api/tasks/op_test_123/halt')) return jsonResponse({ status: 'halted' });
       return undefined;
     });
 
@@ -94,7 +94,9 @@ describe('UnifiedPinealCockpit controls and honesty', () => {
     await fireEvent.click(stopBtn);
 
     await waitFor(() => {
-      expect(calls.some((c) => c.method === 'POST' && c.path === '/api/tasks/op_test_123/halt')).toBe(true);
+      expect(
+        calls.some((c) => c.method === 'POST' && c.path.startsWith('/api/tasks/op_test_123/halt?client_id='))
+      ).toBe(true);
     });
     expect(get(armEngaged)).toBe(false);
     expect(get(isProcessing)).toBe(false);

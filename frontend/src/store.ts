@@ -57,6 +57,49 @@ export function isAuthFailure(res: Response): boolean {
   return res.status === 401 || res.status === 403;
 }
 
+/** Format FastAPI/backend JSON error payloads safely without `[object Object]`. */
+export function formatApiError(data: any, fallback: string): string {
+  const errMsg = data?.error?.message;
+  if (typeof errMsg === 'string' && errMsg.trim()) return errMsg.trim();
+
+  const detail = data?.detail;
+  if (typeof detail === 'string' && detail.trim()) return detail.trim();
+  if (Array.isArray(detail) && detail.length > 0) {
+    const formatted = detail
+      .map((entry: any) => {
+        if (typeof entry === 'string') return entry.trim();
+        if (entry && typeof entry === 'object') {
+          const loc = Array.isArray(entry.loc)
+            ? entry.loc.filter((part: any) => part !== 'body').join('.')
+            : '';
+          const msg = typeof entry.msg === 'string' ? entry.msg.trim() : '';
+          if (loc && msg) return `${loc}: ${msg}`;
+          if (msg) return msg;
+          try {
+            return JSON.stringify(entry);
+          } catch {
+            return '';
+          }
+        }
+        return String(entry ?? '');
+      })
+      .filter(Boolean);
+    if (formatted.length > 0) return formatted.join(' · ');
+  }
+  if (detail && typeof detail === 'object') {
+    if (typeof detail.message === 'string' && detail.message.trim()) return detail.message.trim();
+    try {
+      return JSON.stringify(detail);
+    } catch {
+      /* fallback below */
+    }
+  }
+
+  const msg = data?.message;
+  if (typeof msg === 'string' && msg.trim()) return msg.trim();
+  return fallback;
+}
+
 export function wsUrl(clientId: string): string {
   // Secrets never enter URLs or proxy/access logs. The socket authenticates
   // with its first message instead.

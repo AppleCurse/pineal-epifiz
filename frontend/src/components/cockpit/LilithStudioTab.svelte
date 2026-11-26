@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Icon from '../Icon.svelte';
-  import { apiFetch, clientId, taskStatus, vaultLocked } from '../../store';
+  import { apiFetch, clientId, formatApiError, taskStatus, vaultLocked } from '../../store';
 
   export let targetUrl: string = '';
 
@@ -74,7 +74,7 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(data?.error?.message || data?.detail || `HTTP ${res.status}`);
+        throw new Error(formatApiError(data, `HTTP ${res.status}`));
       }
       hookResult = data;
     } catch (e: any) {
@@ -105,7 +105,7 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(data?.error?.message || data?.detail || `HTTP ${res.status}`);
+        throw new Error(formatApiError(data, `HTTP ${res.status}`));
       }
       lilithResult = data;
     } catch (e: any) {

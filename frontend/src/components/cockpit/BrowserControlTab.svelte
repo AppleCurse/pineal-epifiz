@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import Icon from '../Icon.svelte';
-  import { apiFetch, clientId } from '../../store';
+  import { apiFetch, clientId, formatApiError } from '../../store';
 
   export let targetUrl: string = '';
 
@@ -67,7 +67,7 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        errorMsg = data?.error?.message || data?.detail || `Tarayıcı açılamadı (${res.status}).`;
+        errorMsg = formatApiError(data, `Tarayıcı açılamadı (${res.status}).`);
       } else {
         notice = 'Sayfa açıldı. Aşağıdaki ekrandan kontrol edebilirsiniz.';
         await refreshStateAndShot();
@@ -100,7 +100,7 @@
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
-        errorMsg = d?.error?.message || d?.detail || `Tıklama uygulanamadı (${res.status}).`;
+        errorMsg = formatApiError(d, `Tıklama uygulanamadı (${res.status}).`);
       }
       await refreshStateAndShot();
     } catch {
@@ -122,7 +122,7 @@
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
-        errorMsg = d?.error?.message || d?.detail || `Yazı gönderilemedi (${res.status}).`;
+        errorMsg = formatApiError(d, `Yazı gönderilemedi (${res.status}).`);
       } else {
         typeText = '';
       }
@@ -147,7 +147,7 @@
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
-        errorMsg = d?.error?.message || d?.detail || `Tuş gönderilemedi (${res.status}).`;
+        errorMsg = formatApiError(d, `Tuş gönderilemedi (${res.status}).`);
       }
       await refreshStateAndShot();
     } catch {
@@ -170,7 +170,7 @@
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) {
-        errorMsg = d?.error?.message || d?.detail || `İşlem başarısız (${res.status}).`;
+        errorMsg = formatApiError(d, `İşlem başarısız (${res.status}).`);
       } else {
         notice = okText;
       }

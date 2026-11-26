@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Icon from '../Icon.svelte';
-  import { apiFetch, clientId, vaultLocked } from '../../store';
+  import { apiFetch, clientId, formatApiError, vaultLocked } from '../../store';
 
   export let chatMessages: Array<{ ts: string; sender: string; text: string }> = [];
   export let inputMessage: string = '';
@@ -73,14 +73,14 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(data?.error?.message || `HTTP ${res.status}`);
+        throw new Error(formatApiError(data, `HTTP ${res.status}`));
       }
       if (data.available === false || data.error) {
         coachMessages = [
           ...coachMessages,
           {
             sender: 'Koç (Uyarı)',
-            text: data?.error?.message || 'Model şu an yanıt veremedi.',
+            text: formatApiError(data, 'Model şu an yanıt veremedi.'),
             meta: data?.error?.reason || '',
           },
         ];

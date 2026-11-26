@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import Icon from '../Icon.svelte';
   import JuryConsensusPanel from './JuryConsensusPanel.svelte';
-  import { apiFetch, clientId } from '../../store';
+  import { apiFetch, clientId, formatApiError } from '../../store';
   import { channelLabel, reasonLabel, type CapabilityRow } from '../../lib/channelStatus';
 
   export let routingData: any = null;
@@ -115,7 +115,7 @@
         body: JSON.stringify(body),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) langError = data?.error?.message || data?.detail || `İşlem yapılamadı (${res.status}).`;
+      if (!res.ok) langError = formatApiError(data, `İşlem yapılamadı (${res.status}).`);
       else langResult = data;
     } catch {
       langError = 'Dil aracına ulaşılamadı.';
@@ -125,7 +125,10 @@
   }
 
   async function runShadow() {
-    if (shadowBusy) return;
+    const rawText = shadowInput.trim();
+    const posts = rawText ? rawText.split(/\r?\n/).map((s) => s.trim()).filter(Boolean) : [];
+    const username = shadowUsername.trim();
+    if ((!rawText && !username) || shadowBusy) return;
     shadowBusy = true;
     shadowError = '';
     shadowResult = null;
@@ -138,15 +141,19 @@
         shadowMode === 'analyze'
           ? {
               client_id: $clientId || 'default',
-              username: shadowUsername.trim() || undefined,
-              bio: shadowInput.trim(),
-              recent_texts: shadowInput.trim() ? [shadowInput.trim()] : [],
+              username: username || undefined,
+              bio: rawText,
+              posts,
             }
           : {
               client_id: $clientId || 'default',
-              target_style: shadowInput.trim(),
+              target_profile: {
+                username: username || undefined,
+                bio: rawText,
+                posts,
+              },
               goal: shadowGoal.trim(),
-              context: shadowUsername.trim(),
+              context: username,
             };
       const res = await apiFetch(endpoint, {
         method: 'POST',
@@ -154,7 +161,7 @@
         body: JSON.stringify(payload),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) shadowError = data?.error?.message || data?.detail || `İşlem başarısız (${res.status}).`;
+      if (!res.ok) shadowError = formatApiError(data, `İşlem başarısız (${res.status}).`);
       else shadowResult = data;
     } catch {
       shadowError = 'Sunucuya ulaşılamadı.';
@@ -165,7 +172,8 @@
 
   async function runJuryVote() {
     const claim = juryClaim.trim();
-    if (!claim || juryBusy) return;
+    const evidence = juryEvidence.trim();
+    if (!claim || !evidence || juryBusy) return;
     juryBusy = true;
     juryError = '';
     juryResult = null;
@@ -175,12 +183,12 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           claim,
-          evidence: juryEvidence.trim() ? [juryEvidence.trim()] : [],
+          evidence,
           client_id: $clientId || 'default',
         }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) juryError = data?.error?.message || data?.detail || `Jüri kontrolü başarısız (${res.status}).`;
+      if (!res.ok) juryError = formatApiError(data, `Jüri kontrolü başarısız (${res.status}).`);
       else juryResult = data;
     } catch {
       juryError = 'Jüri servisine bağlanılamadı.';
@@ -209,7 +217,7 @@
         calNote = '';
         await refreshAllTools();
       } else {
-        calNotice = data?.error?.message || data?.detail || 'Kayıt eklenemedi.';
+        calNotice = formatApiError(data, 'Kayıt eklenemedi.');
       }
     } catch {
       calNotice = 'Kayıt gönderilemedi.';
@@ -235,7 +243,7 @@
         }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) interpError = data?.error?.message || data?.detail || `Asistan çalıştırılamadı (${res.status}).`;
+      if (!res.ok) interpError = formatApiError(data, `Asistan çalıştırılamadı (${res.status}).`);
       else interpResult = data;
     } catch {
       interpError = 'Bağlantı sağlanamadı.';
@@ -273,7 +281,7 @@
         minorState = data;
         minorNotice = action === 'set' ? 'Çocuk koruma kilidi güncellendi.' : 'Koruma kilidi temizlendi.';
       } else {
-        minorNotice = data?.error?.message || data?.detail || 'İşlem uygulanamadı.';
+        minorNotice = formatApiError(data, 'İşlem uygulanamadı.');
       }
     } catch {
       minorNotice = 'Bağlantı hatası.';
@@ -456,8 +464,8 @@
         <span class="pill">{juryStatus.available ? 'Jüri aktif' : 'Ek anahtar gerekli'}</span>
       {/if}
       <input type="text" class="field-input" bind:value={juryClaim} placeholder="Doğrulanacak iddia..." />
-      <input type="text" class="field-input" bind:value={juryEvidence} placeholder="Dayanak kanıt (isteğe bağlı)..." />
-      <button type="button" class="btn btn-primary btn-sm" on:click={runJuryVote} disabled={juryBusy || !juryClaim.trim()}>
+      <input type="text" class="field-input" bind:value={juryEvidence} placeholder="Dayanak kanıt metni (zorunlu)..." />
+      <button type="button" class="btn btn-primary btn-sm" on:click={runJuryVote} disabled={juryBusy || !juryClaim.trim() || !juryEvidence.trim()}>
         {juryBusy ? 'Jüri inceliyor...' : 'Jüriye Sor'}
       </button>
       {#if juryError}<div class="alert-banner err">{juryError}</div>{/if}
@@ -482,7 +490,7 @@
       {#if shadowMode === 'generate'}
         <input type="text" class="field-input" bind:value={shadowGoal} placeholder="Bu mesajda amacınız nedir?" />
       {/if}
-      <button type="button" class="btn btn-secondary btn-sm" on:click={runShadow} disabled={shadowBusy}>
+      <button type="button" class="btn btn-secondary btn-sm" on:click={runShadow} disabled={shadowBusy || (!shadowInput.trim() && !shadowUsername.trim())}>
         {shadowBusy ? 'Çalışılıyor...' : 'Çalıştır'}
       </button>
       {#if shadowError}<div class="alert-banner err">{shadowError}</div>{/if}
@@ -560,7 +568,7 @@
             {Array.isArray(routingData?.provider_keys_set) && routingData.provider_keys_set.length > 0
               ? routingData.provider_keys_set.join(', ')
               : routingData?.has_openrouter
-                ? 'OpenRouter'
+                ? '9Router / OpenRouter'
                 : routingData?.use_local
                   ? 'Yerel Model'
                   : 'Seçilmedi'}

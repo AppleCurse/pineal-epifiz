@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import UnifiedPinealCockpit from '../components/UnifiedPinealCockpit.svelte';
 import { activeTab, theme } from '../lib/theme';
-import { armEngaged, clientId, isProcessing, powerEngaged, recordEngaged, taskStatus } from '../store';
+import { armEngaged, clientId, formatApiError, isProcessing, powerEngaged, recordEngaged, taskStatus } from '../store';
 
 function installMemoryStorage() {
   const mem = new Map<string, string>();
@@ -311,5 +311,99 @@ describe('Modern modular cockpit', () => {
     await fireEvent.click(screen.getByRole('button', { name: /Anladım, Gizle/i }));
     expect(screen.queryByText(/Analizi Başlatın ve Odaları Gezin/i)).toBeNull();
     expect(localStorage.getItem('pineal_guide_dismissed')).toBe('1');
+  });
+
+  it('formats FastAPI 422 detail arrays and error objects cleanly without [object Object]', () => {
+    const out422 = formatApiError(
+      { detail: [{ loc: ['body', 'evidence'], msg: 'Input should be a valid string', type: 'string_type' }] },
+      'Fallback'
+    );
+    expect(out422).toContain('evidence: Input should be a valid string');
+    expect(out422).not.toContain('[object Object]');
+
+    expect(formatApiError({ error: { message: 'Kasa kilitli' }, detail: 'ignored' }, 'Fallback')).toBe('Kasa kilitli');
+    expect(formatApiError({ detail: 'Geçersiz istek' }, 'Fallback')).toBe('Geçersiz istek');
+    expect(formatApiError({}, 'Fallback mesajı')).toBe('Fallback mesajı');
+  });
+
+  it('sends client_id query parameter when ACIL DUR halt button is clicked', async () => {
+    const calls = installFetch((path) => {
+      if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: false });
+      if (path.startsWith('/api/tasks/task_xyz/halt')) return jsonResponse({ halted: true });
+      return undefined;
+    });
+
+    taskStatus.set({ task_id: 'task_xyz', status: 'running' });
+    isProcessing.set(true);
+    render(UnifiedPinealCockpit);
+
+    await fireEvent.click(screen.getByRole('button', { name: /ACİL DUR/i }));
+    await waitFor(() => {
+      expect(calls.some((c) => c.method === 'POST' && c.path === '/api/tasks/task_xyz/halt?client_id=test_room')).toBe(true);
+    });
+  });
+
+  it('sends string evidence to /api/jury/vote and structured target_profile to shadow endpoints', async () => {
+    const calls = installFetch((path, init) => {
+      if (path.startsWith('/api/vault/status')) return jsonResponse({ locked: false });
+      if (path.startsWith('/api/telemetry')) return jsonResponse({ capabilities: [] });
+      if (path === '/api/jury/vote' && init?.method === 'POST') return jsonResponse({ available: true, consensus: true });
+      if (path === '/api/experimental/shadow/analyze' && init?.method === 'POST') return jsonResponse({ narcissism: 0 });
+      if (path === '/api/experimental/shadow/generate' && init?.method === 'POST') return jsonResponse({ strategy: 'mirroring' });
+      return undefined;
+    });
+
+    const { container } = render(UnifiedPinealCockpit);
+    const sysBtn = container.querySelector<HTMLButtonElement>('button[data-tab="system"]');
+    await fireEvent.click(sysBtn!);
+
+    // Jury vote payload contract
+    await fireEvent.input(screen.getByPlaceholderText(/Doğrulanacak iddia/i), { target: { value: 'Örnek iddia' } });
+    await fireEvent.input(screen.getByPlaceholderText(/Dayanak kanıt metni/i), { target: { value: 'Somut gözlem' } });
+    await fireEvent.click(screen.getByRole('button', { name: /Jüriye Sor/i }));
+
+    await waitFor(() => {
+      const req = calls.find((c) => c.path === '/api/jury/vote' && c.method === 'POST');
+      expect(req).toBeTruthy();
+      expect(typeof req!.body.evidence).toBe('string');
+      expect(req!.body.evidence).toBe('Somut gözlem');
+    });
+
+    // Shadow analyze payload contract
+    await fireEvent.input(screen.getByPlaceholderText(/Kişi \/ konu/i), { target: { value: 'ornek_kisi' } });
+    await fireEvent.input(screen.getByPlaceholderText(/Örnek yazılar veya üslup notu/i), {
+      target: { value: 'Birinci paylaşım\nİkinci paylaşım' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: /Çalıştır/i }));
+
+    await waitFor(() => {
+      const req = calls.find((c) => c.path === '/api/experimental/shadow/analyze' && c.method === 'POST');
+      expect(req).toBeTruthy();
+      expect(req!.body.posts).toEqual(['Birinci paylaşım', 'İkinci paylaşım']);
+      expect(req!.body.recent_texts).toBeUndefined();
+    });
+
+    // Shadow generate payload contract
+    const selects = container.querySelectorAll<HTMLSelectElement>('select.field-select');
+    const shadowSelect = Array.from(selects).find((s) =>
+      Array.from(s.options).some((o) => o.value === 'generate')
+    );
+    expect(shadowSelect).toBeTruthy();
+    await fireEvent.change(shadowSelect!, { target: { value: 'generate' } });
+    await fireEvent.input(await screen.findByPlaceholderText(/Bu mesajda amacınız nedir/i), {
+      target: { value: 'Doğal merhaba' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: /Çalıştır/i }));
+
+    await waitFor(() => {
+      const req = calls.find((c) => c.path === '/api/experimental/shadow/generate' && c.method === 'POST');
+      expect(req).toBeTruthy();
+      expect(req!.body.target_profile).toEqual({
+        username: 'ornek_kisi',
+        bio: 'Birinci paylaşım\nİkinci paylaşım',
+        posts: ['Birinci paylaşım', 'İkinci paylaşım'],
+      });
+      expect(req!.body.goal).toBe('Doğal merhaba');
+    });
   });
 });

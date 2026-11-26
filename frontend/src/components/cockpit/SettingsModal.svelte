@@ -121,7 +121,7 @@
                 {configuredSet.size > 0
                   ? `${configuredSet.size} sağlayıcı kayıtlı`
                   : routingData?.has_openrouter
-                    ? 'OpenRouter üzerinden aktif'
+                    ? '9Router / OpenRouter üzerinden aktif'
                     : 'Henüz anahtar girilmedi'}
               </span>
             </div>

@@ -23,6 +23,7 @@
     setApiToken,
     currentApiToken,
     apiFetch,
+    formatApiError,
     isAuthFailure,
     clientId,
     logs,
@@ -412,7 +413,7 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        vaultError = data?.error?.message || data?.detail || 'Kasa işlemi gerçekleştirilemedi. Anahtar ayarlarını kontrol edin.';
+        vaultError = formatApiError(data, 'Kasa işlemi gerçekleştirilemedi. Anahtar ayarlarını kontrol edin.');
         if (res.status === 423) showSettingsModal = true;
       } else {
         vaultLocked.set(!lockedNow);
@@ -474,7 +475,7 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        settingsError = data?.error?.message || data?.detail || `Ayarlar kaydedilemedi (${res.status}).`;
+        settingsError = formatApiError(data, `Ayarlar kaydedilemedi (${res.status}).`);
       } else {
         settingsNotice = data?.message || 'Anahtarlar kaydedildi ve kasa güncellendi.';
         await refreshVaultState();
@@ -537,7 +538,7 @@
         } else {
           launchNotice = {
             tone: 'err',
-            text: data?.error?.message || data?.detail || `Analiz başlatılamadı (${res.status}).`,
+            text: formatApiError(data, `Analiz başlatılamadı (${res.status}).`),
           };
         }
         isProcessing.set(false);
@@ -564,9 +565,10 @@
     playHalt();
     const cur = get(taskStatus);
     const taskId = cur?.task_id;
+    const cid = encodeURIComponent(get(clientId) || 'default');
     try {
       if (taskId) {
-        await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}/halt`, {
+        await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}/halt?client_id=${cid}`, {
           method: 'POST',
         });
       }
@@ -598,7 +600,7 @@
       if (!res.ok) {
         launchNotice = {
           tone: 'err',
-          text: data?.error?.message || data?.detail || `Numara sorgusu tamamlanamadı (${res.status}).`,
+          text: formatApiError(data, `Numara sorgusu tamamlanamadı (${res.status}).`),
         };
       } else {
         phoneProbeResult = data;
@@ -636,7 +638,7 @@
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          pushChat('Sistem', data?.error?.message || data?.detail || `Lilith yanıt veremedi (${res.status}).`);
+          pushChat('Sistem', formatApiError(data, `Lilith yanıt veremedi (${res.status}).`));
         } else {
           const lines: string[] = [];
           if (data?.lilith?.hook) lines.push(`İlk Mesaj / Kanca: ${data.lilith.hook}`);
@@ -663,7 +665,7 @@
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          pushChat('Sistem', data?.error?.message || data?.detail || `Sorgu tamamlanamadı (${res.status}).`);
+          pushChat('Sistem', formatApiError(data, `Sorgu tamamlanamadı (${res.status}).`));
         } else {
           const note = data?.result?.machine_note || data?.reply || data?.answer || JSON.stringify(data?.result || data);
           pushChat('Aspasia', note);
@@ -682,7 +684,7 @@
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          pushChat('Sistem', data?.error?.message || data?.detail || `Danışman yanıt veremedi (${res.status}).`);
+          pushChat('Sistem', formatApiError(data, `Danışman yanıt veremedi (${res.status}).`));
         } else {
           pushChat('Aspasia', data?.reply || data?.message || data?.response || JSON.stringify(data));
         }
@@ -714,7 +716,7 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(data?.error?.message || data?.detail || `HTTP ${res.status}`);
+        throw new Error(formatApiError(data, `HTTP ${res.status}`));
       }
       if (data?.status !== 'stored') {
         throw new Error('Kanıt kaydı doğrulanamadı.');
@@ -759,7 +761,7 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        overrideNotice = data?.error?.message || data?.detail || `Not eklenemedi (${res.status}).`;
+        overrideNotice = formatApiError(data, `Not eklenemedi (${res.status}).`);
       } else {
         overrideNotice = 'Operatör notu kalıcı hafızaya eklendi.';
         overrideFact = '';
@@ -780,7 +782,7 @@
       const res = await apiFetch(`/api/tasks?client_id=${cid}`);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        tasksError = data?.error?.message || data?.detail || `Geçmiş yüklenemedi (${res.status}).`;
+        tasksError = formatApiError(data, `Geçmiş yüklenemedi (${res.status}).`);
       } else {
         pastTasks = Array.isArray(data?.tasks) ? data.tasks : Array.isArray(data) ? data : [];
       }
@@ -865,7 +867,7 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        reportBuildError = data?.error?.message || data?.detail || `Rapor oluşturulamadı (${res.status}).`;
+        reportBuildError = formatApiError(data, `Rapor oluşturulamadı (${res.status}).`);
       } else {
         reportBuildResult = data;
         await loadReportCenter();

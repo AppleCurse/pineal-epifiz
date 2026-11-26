@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Icon from '../Icon.svelte';
-  import { apiFetch, clientId, speechState, taskStatus } from '../../store';
+  import { apiFetch, clientId, formatApiError, speechState, taskStatus } from '../../store';
   import { reasonLabel } from '../../lib/channelStatus';
 
   export let targetUrl: string = '';
@@ -89,7 +89,7 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        mediaError = data?.error?.message || data?.detail || `Medya analizi başlatılamadı (${res.status}).`;
+        mediaError = formatApiError(data, `Medya analizi başlatılamadı (${res.status}).`);
       } else {
         mediaResult = data;
       }
@@ -119,7 +119,7 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        speechError = data?.error?.message || data?.detail || `Sesli okuma başarısız (${res.status}).`;
+        speechError = formatApiError(data, `Sesli okuma başarısız (${res.status}).`);
       } else {
         speechNotice = 'Metin seslendirildi.';
       }
@@ -147,7 +147,7 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        speechError = data?.error?.message || data?.detail || `Rapor seslendirilemedi (${res.status}).`;
+        speechError = formatApiError(data, `Rapor seslendirilemedi (${res.status}).`);
       } else {
         speechNotice = 'Aktif analiz özeti seslendirildi.';
       }
@@ -191,7 +191,7 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        listenError = data?.error?.message || data?.detail || `Ses çözümlenemedi (${res.status}).`;
+        listenError = formatApiError(data, `Ses çözümlenemedi (${res.status}).`);
       } else {
         listenResult = data;
       }
