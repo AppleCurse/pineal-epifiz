@@ -81,6 +81,11 @@ if not defined ENABLE_MEDIA_FORENSICS set ENABLE_MEDIA_FORENSICS=true
 echo Kapi durumu: ENABLE_CROSS_PLATFORM ENABLE_MAIGRET ENABLE_HOLEHE ENABLE_CRAWL4AI ENABLE_SCRAPLING ENABLE_X_SENSOR ENABLE_IG_SECONDARY ENABLE_COMPANY_TARGETING ENABLE_REPORT_FACTORY ENABLE_MEDIA_FORENSICS acik (kasa ve hiz kapilari HER DURUMDA aktif).
 echo Sunucu baslatiliyor: http://localhost:8000
 echo.
+if exist "%~dp0scripts\baslat_tam_donanim.ps1" (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\baslat_tam_donanim.ps1" -OpenBrowser %*
+    if errorlevel 1 goto :fail
+    goto :done
+)
 python -m uvicorn backend.api:app --host 0.0.0.0 --port 8000
 if errorlevel 1 goto :fail
 
