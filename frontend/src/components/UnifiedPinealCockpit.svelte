@@ -655,7 +655,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             client_id: cid,
-            query: msg,
+            message: msg,
             target: targetUrl.trim(),
             task_id: curTask?.task_id || '',
             subject_consent: isAdultDeclared,
@@ -674,7 +674,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             client_id: cid,
-            message: msg,
+            user_message: msg,
             agent_id: selectedAgentId || 'aspasia',
             task_id: curTask?.task_id || '',
             subject_consent: isAdultDeclared,
