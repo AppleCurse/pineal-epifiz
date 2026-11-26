@@ -136,14 +136,14 @@ $ollamaExe = @(
 if ($ollamaExe) {
     $tagsObj = $null
     try {
-        $tagsObj = Invoke-RestMethod -Uri "http://127.0.0.1:11434/api/tags" -TimeoutSec 2 -ErrorAction Stop
+        $tagsObj = Invoke-RestMethod -Uri "http://127.0.0.1:11434/api/tags" -TimeoutSec 3 -ErrorAction Stop
     } catch {
         try {
             Start-Process -FilePath $ollamaExe -ArgumentList "serve" -WindowStyle Hidden | Out-Null
-            for ($i = 0; $i -lt 8; $i++) {
-                Start-Sleep -Milliseconds 500
+            for ($i = 0; $i -lt 30; $i++) {
+                Start-Sleep -Milliseconds 1000
                 try {
-                    $tagsObj = Invoke-RestMethod -Uri "http://127.0.0.1:11434/api/tags" -TimeoutSec 2 -ErrorAction Stop
+                    $tagsObj = Invoke-RestMethod -Uri "http://127.0.0.1:11434/api/tags" -TimeoutSec 3 -ErrorAction Stop
                     break
                 } catch {
                 }
