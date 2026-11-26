@@ -490,9 +490,9 @@
   // --- ANALİZ BAŞLATMA & ACİL DURDURMA & TELEFON YOKLAMA ---
   async function launchAnalysis() {
     const url = targetUrl.trim();
-    if (!url || !isAdultDeclared || !$armEngaged) return;
+    if (!url || !isAdultDeclared) return;
 
-    playRunning();
+    if (!$armEngaged) armEngaged.set(true); playRunning();
     launchNotice = null;
     isProcessing.set(true);
 
