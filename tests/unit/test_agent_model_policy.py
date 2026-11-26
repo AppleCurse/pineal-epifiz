@@ -62,6 +62,9 @@ def test_task_and_agent_capabilities_are_explicit():
     assert gateway.model_satisfies("google/gemini-3.7-flash", frozenset({"chat", "vision"}))
     assert gateway.model_satisfies("x-ai/grok-4.6", frozenset({"chat", "vision"}))
     assert gateway.model_satisfies("anthropic/claude-sonnet-5", frozenset({"chat", "vision"}))
+    assert gateway.model_satisfies("cx/gpt-6-luna", frozenset({"chat", "vision"}))
+    assert gateway.model_satisfies("ag/gemini-3.8-flash", frozenset({"chat", "vision"}))
+    assert not gateway.model_satisfies("ag/claude-sonnet-5-5", frozenset({"chat", "vision"}))
     assert not gateway.model_satisfies("inclusionai/ling-3.0-flash", frozenset({"chat", "vision"}))
 
 

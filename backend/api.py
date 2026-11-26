@@ -3027,6 +3027,8 @@ async def api_vault(req: VaultPayload):
             shadow_executor.llm_gateway.set_key(req.api_key, unlock_live=True)
         if dialogue_manager is not None:
             dialogue_manager.llm.set_key(req.api_key, unlock_live=True)
+        if aspasia_chief is not None and getattr(aspasia_chief, "llm", None) is not None:
+            aspasia_chief.llm.set_key(req.api_key, unlock_live=True)
         vault["or_key"] = True
         broadcast_log(req.client_id, "INFO", "KASA: API Anahtarı girildi. Ağ geçidi aktif — canlı LLM kilidi açıldı.")
         
@@ -3039,6 +3041,8 @@ async def api_vault(req: VaultPayload):
             gateways.append(shadow_executor.llm_gateway)
         if dialogue_manager is not None:
             gateways.append(dialogue_manager.llm)
+        if aspasia_chief is not None and getattr(aspasia_chief, "llm", None) is not None:
+            gateways.append(aspasia_chief.llm)
         for provider_id, provider_key in req.provider_keys.items():
             # [FORENSIC VAULT-INTERLOCK] Placeholder havuza girmez; atlanan
             # ID dürüstçe raporlanır (değer asla loglanmaz).
@@ -3067,6 +3071,12 @@ async def api_vault(req: VaultPayload):
             model_name=req.local_model or None,
             active=active,
         )
+        if aspasia_chief is not None and getattr(aspasia_chief, "llm", None) is not None:
+            aspasia_chief.llm.set_local_config(
+                base_url=req.local_url or None,
+                model_name=req.local_model or None,
+                active=active,
+            )
         if req.use_local is not None:
             vault["use_local"] = active
         broadcast_log(req.client_id, "INFO", f"KASA: Yerel Kısıtlamasız LLM Yapılandırıldı ({req.local_model or 'Ollama/LM Studio'}).")

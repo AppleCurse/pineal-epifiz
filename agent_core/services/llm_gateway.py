@@ -729,6 +729,11 @@ class LLMGateway:
         MODEL_REGISTRY["grok_4_6"],
         MODEL_REGISTRY["pineal_vision_lane"],
         MODEL_REGISTRY["pineal_vision"],
+        # Canli base64 PNG testi + model_substitution_allowed dogrulanmis 9Router multimodal modelleri
+        "cx/gpt-6-luna",
+        "ag/gemini-3.8-flash",
+        "ag/gemini-4-carbon",
+        "ag/gemini-4-carbon-medium",
     })
 
     LOCAL_DEFAULT_URL = os.getenv("LOCAL_LLM_URL", "http://localhost:11434/v1")

@@ -63,6 +63,28 @@ async def test_aspasia_chat_mocked_llm_high(monkeypatch):
     assert "sistem ayakta" in data["message"].lower()
     assert "mösyö" not in data["message"].lower()
 
+
+@pytest.mark.asyncio
+async def test_vault_syncs_aspasia_chief_llm_keys(monkeypatch):
+    """POST /api/vault yeni API anahtarı ve sağlayıcı anahtarını aspasia_chief.llm'e de aktarır."""
+    from agent_core.services.llm_gateway import LLMGateway
+
+    gw = LLMGateway()
+    monkeypatch.setattr(api_mod.aspasia_chief, "llm", gw)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        r = await ac.post(
+            "/api/vault",
+            json={
+                "client_id": "c_http_vault_sync",
+                "api_key": "sk-test-sync-987654321",
+                "provider_keys": {"anthropic": "sk-ant-sync-123456"},
+            },
+        )
+    assert r.status_code == 200
+    assert gw.api_key == "sk-test-sync-987654321"
+    assert gw.live_unlocked is True
+
 # --- HERMETIC TEST GUARD: blocks live LLM calls ---
 import pytest as _pytest
 from agent_core.services.llm_gateway import LLMGateway as _LLMGateway

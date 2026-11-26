@@ -42,13 +42,16 @@ BROWSER_MISSING_REASON = "browser_binary_missing"
 #: ile değiştirilebilir; Playwright bu değişkeni kendisi de okur).
 _DEFAULT_BROWSERS_ROOT = "~/.cache/ms-playwright"
 
-#: Chromium'u taşıyan bilinen ikili adları (headless shell dâhil).
+#: Chromium'u taşıyan bilinen ikili adları (Linux ve Windows headless shell dâhil).
 _BINARY_NAMES = (
     "chrome",
     "chrome-linux64/chrome",
     "chrome-linux/chrome",
     "chrome-headless-shell-linux64/chrome-headless-shell",
     "headless_shell",
+    "chrome-win64/chrome.exe",
+    "chrome-win/chrome.exe",
+    "chrome-headless-shell-win64/chrome-headless-shell.exe",
 )
 
 
@@ -71,6 +74,21 @@ def _env_browsers_root() -> str:
         or os.environ.get("PINEAL_PLAYWRIGHT_BROWSERS_PATH", "").strip()
         or _DEFAULT_BROWSERS_ROOT
     )
+
+
+def _candidate_browsers_roots() -> tuple[str, ...]:
+    """Playwright önbellek kökleri (explicit env varsa tek, yoksa Linux + Windows)."""
+    explicit = (
+        os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "").strip()
+        or os.environ.get("PINEAL_PLAYWRIGHT_BROWSERS_PATH", "").strip()
+    )
+    if explicit:
+        return (explicit,)
+    roots = [_DEFAULT_BROWSERS_ROOT]
+    local_app_data = os.environ.get("LOCALAPPDATA", "").strip()
+    if local_app_data:
+        roots.append(os.path.join(local_app_data, "ms-playwright"))
+    return tuple(roots)
 
 
 def _pinned_chromium() -> str:
@@ -105,7 +123,7 @@ def browser_binary_status() -> BrowserBinaryStatus:
     pinned = _pinned_chromium()
     if pinned:
         if os.path.isfile(pinned) and os.access(pinned, os.X_OK):
-            return BrowserBinaryStatus(available=True, source="pinned", path=pinned)
+            return BrowserBinaryStatus(available=True, source="pinned", path=pinned, reason="")
         # Açıkça sabitlenmiş ama yok: bu bir YAPILANDIRMA hatasıdır, sessizce
         # "ikili yok"a düşmek operatörü yanıltır — sebebi ayrı raporlanır.
         return BrowserBinaryStatus(
@@ -115,10 +133,10 @@ def browser_binary_status() -> BrowserBinaryStatus:
             reason="pinned_browser_path_missing",
         )
 
-    root = _env_browsers_root()
-    found = _scan_playwright_cache(root)
-    if found:
-        return BrowserBinaryStatus(available=True, source="playwright_cache", path=found)
+    for root in _candidate_browsers_roots():
+        found = _scan_playwright_cache(root)
+        if found:
+            return BrowserBinaryStatus(available=True, source="playwright_cache", path=found, reason="")
 
     # [ÖLÇÜM] Playwright sürücüsüne SORMAK yerine sabit adaylar tarandı: sürücü
     # çağrısı süreç açar (ölçüldü: telemetri ucunda pahalı) ve bu fonksiyon
